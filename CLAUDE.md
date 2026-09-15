@@ -319,6 +319,16 @@ simply implement:
 Refuse with the number, not with an opinion, and write the refusal down or the
 next pass will find it again.
 
+**Re-shoot after a fix, and expect the next pass to catch what this one caused.**
+A critic gives you a direction, never a distance, and two objects usually touch
+the thing it named. Told that conveyor riders were "sunk to the knee", I moved
+the belt rather than the people; the complaint was satisfied and the error came
+back as its mirror, with the riders hanging a body's length UNDERNEATH the band,
+which nobody noticed until a second pass. Same shape: a stair top left 22 units
+below the belt it was meant to meet, so a correctly placed rider stepped down
+into nothing before the first tread. Ask which object is in the wrong place
+before moving either, and put the result in front of the critic again.
+
 ## Things that look like bugs and are not
 
 - **A process killed with exit 144 now has two possible causes**, and one of
