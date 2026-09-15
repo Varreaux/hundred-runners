@@ -41,7 +41,14 @@ eval(src + `
 ;(function(){
   const press = k => keyHandler({ key: k, repeat: false, preventDefault(){} });
   const KEYS = 'QWERASDFZXCVBNMPRTYUIOGHJKL'.split('').concat(['1','2','3','4','5','6','7','8','9',' ','Enter','Escape']);
-  const errs = {}; let froze = 0; const RUNS = 60;
+  // 30 runs, not 60. Measured cost per game on a quiet machine, by style:
+  // style 0 (bot, plays the whole course to the finale and hammers keys) 45.6s,
+  // style 1 (no input) 3.1s, style 2 (random keys) 10.1s, style 3 (masher) 3.0s.
+  // So the bot alone is two thirds of the total and the end screen is 11%.
+  // If this ever needs to be faster again, style 0 is the only lever that
+  // matters -- and it is also the only style that reaches the finale, so think
+  // before trimming it.
+  const errs = {}; let froze = 0; const RUNS = 30;
   let maxParticles=0, maxBubbles=0, maxFloaters=0, maxRipples=0, reachedEnd=0;
   // deterministic pseudo-random so runs differ but are reproducible
   let seed = 12345;
@@ -75,8 +82,15 @@ eval(src + `
         }
       }
       if (S.mode === 'win' || S.mode === 'lose' || S.mode === 'finale') reachedEnd++;
-      // sit on the end screen for 20s of frames: it is animated now (endT, embers, staggered cards, typing)
-      for (let i = 0; i < 60*20; i++) { update(1/60); draw(); maxParticles=Math.max(maxParticles,S.particles.length); }
+      // Sit on the end screen: it is animated (endT, embers, staggered cards, typing)
+      // and has broken before. 6s, not the 20s this used to be. Measured by
+      // stepping endT and hashing the canvas until the frame stops changing:
+      // the lose report settles at 2.75s, and a win screen carrying a full
+      // hundred-death report -- rank stamp and typed line included, the longest
+      // layout there is -- settles at 4.0s. 6s is that worst case plus half
+      // again. Pin S.shake to 0 before hashing or the title slam's jitter makes
+      // every frame differ and the measurement reads as "never settles".
+      for (let i = 0; i < 60*6; i++) { update(1/60); draw(); maxParticles=Math.max(maxParticles,S.particles.length); }
       // and restart from it
       press('R'); for (let i = 0; i < 120; i++) { update(1/60); draw(); }
     } catch (e) {
