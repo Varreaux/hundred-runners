@@ -920,7 +920,7 @@ function drawFigure(r, sx, sy, phase, scale, alpha) {
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   const moving = phase !== 0;
   const sn = Math.sin(phase), cs = Math.cos(phase);
-  const lean = moving ? -0.14 : 0;
+  const lean = moving ? 0.16 : 0;   // positive tilts the top of the torso forward (right) for a right-facing runner
   const limb = (x0, y0, cx, cy, x1, y1, col, w) => {
     ctx.strokeStyle = INK; ctx.lineWidth = w + 1.6; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(cx, cy, x1, y1); ctx.stroke();
     ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(cx, cy, x1, y1); ctx.stroke();
