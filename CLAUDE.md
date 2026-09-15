@@ -69,6 +69,19 @@ non-finite coordinates), then evals the script text from `index.html` with the
   escape like `'Matouš'` reads as eleven characters but *is* `Matouš` at
   runtime, so a grep will report a mismatch that does not exist. Pull the
   literal out and `eval` it, or check the value in the browser.
+- **Deleting a function is a freeze risk.** A call to a function that no longer
+  exists throws, and an exception in `update()` or `draw()` kills the loop. This
+  already happened: `AU.rocks` went with the cave-in, a new gate slam still
+  called it, and the game died the moment the gate landed. After removing
+  anything, grep for its callers. For the sound module this one-liner audits
+  every call against every definition and reports stale ones:
+
+  ```
+  node -e "const s=require('fs').readFileSync('index.html','utf8').split('<script>')[1];
+  const d=new Set([...s.match(/const AU = \{([\s\S]*?)\n\};/)[1].matchAll(/^\s{2}(\w+)\s*[(:]/gm)].map(m=>m[1]));
+  console.log([...new Set([...s.matchAll(/AU\.(\w+)\s*\(/g)].map(m=>m[1]))].filter(c=>!d.has(c)))"
+  ```
+
 - **Non-ASCII and emoji in object keys** need a JavaScript `\u{...}` escape. A
   Python-style `\U` produces a key that silently never matches. Named runners
   have fixed appearances in a `LOOKS` table keyed by the exact name string, so a
