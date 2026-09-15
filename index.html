@@ -118,12 +118,21 @@ const LINES = {
   ],
   crush: ['Ow.', 'Rude!', 'Mind the—', 'Squish.', 'Not the hair!', 'I had plans.'],
 };
+// Every word the player types, from Linh's branch. They were mechanical -- ROPE,
+// WINCH, TRESTLE -- which described the apparatus and said nothing. These name
+// what the run is actually about, so the crossing you are fixing tells you why
+// you are fixing it. Lengths run 3 to 6; there is no 7 any more, so the
+// difficulty ramp below maps onto what exists rather than onto what used to.
 const WORDS = {
-  4: ['ROPE', 'GATE', 'LOCK', 'PULL', 'HAUL', 'LIFT', 'KNOT', 'HOOK'],
-  5: ['LEVER', 'CRANK', 'WINCH', 'CHAIN', 'PLANK', 'HOIST', 'LATCH', 'CABLE'],
-  6: ['BRIDGE', 'PULLEY', 'ANCHOR', 'TETHER', 'TIMBER', 'RUDDER', 'GIRDER'],
-  7: ['TRESTLE', 'CAPSTAN', 'RATCHET', 'LANYARD', 'BOLLARD', 'RIGGING'],
+  3: ['RUN', 'PAY', 'TAX', 'JOB', 'BUY'],
+  4: ['EXIT', 'FLEE', 'FREE', 'DEBT', 'WAGE', 'WORK', 'BOSS', 'CASH'],
+  5: ['LABOR', 'MONEY', 'QUOTA', 'UNION', 'SHIFT', 'CHAIN', 'FREED'],
+  6: ['ESCAPE', 'PROFIT', 'STRIKE', 'WORKER', 'SALARY', 'RESIST', 'UNLOCK'],
 };
+// Linh picks a length at random, which drops the difficulty ramp. Keep the ramp
+// and map it onto the lengths that exist.
+const WORD_LEN = [3, 4, 5, 6, 6];
+const themeWord = diff => pick(WORDS[WORD_LEN[Math.max(1, Math.min(5, diff)) - 1]]);
 
 // ================================================================ helpers
 const cv = document.getElementById('c');
@@ -216,9 +225,9 @@ const inView = (wx, margin = 100) => wx > V.left - margin && wx < V.left + V.vw 
 const VERBS = {
   keys: {
     hint: 'hit the highlighted keys in order',
-    start(diff) { return { seq: makeSeq(2 + diff), idx: 0 }; },
+    start(diff) { return { seq: themeWord(diff).split(''), idx: 0 }; },
     key(m, k) {
-      if (!CFG.keyPool.includes(k)) return null;
+      if (!/^[A-Z]$/.test(k)) return null;
       if (k === m.seq[m.idx]) { m.idx++; return m.idx >= m.seq.length ? 'done' : 'ok'; }
       m.idx = 0; return 'wrong';
     },
@@ -262,7 +271,7 @@ const VERBS = {
   },
   word: {
     hint: 'type the word',
-    start(diff) { const len = [4, 5, 5, 6, 7][diff - 1]; return { word: pick(WORDS[len]), idx: 0 }; },
+    start(diff) { return { word: themeWord(diff), idx: 0 }; },
     key(m, k) {
       if (k.length !== 1 || k < 'A' || k > 'Z') return null;
       if (k === m.word[m.idx]) { m.idx++; return m.idx >= m.word.length ? 'done' : 'ok'; }
@@ -270,7 +279,7 @@ const VERBS = {
     },
     update() {},
     progress(m) { return m.idx / m.word.length; },
-    draw(m, px, py, pw) { drawKeyBoxes(m.word.split(''), m.idx, px, py, pw); },
+    draw(m, px, py, pw) { drawWordPrompt(m.word, m.idx, px, py, pw); },
   },
 };
 
@@ -4348,6 +4357,34 @@ function drawHud() {
     ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
     ctx.fillText(hint, W / 2, H - 9); ctx.textAlign = 'left';
   }
+}
+// The word is read and typed, not followed. drawKeyBoxes highlights the next
+// key, which turns 'type the word' into 'press the lit thing' -- fine for the
+// keys verb, wrong for this one. Here the whole word stands as one piece of
+// text and only what you have already typed is marked.
+function drawWordPrompt(word, idx, px, py, pw) {
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 40px monospace';
+  const total = ctx.measureText(word).width;
+  let bx = px + pw / 2 - total / 2;
+  for (let i = 0; i < word.length; i++) {
+    const w = ctx.measureText(word[i]).width;
+    const done = i < idx;
+    if (done) {
+      ctx.fillStyle = 'rgba(46,204,113,0.18)';
+      roundRect(bx - 1, py + 40, w + 2, 46, 4); ctx.fill();
+    }
+    ctx.fillStyle = done ? '#2ecc71' : '#e8e4ea';
+    ctx.fillText(word[i], bx + w / 2, py + 76);
+    bx += w;
+  }
+  // a rule under the letters still to come, so progress reads at a glance
+  const typed = ctx.measureText(word.slice(0, idx)).width;
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  ctx.fillRect(px + pw / 2 - total / 2 + typed, py + 86, total - typed, 2);
+  ctx.fillStyle = '#2ecc71';
+  ctx.fillRect(px + pw / 2 - total / 2, py + 86, typed, 2);
+  ctx.textAlign = 'left';
 }
 function drawKeyBoxes(chars, idx, px, py, pw) {
   const boxW = 40, gap = 8, total = chars.length * boxW + (chars.length - 1) * gap;
