@@ -19,6 +19,17 @@ Morgan (GitHub login `Varreaux`). Read this before editing.
   no-cache headers. Do not point him at any other port. If you run your own
   server for screenshots, keep it to yourself and say so.
 
+## Close the Chrome tab when you are done with it
+
+Claude in Chrome opens a tab per session and they accumulate: Morgan ends up
+with a row of identical "Hundred Runners" tabs he did not open and cannot tell
+apart from the one he is playing in. Close yours with `tabs_close_mcp` as soon
+as you have finished checking something, and before you finish a turn.
+
+Leave one open only when Morgan asked to see it, or when you are mid-task and
+will use it again in the same turn — and say which it is so he knows the tab is
+deliberate. `tabs_context_mcp` lists what is open if you have lost track.
+
 ## What our instruments cannot sense
 
 A passing test is a verdict only on what the test senses, never on whether the
