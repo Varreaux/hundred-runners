@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '36 they run like people now';
+const BUILD = '37 the toll, without stopping the clock';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -953,7 +953,7 @@ function update(dt) {
   const camStopped = S.cam >= S.camMax;
   S.recent = S.recent.filter(t => S.t - t < 1);
   if (!S.spike && S.spikeCool <= 0 && S.recent.length >= 5) {
-    S.spike = { t: 0.7, n: S.recent.length, at: S.lastKill }; S.recent.length = 0; S.spikeCool = CFG.spikeCooldown; S.shake = 8; AU.boom();
+    S.spike = { t: 0.9, n: S.recent.length, at: S.lastKill }; S.recent.length = 0; S.spikeCool = CFG.spikeCooldown; S.shake = 8; AU.boom();
   }
   const inside = S.cam + CFG.packFront > CFG.entrance && S.cam + CFG.packFront < CFG.exit;
   AU.ambient(inside, S.runners.filter(r => r.state === 'run' && !r.held).length, dt);
@@ -1345,35 +1345,30 @@ function draw() {
   // lays the wash and the plate across the end screen's roll call. If either half moves
   // again, the condition moves with it.
   if (S.spike && S.mode !== 'win' && S.mode !== 'lose') {
-    ctx.fillStyle = `rgba(20,0,0,${0.5 * Math.min(1, S.spike.t / 0.35)})`; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = `rgba(20,0,0,${0.3 * Math.min(1, S.spike.t / 0.25)})`; ctx.fillRect(0, 0, W, H);
   }
   if (S.mode === 'play' || S.mode === 'finale') drawOverlays();
   // The plate names deaths, so it points at the deaths without standing on them: it takes
   // the opposite half of the screen and reaches across with a stem.
   // Same guard as the wash above, and for the same reason. See the note there.
-  if (S.spike && S.mode !== 'win' && S.mode !== 'lose') {
-    const a = Math.min(1, S.spike.t / 0.35);
+  // The toll is written where the people died, not on a plate across the screen
+  // with a line reaching back to them, and it says LOST rather than a bare -N so
+  // it cannot be read as a score next to the counter in the HUD.
+  if (S.spike && S.mode !== 'win' && S.mode !== 'lose' && S.spike.at) {
+    const a = Math.min(1, S.spike.t / 0.4);
+    const [kx, ky] = toScreen(S.spike.at.x, S.spike.at.y);
+    // BELOW the walkway, not above it: above is where the room badge and the
+    // "N coming" bar already live, and the toll landed straight on top of them.
+    // Below is also where the bodies went, so it is where the eye already is.
+    const sink = (1 - S.spike.t / 0.9) * 16;
+    const x = Math.max(70, Math.min(W - 70, kx)), y = Math.min(H - 54, ky + 74 + sink);
     ctx.textAlign = 'center'; ctx.globalAlpha = a;
-    ctx.font = 'bold 84px monospace';
-    const pw = ctx.measureText(`-${S.spike.n}`).width + 80;
-    const at = S.spike.at;
-    let px = W / 2, py = H / 2, kx = null, ky = null;
-    if (at) {
-      [kx, ky] = toScreen(at.x, at.y);
-      px = kx < W / 2 ? W - pw / 2 - 28 : pw / 2 + 28;
-      py = Math.max(132, Math.min(H - 150, ky - 190));
-    }
-    // the stem first, so the plate sits on top of its own line rather than under it
-    if (at) {
-      ctx.strokeStyle = `rgba(255,59,59,${0.4 * a})`; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(px, py + 54); ctx.lineTo(kx, Math.max(8, Math.min(H - 8, ky - 16))); ctx.stroke();
-      ctx.fillStyle = `rgba(255,59,59,${0.5 * a})`;
-      ctx.beginPath(); ctx.arc(kx, Math.max(8, Math.min(H - 8, ky - 16)), 4, 0, 6.28); ctx.fill();
-    }
-    ctx.fillStyle = 'rgba(10,6,10,0.82)'; roundRect(px - pw / 2, py - 62, pw, 116, 14); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,59,59,0.5)'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.fillStyle = '#ff3b3b'; ctx.fillText(`-${S.spike.n}`, px, py + 10);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 16px monospace'; ctx.fillText('AT ONCE', px, py + 40);
+    ctx.fillStyle = 'rgba(10,6,10,0.55)';
+    ctx.font = 'bold 46px monospace';
+    const w = Math.max(96, ctx.measureText(String(S.spike.n)).width + 46);
+    roundRect(x - w / 2, y - 38, w, 62, 10); ctx.fill();
+    ctx.fillStyle = '#ff3b3b'; ctx.fillText(String(S.spike.n), x, y);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px monospace'; ctx.fillText('LOST HERE', x, y + 18);
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
   }
   drawHud();
@@ -5184,7 +5179,7 @@ function drawEnd() {
 let last = performance.now();
 function frame(now) {
   const real = Math.min(0.05, (now - last) / 1000); last = now;
-  update(S.spike ? real * 0.25 : real); draw();
+  update(real); draw();
   if (S.spike) { S.spike.t -= real; if (S.spike.t <= 0) S.spike = null; }
   if (S.spikeCool > 0) S.spikeCool -= real;
   requestAnimationFrame(frame);
