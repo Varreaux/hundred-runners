@@ -4925,7 +4925,15 @@ function devSolve() {
     while (S.active === r && guard++ < 600) {
       const m = r.mg, V = VERBS[r.verb];
       if (r.verb === 'bar') { m.pos = m.zone + m.zoneW / 2; fire(' '); continue; }
-      if (V.solveKey) { fire(V.solveKey(m)); continue; }
+      if (V.solveKey) {
+        const k = V.solveKey(m);
+        // null means "no key helps right now" -- the sweeper is playing its
+        // demo and the puzzle is waiting on the clock, not on the player.
+        // Firing into that 600 times and giving up is how an instrument
+        // reports a working room as broken.
+        if (k == null) break;
+        fire(k); continue;
+      }
       const before = V.progress(m);
       let moved = false;
       for (const k of SOLVE_KEYS) {
