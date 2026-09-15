@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '28 two octaves and an honest sky';
+const BUILD = '29 daylight reaches the mill';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1266,19 +1266,6 @@ function drawMountain() {
   drawMillMass();
   ctx.restore();
   ctx.save(); seamClip(1); ctx.clip();
-  // sun wash down the upper-left flank; the sun sits upper-left in drawSky
-  const sun = ctx.createLinearGradient(0, top, V.vw * 0.8, top + 900);
-  sun.addColorStop(0, 'rgba(255,224,176,0.16)');
-  sun.addColorStop(1, 'rgba(255,224,176,0)');
-  ctx.fillStyle = sun; ctx.fillRect(-60, top, V.vw + 120, bottom - top);
-  // daylight leaking into the rock around each mouth
-  for (const wx of [CFG.entrance, CFG.exit]) {
-    if (!inView(wx, 420)) continue;
-    const mx = wx - V.left, my = laneY(0) - CFG.tunnelH * 0.5;
-    const dg = ctx.createRadialGradient(mx, my, 20, mx, my, 400);
-    dg.addColorStop(0, 'rgba(255,232,186,0.2)'); dg.addColorStop(1, 'rgba(255,232,186,0)');
-    ctx.fillStyle = dg; ctx.fillRect(mx - 400, my - 400, 800, 800);
-  }
   for (let y = top; y < bottom; y += 26) {
     const k = Math.floor(y / 26);
     ctx.fillStyle = k % 3 === 0 ? 'rgba(255,255,255,0.04)' : k % 3 === 1 ? 'rgba(0,0,0,0.11)' : 'rgba(150,100,130,0.07)';
@@ -1367,6 +1354,21 @@ function drawMountain() {
   drawSeamRock();
   ctx.restore();
   drawSeamFace();
+  // Light falls on the mass whatever the mass is made of. These used to sit
+  // inside the rock clip, so sunlit exterior brick came out darker than lamplit
+  // interior brick, and the mill's own entrance mouth had its daylight clipped
+  // away. They run after both material passes and inside neither.
+  const sun = ctx.createLinearGradient(0, top, V.vw * 0.8, top + 900);
+  sun.addColorStop(0, 'rgba(255,224,176,0.16)');
+  sun.addColorStop(1, 'rgba(255,224,176,0)');
+  ctx.fillStyle = sun; ctx.fillRect(-60, top, V.vw + 120, bottom - top);
+  for (const wx of [CFG.entrance, CFG.exit]) {
+    if (!inView(wx, 420)) continue;
+    const mx = wx - V.left, my = laneY(0) - CFG.tunnelH * 0.5;
+    const dg = ctx.createRadialGradient(mx, my, 20, mx, my, 400);
+    dg.addColorStop(0, 'rgba(255,232,186,0.2)'); dg.addColorStop(1, 'rgba(255,232,186,0)');
+    ctx.fillStyle = dg; ctx.fillRect(mx - 400, my - 400, 800, 800);
+  }
   ctx.restore();
   // Rim light where the rock meets the sky. The high ground faces open sky and catches it;
   // the lower flanks are shaded by the mass above them, so the hairline has to die out
@@ -1721,15 +1723,15 @@ function brickTile() {
   const brick = (bx, by) => {
     const v = hash(bx * 3.7 + by * 11.3);
     g.fillStyle = `rgb(${50 + v * 28 | 0},${38 + v * 19 | 0},${40 + v * 19 | 0})`;
-    g.fillRect(bx, by, 12, 4.5);
-    g.fillStyle = 'rgba(255,255,255,0.06)'; g.fillRect(bx, by, 12, 0.8);
-    g.fillStyle = 'rgba(0,0,0,0.24)'; g.fillRect(bx, by + 3.9, 12, 0.8);
+    g.fillRect(bx, by, 6, 2.25);
+    g.fillStyle = 'rgba(255,255,255,0.05)'; g.fillRect(bx, by, 6, 0.5);
+    g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(bx, by + 1.9, 6, 0.5);
   };
   // half-size brick: at 24x9 a course was 0.46m on a 1.7m figure, so the wall
   // read as rubble stone and the dressed quoins had nothing to contrast with
-  for (let row = 0; row < 12; row++) {
-    const off = (row % 2) * 6.5 + (row === 5 ? 3 : row === 8 ? -2.5 : 0);
-    for (let i = -1; i <= 13; i++) brick(i * 13 + off, row * 5.5);
+  for (let row = 0; row < 24; row++) {
+    const off = (row % 2) * 3.25 + (row === 11 ? 1.5 : row === 17 ? -1.2 : 0);
+    for (let i = -1; i <= 25; i++) brick(i * 6.5 + off, row * 2.75);
   }
   return brickCv = c;
 }
@@ -2783,7 +2785,31 @@ function drawSeamPortal(y) {
     ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(px - 8.6, y - 40, 17.2, 1.2);
     ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.beginPath(); ctx.arc(px - 4, y - 37, 1.2, 0, 6.28); ctx.fill(); ctx.beginPath(); ctx.arc(px + 4, y - 37, 1.2, 0, 6.28); ctx.fill();
   };
+  // the thickness of the cut: a shadowed reveal down the rock side of each post,
+  // a soffit under the head tree, and the dark you are walking into
+  ctx.save();
+  ctx.beginPath(); ctx.rect(sx - 42, y - th - 6, 160, th + 20); ctx.clip();
+  const deep = ctx.createLinearGradient(sx + 30, 0, sx + 150, 0);
+  deep.addColorStop(0, 'rgba(10,8,14,0.62)'); deep.addColorStop(1, 'rgba(10,8,14,0)');
+  ctx.fillStyle = deep; ctx.fillRect(sx + 30, y - th - 6, 120, th + 20);
+  ctx.restore();
+  // soffit: the underside of the cut, seen because the opening has depth
+  ctx.fillStyle = '#1a1620'; ctx.fillRect(sx - 44, y - th - 2, 92, 9);
+  ctx.fillStyle = '#2b2333'; ctx.fillRect(sx - 44, y - th - 2, 92, 4);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(sx - 44, y - th + 5, 92, 4);
   post(sx - 42); post(sx + 42);
+  // reveal: the cut face inside the opening, lit on the mill side only
+  for (const d of [-1, 1]) {
+    ctx.fillStyle = d < 0 ? 'rgba(255,232,190,0.07)' : 'rgba(0,0,0,0.42)';
+    ctx.fillRect(sx + d * 42 + (d < 0 ? 9 : -16), y - th + 4, 7, th - 6);
+  }
+  // sill: a stone threshold the crowd steps over, with a worn lit nose
+  ctx.fillStyle = INK; ctx.fillRect(sx - 46, y - 7, 94, 10);
+  ctx.fillStyle = '#4a4150'; ctx.fillRect(sx - 45, y - 6, 92, 8);
+  ctx.fillStyle = 'rgba(255,240,214,0.2)'; ctx.fillRect(sx - 45, y - 6, 92, 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(sx - 45, y + 0.6, 92, 1.8);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  for (let i = 0; i < 6; i++) ctx.fillRect(sx - 40 + i * 16, y - 6, 1.6, 8);
   // head tree
   ctx.fillStyle = INK; ctx.fillRect(sx - 58, y - th - 18, 116, 18);
   ctx.fillStyle = '#654a2e'; ctx.fillRect(sx - 56, y - th - 16, 112, 15);
@@ -3075,11 +3101,12 @@ function drawSeamRock() {
   for (let y = -1000; y < CFG.worldBottom + 40; y += 54) {
     const hv = hash(y * 0.17), hv2 = hash(y * 0.31 + 5);
     const x0 = seamXAt(y) - V.left, x1 = seamXAt(y + 54) - V.left;
-    const d = 40 + hv * 200;
-    ctx.fillStyle = hv2 > 0.52 ? 'rgba(236,228,244,0.04)' : 'rgba(0,0,0,0.17)';
+    // leaning toward vertical, across the bedding rather than along it
+    const d = 26 + hv * 74;
+    ctx.fillStyle = hv2 > 0.52 ? 'rgba(236,228,244,0.12)' : 'rgba(0,0,0,0.2)';
     ctx.beginPath();
-    ctx.moveTo(x0, y); ctx.lineTo(x0 + d, y + 7 + hv2 * 16);
-    ctx.lineTo(x1 + d * 0.68, y + 54); ctx.lineTo(x1, y + 54);
+    ctx.moveTo(x0, y); ctx.lineTo(x0 + d, y - 6 - hv2 * 10);
+    ctx.lineTo(x1 + d * 0.3, y + 54); ctx.lineTo(x1, y + 54);
     ctx.closePath(); ctx.fill();
   }
   // the lip where the rock was broken back, catching what light there is
@@ -3116,9 +3143,14 @@ function drawSeamRock() {
 }
 function drawSeamFace() {
   if (!inView(FAC.seam, 520)) return;
-  // a soft crease, built up from wide and faint rather than one heavy outline
-  seamEdgePath(); ctx.strokeStyle = 'rgba(9,7,12,0.2)'; ctx.lineWidth = 17; ctx.stroke();
-  seamEdgePath(); ctx.strokeStyle = 'rgba(9,7,12,0.2)'; ctx.lineWidth = 8; ctx.stroke();
+  // A soft crease that belongs to the ROCK, not to both. Stroked centred it put
+  // half its blur on the brick, and the rock read as a nearer plane occluding
+  // the mill rather than as the wall the mill was built against.
+  ctx.save();
+  seamClip(1); ctx.clip();
+  seamEdgePath(); ctx.strokeStyle = 'rgba(9,7,12,0.26)'; ctx.lineWidth = 22; ctx.stroke();
+  seamEdgePath(); ctx.strokeStyle = 'rgba(9,7,12,0.22)'; ctx.lineWidth = 10; ctx.stroke();
+  ctx.restore();
   // a broken lip of light down the cut brick, not a ruled line
   ctx.strokeStyle = 'rgba(204,190,214,0.1)'; ctx.lineWidth = 1.4;
   for (let y = -2600; y <= CFG.worldBottom + 500; y += 22) {
