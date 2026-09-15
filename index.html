@@ -1139,18 +1139,29 @@ function drawRiver() {
   // Water going into a mountain gets darker because less sky reaches it, and that happens
   // over a distance. A flat 30% black across the clipped span put the change on the clip
   // edge instead, which is what made the surface look like two rectangles butted together.
-  const span = x - e;
-  // the ramp spans the roofed stretch, not the whole course; a gradient holds its end
-  // colours past its endpoints, so water outside that stretch is simply left alone
-  const a = (CFG.roofFrom ?? CFG.entrance) - V.left - 48;
-  const b = (CFG.roofTo ?? CFG.exit) - V.left + 48;
-  const rspan = b - a, ramp = Math.min(0.42, 260 / Math.max(1, rspan));
+  const rf = CFG.roofFrom ?? CFG.entrance, rt = CFG.roofTo ?? CFG.exit;
+  // A fade belongs to the boundary, not to the darkening. At a daylight mouth the water
+  // really is lit and dims as it goes under, so it fades in over 260. At an interior
+  // boundary there is rock or building on both sides and nothing bright at the join, so
+  // fading from zero there would assert a light source that is not in the world: the
+  // darkening starts at full instead.
+  const fadeIn = rf === CFG.entrance ? 260 : 0;
+  const fadeOut = rt === CFG.exit ? 260 : 0;
+  const a = rf - V.left - 48, b = rt - V.left + 48;
+  const rspan = Math.max(1, b - a);
+  const s0 = Math.min(0.45, fadeIn / rspan);
+  const s1 = Math.max(s0, 1 - Math.min(0.45, fadeOut / rspan));
   const dk = ctx.createLinearGradient(a, 0, b, 0);
-  dk.addColorStop(0, 'rgba(0,0,0,0)');
-  dk.addColorStop(ramp, 'rgba(0,0,0,0.34)');
-  dk.addColorStop(Math.max(ramp, 1 - ramp), 'rgba(0,0,0,0.34)');
-  dk.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = dk; ctx.fillRect(e, top, span, depth);
+  dk.addColorStop(0, `rgba(0,0,0,${fadeIn ? 0 : 0.34})`);
+  dk.addColorStop(s0, 'rgba(0,0,0,0.34)');
+  dk.addColorStop(s1, 'rgba(0,0,0,0.34)');
+  dk.addColorStop(1, `rgba(0,0,0,${fadeOut ? 0 : 0.34})`);
+  // Fill only the roofed stretch. A gradient holds its END COLOUR past its endpoints, so
+  // once a boundary stops fading to zero that held colour spills backwards and darkens the
+  // water on the unroofed side as well. With fades the clamp changes nothing; without them
+  // it is the whole point.
+  const fx0 = Math.max(e, a), fx1 = Math.min(x, b);
+  if (fx1 > fx0) { ctx.fillStyle = dk; ctx.fillRect(fx0, top, fx1 - fx0, depth); }
   ctx.save(); ctx.beginPath(); ctx.rect(e, top, x - e, depth); ctx.clip(); waves(top); ctx.restore();
   // under the mill it is a tailrace: oily, green, with scum turning on it. It goes on
   // before the lamplight so the reflections sit on the tinted water rather than under it.
