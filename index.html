@@ -18,23 +18,20 @@ const W = 960, H = 540;
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
-  // the pack runs with the camera: each runner holds a slot between packBack and packFront (screen x)
-  // and jitters around it. Pack depth in seconds = (packFront - packBack) / scroll.
-  packBack: 120, packFront: 540,
-  jitter: 30,             // max px a runner wanders from their slot
-  tire: 0.25,             // how much the pack spreads out by the end of the run (0.25 = 25% deeper)
+  packBack: 120, packFront: 540,   // the pack holds slots in this band ahead of the camera anchor
+  jitter: 30,
+  tire: 0.25,             // how much the pack stretches by the end of the run
   armDist: 240,           // room unlocks when the front runner is this close
-  lanes: [400, 210],      // floor y per lane: 0 = low tunnel, 1 = high tunnel
-  tunnelH: 130,           // corridor height above the floor
-  entrance: 760,          // world x where the mountain begins
-  riverY: 470,            // underground river surface
+  baseY: 400,             // floor of tunnel 0; each tunnel above is laneGap higher
+  laneGap: 190,
+  laneCount: 6,
+  tunnelH: 130,
+  entrance: 760,
+  riverY: 470,
+  worldBottom: 540,
   rampLen: 200,
   gapWidth: 120,
   keyPool: 'QWERASDF',
-  // room types: which mini-game fixes them and how they kill while unfixed
-  //   all   = everyone who reaches it falls (chasm)
-  //   half  = each runner has a coin-flip chance to fall (rickety bridge)
-  //   burst = a crusher slams on a timer, only runners under it die
   types: {
     bridge:  { verb: 'keys', title: 'lower the drawbridge',   hazard: 'all',   color: '#ff4646' },
     winch:   { verb: 'bar',  title: 'crank the winch',        hazard: 'all',   color: '#ff4646' },
@@ -42,15 +39,19 @@ const CFG = {
     rickety: { verb: 'word', title: 'tie the rickety bridge', hazard: 'half',  color: '#ff9a3c' },
     crusher: { verb: 'keys', title: 'jam the crusher',        hazard: 'burst', color: '#ffd23c' },
   },
-  crusherPeriod: 1.6,     // seconds between slams
-  // at x the crowd splits, `split` is the share sent to the high tunnel, at merge it rejoins
+  crusherPeriod: 1.6,
+  // a fork sends `split` of the runners on tunnel `from` up a ramp into tunnel `to`; they come back at `merge`.
+  // nested forks must merge before the fork they branched from.
   forks: [
-    { x: 2700, merge: 5600, split: 0.5 },
-    { x: 6600, merge: 8600, split: 0.5 },
-    { x: 9100, merge: 10300, split: 0.5 },
+    { x: 2700,  from: 0, to: 1, merge: 5600,  split: 0.5 },
+    { x: 3800,  from: 1, to: 2, merge: 5200,  split: 0.5 },
+    { x: 6600,  from: 0, to: 1, merge: 11000, split: 0.55 },
+    { x: 7000,  from: 1, to: 2, merge: 10700, split: 0.6 },
+    { x: 7400,  from: 2, to: 3, merge: 10400, split: 0.6 },
+    { x: 7800,  from: 3, to: 4, merge: 10100, split: 0.6 },
+    { x: 8200,  from: 4, to: 5, merge: 9800,  split: 0.6 },
   ],
-  // hold gates: ENTER closes a portcullis and holds the crowd, ENTER again releases. Holding tramples people.
-  gates: [3150, 7050, 9500],
+  gates: [3150, 8150],
   gateArm: 140, holdMax: 3, trampleEvery: 0.75,
   names: ['IDA', 'BO', 'JUNO', 'MAX', 'PIP', 'SOL', 'TEO', 'ZARA'],
   rooms: [
@@ -58,20 +59,30 @@ const CFG = {
     { x: 2200,  lane: 0, type: 'rope',    diff: 1 },
     { x: 3300,  lane: 0, type: 'winch',   diff: 2 },
     { x: 3600,  lane: 1, type: 'bridge',  diff: 2 },
-    { x: 4500,  lane: 1, type: 'rope',    diff: 2 },
-    { x: 4800,  lane: 0, type: 'crusher', diff: 2 },
+    { x: 4400,  lane: 2, type: 'rope',    diff: 2 },
+    { x: 4600,  lane: 0, type: 'crusher', diff: 2 },
+    { x: 4900,  lane: 1, type: 'rickety', diff: 2 },
     { x: 6200,  lane: 0, type: 'winch',   diff: 3 },
-    { x: 7200,  lane: 1, type: 'bridge',  diff: 3 },
-    { x: 7350,  lane: 0, type: 'rickety', diff: 3 },
-    { x: 8000,  lane: 0, type: 'winch',   diff: 4 },
-    { x: 8250,  lane: 1, type: 'crusher', diff: 4 },
-    { x: 9650,  lane: 0, type: 'rope',    diff: 4 },
+    { x: 8300,  lane: 0, type: 'rickety', diff: 3 },
+    { x: 8500,  lane: 1, type: 'bridge',  diff: 3 },
+    { x: 8700,  lane: 2, type: 'crusher', diff: 3 },
+    { x: 8900,  lane: 3, type: 'rope',    diff: 3 },
+    { x: 9100,  lane: 4, type: 'winch',   diff: 3 },
+    { x: 9300,  lane: 5, type: 'bridge',  diff: 3 },
+    { x: 9600,  lane: 0, type: 'winch',   diff: 4 },
     { x: 9900,  lane: 1, type: 'crusher', diff: 4 },
-    { x: 10900, lane: 0, type: 'bridge',  diff: 5 },
+    { x: 10200, lane: 2, type: 'rope',    diff: 4 },
+    { x: 11600, lane: 0, type: 'bridge',  diff: 5 },
   ],
-  finale: { x: 11700, baseLen: 6, keyTime: 0.9 },   // gate length = baseLen + one key per 20 survivors
+  finale: { x: 12300, baseLen: 6, keyTime: 0.9 },
 };
 CFG.exit = CFG.finale.x - 10;
+const laneY = k => CFG.baseY - CFG.laneGap * k;
+// where each tunnel exists: tunnel 0 runs the whole mountain, others exist between their fork and merge
+const LANE_SPANS = [];
+for (let k = 0; k < CFG.laneCount; k++) LANE_SPANS.push(k === 0 ? [[CFG.entrance - 20, CFG.exit + 20]] : CFG.forks.filter(f => f.to === k).map(f => [f.x + CFG.rampLen, f.merge]));
+const laneAt = (k, x) => LANE_SPANS[k].some(([a, b]) => x >= a && x <= b);
+
 const LINES = {
   ambient: [
     'Yay, I retire tomorrow!', 'Best day of my life!', 'Nothing can go wrong!', "Wait, what's a drawbridge?",
@@ -81,18 +92,18 @@ const LINES = {
     "I'm allergic to falling.", 'I skipped leg day for this.', "Statistically we're fine.", 'Race you to the end!',
     "I can't swim, but why would I?", "My horoscope said 'big changes'.", 'Told my mum this was a picnic.',
     "Someone's got this handled, right?", 'I love a good crowd.', "New shoes. Don't wanna get them wet.",
-    'Just got a puppy!', 'Mortgage approved!', 'I feel so alive!', 'What could possibly...',
+    'Just got a puppy!', 'Mortgage approved!', 'I feel so alive!', 'What could possibly...', 'Ooh, which way?', 'Upstairs looks fun!',
   ],
   safe: ['See? Totally safe.', 'I was never worried.', 'Sturdy!', 'Told you it was fine.', 'Easy.'],
   held: ['Why are we stopped?', 'Any minute now...', 'Is this a bathroom break?', 'I can see my house from here.', 'Personal space, please.'],
   fall: [
-    'I retire tomor\u2014', 'Not the new shoes!', 'Tell my cat I\u2014', 'Oh. Oh no.', 'Wheee!', "This wasn't in the brochure!",
+    'I retire tomor—', 'Not the new shoes!', 'Tell my cat I—', 'Oh. Oh no.', 'Wheee!', "This wasn't in the brochure!",
     'Bit of a dip here.', 'I regret the snacks.', 'Is THIS the gift shop?', 'Skipped leg day...', 'Told you, honey!',
-    'Noooo\u2014', 'Big changes indeed.', "Well, that's a Tuesday.", 'The waiver!', 'Five stars, would fall again.',
+    'Noooo—', 'Big changes indeed.', "Well, that's a Tuesday.", 'The waiver!', 'Five stars, would fall again.',
     'The puppy!', 'Cancel the mortgage!', 'So... alive...',
   ],
-  crush: ['Ow.', 'Rude!', 'Mind the\u2014', 'Squish.', 'Not the hair!', 'I had plans.'],
-  trample: ['Oof.', 'Excuse m\u2014', 'I was here first!', 'No pushing!', 'My spleen.'],
+  crush: ['Ow.', 'Rude!', 'Mind the—', 'Squish.', 'Not the hair!', 'I had plans.'],
+  trample: ['Oof.', 'Excuse m—', 'I was here first!', 'No pushing!', 'My spleen.'],
 };
 const WORDS = {
   4: ['ROPE', 'GATE', 'LOCK', 'PULL', 'HAUL', 'LIFT', 'KNOT', 'HOOK'],
@@ -124,6 +135,24 @@ function roundRect(x, y, w, h, r) {
 }
 function loadBest() { try { return +localStorage.getItem('hr_best') || 0; } catch (e) { return 0; } }
 function saveBest(n) { try { if (n > loadBest()) localStorage.setItem('hr_best', String(n)); } catch (e) {} }
+
+// ================================================================ view: camera anchor, zoom, world <-> screen
+// The world is drawn scaled by V.zoom with the river pinned to the bottom of the screen.
+const V = { left: 0, zoom: 1, vw: W };
+function updateView(dt) {
+  V.vw = W / V.zoom;
+  V.left = S.cam + CFG.packFront - 0.56 * V.vw;
+  // zoom out so every tunnel active in view fits
+  let top = 0;
+  for (let k = 1; k < CFG.laneCount; k++) {
+    if (LANE_SPANS[k].some(([a, b]) => b > V.left - 100 && a < V.left + V.vw + 250)) top = k;
+  }
+  const minY = laneY(top) - CFG.tunnelH - 60;
+  const target = Math.min(1, (H - 46) / (CFG.worldBottom - minY));
+  V.zoom += (target - V.zoom) * Math.min(1, dt * 1.6);
+}
+const toScreen = (wx, wy) => [(wx - V.left) * V.zoom, H + (wy - CFG.worldBottom) * V.zoom];
+const inView = (wx, margin = 100) => wx > V.left - margin && wx < V.left + V.vw + margin;
 
 // ================================================================ mini-game verbs
 const VERBS = {
@@ -200,12 +229,12 @@ function reset() {
   for (let i = 0; i < CFG.runnerCount; i++) {
     S.runners.push({
       x: 0, slot: rand(CFG.packBack, CFG.packFront), jit: rand(0, 6.28), jitAmp: rand(8, CFG.jitter),
-      dy: rand(-22, 22), y: CFG.lanes[0],
+      dy: rand(-22, 22), y: laneY(0),
       skin: pick(SKIN), shirt: pick(SHIRT), pants: pick(PANTS), hair: pick(HAIR),
       name: i < CFG.names.length ? CFG.names[i] : null,
       phase: Math.random() * 6.28,
       state: 'run', vy: 0, fy: 0, rot: 0, fallLimit: 70, hop: 0, rolled: null,
-      lane: 0, fi: 0, mergeX: null, ramp: null,
+      lane: 0, lastForkX: -1, route: [], ramp: null, held: false,
     });
   }
   for (const r of S.runners) r.x = r.slot;
@@ -215,6 +244,7 @@ function reset() {
                    hot: null, mg: null, state: 'dormant', bridge: 0, deaths: 0, slamT: rand(0, CFG.crusherPeriod) });
   }
   for (const x of CFG.gates) S.gates.push({ x, state: 'dormant', holdT: 0, trampleT: 0, deaths: 0 });
+  V.zoom = 1; V.left = 0; V.vw = W;
 }
 function armRoom(room) {
   const used = new Set(S.rooms.filter(r => r.state === 'armed').map(r => r.hot));
@@ -231,7 +261,7 @@ function killRunner(r, how) {
   if (how === 'splash') splash(r.x, CFG.riverY);
   else if (how === 'dark') dust(r.x, r.y + 50, '#3a3040');
   else dust(r.x, r.y - 6, '#c0392b');
-  S.floaters.push({ wx: r.x, y: r.y + 20, txt: r.name ? `-${r.name}` : '-1', life: r.name ? 1.4 : 0.8, color: '#ff6b6b' });
+  S.floaters.push({ wx: r.x, wy: r.y - 10, txt: r.name ? `-${r.name}` : '-1', life: r.name ? 1.4 : 0.8, color: '#ff6b6b' });
 }
 
 // ================================================================ input
@@ -256,7 +286,7 @@ window.addEventListener('keydown', e => {
     const res = VERBS[room.verb].key(room.mg, k);
     if (res === 'done') {
       room.state = 'solved'; S.active = null;
-      S.floaters.push({ wx: room.x + CFG.gapWidth / 2, y: CFG.lanes[room.lane] - 100, txt: 'CLEAR', life: 1, color: '#2ecc71' });
+      S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 100, txt: 'CLEAR', life: 1, color: '#2ecc71' });
     } else if (res === 'wrong') S.wrongFlash = 0.25;
   }
   if (S.mode === 'finale') {
@@ -278,10 +308,9 @@ function finaleFail() {
   const f = S.finale;
   f.attempts--; f.idx = 0; f.timer = CFG.finale.keyTime; S.wrongFlash = 0.4; S.shake = 6;
   f.seq = makeSeq(f.len);
-  // one survivor walks into the dark
   const r = f.line.pop();
   if (r) { r.state = 'gone'; f.leaving.push({ r, t: 0 }); }
-  S.floaters.push({ sx: W / 2, y: H / 2 - 40, txt: r && r.name ? `${r.name} IS LOST` : 'ATTEMPT LOST', life: 1.2, color: '#ff5555', big: true });
+  S.floaters.push({ sx: W / 2, sy: H / 2 - 40, txt: r && r.name ? `${r.name} IS LOST` : 'ATTEMPT LOST', life: 1.2, color: '#ff5555', big: true });
   if (f.attempts <= 0) S.mode = 'lose';
 }
 
@@ -298,13 +327,15 @@ function update(dt) {
     f.timer -= dt;
     for (const l of f.leaving) l.t += dt;
     if (f.timer <= 0) finaleFail();
+    updateView(dt);
     return;
   }
-  if (S.mode !== 'play') return;
+  if (S.mode !== 'play') { updateView(dt); return; }
 
   S.cam = Math.min(S.camMax, S.cam + CFG.scroll * dt);
+  updateView(dt);
   const camStopped = S.cam >= S.camMax;
-  const spread = 1 + CFG.tire * (S.cam / S.camMax);   // the pack tires and stretches out
+  const spread = 1 + CFG.tire * (S.cam / S.camMax);
   if (S.active) VERBS[S.active.verb].update(S.active.mg, dt);
   const holdGate = S.gates.find(g => g.state === 'holding');
 
@@ -323,7 +354,7 @@ function update(dt) {
       for (const room of S.rooms) {
         if (room.lane !== r.lane || room.state === 'solved') continue;
         if (r.x < room.x + 8 || r.x >= room.x + CFG.gapWidth) continue;
-        if (room.hazard === 'burst') continue;                       // the crusher kills on its own timer
+        if (room.hazard === 'burst') continue;
         if (room.hazard === 'half') { if (r.rolled === room) continue; r.rolled = room; if (Math.random() < 0.5) continue; }
         r.state = 'fall'; r.vy = 0; r.fy = 0; r.fallLimit = r.lane === 0 ? CFG.riverY - r.y : 60; room.deaths++;
         if (Math.random() < 0.35 && S.t - S.lastWordT > 0.4) { S.lastWordT = S.t; S.bubbles = S.bubbles.filter(b => b.r !== r); say(r, 'fall', 1.4); }
@@ -343,7 +374,7 @@ function update(dt) {
     if (room.state === 'solved') room.bridge = Math.min(1, room.bridge + dt * 3.5);
     if (room.hazard === 'burst' && room.state !== 'solved') {
       const before = room.slamT; room.slamT += dt;
-      if (before < 1.0 && room.slamT >= 1.0) {                        // slam moment
+      if (before < 1.0 && room.slamT >= 1.0) {
         for (const r of S.runners) {
           if (r.state === 'run' && r.lane === room.lane && r.x >= room.x + 35 && r.x < room.x + 85) { killRunner(r, 'crush'); room.deaths++; }
         }
@@ -376,33 +407,24 @@ function update(dt) {
     S.mode = 'finale';
   }
 }
-// someone in the crowd says something cheerful, roughly every second
-function chatter(dt) {
-  S.sayT -= dt;
-  if (S.sayT > 0 || S.bubbles.length >= 3) return;
-  S.sayT = rand(0.8, 1.6);
-  const vis = S.runners.filter(r => r.state === 'run' && r.x > S.cam + 40 && r.x < S.cam + W - 60 && !S.bubbles.some(b => b.r === r));
-  if (!vis.length) return;
-  const named = vis.filter(r => r.name);
-  const r = named.length && Math.random() < 0.35 ? pick(named) : pick(vis);
-  if (r.held) say(r, 'held');
-  else if (S.rooms.some(m => m.lane === r.lane && m.state === 'solved' && r.x >= m.x && r.x < m.x + CFG.gapWidth)) say(r, 'safe');
-  else say(r, 'ambient');
-}
+// forks: branch up into a new tunnel; merges: come back down. Nested branches unwind in order.
 function updateLane(r) {
-  const fork = CFG.forks[r.fi];
-  if (fork && r.lane === 0 && r.x >= fork.x) {
-    r.fi++;
-    if (Math.random() < fork.split) {
-      r.lane = 1; r.mergeX = fork.merge; r.hop = 0.5;
-      r.ramp = { x0: fork.x, x1: fork.x + CFG.rampLen, y0: CFG.lanes[0], y1: CFG.lanes[1] };
+  for (const f of CFG.forks) {
+    if (f.x <= r.lastForkX || r.x < f.x) continue;
+    r.lastForkX = f.x;
+    if (f.from !== r.lane) continue;
+    if (Math.random() < f.split) {
+      r.route.push({ mergeX: f.merge, back: f.from });
+      r.lane = f.to; r.hop = 0.5;
+      r.ramp = { x0: f.x, x1: f.x + CFG.rampLen, y0: laneY(f.from), y1: laneY(f.to) };
       dust(r.x, r.y);
     }
   }
-  if (r.lane === 1 && r.x >= r.mergeX) {
-    r.lane = 0;
-    r.ramp = { x0: r.mergeX, x1: r.mergeX + CFG.rampLen, y0: CFG.lanes[1], y1: CFG.lanes[0] };
-    r.mergeX = null;
+  const top = r.route[r.route.length - 1];
+  if (top && r.x >= top.mergeX) {
+    r.route.pop();
+    r.ramp = { x0: top.mergeX, x1: top.mergeX + CFG.rampLen, y0: laneY(r.lane), y1: laneY(top.back) };
+    r.lane = top.back;
   }
   if (r.ramp) {
     const t = clamp01((r.x - r.ramp.x0) / (r.ramp.x1 - r.ramp.x0));
@@ -410,10 +432,22 @@ function updateLane(r) {
     if (t >= 1) r.ramp = null;
   }
 }
+function chatter(dt) {
+  S.sayT -= dt;
+  if (S.sayT > 0 || S.bubbles.length >= 3) return;
+  S.sayT = rand(0.8, 1.6);
+  const vis = S.runners.filter(r => r.state === 'run' && inView(r.x, -40) && !S.bubbles.some(b => b.r === r));
+  if (!vis.length) return;
+  const named = vis.filter(r => r.name);
+  const r = named.length && Math.random() < 0.35 ? pick(named) : pick(vis);
+  if (r.held) say(r, 'held');
+  else if (S.rooms.some(m => m.lane === r.lane && m.state === 'solved' && r.x >= m.x && r.x < m.x + CFG.gapWidth)) say(r, 'safe');
+  else say(r, 'ambient');
+}
 function updateFx(dt) {
   for (const p of S.particles) { p.vy += (p.c === '#9fdcff' ? 600 : 60) * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; }
   S.particles = S.particles.filter(p => p.life > 0);
-  for (const f of S.floaters) { f.y -= 30 * dt; f.life -= dt; }
+  for (const f of S.floaters) { if (f.wy !== undefined) f.wy -= 30 * dt; else f.sy -= 30 * dt; f.life -= dt; }
   S.floaters = S.floaters.filter(f => f.life > 0);
   for (const r of S.ripples) { r.r += 40 * dt; r.life -= dt; }
   S.ripples = S.ripples.filter(r => r.life > 0);
@@ -431,7 +465,6 @@ function splash(wx, y) {
 function dust(wx, y, c = '#a08c70') {
   for (let i = 0; i < 6; i++) S.particles.push({ x: wx + rand(-6, 6), y: y - rand(0, 6), vx: rand(-40, 40), vy: rand(-60, -10), life: rand(0.3, 0.6), c });
 }
-// runners in this lane heading for the room, and seconds until the first one arrives
 function approaching(room) {
   let n = 0, maxX = -1e9;
   for (const r of S.runners) {
@@ -444,15 +477,20 @@ function approaching(room) {
 // ================================================================ draw
 function draw() {
   ctx.clearRect(0, 0, W, H);
+  drawSky();
   ctx.save();
   if (S.shake > 0) ctx.translate(rand(-S.shake, S.shake), rand(-S.shake, S.shake));
-  drawBackdrop();
-  drawLane(1); drawRunners(1);
-  drawLane(0); drawRunners(0);
+  // world space: scaled by zoom, river pinned to the bottom
+  ctx.translate(0, H - CFG.worldBottom * V.zoom); ctx.scale(V.zoom, V.zoom);
+  drawOutside();
+  drawMountain();
+  carveTunnels();
+  for (let k = CFG.laneCount - 1; k >= 0; k--) { drawLane(k); drawRunners(k); }
   drawFinish();
-  if (S.mode === 'play' || S.mode === 'finale') { drawFx(); drawBubbles(); }
+  if (S.mode === 'play' || S.mode === 'finale') drawFx();
   ctx.restore();
   drawVignette();
+  if (S.mode === 'play' || S.mode === 'finale') drawOverlays();
   drawHud();
   if (S.mode === 'play' && S.active) drawPanel(S.active);
   if (S.mode === 'finale') drawFinalePanel();
@@ -465,70 +503,71 @@ function draw() {
   }
   if (S.wrongFlash > 0) { ctx.fillStyle = `rgba(255,40,40,${S.wrongFlash * 0.6})`; ctx.fillRect(0, 0, W, H); }
 }
-function drawBackdrop() {
-  const horizon = CFG.riverY;
-  const g = ctx.createLinearGradient(0, 0, 0, horizon);
+function drawSky() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, '#6fa7d8'); g.addColorStop(0.7, '#a9cbe6'); g.addColorStop(1, '#e8d9b8');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, horizon);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+function drawOutside() {
+  const horizon = CFG.riverY;
   parallaxRange(0.3, 260, (seg, sx) => {
     ctx.fillStyle = '#7fa07a';
     ctx.beginPath(); ctx.arc(sx + 130, horizon + 10, 140 + hash(seg) * 40, Math.PI, 0); ctx.fill();
   });
   parallaxRange(0.55, 90, (seg, sx) => {
     if (hash(seg * 7) < 0.45) return;
-    const tx = sx + hash(seg * 3) * 60, th = 40 + hash(seg * 5) * 30, base = CFG.lanes[0] + 2;
+    const tx = sx + hash(seg * 3) * 60, th = 40 + hash(seg * 5) * 30, base = laneY(0) + 2;
     ctx.fillStyle = '#3b2a1c'; ctx.fillRect(tx - 2, base - 14, 4, 14);
     ctx.fillStyle = '#2f5d3a';
     ctx.beginPath(); ctx.moveTo(tx - 16, base - 12); ctx.lineTo(tx, base - th); ctx.lineTo(tx + 16, base - 12); ctx.fill();
   });
-  const wg = ctx.createLinearGradient(0, horizon, 0, H);
+  const wg = ctx.createLinearGradient(0, horizon, 0, CFG.worldBottom + 400);
   wg.addColorStop(0, '#1f6f92'); wg.addColorStop(1, '#0b2c45');
-  ctx.fillStyle = wg; ctx.fillRect(0, horizon, W, H - horizon);
+  ctx.fillStyle = wg; ctx.fillRect(-50, horizon, V.vw + 100, 400);
   ctx.fillStyle = 'rgba(160,230,255,0.16)';
-  for (let x = -40; x < W; x += 60) {
+  for (let x = -40; x < V.vw + 60; x += 60) {
     ctx.fillRect(x + (S.t * 30) % 60, horizon + 14 + Math.sin(x + S.t * 3) * 3, 28, 2);
     ctx.fillRect(x + 30 - (S.t * 22) % 60, horizon + 40 + Math.cos(x + S.t * 2) * 3, 20, 2);
   }
-  drawMountain();
-  carveTunnels();
 }
 function mountainPath() {
-  const e = CFG.entrance - S.cam, x = CFG.exit - S.cam, y0 = CFG.riverY;
-  const flank = [[-80, y0], [-30, 330], [40, 250], [160, 150], [360, 40], [700, -40]];
-  ctx.beginPath(); ctx.moveTo(e - 80, H);
+  const e = CFG.entrance - V.left, x = CFG.exit - V.left, y0 = CFG.riverY;
+  const flank = [[-80, y0], [-30, 330], [40, 250], [160, 150], [300, 20], [450, -160], [600, -380], [800, -650], [1000, -950], [1250, -1300]];
+  ctx.beginPath(); ctx.moveTo(e - 80, CFG.worldBottom + 400);
   for (const [dx, dy] of flank) ctx.lineTo(e + dx, dy);
   for (let i = flank.length - 1; i >= 0; i--) ctx.lineTo(x - flank[i][0], flank[i][1]);
-  ctx.lineTo(x + 80, H); ctx.closePath();
+  ctx.lineTo(x + 80, CFG.worldBottom + 400); ctx.closePath();
 }
 function drawMountain() {
   ctx.save();
   mountainPath(); ctx.fillStyle = '#2b2431'; ctx.fill();
   ctx.clip();
-  for (let y = -40; y < H; y += 18) {
+  const top = -1300, bottom = CFG.worldBottom + 400;
+  for (let y = top; y < bottom; y += 18) {
     const k = Math.floor(y / 18);
     ctx.fillStyle = k % 2 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.08)';
-    ctx.fillRect(0, y + Math.sin(k) * 3, W, 9);
+    ctx.fillRect(-50, y + Math.sin(k) * 3, V.vw + 100, 9);
   }
   ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 2;
   parallaxRange(1, 140, (seg, sx) => {
     if (hash(seg * 11) < 0.5) return;
-    const cx = sx + hash(seg) * 100, cy = hash(seg * 3) * H;
+    const cx = sx + hash(seg) * 100, cy = top + hash(seg * 3) * (bottom - top);
     ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + 18, cy + 40); ctx.lineTo(cx + 6, cy + 90); ctx.stroke();
   });
   ctx.restore();
   mountainPath(); ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 3; ctx.stroke();
 }
 function carveTunnels() {
-  const th = CFG.tunnelH, lo = CFG.lanes[0], hi = CFG.lanes[1];
+  const th = CFG.tunnelH;
   ctx.fillStyle = '#17121c';
-  corridor(CFG.entrance - 20, CFG.exit + 20, lo);
+  for (let k = 0; k < CFG.laneCount; k++) for (const [a, b] of LANE_SPANS[k]) corridor(a, b, laneY(k));
   for (const f of CFG.forks) {
-    corridor(f.x + CFG.rampLen, f.merge, hi);
-    slantCorridor(f.x, lo, f.x + CFG.rampLen, hi);
-    slantCorridor(f.merge, hi, f.merge + CFG.rampLen, lo);
+    slantCorridor(f.x, laneY(f.from), f.x + CFG.rampLen, laneY(f.to));
+    slantCorridor(f.merge, laneY(f.to), f.merge + CFG.rampLen, laneY(f.from));
   }
   const lamp = (wx, y) => {
-    const sx = wx - S.cam; if (sx < -150 || sx > W + 150) return;
+    if (!inView(wx, 150)) return;
+    const sx = wx - V.left;
     const gl = ctx.createRadialGradient(sx, y + 10, 4, sx, y + 10, 130);
     gl.addColorStop(0, 'rgba(255,190,90,0.28)'); gl.addColorStop(1, 'rgba(255,190,90,0)');
     ctx.fillStyle = gl; ctx.fillRect(sx - 130, y - 20, 260, 260);
@@ -536,24 +575,23 @@ function carveTunnels() {
     ctx.fillStyle = '#ffd27a'; ctx.fillRect(sx - 4, y + 8, 8, 10);
     ctx.fillStyle = '#7a5a20'; ctx.fillRect(sx - 5, y + 7, 10, 2); ctx.fillRect(sx - 5, y + 18, 10, 2);
   };
-  for (let wx = Math.ceil((S.cam - 200) / 240) * 240; wx < S.cam + W + 200; wx += 240) {
-    if (wx > CFG.entrance && wx < CFG.exit) lamp(wx, lo - th + 2);
-    for (const f of CFG.forks) if (wx > f.x + CFG.rampLen && wx < f.merge) lamp(wx + 120, hi - th + 2);
+  for (let wx = Math.ceil((V.left - 200) / 240) * 240; wx < V.left + V.vw + 200; wx += 240) {
+    for (let k = 0; k < CFG.laneCount; k++) if (laneAt(k, wx + k * 40)) lamp(wx + k * 40, laneY(k) - th + 2);
   }
 }
 function corridor(wx0, wx1, y) {
-  const x0 = Math.max(-10, wx0 - S.cam), x1 = Math.min(W + 10, wx1 - S.cam);
+  const x0 = Math.max(-10, wx0 - V.left), x1 = Math.min(V.vw + 10, wx1 - V.left);
   if (x1 <= x0) return;
   ctx.fillRect(x0, y - CFG.tunnelH, x1 - x0, CFG.tunnelH + 1);
 }
 function slantCorridor(wx0, y0, wx1, y1) {
-  const x0 = wx0 - S.cam, x1 = wx1 - S.cam;
-  if (x1 < -50 || x0 > W + 50) return;
+  if (!inView(wx0, 260)) return;
+  const x0 = wx0 - V.left, x1 = wx1 - V.left;
   ctx.beginPath(); ctx.moveTo(x0, y0 + 1); ctx.lineTo(x1, y1 + 1); ctx.lineTo(x1, y1 - CFG.tunnelH); ctx.lineTo(x0, y0 - CFG.tunnelH); ctx.fill();
 }
 function parallaxRange(p, size, fn) {
-  const off = S.cam * p;
-  const s0 = Math.floor((off - size) / size), s1 = Math.floor((off + W + size) / size);
+  const off = V.left * p;
+  const s0 = Math.floor((off - size) / size), s1 = Math.floor((off + V.vw + size) / size);
   for (let seg = s0; seg <= s1; seg++) fn(seg, seg * size - off);
 }
 function drawVignette() {
@@ -562,11 +600,11 @@ function drawVignette() {
   ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
 }
 function drawLane(lane) {
-  const y = CFG.lanes[lane];
-  const view0 = S.cam - 60, view1 = S.cam + W + 60;
+  const y = laneY(lane);
+  const view0 = V.left - 60, view1 = V.left + V.vw + 60;
   const spans = lane === 0
     ? [[-1e9, CFG.entrance, 'out'], [CFG.entrance, CFG.exit, 'in'], [CFG.exit, 1e9, 'out']]
-    : CFG.forks.map(f => [f.x + CFG.rampLen, f.merge, 'in']);
+    : LANE_SPANS[lane].map(([a, b]) => [a, b, 'in']);
   const gaps = S.rooms.filter(r => r.lane === lane && r.hazard !== 'burst').map(r => [r.x, r.x + CFG.gapWidth]).sort((a, b) => a[0] - b[0]);
   for (const [s0, s1, style] of spans) {
     let cur = Math.max(s0, view0);
@@ -574,12 +612,11 @@ function drawLane(lane) {
     for (const [g0, g1] of gaps) { if (g1 > cur && g0 < end) { groundRect(cur, g0, y, style); cur = g1; } }
     groundRect(cur, end, y, style);
   }
-  if (lane === 1) {
-    for (const f of CFG.forks) {
-      ramp(f.x, CFG.lanes[0], f.x + CFG.rampLen, CFG.lanes[1]);
-      ramp(f.merge, CFG.lanes[1], f.merge + CFG.rampLen, CFG.lanes[0]);
-      signpost(f.x, CFG.lanes[0]);
-    }
+  for (const f of CFG.forks) {
+    if (f.to !== lane) continue;
+    ramp(f.x, laneY(f.from), f.x + CFG.rampLen, laneY(f.to));
+    ramp(f.merge, laneY(f.to), f.merge + CFG.rampLen, laneY(f.from));
+    signpost(f.x, laneY(f.from));
   }
   if (lane === 0) { archway(CFG.entrance, y); archway(CFG.exit, y, true); }
   for (const g of S.gates) drawGate(g, lane);
@@ -587,11 +624,11 @@ function drawLane(lane) {
 }
 function groundRect(wx0, wx1, y, style = 'in') {
   if (wx1 <= wx0) return;
-  const x0 = wx0 - S.cam, x1 = wx1 - S.cam;
+  const x0 = wx0 - V.left, x1 = wx1 - V.left;
   ctx.fillStyle = style === 'in' ? '#3a3038' : '#4a3b2a'; ctx.fillRect(x0, y + 14, x1 - x0, 30);
   ctx.fillStyle = style === 'in' ? '#2a2229' : '#3a2d20';
   for (let wx = Math.floor(wx0 / 12) * 12; wx < wx1; wx += 12) {
-    if (hash(wx + y) > 0.7) ctx.fillRect(wx - S.cam + hash(wx * 3 + y) * 8, y + 18 + hash(wx * 5 + y) * 22, 3, 2);
+    if (hash(wx + y) > 0.7) ctx.fillRect(wx - V.left + hash(wx * 3 + y) * 8, y + 18 + hash(wx * 5 + y) * 22, 3, 2);
   }
   if (style === 'in') {
     ctx.fillStyle = '#6a5f66'; ctx.fillRect(x0, y, x1 - x0, 14);
@@ -604,8 +641,8 @@ function groundRect(wx0, wx1, y, style = 'in') {
   }
 }
 function ramp(wx0, y0, wx1, y1) {
-  const x0 = wx0 - S.cam, x1 = wx1 - S.cam;
-  if (x1 < -50 || x0 > W + 50) return;
+  if (!inView(wx0, 260)) return;
+  const x0 = wx0 - V.left, x1 = wx1 - V.left;
   ctx.fillStyle = '#3a3038';
   ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x1, y1 + 44); ctx.lineTo(x0, y0 + 44); ctx.fill();
   ctx.strokeStyle = '#6a5f66'; ctx.lineWidth = 14; ctx.lineCap = 'butt';
@@ -619,8 +656,8 @@ function ramp(wx0, y0, wx1, y1) {
   }
 }
 function archway(wx, y, exit = false) {
-  const sx = wx - S.cam; if (sx < -120 || sx > W + 120) return;
-  const th = CFG.tunnelH;
+  if (!inView(wx, 240)) return;
+  const sx = wx - V.left, th = CFG.tunnelH;
   if (exit) {
     const gl = ctx.createLinearGradient(sx - 220, 0, sx, 0);
     gl.addColorStop(0, 'rgba(255,240,200,0)'); gl.addColorStop(1, 'rgba(255,240,200,0.35)');
@@ -632,8 +669,8 @@ function archway(wx, y, exit = false) {
   ctx.fillStyle = '#17121c'; ctx.beginPath(); ctx.arc(sx, y - th + 2, 16, Math.PI, 0); ctx.fill();
 }
 function signpost(wx, y) {
-  const sx = wx - S.cam - 34;
-  if (sx < -50 || sx > W + 50) return;
+  if (!inView(wx, 80)) return;
+  const sx = wx - V.left - 34;
   ctx.fillStyle = '#5a4630'; ctx.fillRect(sx - 2, y - 66, 5, 66);
   const board = (yy, rot) => {
     ctx.save(); ctx.translate(sx, yy); ctx.rotate(rot);
@@ -644,34 +681,21 @@ function signpost(wx, y) {
   };
   board(y - 58, -0.55); board(y - 40, 0);
 }
-// a portcullis in each tunnel the gate crosses; lane 0 carries the badge
+// portcullis structure only; the badge is drawn in the overlay pass
 function drawGate(g, lane) {
-  const sx = g.x - S.cam; if (sx < -80 || sx > W + 80) return;
-  const y = CFG.lanes[lane], th = CFG.tunnelH;
-  if (lane === 1 && !CFG.forks.some(f => g.x > f.x + CFG.rampLen && g.x < f.merge)) return;
+  if (!inView(g.x, 80) || !laneAt(lane, g.x)) return;
+  const sx = g.x - V.left, y = laneY(lane), th = CFG.tunnelH;
   const down = g.state === 'holding' ? 1 : 0.12;
   ctx.fillStyle = '#4c4455'; ctx.fillRect(sx - 10, y - th - 4, 6, th + 4); ctx.fillRect(sx + 4, y - th - 4, 6, th + 4);
   ctx.fillStyle = g.state === 'holding' ? '#8a8aa0' : '#6a6a7e';
   for (let i = -6; i <= 6; i += 4) ctx.fillRect(sx + i - 1, y - th, 2, th * down);
   for (let k = 0; k < 3; k++) ctx.fillRect(sx - 8, y - th + 8 + k * (th * down / 3), 16, 2);
-  if (lane !== 0 || g.state === 'dormant' || g.state === 'spent') return;
-  const holding = g.state === 'holding';
-  const col = '#5ce1ff';
-  ctx.fillStyle = holding ? 'rgba(92,225,255,0.10)' : 'rgba(92,225,255,0.06)';
-  ctx.fillRect(sx - 30, y - th, 60, th + 44);
-  ctx.strokeStyle = col; ctx.lineWidth = holding ? 3 : 2; ctx.strokeRect(sx - 30, y - th, 60, th + 44);
-  ctx.fillStyle = col; roundRect(sx - 34, y - th + 10, 68, 24, 8); ctx.fill();
-  ctx.fillStyle = '#111'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
-  ctx.fillText(holding ? 'RELEASE' : 'ENTER', sx, y - th + 27);
-  ctx.fillStyle = col; ctx.font = 'bold 11px monospace';
-  ctx.fillText(holding ? 'holding...' : 'HOLD', sx, y - th + 48);
-  if (holding) {
-    const frac = 1 - g.holdT / CFG.holdMax;
-    ctx.fillStyle = '#233'; ctx.fillRect(sx - 30, y - th + 54, 60, 4);
-    ctx.fillStyle = col; ctx.fillRect(sx - 30, y - th + 54, 60 * frac, 4);
+  if (lane === 0 && (g.state === 'armed' || g.state === 'holding')) {
+    const holding = g.state === 'holding';
+    ctx.fillStyle = holding ? 'rgba(92,225,255,0.10)' : 'rgba(92,225,255,0.06)';
+    ctx.fillRect(sx - 30, y - th, 60, th + 44);
+    ctx.strokeStyle = '#5ce1ff'; ctx.lineWidth = holding ? 3 : 2; ctx.strokeRect(sx - 30, y - th, 60, th + 44);
   }
-  if (g.deaths) { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '11px monospace'; ctx.fillText(`${g.deaths} trampled`, sx, y + 100); }
-  ctx.textAlign = 'left';
 }
 function drawTower(x, y, w, h) {
   ctx.fillStyle = '#5b5b70'; ctx.fillRect(x, y, w, h);
@@ -684,8 +708,8 @@ function drawTower(x, y, w, h) {
   for (let i = 0; i < 3; i++) ctx.fillRect(x + i * (w / 3) + 1, y - 7, w / 3 - 3, 8);
 }
 function drawRoom(room, y) {
-  const sx = room.x - S.cam, gw = CFG.gapWidth;
-  if (sx < -220 || sx > W + 60) return;
+  if (!inView(room.x, 240)) return;
+  const sx = room.x - V.left, gw = CFG.gapWidth;
   const b = room.bridge, prog = room.mg && room.state === 'armed' ? VERBS[room.verb].progress(room.mg) : 0;
   if (room.hazard !== 'burst') {
     if (room.lane === 0) {
@@ -701,7 +725,6 @@ function drawRoom(room, y) {
     ctx.fillStyle = '#2a2229'; ctx.fillRect(sx - 5, y, 5, 44); ctx.fillRect(sx + gw, y, 5, 44);
   }
   if (room.type === 'bridge') {
-    // the drawbridge hangs on the far side and comes down toward the runners
     drawTower(sx + gw + 4, y - 70, 26, 114);
     const ang = Math.PI / 2 * (1 - b);
     ctx.save(); ctx.translate(sx + gw, y); ctx.rotate(ang);
@@ -732,7 +755,6 @@ function drawRoom(room, y) {
       ctx.beginPath(); ctx.arc(sx - 3, y - 20, 7, 0, 6.28); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(sx - 3, y - 13); ctx.quadraticCurveTo(sx + 6, y + 10, sx, y + 34); ctx.stroke();
     } else {
-      // a rickety bridge is already there, sagging and missing planks, until it is tied off
       const fixed = rickety ? b : 1;
       const sag = 26 + (rickety ? 14 * (1 - fixed) : 0), drop = rickety ? 0 : 50 * (1 - b);
       const wob = rickety && fixed < 1 ? Math.sin(S.t * 9) * 3 : 0;
@@ -743,7 +765,7 @@ function drawRoom(room, y) {
       ctx.beginPath(); ctx.moveTo(sx, y - 2); ctx.quadraticCurveTo(sx + gw / 2, y - 2 + sag + drop + wob, sx + gw, y - 2); ctx.stroke();
       ctx.fillStyle = '#5c3a1a';
       for (let t = 0.06; t < 1; t += 0.08) {
-        if (rickety && fixed < 1 && hash(room.x + t * 100) < 0.4) continue;   // missing planks
+        if (rickety && fixed < 1 && hash(room.x + t * 100) < 0.4) continue;
         const px = (1 - t) * (1 - t) * sx + 2 * (1 - t) * t * (sx + gw / 2) + t * t * (sx + gw);
         const py = (1 - t) * (1 - t) * (y - 2) + 2 * (1 - t) * t * (y - 2 + sag + drop + wob) + t * t * (y - 2);
         ctx.fillRect(px - 1, py - 4, 2, 8);
@@ -751,7 +773,6 @@ function drawRoom(room, y) {
       ctx.globalAlpha = 1;
     }
   } else if (room.type === 'crusher') {
-    // a stone block on a chain that slams down onto the corridor floor
     const th = CFG.tunnelH, t = room.slamT;
     let drop = 0;
     if (room.state !== 'solved') {
@@ -771,44 +792,24 @@ function drawRoom(room, y) {
   if (room.state === 'armed') {
     const pulse = 0.6 + 0.4 * Math.sin(S.t * 10);
     const isActive = S.active === room;
-    const col = isActive ? '#5ce1ff' : room.color;
     ctx.fillStyle = isActive ? 'rgba(92,225,255,0.10)' : `rgba(255,70,70,${0.06 + 0.08 * pulse})`;
     ctx.fillRect(sx - 14, y - 90, gw + 28, 134);
-    ctx.strokeStyle = col; ctx.globalAlpha = isActive ? 1 : pulse; ctx.lineWidth = 3; ctx.strokeRect(sx - 14, y - 90, gw + 28, 134); ctx.globalAlpha = 1;
-    ctx.fillStyle = col;
-    ctx.beginPath(); ctx.arc(sx + gw / 2, y - 62, 18, 0, 6.28); ctx.fill();
-    ctx.fillStyle = '#111'; ctx.font = 'bold 20px monospace'; ctx.textAlign = 'center';
-    ctx.fillText(room.hot, sx + gw / 2, y - 55);
-    // who is coming and how long you have
-    const ap = approaching(room);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px monospace';
-    ctx.fillText(ap.n ? `${ap.n} coming` : 'clear', sx + gw / 2, y - 30);
-    const frac = clamp01(ap.eta / 3);
-    ctx.fillStyle = '#233'; ctx.fillRect(sx + gw / 2 - 26, y - 26, 52, 4);
-    ctx.fillStyle = frac < 0.35 ? '#ff4646' : '#fff'; ctx.fillRect(sx + gw / 2 - 26, y - 26, 52 * frac, 4);
-    ctx.textAlign = 'left';
-  }
-  if (room.deaths > 0) {
-    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
-    ctx.fillText(`${room.deaths} lost`, sx + gw / 2, room.lane === 0 ? y + 100 : y - 100); ctx.textAlign = 'left';
+    ctx.strokeStyle = isActive ? '#5ce1ff' : room.color; ctx.globalAlpha = isActive ? 1 : pulse; ctx.lineWidth = 3 / V.zoom;
+    ctx.strokeRect(sx - 14, y - 90, gw + 28, 134); ctx.globalAlpha = 1;
   }
 }
 function drawFinish() {
-  const fx = CFG.finale.x - S.cam, y = CFG.lanes[0];
-  if (fx > W + 80) return;
+  if (!inView(CFG.finale.x, 120)) return;
+  const fx = CFG.finale.x - V.left, y = laneY(0);
   ctx.fillStyle = '#d9c27a'; ctx.fillRect(fx - 48, y - 130, 8, 130); ctx.fillRect(fx + 20, y - 130, 8, 130);
   ctx.fillStyle = '#e74c3c'; ctx.fillRect(fx - 48, y - 130, 76, 26);
   ctx.fillStyle = '#fff'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
   ctx.fillText('FINISH', fx - 10, y - 112); ctx.textAlign = 'left';
   for (let i = 0; i < 6; i++) { ctx.fillStyle = i % 2 ? '#fff' : '#111'; ctx.fillRect(fx - 40 + i * 10, y - 104, 10, 6); }
-  // survivors waiting at the exit during the final gate
   if (S.finale) {
     const f = S.finale;
     f.line.slice(0, 40).forEach((r, i) => drawFigure(r, fx - 60 - i * 9 - (i % 2) * 3, y + (i % 3) * 5 - 5, 0, 1, 1));
-    for (const l of f.leaving) {
-      const a = Math.max(0, 1 - l.t / 1.2);
-      drawFigure(l.r, fx - 60 - l.t * 60, y - 4, l.t * 12, 1, a);
-    }
+    for (const l of f.leaving) drawFigure(l.r, fx - 60 - l.t * 60, y - 4, l.t * 12, 1, Math.max(0, 1 - l.t / 1.2));
     f.leaving = f.leaving.filter(l => l.t < 1.2);
   }
 }
@@ -829,7 +830,7 @@ function drawRunners(lane) {
   const list = S.runners.filter(r => r.lane === lane && (r.state === 'run' || r.state === 'fall'))
     .sort((a, b) => a.dy - b.dy);
   for (const r of list) {
-    const sx = r.x - S.cam;
+    const sx = r.x - V.left;
     const hop = r.hop > 0 ? -Math.sin(r.hop / 0.5 * Math.PI) * 16 : 0;
     const moving = r.state === 'run' && !r.held;
     const bob = (moving ? -Math.abs(Math.sin(r.phase)) * 1.5 : 0) + hop;
@@ -841,43 +842,85 @@ function drawRunners(lane) {
     }
     ctx.save(); ctx.translate(sx, sy);
     let alpha = 1;
-    if (r.state === 'fall') { ctx.rotate(r.rot); if (r.lane === 1) alpha = Math.max(0, 1 - r.fy / r.fallLimit); }
+    if (r.state === 'fall') { ctx.rotate(r.rot); if (r.lane > 0) alpha = Math.max(0, 1 - r.fy / r.fallLimit); }
     else if (r.hop > 0) ctx.rotate(-0.7 * Math.sin(r.hop / 0.5 * Math.PI));
     drawFigure(r, 0, 0, moving ? r.phase : 0, scale, alpha);
     ctx.restore();
-    if (r.name && r.state === 'run') {
-      ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
-      ctx.fillText(r.name, sx, sy - 30); ctx.textAlign = 'left';
-    }
   }
 }
 function drawFx() {
   ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5;
   for (const r of S.ripples) {
     ctx.globalAlpha = r.life;
-    ctx.beginPath(); ctx.ellipse(r.x - S.cam, r.y, r.r * 1.6, r.r * 0.5, 0, 0, 6.28); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(r.x - V.left, r.y, r.r * 1.6, r.r * 0.5, 0, 0, 6.28); ctx.stroke();
   }
-  for (const p of S.particles) { ctx.fillStyle = p.c; ctx.globalAlpha = Math.min(1, p.life * 2); ctx.fillRect(p.x - S.cam, p.y, 3, 3); }
+  for (const p of S.particles) { ctx.fillStyle = p.c; ctx.globalAlpha = Math.min(1, p.life * 2); ctx.fillRect(p.x - V.left, p.y, 3, 3); }
   ctx.globalAlpha = 1;
+}
+// screen-space labels that must stay readable when zoomed out: badges, gate controls, names, bubbles, floaters
+function drawOverlays() {
   ctx.textAlign = 'center';
+  for (const room of S.rooms) {
+    if (!inView(room.x, 200)) continue;
+    const [cx, cy] = toScreen(room.x + CFG.gapWidth / 2, laneY(room.lane));
+    if (room.state === 'armed') {
+      const isActive = S.active === room, col = isActive ? '#5ce1ff' : room.color;
+      const by = cy - 62 * V.zoom - (1 - V.zoom) * 26;
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, by, 16, 0, 6.28); ctx.fill();
+      ctx.fillStyle = '#111'; ctx.font = 'bold 18px monospace'; ctx.fillText(room.hot, cx, by + 6);
+      const ap = approaching(room);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 11px monospace';
+      ctx.fillText(ap.n ? `${ap.n} coming` : 'clear', cx, by + 30);
+      const frac = clamp01(ap.eta / 3);
+      ctx.fillStyle = '#233'; ctx.fillRect(cx - 24, by + 34, 48, 4);
+      ctx.fillStyle = frac < 0.35 ? '#ff4646' : '#fff'; ctx.fillRect(cx - 24, by + 34, 48 * frac, 4);
+    }
+    if (room.deaths > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '11px monospace';
+      ctx.fillText(`${room.deaths} lost`, cx, room.lane === 0 ? cy + 100 * V.zoom : cy - (CFG.tunnelH - 6) * V.zoom - 4);
+    }
+  }
+  for (const g of S.gates) {
+    if (g.state === 'dormant' || g.state === 'spent' || !inView(g.x, 80)) continue;
+    const holding = g.state === 'holding', col = '#5ce1ff';
+    const [gx, gy] = toScreen(g.x, laneY(0) - CFG.tunnelH);
+    ctx.fillStyle = col; roundRect(gx - 34, gy + 10, 68, 24, 8); ctx.fill();
+    ctx.fillStyle = '#111'; ctx.font = 'bold 12px monospace'; ctx.fillText(holding ? 'RELEASE' : 'ENTER', gx, gy + 27);
+    ctx.fillStyle = col; ctx.font = 'bold 11px monospace'; ctx.fillText(holding ? 'holding...' : 'HOLD', gx, gy + 48);
+    if (holding) {
+      const frac = 1 - g.holdT / CFG.holdMax;
+      ctx.fillStyle = '#233'; ctx.fillRect(gx - 30, gy + 54, 60, 4);
+      ctx.fillStyle = col; ctx.fillRect(gx - 30, gy + 54, 60 * frac, 4);
+    }
+    if (g.deaths) { ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '11px monospace'; ctx.fillText(`${g.deaths} trampled`, gx, toScreen(0, laneY(0))[1] + 100 * V.zoom); }
+  }
+  ctx.font = 'bold 9px monospace';
+  for (const r of S.runners) {
+    if (!r.name || r.state !== 'run' || !inView(r.x, 20)) continue;
+    const [nx, ny] = toScreen(r.x, r.y + r.dy * 0.5 - 4);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillText(r.name, nx, ny - 30 * V.zoom - 2);
+  }
   for (const f of S.floaters) {
+    const [fx, fy] = f.wx !== undefined ? toScreen(f.wx, f.wy) : [f.sx, f.sy];
     ctx.globalAlpha = Math.min(1, f.life);
     ctx.fillStyle = f.color; ctx.font = f.big ? 'bold 30px monospace' : 'bold 14px monospace';
-    ctx.fillText(f.txt, f.sx !== undefined ? f.sx : f.wx - S.cam, f.y);
+    ctx.fillText(f.txt, fx, fy);
   }
-  ctx.globalAlpha = 1; ctx.textAlign = 'left';
+  ctx.globalAlpha = 1;
+  drawBubbles();
+  ctx.textAlign = 'left';
 }
 function drawBubbles() {
   ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
   const placed = [];
   for (const b of S.bubbles) {
-    const sx = b.wx - S.cam, sy = b.wy;
-    if (sx < -100 || sx > W + 100) continue;
+    if (!inView(b.wx, 100)) continue;
+    const [sx, sy0] = toScreen(b.wx, b.wy);
+    const sy = sy0 + 30 * (1 - V.zoom);
     const a = Math.min(1, b.life / 0.35) * Math.min(1, (b.max - b.life) / 0.12 + 0.2);
     const w = ctx.measureText(b.txt).width + 14, h = 18;
     const bx = Math.max(4, Math.min(W - w - 4, sx - w / 2));
     let by = sy - h - 6;
-    // stack bubbles that would overlap an earlier one
     for (let guard = 0; guard < 6; guard++) {
       const hit = placed.find(q => bx < q.x + q.w + 4 && bx + w + 4 > q.x && by < q.y + q.h + 2 && by + h + 2 > q.y);
       if (!hit) break;
@@ -908,23 +951,23 @@ function drawHud() {
   x = pill(x, 'LOST', S.stats.dead, '#ff6b6b');
   x = pill(x, 'FINISHED', S.stats.arrived, '#f1c40f');
   const tx = 690, tw = 256;
-  ctx.fillStyle = '#2a2d3a'; roundRect(tx, 12, tw, 16, 4); ctx.fill();
+  ctx.fillStyle = '#2a2d3a'; roundRect(tx, 8, tw, 24, 4); ctx.fill();
   const p = Math.min(1, S.cam / S.camMax);
-  ctx.fillStyle = '#3d4256'; roundRect(tx, 12, tw * p, 16, 4); ctx.fill();
-  for (const g of S.gates) { ctx.fillStyle = g.state === 'spent' ? '#3a5a66' : '#5ce1ff'; ctx.fillRect(tx + tw * g.x / CFG.finale.x - 1, 13, 2, 14); }
+  ctx.fillStyle = '#3d4256'; roundRect(tx, 8, tw * p, 24, 4); ctx.fill();
+  for (const g of S.gates) { ctx.fillStyle = g.state === 'spent' ? '#3a5a66' : '#5ce1ff'; ctx.fillRect(tx + tw * g.x / CFG.finale.x - 1, 9, 2, 22); }
   for (const room of S.rooms) {
     const rx = tx + tw * Math.min(1, room.x / CFG.finale.x);
     ctx.fillStyle = room.state === 'solved' ? '#2ecc71' : room.state === 'armed' ? room.color : '#8a8fa3';
-    ctx.fillRect(rx - 2, room.lane === 1 ? 13 : 21, 4, 6);
+    ctx.fillRect(rx - 2, 27 - room.lane * 3.6, 4, 3);
   }
   const cx = tx + tw * Math.min(1, (S.cam + CFG.packFront) / CFG.finale.x);
-  ctx.fillStyle = '#fff'; ctx.fillRect(cx - 1, 10, 2, 20);
+  ctx.fillStyle = '#fff'; ctx.fillRect(cx - 1, 6, 2, 28);
   if (S.mode === 'play') {
-    let hint = 'watch the tunnel ahead';
+    let hint = 'watch the tunnels ahead';
     const armed = S.rooms.filter(r => r.state === 'armed');
     const gate = S.gates.find(g => g.state === 'armed' || g.state === 'holding');
     if (S.active) hint = VERBS[S.active.verb].hint + '   (ESC to close)';
-    else if (armed.length) hint = `press ${armed.map(r => r.hot).join(' or ')} to open a flashing room`;
+    else if (armed.length) hint = `press ${armed.map(r => r.hot).sort().join(' or ')} to open a flashing room`;
     if (gate) hint += gate.state === 'holding' ? '   ENTER releases the gate' : '   ENTER holds the crowd at the gate';
     ctx.fillStyle = 'rgba(8,10,18,0.6)'; ctx.fillRect(0, H - 26, W, 26);
     ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
@@ -976,15 +1019,16 @@ function drawTitle() {
     '100 people are running into the mountain. You cannot stop them.',
     'Broken crossings swallow whoever reaches them before you fix them.',
     'Red rooms take everyone. Orange take half. Yellow crushers take some.',
+    'The tunnels branch, and branch again. The view pulls back to show them all.',
     '',
     'NUMBER opens a flashing room. Then: hit keys in order, time the winch, or type the word.',
     'ENTER holds the crowd at a gate for a moment, but the crush tramples people.',
     'Everyone who makes it out is one attempt at the final gate.',
   ];
-  lines.forEach((l, i) => ctx.fillText(l, W / 2, 156 + i * 23));
+  lines.forEach((l, i) => ctx.fillText(l, W / 2, 156 + i * 22));
   ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 20px monospace';
-  ctx.globalAlpha = 0.6 + 0.4 * Math.sin(S.t * 4); ctx.fillText('SPACE to start', W / 2, 340); ctx.globalAlpha = 1;
-  if (S.best) { ctx.fillStyle = '#aaa'; ctx.font = '13px monospace'; ctx.fillText(`best run: ${S.best} survivors`, W / 2, 364); }
+  ctx.globalAlpha = 0.6 + 0.4 * Math.sin(S.t * 4); ctx.fillText('SPACE to start', W / 2, 350); ctx.globalAlpha = 1;
+  if (S.best) { ctx.fillStyle = '#aaa'; ctx.font = '13px monospace'; ctx.fillText(`best run: ${S.best} survivors`, W / 2, 374); }
   ctx.textAlign = 'left';
 }
 function drawEnd() {
@@ -1024,12 +1068,12 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 reset();
-// dev shortcuts: ?start&skip=12 jumps into play 12 seconds in, ?finale jumps to the final gate
+updateView(1);
 const qs = new URLSearchParams(location.search);
 if (qs.has('start')) { S.mode = 'play'; const n = +(qs.get('skip') || 0) * 60; for (let i = 0; i < n; i++) update(1 / 60); }
 if (qs.has('finale')) {
   S.runners.slice(0, 12).forEach(r => { r.state = 'arrived'; });
-  S.stats.arrived = 12; S.cam = S.camMax;
+  S.stats.arrived = 12; S.cam = S.camMax; updateView(1);
   S.finale = { len: 6, seq: makeSeq(6), idx: 2, attempts: 12, timer: 0.9, line: S.runners.slice(0, 12), leaving: [] }; S.mode = 'finale';
 }
 requestAnimationFrame(frame);
