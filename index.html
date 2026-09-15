@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '34 the wiring gets its road too';
+const BUILD = '35 the shift comes off the line';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -28,6 +28,8 @@ const CFG = {
   laneCount: 6,
   tunnelH: 130,
   entrance: 760,
+  // The opening: the shift comes off the line, the doors go up, the run starts.
+  intro: { belt: 30, drop: 300, doors: 640, lift: 104, deliver: 2.8, settle: 1.1, open: 1.3, hold: 0.45 },
   riverY: 470,
   // Where rock stands over the water. The river darkens because there is rock above it,
   // not because it has crossed the entrance, so the darkening is keyed to these. They are
@@ -754,6 +756,7 @@ function reset() {
     stats: { dead: 0, arrived: 0 },
     finale: null, best: loadBest(), rollBottom: 254,
     endT: 0, endEmb: [], endSpawn: 0, endRoll: null,
+    introT: 0, doorOpen: 0,
     recent: [], spike: null, spikeCool: 0, streak: 0, bestStreak: 0, lastScream: 0,
   };
   for (let i = 0; i < CFG.runnerCount; i++) {
@@ -766,6 +769,8 @@ function reset() {
       state: 'run', vy: 0, fy: 0, rot: 0, fallLimit: 70, hop: 0, rolled: null, fs: false, squash: 0, catchUp: 0,
       doom: null, endX: 0, deathT: 0,
       lane: 0, lastForkX: -1, route: [], ramp: null, held: false,
+      // when this one steps off the belt, spread across the delivery window
+      bornAt: (i / CFG.runnerCount) * CFG.intro.deliver,
     });
   }
   for (const r of S.runners) r.x = r.slot;
@@ -841,9 +846,11 @@ window.addEventListener('keydown', e => {
   if (k.startsWith('ARROW')) e.preventDefault();
   AU.init();
   if (k === 'M' && !S.active) { AU.muted = !AU.muted; return; }
-  if (S.mode === 'title') { if (k === ' ') S.mode = 'play'; return; }
-  if (S.mode === 'win' || S.mode === 'lose') { if (k === 'R') { reset(); S.mode = 'play'; } return; }
-  if (S.paused) { if (k === 'P') S.paused = false; else if (k === 'R') { reset(); S.mode = 'play'; } return; }
+  if (S.mode === 'title') { if (k === ' ') { S.mode = 'intro'; S.introT = 0; } return; }
+  // any key skips the opening; nobody wants to watch it twice
+  if (S.mode === 'intro') { startRun(); return; }
+  if (S.mode === 'win' || S.mode === 'lose') { if (k === 'R') { reset(); S.mode = 'intro'; S.introT = 0; } return; }
+  if (S.paused) { if (k === 'P') S.paused = false; else if (k === 'R') { reset(); S.mode = 'intro'; S.introT = 0; } return; }
   if (k === 'P' && !S.active) { S.paused = true; return; }
   if (S.mode === 'play') {
     // Digits pick a room, EXCEPT while a puzzle that reads digits is open --
@@ -932,6 +939,7 @@ function update(dt) {
     return;
   }
   if (S.mode === 'win' || S.mode === 'lose') { S.endT += dt; endEmbers(dt); }
+  if (S.mode === 'intro') { updateIntro(dt); updateView(dt); return; }
   if (S.mode !== 'play') { updateView(dt); return; }
 
   let rear = Infinity;
@@ -1092,6 +1100,50 @@ function update(dt) {
                  line: S.runners.filter(r => r.state === 'arrived'), leaving: [] };
     S.mode = 'finale';
   }
+}
+// The shift comes off the line. Runners arrive on the belt in turn, step down,
+// gather at the doors, and when the doors are up they are simply handed to the
+// normal pack formation -- the run has already started by the time you see it move.
+const I = () => CFG.intro;
+function updateIntro(dt) {
+  const c = I();
+  S.introT += dt;
+  const gather = c.deliver + c.settle;
+  const floor = laneY(0);
+  for (const r of S.runners) {
+    if (S.introT < r.bornAt) { r.x = c.belt - 60; r.y = floor - c.lift; r.onBelt = true; r.offLine = false; continue; }
+    const since = S.introT - r.bornAt;
+    const ride = 0.85, step = 0.5;                 // along the line, then down the stair
+    if (since < ride) {                            // carried along, feet still
+      r.onBelt = true; r.offLine = false;
+      r.x = c.belt + (since / ride) * (c.drop - c.belt);
+      r.y = floor - c.lift;
+    } else if (since < ride + step) {              // down the stair, walking now
+      const k = (since - ride) / step;
+      r.onBelt = false; r.offLine = true;
+      r.x = c.drop + k * 46;
+      r.y = floor - c.lift * (1 - k * k);          // eased, so the last of the drop is quick
+    } else {                                       // across the yard to your place at the gate
+      r.onBelt = false; r.offLine = false;
+      r.y = floor;
+      const target = Math.min(r.slot, c.doors - 26 - Math.abs(r.dy) * 0.9);
+      r.x = (c.drop + 46) + Math.min(1, (since - ride - step) / 0.9) * (target - c.drop - 46);
+    }
+  }
+  // doors
+  if (S.introT >= gather) S.doorOpen = Math.min(1, (S.introT - gather) / c.open);
+  if (S.introT >= gather + c.open + c.hold) startRun();
+  // a word from the floor while they wait
+  if (S.introT > 0.8) chatter(dt);
+  AU.ambient(false, S.runners.filter(r => !r.onBelt).length, dt);
+}
+// Hand over to the run proper. Also the skip, so skipping and finishing land
+// in exactly the same state rather than two states that drift apart.
+function startRun() {
+  S.mode = 'play'; S.doorOpen = 1; S.introT = 0;
+  for (const r of S.runners) { r.onBelt = false; r.x = r.slot; }
+  S.bubbles.length = 0;
+  AU.clank();
 }
 // forks: branch up into a new tunnel; merges: come back down. Nested branches unwind in order.
 function updateLane(r) {
@@ -1278,6 +1330,7 @@ function draw() {
   drawRiver();
   carveTunnels();
   // the bars go on after the bodies: a closed gate that people are drawn over is not a barrier
+  drawIntro();
   for (let k = CFG.laneCount - 1; k >= 0; k--) { drawLane(k); drawRunners(k); drawRoomProps(k); for (const g of S.gates) drawGate(g, k, true); }
   drawFinish();
   if (S.mode === 'play' || S.mode === 'finale') drawFx();
@@ -4216,6 +4269,121 @@ function drawMachineRoom(room, y) {
     ctx.globalAlpha = S.active === room ? 1 : p; ctx.lineWidth = 2.4 / V.zoom;
     ctx.strokeRect(sx + 4, y - 78, gw - 8, 80); ctx.globalAlpha = 1;
   }
+}
+// ---------------------------------------------------------------- the opening
+// A belt bringing the shift out, a drop plate, and the yard doors. Drawn in world
+// space, so it sits in the same geometry as everything else and needs no special
+// camera. Only ever visible during the opening and the first seconds of the run.
+function introAlpha() {
+  if (S.mode === 'intro') return 1;
+  if (S.mode !== 'play') return 0;
+  // fade out over the first stretch of road rather than vanishing on the handover
+  return Math.max(0, 1 - S.cam / 260);
+}
+function drawBelt(yFloor) {
+  const c = I(), y = yFloor - c.lift, x0 = c.belt - 90 - V.left, x1 = c.drop + 30 - V.left, h = 22;
+  const top = y - h;
+  // gantry legs down to the yard, behind everything else the belt draws
+  ctx.fillStyle = '#2f2830';
+  for (let lx = x0 + 40; lx < x1 - 20; lx += 96) { ctx.fillRect(lx, y + 2, 9, c.lift - 2); ctx.fillRect(lx - 12, y + 2, 33, 6); }
+  // the stair down at the delivery end
+  const sx = c.drop - V.left, steps = 5;
+  for (let i = 0; i < steps; i++) {
+    const w = 14, sy = y + 6 + (i + 1) * ((c.lift - 6) / steps);
+    ctx.fillStyle = i % 2 ? '#4c4249' : '#564c53';
+    ctx.fillRect(sx + i * w, sy, w + 2, (c.lift - 6) / steps + 2);
+  }
+  ctx.strokeStyle = '#6a5f66'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(sx, y - 6); ctx.lineTo(sx + steps * 14 + 8, y + c.lift - 4); ctx.stroke();
+  // frame and legs
+  ctx.fillStyle = '#3a3038'; ctx.fillRect(x0, top, x1 - x0, h);
+  ctx.fillStyle = '#2a2229';
+  for (let lx = x0 + 24; lx < x1; lx += 62) ctx.fillRect(lx, y, 7, 30);
+  // the running band, hatched so it reads as moving
+  ctx.fillStyle = '#4c4249'; ctx.fillRect(x0, top, x1 - x0, 11);
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2;
+  const crawl = (S.t * 46) % 22;
+  for (let bx = x0 - 22 + crawl; bx < x1; bx += 22) {
+    ctx.beginPath(); ctx.moveTo(bx, top + 1); ctx.lineTo(bx + 7, top + 10); ctx.stroke();
+  }
+  // rollers at each end
+  for (const rx of [x0 + 7, x1 - 7]) {
+    ctx.fillStyle = '#6a5f66'; ctx.beginPath(); ctx.arc(rx, top + 6, 8, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = '#8a7e84'; ctx.lineWidth = 1.5;
+    const a = S.t * 5;
+    ctx.beginPath(); ctx.moveTo(rx - Math.cos(a) * 6, top + 6 - Math.sin(a) * 6); ctx.lineTo(rx + Math.cos(a) * 6, top + 6 + Math.sin(a) * 6); ctx.stroke();
+  }
+}
+// Two leaves hinged at their outer edges, swinging out toward the yard. Drawn
+// with a horizontal squeeze rather than a real rotation: the leaf keeps its
+// height and loses its width as it turns, which is what a door does from side on.
+function drawGateWall(y) {
+  const c = I(), cx = c.doors - V.left, half = 44, h = 122;
+  const top = y - h - 18, x0 = cx - half - 13, x1 = cx + half + 13;
+  // the wall runs off the top of the frame on both sides of the opening
+  ctx.fillStyle = '#4a3f45';
+  ctx.fillRect(x0 - 260, top - 150, 260, h + 168);
+  ctx.fillRect(x1, top - 150, 300, h + 168);
+  // brick courses
+  ctx.fillStyle = 'rgba(0,0,0,0.16)';
+  for (let by = top - 148; by < y + 18; by += 11) {
+    const off = ((by / 11) | 0) % 2 ? 9 : 0;
+    for (let bx = x0 - 258 + off; bx < x0 - 2; bx += 18) ctx.fillRect(bx, by, 16, 4);
+    for (let bx = x1 + 2 + off; bx < x1 + 298; bx += 18) ctx.fillRect(bx, by, 16, 4);
+  }
+  // coping along the top
+  ctx.fillStyle = '#5b5b70';
+  ctx.fillRect(x0 - 262, top - 156, 264, 9); ctx.fillRect(x1 - 2, top - 156, 304, 9);
+  // a painted sign on the left pier
+  ctx.fillStyle = 'rgba(232,228,234,0.30)'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('NO. 1 MILL', x0 - 130, top - 90);
+  ctx.fillText('GATE', x0 - 130, top - 72);
+  ctx.textAlign = 'left';
+}
+function drawYardDoors(y) {
+  const c = I(), cx = c.doors - V.left, h = 122, half = 44;
+  const open = S.doorOpen;
+  const swing = open * open * (3 - 2 * open);          // ease, so the last of it settles
+  // frame
+  ctx.fillStyle = '#4c4455';
+  ctx.fillRect(cx - half - 13, y - h - 10, 13, h + 10);
+  ctx.fillRect(cx + half, y - h - 10, 13, h + 10);
+  ctx.fillRect(cx - half - 13, y - h - 18, half * 2 + 26, 9);
+  for (const dir of [-1, 1]) {
+    const w = half * (1 - swing * 0.92);
+    const hinge = cx + dir * half;
+    ctx.save();
+    ctx.translate(hinge, y - h / 2);
+    ctx.scale(dir, 1);
+    // face, darker as it turns edge-on
+    const shade = 1 - swing * 0.45;
+    ctx.fillStyle = `rgb(${Math.round(86 * shade)},${Math.round(74 * shade)},${Math.round(62 * shade)})`;
+    ctx.fillRect(-w, -h / 2, w, h);
+    // planks and two straps
+    ctx.strokeStyle = `rgba(0,0,0,${0.35 * shade})`; ctx.lineWidth = 1.5;
+    for (let px = -w + 9; px < 0; px += 13) { ctx.beginPath(); ctx.moveTo(px, -h / 2); ctx.lineTo(px, h / 2); ctx.stroke(); }
+    ctx.fillStyle = `rgba(60,58,70,${shade})`;
+    ctx.fillRect(-w, -h / 2 + 16, w, 7); ctx.fillRect(-w, h / 2 - 25, w, 7);
+    // handle on the leading edge
+    ctx.fillStyle = '#8a7e84'; ctx.fillRect(-w + 3, -6, 4, 14);
+    ctx.restore();
+  }
+  // light spilling through the widening gap
+  if (swing > 0.04) {
+    const g = ctx.createLinearGradient(cx, y - h, cx, y);
+    g.addColorStop(0, `rgba(255,228,170,${0.30 * swing})`); g.addColorStop(1, 'rgba(255,228,170,0)');
+    ctx.fillStyle = g; ctx.fillRect(cx - half, y - h, half * 2, h);
+  }
+}
+function drawIntro() {
+  const a = introAlpha();
+  if (a <= 0) return;
+  const y = laneY(0);
+  ctx.save(); ctx.globalAlpha = a;
+  drawGateWall(y);
+  drawBelt(y);
+  drawYardDoors(y);
+  ctx.restore();
 }
 function drawFinish() {
   if (!inView(CFG.finale.x, 120)) return;

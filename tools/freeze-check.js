@@ -73,14 +73,28 @@ eval(src + `
         maxParticles=Math.max(maxParticles,S.particles.length); maxBubbles=Math.max(maxBubbles,S.bubbles.length);
         maxFloaters=Math.max(maxFloaters,S.floaters.length); maxRipples=Math.max(maxRipples,S.ripples.length);
         if (style === 0) {
-          // Work ONE room at a time and stay with it. Round-robinning every frame
-          // looks thorough and is not: a puzzle that plays a timed demo pauses when
-          // its panel closes, so a bot that keeps switching can hold a demo paused
-          // for the whole run and then report the room unsolvable. Only pick a new
-          // room when nothing is open.
-          const open = S.rooms.find(r => r === S.active && r.state === 'armed');
-          const queue = open ? [open] : S.rooms.filter(r => r.state === 'armed').slice(0, 1);
-          for (const r of queue) {
+          // Work ONE room at a time, and work the one about to kill someone.
+          // Two traps here, both measured. Round-robinning every frame holds a
+          // timed demo paused all run, because closing a panel pauses it, and then
+          // reports the room unsolvable. But committing to the FIRST armed room
+          // instead just moves the deaths: measured over six runs, round-robin left
+          // 49 dead at the sweeper, commit-by-position left 43 at the bridge, and
+          // commit-by-urgency left none. Rank by how soon a room kills, and hold on
+          // to the current one unless something is meaningfully more urgent, or the
+          // bot re-decides every frame and pauses its own demo again.
+          const armed = S.rooms.filter(r => r.state === 'armed');
+          const urgency = room => {
+            let best = Infinity;
+            for (const q of S.runners) {
+              if (q.state !== 'run' && q.state !== 'fall') continue;
+              if (!canReach(q, room)) continue;
+              best = Math.min(best, room.x + killFrom(room) - q.x);
+            }
+            return best;
+          };
+          let target = armed.length ? armed.reduce((a, b) => (urgency(b) < urgency(a) ? b : a)) : null;
+          if (target && armed.includes(S.active) && urgency(S.active) <= urgency(target) + 40) target = S.active;
+          for (const r of (target ? [target] : [])) {
             if (S.active && S.active !== r) press('ESCAPE');
             if (S.active !== r) press(String(r.hot));
             let guard = 0;
