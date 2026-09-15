@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '21 a pack of feet';
+const BUILD = '22 the mountain has an inside';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -493,7 +493,7 @@ function armRoom(room) {
 // a room resolved with nobody lost: the streak grows
 function cleanRoom(room) {
   S.streak++; S.bestStreak = Math.max(S.bestStreak, S.streak);
-  S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 120, txt: S.streak > 1 ? `CLEAN x${S.streak}` : 'CLEAN', life: 1.4, color: '#2ecc71', big: S.streak > 1 });
+  S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 152, txt: S.streak > 1 ? `CLEAN x${S.streak}` : 'CLEAN', life: 1.4, color: '#2ecc71', big: S.streak > 1 });
   emit('spark', 7 + Math.min(9, S.streak), room.x + CFG.gapWidth / 2, laneY(room.lane) - 26, { sx: 34, vx: [-46, 46], vy: [-230, -120], life: [0.45, 0.95], c: '#8affbc' });
   AU.cheer(S.streak);
 }
@@ -506,6 +506,7 @@ function say(r, pool, life = 2.2, pinned = false) {
 function killRunner(r, how) {
   r.state = 'dead'; r.endX = r.x; r.deathT = S.t; S.stats.dead++; S.shake = Math.min(5, S.shake + 1.2);
   S.recent.push(S.t); if (S.spike) S.spike.n++;
+  S.lastKill = { x: r.x, y: laneY(r.lane) };      // so the death plate can point at where it happened
   if (S.streak > 0) { S.streak = 0; S.floaters.push({ sx: W / 2, sy: 200, txt: 'STREAK LOST', life: 1, color: '#ff9a3c' }); }
   if (how === 'splash') AU.splash(); else AU.noise(0.1, 0.18, ['lowpass', 300]);
   if (S.t - S.lastScream > 0.2 && Math.random() < 0.6) { S.lastScream = S.t; AU.scream(); }
@@ -626,7 +627,7 @@ function update(dt) {
   const camStopped = S.cam >= S.camMax;
   S.recent = S.recent.filter(t => S.t - t < 1);
   if (!S.spike && S.spikeCool <= 0 && S.recent.length >= 5) {
-    S.spike = { t: 0.7, n: S.recent.length }; S.recent.length = 0; S.spikeCool = CFG.spikeCooldown; S.shake = 8; AU.boom();
+    S.spike = { t: 0.7, n: S.recent.length, at: S.lastKill }; S.recent.length = 0; S.spikeCool = CFG.spikeCooldown; S.shake = 8; AU.boom();
   }
   const inside = S.cam + CFG.packFront > CFG.entrance && S.cam + CFG.packFront < CFG.exit;
   AU.ambient(inside, S.runners.filter(r => r.state === 'run' && !r.held).length, dt);
@@ -918,7 +919,8 @@ function draw() {
   drawMountain();
   drawRiver();
   carveTunnels();
-  for (let k = CFG.laneCount - 1; k >= 0; k--) { drawLane(k); drawRunners(k); }
+  // the bars go on after the bodies: a closed gate that people are drawn over is not a barrier
+  for (let k = CFG.laneCount - 1; k >= 0; k--) { drawLane(k); drawRunners(k); drawRoomProps(k); for (const g of S.gates) drawGate(g, k, true); }
   drawFinish();
   if (S.mode === 'play' || S.mode === 'finale') drawFx();
   ctx.restore();
@@ -926,6 +928,33 @@ function draw() {
   drawVignette();
   ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.16; ctx.fillStyle = ctx.createPattern(grain(), 'repeat'); ctx.fillRect(0, 0, W, H); ctx.restore();
   if (S.mode === 'play' || S.mode === 'finale') drawOverlays();
+  // The plate names deaths, so it stands over the deaths, and it goes under the HUD
+  // rather than over it: its red wash used to drain the colour out of the counters.
+  if (S.spike && S.mode !== 'win' && S.mode !== 'lose') {
+    const a = Math.min(1, S.spike.t / 0.35);
+    ctx.fillStyle = `rgba(20,0,0,${0.5 * a})`; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.globalAlpha = a;
+    ctx.font = 'bold 84px monospace';
+    const pw = ctx.measureText(`-${S.spike.n}`).width + 80;
+    const at = S.spike.at;
+    let px = W / 2, py = H / 2;
+    if (at) {
+      const [kx, ky] = toScreen(at.x, at.y);
+      px = Math.max(pw / 2 + 16, Math.min(W - pw / 2 - 16, kx));
+      py = Math.max(150, Math.min(H - 120, ky - 128));
+    }
+    ctx.fillStyle = 'rgba(10,6,10,0.82)'; roundRect(px - pw / 2, py - 62, pw, 116, 14); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,59,59,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+    // a stem down to the spot, so the number is attached to the thing it counts
+    if (at) {
+      const [kx, ky] = toScreen(at.x, at.y);
+      ctx.strokeStyle = 'rgba(255,59,59,0.35)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(px, py + 54); ctx.lineTo(kx, Math.min(H - 8, ky)); ctx.stroke();
+    }
+    ctx.fillStyle = '#ff3b3b'; ctx.fillText(`-${S.spike.n}`, px, py + 10);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 16px monospace'; ctx.fillText('AT ONCE', px, py + 40);
+    ctx.globalAlpha = 1; ctx.textAlign = 'left';
+  }
   drawHud();
   if (S.mode === 'play' && S.active) drawPanel(S.active);
   if (S.mode === 'finale') drawFinalePanel();
@@ -937,19 +966,6 @@ function draw() {
     ctx.fillText('PAUSED', W / 2, H / 2); ctx.font = '16px monospace'; ctx.fillText('P to resume   R to restart', W / 2, H / 2 + 36); ctx.textAlign = 'left';
   }
   if (S.wrongFlash > 0) { ctx.fillStyle = `rgba(255,40,40,${S.wrongFlash * 0.6})`; ctx.fillRect(0, 0, W, H); }
-  // the death-spike plate belongs to play, not over the end screen's roll call
-  if (S.spike && S.mode !== 'win' && S.mode !== 'lose') {
-    const a = Math.min(1, S.spike.t / 0.35);
-    ctx.fillStyle = `rgba(20,0,0,${0.5 * a})`; ctx.fillRect(0, 0, W, H);
-    ctx.textAlign = 'center'; ctx.globalAlpha = a;
-    ctx.font = 'bold 84px monospace';
-    const pw = ctx.measureText(`-${S.spike.n}`).width + 80;
-    ctx.fillStyle = 'rgba(10,6,10,0.82)'; roundRect(W / 2 - pw / 2, H / 2 - 62, pw, 116, 14); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,59,59,0.5)'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.fillStyle = '#ff3b3b'; ctx.fillText(`-${S.spike.n}`, W / 2, H / 2 + 10);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 16px monospace'; ctx.fillText('AT ONCE', W / 2, H / 2 + 40);
-    ctx.globalAlpha = 1; ctx.textAlign = 'left';
-  }
 }
 function drawSky() {
   const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -995,14 +1011,26 @@ function drawOutside() {
 function hills(p, size, base, hmin, hmax, col, salt) {
   parallaxRange(p, size, (seg, sx) => {
     const n = 3;
-    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(sx, base + 300); ctx.lineTo(sx, base);
-    for (let i = 0; i < n; i++) {
-      const x0 = sx + i * size / n, x1 = sx + (i + 1) * size / n;
-      const h = hmin + hash(seg * 7 + i * 3 + salt) * (hmax - hmin);
-      const dip = i < n - 1 ? 8 + hash(seg * 5 + i + salt) * 22 : 0;
-      ctx.quadraticCurveTo(x0 + (x1 - x0) * (0.35 + hash(seg + i) * 0.3), base - h, x1, base - dip);
-    }
-    ctx.lineTo(sx + size, base + 300); ctx.closePath(); ctx.fill();
+    const shape = () => {
+      ctx.beginPath(); ctx.moveTo(sx, base + 300); ctx.lineTo(sx, base);
+      for (let i = 0; i < n; i++) {
+        const x0 = sx + i * size / n, x1 = sx + (i + 1) * size / n;
+        const h = hmin + hash(seg * 7 + i * 3 + salt) * (hmax - hmin);
+        const dip = i < n - 1 ? 8 + hash(seg * 5 + i + salt) * 22 : 0;
+        ctx.quadraticCurveTo(x0 + (x1 - x0) * (0.35 + hash(seg + i) * 0.3), base - h, x1, base - dip);
+      }
+      ctx.lineTo(sx + size, base + 300); ctx.closePath();
+    };
+    ctx.fillStyle = col; shape(); ctx.fill();
+    // A flat fill with a hard edge is a vector shape, not a hill. The sun is upper-left, so
+    // the crest catches it; the further hills haze toward the sky colour at their feet.
+    ctx.save(); shape(); ctx.clip();
+    const g = ctx.createLinearGradient(0, base - hmax, 0, base + 40);
+    g.addColorStop(0, 'rgba(255,246,206,0.26)');
+    g.addColorStop(0.42, 'rgba(255,246,206,0)');
+    g.addColorStop(1, `rgba(164,200,228,${0.34 - p * 0.3})`);
+    ctx.fillStyle = g; ctx.fillRect(sx - 4, base - hmax - 20, size + 8, hmax + 340);
+    ctx.restore();
   });
 }
 function waves(horizon) {
@@ -1065,9 +1093,32 @@ function mountainPath() {
 }
 function drawMountain() {
   ctx.save();
-  mountainPath(); ctx.fillStyle = '#2b2431'; ctx.fill();
-  ctx.clip();
   const top = -1300, bottom = CFG.worldBottom + 400;
+  // The mass is not one value. Near the peak it stands in the sky and is hazed pale;
+  // by the time you are level with the tunnels it is stone; below that it is the dark
+  // the tunnels are cut out of. Without this the sunlit outside of the mountain comes
+  // out darker than the lamplit inside, and the whole thing reads as flat wallpaper.
+  mountainPath();
+  const mass = ctx.createLinearGradient(0, top, 0, bottom);
+  mass.addColorStop(0, '#6d5f76');
+  mass.addColorStop(0.3, '#4c4056');
+  mass.addColorStop(0.62, '#342c3d');
+  mass.addColorStop(1, '#171320');
+  ctx.fillStyle = mass; ctx.fill();
+  ctx.clip();
+  // sun wash down the upper-left flank; the sun sits upper-left in drawSky
+  const sun = ctx.createLinearGradient(0, top, V.vw * 0.8, top + 900);
+  sun.addColorStop(0, 'rgba(255,224,176,0.16)');
+  sun.addColorStop(1, 'rgba(255,224,176,0)');
+  ctx.fillStyle = sun; ctx.fillRect(-60, top, V.vw + 120, bottom - top);
+  // daylight leaking into the rock around each mouth
+  for (const wx of [CFG.entrance, CFG.exit]) {
+    if (!inView(wx, 420)) continue;
+    const mx = wx - V.left, my = laneY(0) - CFG.tunnelH * 0.5;
+    const dg = ctx.createRadialGradient(mx, my, 20, mx, my, 400);
+    dg.addColorStop(0, 'rgba(255,232,186,0.2)'); dg.addColorStop(1, 'rgba(255,232,186,0)');
+    ctx.fillStyle = dg; ctx.fillRect(mx - 400, my - 400, 800, 800);
+  }
   for (let y = top; y < bottom; y += 26) {
     const k = Math.floor(y / 26);
     ctx.fillStyle = k % 3 === 0 ? 'rgba(255,255,255,0.04)' : k % 3 === 1 ? 'rgba(0,0,0,0.11)' : 'rgba(150,100,130,0.07)';
@@ -1078,37 +1129,45 @@ function drawMountain() {
       const h = hash(seg * 13 + j * 101); if (h < 0.6) continue;
       const bx = sx + hash(seg + j) * 120, by = top + hash(seg * 3 + j * 17) * (bottom - top);
       const rw = 12 + h * 28, rh = rw * (0.45 + hash(seg * 5 + j) * 0.4);
-      ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.beginPath(); ctx.ellipse(bx + 2, by + 3, rw, rh, 0.25, 0, 6.28); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.beginPath(); ctx.ellipse(bx, by, rw, rh, 0.25, 0, 6.28); ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1.4; ctx.stroke();
+      // a boulder in the rock, not an outlined oval hanging in it: solid body,
+      // lit crown facing the sun upper-left, dark belly, and a shadow it sits in
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(bx + 3, by + 4, rw, rh, 0.25, 0, 6.28); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.beginPath(); ctx.ellipse(bx, by, rw, rh, 0.25, 0, 6.28); ctx.fill();
+      ctx.fillStyle = 'rgba(255,238,214,0.09)'; ctx.beginPath();
+      ctx.ellipse(bx - rw * 0.16, by - rh * 0.3, rw * 0.72, rh * 0.5, 0.25, 0, 6.28); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath();
+      ctx.ellipse(bx + rw * 0.2, by + rh * 0.42, rw * 0.66, rh * 0.42, 0.25, 0, 6.28); ctx.fill();
     }
   });
-  // old workings: short dead corridors cut through the rock long ago, some still lit, no way in or out.
-  // They are what makes the mountain read as honeycombed rather than as a solid slab.
-  parallaxRange(1, 140, (seg, sx) => {
-   for (let j = 0; j < 8; j++) {
+  // Old workings: drifts and shafts cut through the rock long ago, some still lit.
+  // Each is a carved void with a back wall, a floor, prop timbers and rubble, so the
+  // mountain reads as honeycombed rather than as a slab with black holes painted on.
+  parallaxRange(1, 150, (seg, sx) => {
+   const placed = [];
+   for (let j = 0; j < 7; j++) {
     const h = hash(seg * 17.3 + j * 41.7);
-    if (h < 0.42) continue;
-    const w = 58 + h * 120, hgt = 20 + hash(seg * 5.5 + j * 13.1) * 16;
-    const yy = -800 + hash(seg * 9.1 + j * 27.3) * 1320;
+    if (h < 0.4) continue;
+    const vert = hash(seg * 6.1 + j * 3.7) > 0.82;
+    const w = vert ? 26 + h * 16 : 62 + h * 130;
+    const hgt = vert ? 90 + hash(seg * 5.5 + j * 13.1) * 150 : 26 + hash(seg * 5.5 + j * 13.1) * 20;
+    // each cut starts somewhere of its own; without this every working in a segment
+    // shares a left edge and the rock reads as a column of stickers
+    const xx = sx + hash(seg * 21.7 + j * 8.9) * 132 - 40;
+    const yy = -820 + hash(seg * 9.1 + j * 27.3) * 1340;
     // only keep clear of tunnels that actually exist at this point in the course
-    const wx = sx + V.left;
+    const wx = xx + V.left;
     let clear = true;
     for (let k = 0; k < CFG.laneCount; k++) {
       if (!laneAt(k, wx) && !laneAt(k, wx + w)) continue;
-      if (yy + hgt > laneY(k) - CFG.tunnelH - 26 && yy < laneY(k) + 52) { clear = false; break; }
+      if (yy + hgt > laneY(k) - CFG.tunnelH - 30 && yy < laneY(k) + 56) { clear = false; break; }
+    }
+    // and clear of each other, with rock left between: two dead ends 5px apart is not rock
+    if (clear) for (const p of placed) {
+      if (xx < p.x + p.w + 34 && xx + w + 34 > p.x && yy < p.y + p.h + 40 && yy + hgt + 40 > p.y) { clear = false; break; }
     }
     if (!clear) continue;
-    ctx.fillStyle = 'rgba(6,4,10,0.82)'; roundRect(sx, yy, w, hgt, 5); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(sx + 2, yy, w - 4, 2.2);
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(sx + 2, yy + hgt - 2.4, w - 4, 2.4);
-    if (hash(seg * 3.3) > 0.55) {
-      const lx = sx + w * 0.34, ly = yy + hgt * 0.5;
-      const gl = ctx.createRadialGradient(lx, ly, 2, lx, ly, 36);
-      gl.addColorStop(0, 'rgba(255,186,92,0.2)'); gl.addColorStop(1, 'rgba(255,186,92,0)');
-      ctx.fillStyle = gl; ctx.fillRect(lx - 36, yy - 12, 72, hgt + 24);
-      ctx.fillStyle = '#c9a25a'; ctx.fillRect(lx - 1.4, yy + hgt * 0.34, 2.8, 4);
-    }
+    placed.push({ x: xx, y: yy, w, h: hgt });
+    working(xx, yy, w, hgt, seg + j * 0.37, hash(seg * 3.3 + j * 7.9) > 0.62, vert);
    }
   });
   // mineral seams catching what little light there is
@@ -1126,7 +1185,85 @@ function drawMountain() {
     ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo(cx + 14, cy + 18, cx + 5, cy + 36); ctx.quadraticCurveTo(cx - 3, cy + 48, cx + 6, cy + 62); ctx.stroke();
   });
   ctx.restore();
-  mountainPath(); ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 3; ctx.stroke();
+  // Rim light where the rock meets the sky. The high ground faces open sky and catches it;
+  // the lower flanks are shaded by the mass above them, so the hairline has to die out
+  // rather than run all the way round the silhouette.
+  const rim = ctx.createLinearGradient(0, -1300, 0, laneY(CFG.laneCount - 1));
+  rim.addColorStop(0, 'rgba(255,240,214,0.3)');
+  rim.addColorStop(0.55, 'rgba(230,222,240,0.12)');
+  rim.addColorStop(1, 'rgba(230,222,240,0)');
+  mountainPath(); ctx.strokeStyle = rim; ctx.lineWidth = 3; ctx.stroke();
+}
+// One abandoned excavation. Drawn as a void you can see into: dark air at the
+// mouth, a back wall a shade lighter, a floor catching whatever light there is.
+function working(x, y, w, h, salt, lit, vert) {
+  const r = n => hash(salt * 100 + n);
+  // the rock around the mouth is bruised by the cut
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  roundRect(x - 5, y - 4, w + 10, h + 9, 8); ctx.fill();
+  // silhouette of the void: flat floor, ragged arch overhead
+  const arch = Math.min(h * 0.42, 11);
+  ctx.beginPath();
+  ctx.moveTo(x, y + h);
+  ctx.lineTo(x, y + arch);
+  ctx.quadraticCurveTo(x + w * 0.13, y - 1 + r(1) * 3, x + w * 0.38, y + 1 + r(2) * 2);
+  ctx.quadraticCurveTo(x + w * 0.62, y + 3 - r(3) * 4, x + w * 0.86, y + r(4) * 3);
+  ctx.quadraticCurveTo(x + w * 0.96, y + 1, x + w, y + arch);
+  ctx.lineTo(x + w, y + h);
+  ctx.closePath();
+  ctx.save(); ctx.clip();
+  // air in the cut, darkest at the roof
+  const air = ctx.createLinearGradient(0, y, 0, y + h);
+  air.addColorStop(0, '#05040a'); air.addColorStop(1, lit ? '#1d1520' : '#0b0812');
+  ctx.fillStyle = air; ctx.fillRect(x - 2, y - 6, w + 4, h + 12);
+  // back wall, set in from the mouth, a shade lighter so the space has depth
+  const bw = ctx.createLinearGradient(0, y + arch, 0, y + h);
+  bw.addColorStop(0, lit ? 'rgba(96,74,56,0.5)' : 'rgba(58,50,70,0.34)');
+  bw.addColorStop(1, lit ? 'rgba(52,38,32,0.5)' : 'rgba(32,28,42,0.34)');
+  ctx.fillStyle = bw; ctx.fillRect(x + w * 0.1, y + arch * 0.7, w * 0.8, h - arch * 0.7 - 3);
+  // floor of the cut, and the lip of rock at its edge
+  ctx.fillStyle = lit ? 'rgba(126,100,70,0.55)' : 'rgba(70,62,82,0.4)';
+  ctx.fillRect(x, y + h - 3.4, w, 3.4);
+  ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(x, y + h - 3.4, w, 1);
+  // prop timbers holding the roof up
+  if (!vert && w > 70) {
+    const n = 1 + Math.floor(r(5) * 2);
+    for (let i = 0; i < n; i++) {
+      const px = x + w * (0.26 + i * 0.34 + r(6 + i) * 0.1);
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(px - 1.6, y + arch * 0.6, 3.2, h - arch * 0.6 - 3);
+      ctx.fillRect(px - 8, y + arch * 0.6, 16, 2.6);
+      ctx.fillStyle = 'rgba(150,118,80,0.25)';
+      ctx.fillRect(px - 1.6, y + arch * 0.6, 1.2, h - arch * 0.6 - 3);
+    }
+  }
+  // spoil left on the floor
+  for (let i = 0; i < 3; i++) {
+    if (r(20 + i) < 0.45) continue;
+    const bx = x + 4 + r(30 + i) * (w - 8), br = 1.4 + r(40 + i) * 2.6;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.beginPath(); ctx.ellipse(bx, y + h - 3.6, br, br * 0.6, 0, 0, 6.28); ctx.fill();
+  }
+  // a lamp nobody came back for
+  if (lit) {
+    const lx = x + w * (vert ? 0.5 : 0.3), ly = y + h - 9;
+    const gl = ctx.createRadialGradient(lx, ly, 2, lx, ly, 46);
+    gl.addColorStop(0, 'rgba(255,190,102,0.34)');
+    gl.addColorStop(0.5, 'rgba(255,170,88,0.12)');
+    gl.addColorStop(1, 'rgba(255,170,88,0)');
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = gl; ctx.fillRect(lx - 46, ly - 46, 92, 92); ctx.restore();
+    ctx.fillStyle = '#e8bd6e'; ctx.fillRect(lx - 1.3, ly - 3, 2.6, 4.4);
+  }
+  ctx.restore();
+  // the shadowed underside of the roof, drawn over everything in the cut
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath();
+  ctx.moveTo(x, y + arch); ctx.lineTo(x, y + arch + 4);
+  ctx.quadraticCurveTo(x + w * 0.5, y + 8, x + w, y + arch + 4);
+  ctx.lineTo(x + w, y + arch);
+  ctx.quadraticCurveTo(x + w * 0.5, y + 2, x, y + arch);
+  ctx.fill();
 }
 function strataBand(y, h, k) {
   const step = 48, x0 = -60, x1 = V.vw + 60;
@@ -1138,7 +1275,7 @@ function strataBand(y, h, k) {
 function carveTunnels() {
   const th = CFG.tunnelH;
   ctx.fillStyle = '#17121c';
-  for (let k = 0; k < CFG.laneCount; k++) for (const [a, b] of LANE_SPANS[k]) corridor(a, b, laneY(k));
+  for (let k = 0; k < CFG.laneCount; k++) for (const [a, b] of LANE_SPANS[k]) corridor(a, b, laneY(k), k);
   for (const f of CFG.forks) {
     slantCorridor(f.x, laneY(f.from), f.x + CFG.rampLen, laneY(f.to));
     slantCorridor(f.merge, laneY(f.to), f.merge + CFG.rampLen, laneY(f.from));
@@ -1176,13 +1313,12 @@ function carveTunnels() {
   shaft(CFG.entrance, 1); shaft(CFG.exit, -1);
   ceilingRays(th);
 }
-// thin shafts of daylight reaching the topmost tunnel through cracks in the rock above
+// Thin shafts of daylight reaching the highest tunnel through cracks in the rock above.
+// Only the highest tunnel in the mountain gets them. The topmost lane merely *on screen*
+// can still have a thousand pixels of rock over it, and sunbeams do not come through that.
 function ceilingRays(th) {
-  let top = -1;
-  for (let k = CFG.laneCount - 1; k >= 0; k--) {
-    if (LANE_SPANS[k].some(([a, b]) => b > V.left - 100 && a < V.left + V.vw + 100)) { top = k; break; }
-  }
-  if (top < 0) return;
+  const top = CFG.laneCount - 1;
+  if (!LANE_SPANS[top].some(([a, b]) => b > V.left - 100 && a < V.left + V.vw + 100)) return;
   const y = laneY(top);
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
   for (let wx = Math.ceil((V.left - 300) / 330) * 330; wx < V.left + V.vw + 300; wx += 330) {
@@ -1212,18 +1348,24 @@ function shaft(wx, dir) {
   ctx.closePath(); ctx.fill();
   ctx.restore();
 }
-function corridor(wx0, wx1, y) {
+function corridor(wx0, wx1, y, lane = 0) {
   const x0 = Math.max(-10, wx0 - V.left), x1 = Math.min(V.vw + 10, wx1 - V.left);
   if (x1 <= x0) return;
   const cy = y - CFG.tunnelH;
-  ctx.fillStyle = '#231b28'; ctx.fillRect(x0, cy, x1 - x0, CFG.tunnelH + 1);
-  // ribs cut into the back wall at intervals, so the corridor has an inside rather than a flat face
-  for (let wx = Math.floor((x0 + V.left) / 118) * 118; wx < x1 + V.left + 118; wx += 118) {
+  // Six identical shelves is a diagram, not a picture. The higher a tunnel sits the nearer
+  // the open air it is, so its back wall lifts and cools; the bottom lane is the deep one.
+  const d = CFG.laneCount > 1 ? lane / (CFG.laneCount - 1) : 0;
+  ctx.fillStyle = `rgb(${35 + d * 18 | 0},${27 + d * 16 | 0},${40 + d * 18 | 0})`;
+  ctx.fillRect(x0, cy, x1 - x0, CFG.tunnelH + 1);
+  // ribs cut into the back wall at intervals, so the corridor has an inside rather than a flat face.
+  // Their spacing is keyed to the lane so the shelves do not line up into a grid.
+  const ribGap = 104 + lane * 13;
+  for (let wx = Math.floor((x0 + V.left) / ribGap) * ribGap; wx < x1 + V.left + ribGap; wx += ribGap) {
     const rx = wx - V.left;
     if (rx < x0 - 40 || rx > x1 + 40) continue;
-    ctx.fillStyle = 'rgba(0,0,0,0.26)'; ctx.fillRect(rx - 5, cy + 8, 10, CFG.tunnelH - 8);
-    ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(rx - 5, cy + 8, 2.6, CFG.tunnelH - 8);
-    ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 7;
+    ctx.fillStyle = `rgba(0,0,0,${0.3 - d * 0.1})`; ctx.fillRect(rx - 5, cy + 8, 10, CFG.tunnelH - 8);
+    ctx.fillStyle = `rgba(255,255,255,${0.04 + d * 0.03})`; ctx.fillRect(rx - 5, cy + 8, 2.6, CFG.tunnelH - 8);
+    ctx.strokeStyle = `rgba(0,0,0,${0.24 - d * 0.08})`; ctx.lineWidth = 7;
     ctx.beginPath(); ctx.moveTo(rx - 38, cy + 30); ctx.quadraticCurveTo(rx, cy + 7, rx + 38, cy + 30); ctx.stroke();
   }
   // hand-cut ceiling: rock lip with bumps, then a soft shadow under it
@@ -1268,28 +1410,40 @@ function parallaxRange(p, size, fn) {
 // rock between the camera and the world, moving faster than it. It fades out as the view pulls
 // back, so the six-tunnel shot is never obstructed.
 function drawForeground() {
-  const fade = clamp01((V.zoom - 0.46) / 0.34);
+  // There is only rock in front of the camera when the camera is inside rock. Outdoors this
+  // band was reading as black mountains hanging in the sky and black teeth over the lake.
+  const anchor = S.cam + CFG.packFront;
+  const inside = clamp01(Math.min(anchor - CFG.entrance, CFG.exit - anchor) / 260);
+  const fade = clamp01((V.zoom - 0.46) / 0.34) * inside;
   if (fade <= 0.01) return;
-  const p = 1.5, step = 76, off = V.left * p;
+  // this band is drawn in screen pixels, so its scroll has to be scaled by the zoom
+  // as well as by the parallax, or its apparent distance changes every time the camera moves
+  const p = 1.5, step = 118, off = V.left * p * V.zoom;
   const k0 = Math.floor((off - step) / step), k1 = Math.floor((off + W + step) / step) + 1;
-  const lip = (k, salt) => 14 + hash(k * 2.3 + salt) * 44;
+  // wide swings, not a uniform ripple: a near rock edge has teeth
+  const lip = (k, salt) => 6 + hash(k * 2.3 + salt) * 42 + hash(k * 0.71 + salt) * 18;
   const band = (fromTop, salt) => {
-    const g = fromTop
-      ? ctx.createLinearGradient(0, -10, 0, 104)
-      : ctx.createLinearGradient(0, H + 10, 0, H - 96);
-    g.addColorStop(0, 'rgba(9,6,13,0.97)'); g.addColorStop(1, 'rgba(9,6,13,0.66)');
-    ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.moveTo(k0 * step - off, fromTop ? -20 : H + 20);
+    ctx.moveTo(k0 * step - off, fromTop ? -30 : H + 30);
     for (let k = k0; k <= k1; k++) {
       const sx = k * step - off;
       const a = lip(k, salt), b = lip(k + 1, salt);
-      const mid = 14 + hash(k * 5.1 + salt + 7) * 64;
+      const mid = 4 + hash(k * 5.1 + salt + 7) * 68;
       ctx.lineTo(sx, fromTop ? a : H - a);
-      ctx.quadraticCurveTo(sx + step / 2, fromTop ? mid : H - mid, sx + step, fromTop ? b : H - b);
+      ctx.quadraticCurveTo(sx + step * 0.42, fromTop ? mid : H - mid, sx + step, fromTop ? b : H - b);
     }
-    ctx.lineTo(k1 * step - off + step, fromTop ? -20 : H + 20);
-    ctx.closePath(); ctx.fill();
+    ctx.lineTo(k1 * step - off + step, fromTop ? -30 : H + 30);
+    ctx.closePath();
+    // solid at the edge of frame, solid all the way: unlit rock between camera and world
+    ctx.fillStyle = '#0a070e'; ctx.fill();
+    // the one lit thing on it is the inner edge, catching the glow of the mountain behind
+    ctx.save(); ctx.clip();
+    const g = fromTop
+      ? ctx.createLinearGradient(0, 132, 0, 60)
+      : ctx.createLinearGradient(0, H - 132, 0, H - 60);
+    g.addColorStop(0, 'rgba(150,126,168,0.34)'); g.addColorStop(1, 'rgba(150,126,168,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.restore();
   };
   ctx.save();
   ctx.globalAlpha = fade;
@@ -1314,6 +1468,9 @@ function drawLane(lane) {
     for (const [g0, g1] of gaps) { if (g1 > cur && g0 < end) { groundRect(cur, g0, y, style); cur = g1; } }
     groundRect(cur, end, y, style);
   }
+  // earth outside, cut stone inside, and until now they met in a single pixel column under
+  // the arch. Real thresholds are worn: each material spills a little way into the other.
+  if (lane === 0) for (const wx of [CFG.entrance - 48, CFG.exit + 48]) threshold(wx, y, wx === CFG.entrance - 48 ? 1 : -1);
   for (const f of CFG.forks) {
     if (f.to !== lane) continue;
     ramp(f.x, laneY(f.from), f.x + CFG.rampLen, laneY(f.to));
@@ -1322,7 +1479,7 @@ function drawLane(lane) {
   }
   lampPools(lane);
   if (lane === 0) { archway(CFG.entrance, y); archway(CFG.exit, y, true); }
-  for (const g of S.gates) drawGate(g, lane);
+  for (const g of S.gates) drawGate(g, lane, false);
   for (const room of S.rooms) if (room.lane === lane) drawRoom(room, y);
 }
 function lampPools(lane) {
@@ -1338,6 +1495,28 @@ function lampPools(lane) {
     ctx.fillStyle = g; ctx.fillRect(sx - 140, y - 137, 280, 280);
     ctx.restore();
   }
+}
+// The doorstep. `dir` is +1 when the inside lies to the right of wx, -1 when it lies to the left.
+function threshold(wx, y, dir) {
+  if (!inView(wx, 140)) return;
+  const sx = wx - V.left, span = 74;
+  // stone dragged out onto the earth
+  const out = ctx.createLinearGradient(sx, 0, sx - dir * span, 0);
+  out.addColorStop(0, 'rgba(90,82,90,0.85)'); out.addColorStop(1, 'rgba(90,82,90,0)');
+  ctx.fillStyle = out; ctx.fillRect(Math.min(sx, sx - dir * span), y - 1, span, 15);
+  // earth and a few tufts carried in
+  const inn = ctx.createLinearGradient(sx, 0, sx + dir * span, 0);
+  inn.addColorStop(0, 'rgba(88,72,46,0.6)'); inn.addColorStop(1, 'rgba(88,72,46,0)');
+  ctx.fillStyle = inn; ctx.fillRect(Math.min(sx, sx + dir * span), y - 1, span, 13);
+  for (let i = 0; i < 7; i++) {
+    const t = hash(wx * 0.31 + i * 5.7);
+    const gx = sx + dir * t * span * 0.9, r = 1.2 + hash(wx + i) * 2.2;
+    ctx.fillStyle = `rgba(105,138,74,${0.5 * (1 - t)})`;
+    ctx.beginPath(); ctx.ellipse(gx, y + 1, r, r * 0.6, 0, Math.PI, 0); ctx.fill();
+  }
+  // a worn sill under the arch itself
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(sx - 3, y - 1, 6, 14);
+  ctx.fillStyle = 'rgba(255,240,210,0.12)'; ctx.fillRect(sx - 3, y - 1, 6, 2);
 }
 function groundRect(wx0, wx1, y, style = 'in') {
   if (wx1 <= wx0) return;
@@ -1381,20 +1560,27 @@ function ramp(wx0, y0, wx1, y1) {
   ctx.beginPath(); ctx.moveTo(x0, y0 + 1); ctx.lineTo(x1, y1 + 1); ctx.stroke();
   ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(x0, y0 - 1); ctx.lineTo(x1, y1 - 1); ctx.stroke();
+  // Piers carrying the ramp. They stand against the back wall, not out on the footpath,
+  // so they are painted in the wall's own value with no ink outline. Lit like foreground
+  // masonry they read as bollards a hundred people walk straight through.
   const floor = Math.max(y0, y1);
   for (let t = 0.2; t < 1; t += 0.3) {
     const px = x0 + (x1 - x0) * t, py = y0 + (y1 - y0) * t + 44, h = floor + 14 - py;
     if (h <= 4) continue;
-    ctx.fillStyle = INK; ctx.fillRect(px - 8.4, py - 1, 16.8, h + 1);
-    ctx.fillStyle = '#3a3038'; ctx.fillRect(px - 7, py, 14, h);
-    ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(px - 7, py, 3, h);
-    ctx.fillStyle = 'rgba(0,0,0,0.25)'; for (let k = py + 9; k < py + h - 4; k += 10) ctx.fillRect(px - 7, k, 14, 1.5);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(px + 7, py + 2, 5, h - 2);   // cast on the wall behind
+    ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(px - 7, py, 14, h);   // a column stands off the wall
+    ctx.fillStyle = 'rgba(255,226,180,0.07)'; ctx.fillRect(px - 7, py, 3.4, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(px + 3, py, 4, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.13)'; for (let k = py + 11; k < py + h - 4; k += 13) ctx.fillRect(px - 7, k, 14, 1.2);
   }
   ctx.fillStyle = INK; ctx.fillRect(x0, y0 + 43, 0, 0);
 }
 function archway(wx, y, exit = false) {
   if (!inView(wx, 240)) return;
   const sx = wx - V.left, th = CFG.tunnelH, half = 48, pw = 12, rr = half - pw / 2;
+  // An arch is a hole cut in a wall, so it cannot stick out past the wall. Clipping it to
+  // the mountain keeps the outer jamb from standing on its own against open sky.
+  ctx.save(); mountainPath(); ctx.clip();
   if (exit) {
     const gl = ctx.createLinearGradient(sx - 220, 0, sx, 0);
     gl.addColorStop(0, 'rgba(255,240,200,0)'); gl.addColorStop(1, 'rgba(255,240,200,0.35)');
@@ -1407,12 +1593,20 @@ function archway(wx, y, exit = false) {
   ctx.strokeStyle = '#4c4455'; ctx.lineWidth = pw; ctx.beginPath(); ctx.arc(sx, y - th - 2, rr, Math.PI, 0); ctx.stroke();
   ctx.fillStyle = INK; ctx.fillRect(sx - 6.2, y - th - 2 - rr - 9, 12.4, 17);
   ctx.fillStyle = '#5b5b70'; ctx.fillRect(sx - 5, y - th - 2 - rr - 8, 10, 15);
+  ctx.restore();
 }
 function signpost(wx, y) {
   if (!inView(wx, 100)) return;
   const sx = wx - V.left - 70;
-  ctx.fillStyle = INK; ctx.fillRect(sx - 3.2, y - 67, 7.4, 67);
-  ctx.fillStyle = '#5a4630'; ctx.fillRect(sx - 2, y - 66, 5, 66);
+  // a 5px post against a dark wall disappears at any zoom below 1 and the boards
+  // are left hanging in the air; the ink outline and a footing are what hold it down
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath(); ctx.ellipse(sx + 1, y, 13, 3.4, 0, 0, 6.28); ctx.fill();
+  ctx.fillStyle = INK; ctx.fillRect(sx - 4.4, y - 67, 9.8, 67);
+  ctx.fillStyle = '#5a4630'; ctx.fillRect(sx - 2.6, y - 66, 6.2, 66);
+  ctx.fillStyle = 'rgba(255,214,150,0.16)'; ctx.fillRect(sx - 2.6, y - 66, 1.8, 66);
+  ctx.fillStyle = INK; ctx.fillRect(sx - 9, y - 6, 19, 6);
+  ctx.fillStyle = '#4a3a26'; ctx.fillRect(sx - 7.6, y - 5, 16, 4.4);
   const board = (yy, rot) => {
     ctx.save(); ctx.translate(sx, yy); ctx.rotate(rot);
     ctx.beginPath(); ctx.moveTo(-16, -7); ctx.lineTo(12, -7); ctx.lineTo(20, 0); ctx.lineTo(12, 7); ctx.lineTo(-16, 7); ctx.closePath();
@@ -1422,54 +1616,97 @@ function signpost(wx, y) {
   };
   board(y - 58, -0.55); board(y - 40, 0);
 }
-function drawGate(g, lane) {
-  if (!inView(g.x, 80) || !laneAt(lane, g.x)) return;
+// Two passes. The masonry goes behind the crowd, the bars in front of it: if the iron is
+// painted over by every body that reaches it, nothing on screen says the way is shut.
+function drawGate(g, lane, front) {
+  if (!inView(g.x, 90) || !laneAt(lane, g.x)) return;
   const sx = g.x - V.left, y = laneY(lane), th = CFG.tunnelH;
   const holding = g.state === 'holding';
-  // lintel and slot in the ceiling
-  ctx.fillStyle = INK; ctx.fillRect(sx - 20, y - th - 8, 40, 14);
-  ctx.fillStyle = '#4c4455'; ctx.fillRect(sx - 19, y - th - 7, 38, 12);
-  ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(sx - 19, y - th - 7, 38, 3);
+  const cy = y - th;
+  if (front) { gateBars(g, sx, y, th, cy, holding, lane); return; }
 
+  // stone jambs either side, so the gate stands in a doorway instead of hanging in a corridor
+  const jw = 11, jx = 27;
+  for (const s of [-1, 1]) {
+    const x = sx + s * jx - jw / 2;
+    ctx.fillStyle = INK; ctx.fillRect(x - 1.2, cy - 2, jw + 2.4, th + 4);
+    ctx.fillStyle = '#4a4353'; ctx.fillRect(x, cy, jw, th + 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(x, cy, 3, th + 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    for (let by = cy + 9; by < y; by += 17) ctx.fillRect(x, by, jw, 1.3);
+  }
+  // The channel the gate runs in. A shallow recess in the wall, not a hole through it:
+  // filled opaque it read across six lanes as a column of black doorways.
+  ctx.fillStyle = 'rgba(0,0,0,0.26)'; ctx.fillRect(sx - 20, cy, 40, th + 1);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(sx - 20, cy, 2.6, th + 1); ctx.fillRect(sx + 17.4, cy, 2.6, th + 1);
+  ctx.fillStyle = 'rgba(255,226,180,0.05)'; ctx.fillRect(sx - 17.4, cy, 1.6, th + 1);
+
+  // lintel spanning both jambs, with the slot the gate withdraws into
+  ctx.fillStyle = INK; ctx.fillRect(sx - jx - jw / 2 - 2, cy - 15, (jx + jw / 2 + 2) * 2, 17);
+  ctx.fillStyle = '#544b60'; ctx.fillRect(sx - jx - jw / 2, cy - 13, (jx + jw / 2) * 2, 14);
+  ctx.fillStyle = 'rgba(255,255,255,0.09)'; ctx.fillRect(sx - jx - jw / 2, cy - 13, (jx + jw / 2) * 2, 3);
+  ctx.fillStyle = '#0d0a12'; ctx.fillRect(sx - 17, cy - 8, 34, 9);
+}
+function gateBars(g, sx, y, th, cy, holding, lane) {
   const jud = g.judder > 0 ? Math.sin(S.t * 64) * g.judder * 2.4 : 0;
   const drop = Math.max(2, g.drop * th + jud), down = g.drop > 0.95;
-  // streaks off the bars while it is really moving
+  const topY = cy + 2, tipY = topY + drop;
+
+  // the chain that holds it, paying out as the gate falls
+  ctx.strokeStyle = '#3c3545'; ctx.lineWidth = 2.6;
+  ctx.beginPath(); ctx.moveTo(sx, cy - 6); ctx.lineTo(sx, topY + 6); ctx.stroke();
+  ctx.fillStyle = '#6b6478';
+  for (let ly = cy - 6; ly < topY + 6; ly += 6) ctx.fillRect(sx - 2.2, ly, 4.4, 3.4);
+
+  // motion streaks while it is really moving
   if (g.dropV > 1.4) {
     ctx.fillStyle = 'rgba(190,200,220,0.22)';
-    const tail = Math.min(40, g.dropV * 16);
-    for (let i = -12; i <= 12; i += 8) ctx.fillRect(sx + i - 1, y - th + 2 + drop - tail, 2, tail);
+    const tail = Math.min(44, g.dropV * 16);
+    for (let i = -12; i <= 12; i += 8) ctx.fillRect(sx + i - 1, tipY - tail, 2, tail);
   }
+
+  // the grid itself: ink silhouette, then iron, then a warm rim off the left edge
   ctx.fillStyle = INK;
-  for (let i = -12; i <= 12; i += 8) ctx.fillRect(sx + i - 2.2, y - th + 2, 4.4, drop + 1);
-  const bars = Math.max(1, Math.floor((drop - 6) / 34) + 1);
-  for (let k = 0; k < bars; k++) ctx.fillRect(sx - 15, y - th + 8 + k * 34 - 1.2, 30, 4.4);
-  ctx.fillStyle = holding ? '#8a8aa0' : '#6a6a7e';
-  for (let i = -12; i <= 12; i += 8) ctx.fillRect(sx + i - 1.2, y - th + 2, 2.4, drop);
-  for (let k = 0; k < bars; k++) ctx.fillRect(sx - 14, y - th + 8 + k * 34, 28, 2.4);
-  // the spiked bottom edge, so it reads as a portcullis rather than a grille
-  const tipY = y - th + 2 + drop;
+  for (let i = -12; i <= 12; i += 8) ctx.fillRect(sx + i - 2.6, topY, 5.2, drop + 1);
+  const bars = Math.max(1, Math.floor((drop - 6) / 30) + 1);
+  for (let k = 0; k < bars; k++) ctx.fillRect(sx - 16, topY + 6 + k * 30 - 1.4, 32, 5.2);
+  const iron = ctx.createLinearGradient(sx - 16, 0, sx + 16, 0);
+  iron.addColorStop(0, holding ? '#9d9cb4' : '#787690');
+  iron.addColorStop(0.45, holding ? '#787791' : '#5d5c72');
+  iron.addColorStop(1, holding ? '#5c5b72' : '#48475a');
+  ctx.fillStyle = iron;
+  for (let i = -12; i <= 12; i += 8) ctx.fillRect(sx + i - 1.5, topY, 3, drop);
+  for (let k = 0; k < bars; k++) ctx.fillRect(sx - 15, topY + 6 + k * 30, 30, 3);
+  ctx.fillStyle = 'rgba(255,214,150,0.22)';
+  for (let i = -12; i <= 12; i += 8) ctx.fillRect(sx + i - 1.5, topY, 0.9, drop);
+
+  // spiked bottom edge, so it reads as a portcullis rather than a grille
   ctx.fillStyle = INK;
   for (let i = -12; i <= 12; i += 8) {
-    ctx.beginPath(); ctx.moveTo(sx + i - 2.6, tipY - 1); ctx.lineTo(sx + i, tipY + 6); ctx.lineTo(sx + i + 2.6, tipY - 1); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(sx + i - 3, tipY - 1); ctx.lineTo(sx + i, tipY + 7); ctx.lineTo(sx + i + 3, tipY - 1); ctx.fill();
   }
-  ctx.fillStyle = holding ? '#9a9ab0' : '#7a7a8e';
+  ctx.fillStyle = holding ? '#a5a4bc' : '#84839a';
   for (let i = -12; i <= 12; i += 8) {
-    ctx.beginPath(); ctx.moveTo(sx + i - 1.5, tipY - 1); ctx.lineTo(sx + i, tipY + 4.4); ctx.lineTo(sx + i + 1.5, tipY - 1); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(sx + i - 1.7, tipY - 1); ctx.lineTo(sx + i, tipY + 5); ctx.lineTo(sx + i + 1.7, tipY - 1); ctx.fill();
   }
-  if (down) { ctx.fillStyle = INK; ctx.fillRect(sx - 16, y - 1, 32, 5); ctx.fillStyle = '#5b5b70'; ctx.fillRect(sx - 15, y, 30, 3); }
+
+  if (down) { ctx.fillStyle = INK; ctx.fillRect(sx - 18, y - 1, 36, 5); ctx.fillStyle = '#5b5b70'; ctx.fillRect(sx - 17, y, 34, 3); }
+
   // the white-hot line where it struck the floor
   if (g.flash > 0) {
     ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = g.flash;
-    const w = 26 + (1 - g.flash) * 30;
+    const w = 28 + (1 - g.flash) * 34;
     const gl = ctx.createLinearGradient(sx - w, 0, sx + w, 0);
     gl.addColorStop(0, 'rgba(255,220,150,0)'); gl.addColorStop(0.5, 'rgba(255,235,190,0.9)'); gl.addColorStop(1, 'rgba(255,220,150,0)');
     ctx.fillStyle = gl; ctx.fillRect(sx - w, y - 3, w * 2, 4);
     ctx.restore();
   }
+  // the selection box stops at the floor. It used to run 44px below it, through solid
+  // rock, which reads as a rendering fault rather than as a highlight.
   if (lane === 0 && (g.state === 'armed' || holding)) {
     ctx.fillStyle = holding ? 'rgba(92,225,255,0.10)' : 'rgba(92,225,255,0.06)';
-    ctx.fillRect(sx - 30, y - th, 60, th + 44);
-    ctx.strokeStyle = '#5ce1ff'; ctx.lineWidth = holding ? 3 : 2; ctx.strokeRect(sx - 30, y - th, 60, th + 44);
+    ctx.fillRect(sx - 38, cy - 16, 76, th + 18);
+    ctx.strokeStyle = '#5ce1ff'; ctx.lineWidth = holding ? 3 : 2; ctx.strokeRect(sx - 38, cy - 16, 76, th + 18);
   }
 }
 function drawTower(x, y, w, h) {
@@ -1486,6 +1723,22 @@ function drawTower(x, y, w, h) {
   }
   ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(x, y, 4, h);
   ctx.fillStyle = '#6a6a80'; ctx.fillRect(x - 2, y - 4, w + 4, 5);
+}
+// Things that stand between the camera and the walkway, drawn after the crowd.
+function drawRoomProps(lane) {
+  for (const room of S.rooms) {
+    if (room.lane !== lane || room.type !== 'winch' || !inView(room.x, 240)) continue;
+    const y = laneY(lane), sx = room.x - V.left;
+    const prog = room.mg && room.state === 'armed' ? VERBS[room.verb].progress(room.mg) : 0;
+    const spin = prog * 6 + room.bridge * 6;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.ellipse(sx - 17, y + 2, 20, 4.4, 0, 0, 6.28); ctx.fill();
+    drawTower(sx - 30, y - 70, 26, 70);
+    ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(sx - 17, y - 52, 11.4, 0, 6.28); ctx.fill();
+    ctx.fillStyle = '#3a2d20'; ctx.beginPath(); ctx.arc(sx - 17, y - 52, 10, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = '#c9b27a'; ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) { const a = spin + i * Math.PI / 3; ctx.beginPath(); ctx.moveTo(sx - 17 - Math.cos(a) * 9, y - 52 - Math.sin(a) * 9); ctx.lineTo(sx - 17 + Math.cos(a) * 9, y - 52 + Math.sin(a) * 9); ctx.stroke(); }
+  }
 }
 function drawRoom(room, y) {
   if (!inView(room.x, 240)) return;
@@ -1522,12 +1775,8 @@ function drawRoom(room, y) {
     ctx.fillStyle = '#3a2d20'; ctx.beginPath(); ctx.arc(axX, axY, 5, 0, 6.28); ctx.fill();
     ctx.strokeStyle = '#c9b27a'; ctx.lineWidth = 1.5; for (let i = 0; i < 3; i++) { const a = b * 6 + i * Math.PI / 3; ctx.beginPath(); ctx.moveTo(axX - Math.cos(a) * 4.5, axY - Math.sin(a) * 4.5); ctx.lineTo(axX + Math.cos(a) * 4.5, axY + Math.sin(a) * 4.5); ctx.stroke(); }
   } else if (room.type === 'winch') {
-    drawTower(sx - 30, y - 70, 26, 70);
-    const spin = prog * 6 + b * 6;
-    ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(sx - 17, y - 52, 11.4, 0, 6.28); ctx.fill();
-    ctx.fillStyle = '#3a2d20'; ctx.beginPath(); ctx.arc(sx - 17, y - 52, 10, 0, 6.28); ctx.fill();
-    ctx.strokeStyle = '#c9b27a'; ctx.lineWidth = 2;
-    for (let i = 0; i < 3; i++) { const a = spin + i * Math.PI / 3; ctx.beginPath(); ctx.moveTo(sx - 17 - Math.cos(a) * 9, y - 52 - Math.sin(a) * 9); ctx.lineTo(sx - 17 + Math.cos(a) * 9, y - 52 + Math.sin(a) * 9); ctx.stroke(); }
+    // The tower itself is drawn in the front pass, after the crowd: it stands between the
+    // camera and the walkway, so people go behind it instead of through it.
     {
       // plank stowed upright against the tower, cranked down over the gap
       const a = -Math.PI / 2 * (1 - b), tipX = sx + Math.cos(a) * gw, tipY = y + Math.sin(a) * gw;
@@ -1551,23 +1800,36 @@ function drawRoom(room, y) {
     }
     {
       const fixed = rickety ? b : 1;
-      const sag = 26 + (rickety ? 14 * (1 - fixed) : 0), drop = rickety ? 0 : 50 * (1 - b);
+      // A thick brown crescent with a deep belly is a boat. A walkway is a thin line of
+      // separate planks with daylight between them and only as much sag as rope gives.
+      const sag = 14 + (rickety ? 10 * (1 - fixed) : 0), drop = rickety ? 0 : 50 * (1 - b);
       const wob = rickety && fixed < 1 ? Math.sin(S.t * 9) * 3 : 0;
       ctx.globalAlpha = rickety ? 1 : 0.3 + 0.7 * b;
       ctx.strokeStyle = INK; ctx.lineWidth = 3.4;
       ctx.beginPath(); ctx.moveTo(sx - 3, y - 40); ctx.quadraticCurveTo(sx + gw / 2, y - 40 + sag + drop + wob, sx + gw + 3, y - 40); ctx.stroke();
       ctx.strokeStyle = '#c9b27a'; ctx.lineWidth = 1.8; ctx.stroke();
-      ctx.strokeStyle = INK; ctx.lineWidth = 16;
-      ctx.beginPath(); ctx.moveTo(sx, y + 4); ctx.quadraticCurveTo(sx + gw / 2, y + 4 + sag + drop + wob, sx + gw, y + 4); ctx.stroke();
-      ctx.strokeStyle = '#4a2f14'; ctx.lineWidth = 13; ctx.stroke();
-      ctx.strokeStyle = '#8b5a2b'; ctx.lineWidth = 5;
-      ctx.beginPath(); ctx.moveTo(sx, y - 2); ctx.quadraticCurveTo(sx + gw / 2, y - 2 + sag + drop + wob, sx + gw, y - 2); ctx.stroke();
-      ctx.fillStyle = '#5c3a1a';
-      for (let t = 0.06; t < 1; t += 0.08) {
+      // the two carrying ropes the planks are lashed to
+      const belly = y + 1 + sag + drop + wob;
+      const at = t => [
+        (1 - t) * (1 - t) * sx + 2 * (1 - t) * t * (sx + gw / 2) + t * t * (sx + gw),
+        (1 - t) * (1 - t) * (y + 1) + 2 * (1 - t) * t * belly + t * t * (y + 1),
+      ];
+      ctx.strokeStyle = INK; ctx.lineWidth = 3.6;
+      ctx.beginPath(); ctx.moveTo(sx, y + 1); ctx.quadraticCurveTo(sx + gw / 2, belly, sx + gw, y + 1); ctx.stroke();
+      ctx.strokeStyle = '#4a2f14'; ctx.lineWidth = 2.2; ctx.stroke();
+      // planks, each one laid flat along the curve with a gap either side
+      const step = 0.055;
+      for (let t = 0.03; t < 1; t += step) {
         if (rickety && fixed < 1 && hash(room.x + t * 100) < 0.4) continue;
-        const px = (1 - t) * (1 - t) * sx + 2 * (1 - t) * t * (sx + gw / 2) + t * t * (sx + gw);
-        const py = (1 - t) * (1 - t) * (y - 2) + 2 * (1 - t) * t * (y - 2 + sag + drop + wob) + t * t * (y - 2);
-        ctx.fillRect(px - 3.5, py - 1.5, 7, 2.6);
+        const [px, py] = at(t);
+        const [ax, ay] = at(Math.max(0, t - 0.02)), [bx2, by2] = at(Math.min(1, t + 0.02));
+        const ang = Math.atan2(by2 - ay, bx2 - ax);
+        ctx.save(); ctx.translate(px, py); ctx.rotate(ang);
+        ctx.fillStyle = INK; ctx.fillRect(-6.4, -4.6, 12.8, 9.2);
+        ctx.fillStyle = '#8b5a2b'; ctx.fillRect(-5.4, -3.6, 10.8, 7.2);
+        ctx.fillStyle = 'rgba(255,226,176,0.16)'; ctx.fillRect(-5.4, -3.6, 10.8, 1.8);
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-5.4, 2.2, 10.8, 1.8);
+        ctx.restore();
       }
       ctx.globalAlpha = 1;
     }
@@ -1622,12 +1884,27 @@ function drawFinish() {
   if (!inView(CFG.finale.x, 120)) return;
   const fx = CFG.finale.x - V.left, y = laneY(0);
   const bx = fx + 46;
+  // the gantry stands in the same sun as everything else: shadow on the ground,
+  // a lit left face on each post and a shaded right one, and a banner with a fold in it
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.ellipse(bx + 14, y + 2, 16, 4, 0, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(bx + 82, y + 2, 16, 4, 0, 0, 6.28); ctx.fill();
   ctx.fillStyle = INK; ctx.fillRect(bx - 1.2, y - 121, 10.4, 121); ctx.fillRect(bx + 66.8, y - 121, 10.4, 121); ctx.fillRect(bx - 1.2, y - 121, 78.4, 28.4);
-  ctx.fillStyle = '#d9c27a'; ctx.fillRect(bx, y - 120, 8, 120); ctx.fillRect(bx + 68, y - 120, 8, 120);
-  ctx.fillStyle = '#e74c3c'; ctx.fillRect(bx, y - 120, 76, 26);
+  const post = ctx.createLinearGradient(bx, 0, bx + 8, 0);
+  post.addColorStop(0, '#f0dda4'); post.addColorStop(0.5, '#d9c27a'); post.addColorStop(1, '#a88f50');
+  ctx.fillStyle = post; ctx.fillRect(bx, y - 120, 8, 120);
+  const post2 = ctx.createLinearGradient(bx + 68, 0, bx + 76, 0);
+  post2.addColorStop(0, '#f0dda4'); post2.addColorStop(0.5, '#d9c27a'); post2.addColorStop(1, '#a88f50');
+  ctx.fillStyle = post2; ctx.fillRect(bx + 68, y - 120, 8, 120);
+  const ban = ctx.createLinearGradient(0, y - 120, 0, y - 94);
+  ban.addColorStop(0, '#f0685a'); ban.addColorStop(0.55, '#e74c3c'); ban.addColorStop(1, '#b8382c');
+  ctx.fillStyle = ban; ctx.fillRect(bx, y - 120, 76, 26);
+  ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(bx + 38, y - 120, 3, 26);
   ctx.fillStyle = '#fff'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
-  ctx.fillText('FINISH', bx + 38, y - 102); ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillText('FINISH', bx + 38, y - 101);
+  ctx.fillStyle = '#fff'; ctx.fillText('FINISH', bx + 38, y - 102); ctx.textAlign = 'left';
   for (let i = 0; i < 6; i++) { ctx.fillStyle = i % 2 ? '#fff' : '#111'; ctx.fillRect(bx + 8 + i * 10, y - 94, 10, 6); }
+  ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(bx + 8, y - 89, 60, 2);
   if (S.finale) {
     const f = S.finale;
     const q = f.line.slice(0, 40).map((r, i) => ({ r, x: fx - 60 - i * 9 - (i % 2) * 3, y: y + (i % 3) * 5 + 1 })).sort((a, b) => a.y - b.y);
@@ -1770,8 +2047,16 @@ function drawRunners(lane) {
     const sy = footY(r) + (r.state === 'fall' ? r.fy : 0) + bob + drop;
     const scale = (r.name ? 1.1 : 1) * (r.height || 1);
     if (r.state === 'run') {
-      ctx.fillStyle = 'rgba(0,0,0,0.22)';
-      ctx.beginPath(); ctx.ellipse(sx, footY(r) + 2 + drop, 6 * scale, 2, 0, 0, 6.28); ctx.fill();
+      // A shadow points away from its light. Outside the mountain that light is the sun,
+      // fixed upper-left, so the shadow is long and thrown right; under a ceiling lamp it
+      // is short and directly underfoot. The same blob for both is what flattened them.
+      const out = r.x < CFG.entrance || r.x > CFG.exit;
+      const lampX = Math.round((r.x - lane * 40) / 240) * 240 + lane * 40;
+      const lean = out ? 9 : Math.max(-7, Math.min(7, (r.x - lampX) * 0.06));
+      const len = out ? 11 : 6.4;
+      ctx.fillStyle = out ? 'rgba(0,0,0,0.17)' : 'rgba(0,0,0,0.24)';
+      ctx.beginPath();
+      ctx.ellipse(sx + lean * scale, footY(r) + 2 + drop, len * scale, 2.1, 0, 0, 6.28); ctx.fill();
     }
     ctx.save(); ctx.translate(sx, sy);
     if (moving && r.squash > 0) { const q = Math.sin(r.squash * Math.PI) * 0.13; ctx.scale(1 + q, 1 - q); }
@@ -1789,14 +2074,23 @@ function drawRunners(lane) {
     }
     else if (r.hop > 0) ctx.rotate(-0.7 * Math.sin(r.hop / 0.5 * Math.PI));
     drawFigure(r, 0, 0, phase, scale, alpha);
-    // lamplight picking a runner out as they pass beneath it
+    // Lamplight picking a runner out as they pass beneath it. The lamp hangs from the
+    // ceiling above and to one side, so it catches the crown of the head and the near
+    // shoulder and leaves the far side of the body dark. Lighting the chest evenly on
+    // both sides made people look lit from inside.
     if (r.state === 'run' && r.x > CFG.entrance && r.x < CFG.exit) {
       const lampX = Math.round((r.x - lane * 40) / 240) * 240 + lane * 40;
-      const warm = 1 - Math.min(1, Math.abs(r.x - lampX) / 118);
+      const off = r.x - lampX;
+      const warm = 1 - Math.min(1, Math.abs(off) / 118);
       if (warm > 0.03) {
-        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = warm * warm * 0.26;
+        const side = Math.max(-1, Math.min(1, -off / 60));
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = warm * warm * 0.3;
         ctx.fillStyle = '#ffcf8c';
-        ctx.beginPath(); ctx.ellipse(0, -13 * scale, 6.5 * scale, 12.5 * scale, 0, 0, 6.28); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(side * 2.6 * scale, -23 * scale, 5.2 * scale, 9 * scale, 0, 0, 6.28); ctx.fill();
+        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = warm * warm * 0.2;
+        ctx.fillStyle = '#100c18';
+        ctx.beginPath(); ctx.ellipse(-side * 4.4 * scale, -12 * scale, 3.6 * scale, 10 * scale, 0, 0, 6.28); ctx.fill();
         ctx.restore();
       }
     }
@@ -1868,7 +2162,9 @@ function drawOverlays() {
     if (room.state === 'armed') {
       const isActive = S.active === room, col = isActive ? '#5ce1ff' : room.color;
       const by = cy - 62 * V.zoom - (1 - V.zoom) * 26;
-      claim(cx - 26, by - 16, 52, 56);
+      // the reservation has to cover the widest thing inside it, which is the "N coming"
+      // line, not the 32px key disc; 52px left the text sticking out for tags to land on
+      claim(cx - 40, by - 16, 80, 58);
       ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, by, 16, 0, 6.28); ctx.fill();
       ctx.fillStyle = '#111'; ctx.font = 'bold 18px monospace'; ctx.fillText(room.hot, cx, by + 6);
       const ap = approaching(room);
@@ -1888,7 +2184,10 @@ function drawOverlays() {
     const holding = g.state === 'holding', col = '#5ce1ff';
     const [gx, gy] = toScreen(g.x, laneY(0) - CFG.tunnelH);
     claim(gx - 34, gy - 18, 68, 50);
-    ctx.fillStyle = col; ctx.font = 'bold 11px monospace'; ctx.fillText(holding ? 'holding...' : 'HOLD', gx, gy - 8);
+    ctx.font = 'bold 11px monospace';
+    // this label lands on a lit floor band at mid zoom, where thin cyan on stone is unreadable
+    ctx.fillStyle = 'rgba(6,6,12,0.8)'; ctx.fillText(holding ? 'holding...' : 'HOLD', gx + 1, gy - 7);
+    ctx.fillStyle = col; ctx.fillText(holding ? 'holding...' : 'HOLD', gx, gy - 8);
     ctx.fillStyle = col; roundRect(gx - 34, gy - 2, 68, 24, 8); ctx.fill();
     ctx.fillStyle = '#111'; ctx.font = 'bold 12px monospace'; ctx.fillText(holding ? 'RELEASE' : 'ENTER', gx, gy + 15);
     if (holding) {
@@ -1907,15 +2206,28 @@ function drawOverlays() {
     let ny = ny0 - 36 * V.zoom - 2;
     const half = ctx.measureText(r.name).width / 2 + 3;
     // 26 tags over one dense pack needs a lot of stacking room before it gives up
-    for (let guard = 0; guard < 16; guard++) { const hit = tags.find(t => Math.abs(t.x - nx) < t.half + half && Math.abs(t.y - ny) < 10) || placedUI.find(q => nx + half > q.x && nx - half < q.x + q.w && ny > q.y && ny - 9 < q.y + q.h); if (!hit) break; ny = hit.y - 10; }
-    tags.push({ x: nx, y: ny, half }); claim(nx - half, ny - 9, half * 2, 10);
+    // a 9px font stacked at 10px leaves a one-pixel gap and the rows read as one smear
+    for (let guard = 0; guard < 16; guard++) { const hit = tags.find(t => Math.abs(t.x - nx) < t.half + half && Math.abs(t.y - ny) < 13) || placedUI.find(q => nx + half > q.x && nx - half < q.x + q.w && ny > q.y && ny - 12 < q.y + q.h); if (!hit) break; ny = hit.y - 13; }
+    tags.push({ x: nx, y: ny, half }); claim(nx - half, ny - 12, half * 2, 13);
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillText(r.name, nx + 1, ny + 1);
     ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillText(r.name, nx, ny);
   }
   for (const f of S.floaters) {
     const [fx, fy] = f.wx !== undefined ? toScreen(f.wx, f.wy) : [f.sx, f.sy];
     ctx.globalAlpha = Math.min(1, f.life);
-    ctx.fillStyle = f.color; ctx.font = f.big ? 'bold 30px monospace' : 'bold 14px monospace';
+    // world-anchored text has to shrink with the world, or a reward banner ends up three
+    // runners tall and lying across two corridors in the pulled-back shot
+    const zs = f.wx !== undefined ? Math.max(0.55, Math.min(1, V.zoom + 0.16)) : 1;
+    ctx.font = f.big ? `bold ${Math.round(30 * zs)}px monospace` : `bold ${Math.round(14 * zs)}px monospace`;
+    // flat un-outlined text dropped on the artwork reads as a debug print; give it the
+    // same ink edge and drop shadow everything else in the picture has
+    if (f.big) {
+      ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(6,4,10,0.85)';
+      ctx.strokeText(f.txt, fx, fy);
+    } else {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(f.txt, fx + 1, fy + 1);
+    }
+    ctx.fillStyle = f.color;
     ctx.fillText(f.txt, fx, fy);
   }
   ctx.globalAlpha = 1;
@@ -1934,13 +2246,27 @@ function drawBubbles() {
     const w = ctx.measureText(b.txt).width + 12, h = small ? 15 : 18;
     let bx = Math.max(4, Math.min(W - w - 4, sx - w / 2));
     let by = sy - h - 6;
-    for (let guard = 0; guard < 6; guard++) {
-      const hit = placed.find(q => bx < q.x + q.w + 4 && bx + w + 4 > q.x && by < q.y + q.h + 2 && by + h + 2 > q.y);
-      if (!hit) break;
-      by = hit.y - h - 4;
-    }
     const ceil = toScreen(0, laneY(b.r.lane) - CFG.tunnelH)[1] + 4;
-    if (by < ceil) { by = sy - h - 6; bx = Math.min(W - w - 4, bx + w + 8); }
+    // Stack upward; if the stack runs into the ceiling, step sideways and stack again.
+    // Resetting to the original y and stopping there just put the bubble back on top of
+    // whatever it was avoiding, which is how two lines ended up printed over each other.
+    const fit = () => {
+      for (let guard = 0; guard < 8; guard++) {
+        const hit = placed.find(q => bx < q.x + q.w + 4 && bx + w + 4 > q.x && by < q.y + q.h + 2 && by + h + 2 > q.y);
+        if (!hit) return true;
+        by = hit.y - h - 4;
+        if (by < ceil) return false;
+      }
+      return false;
+    };
+    if (!fit()) {
+      for (const dir of [1, -1, 2, -2]) {
+        bx = Math.max(4, Math.min(W - w - 4, sx - w / 2 + dir * (w + 10)));
+        by = sy - h - 6;
+        if (fit()) break;
+      }
+      if (by < ceil) by = ceil;
+    }
     placed.push({ x: bx, y: by, w, h });
     ctx.globalAlpha = a;
     ctx.fillStyle = '#fff'; roundRect(bx, by, w, h, 6); ctx.fill();
