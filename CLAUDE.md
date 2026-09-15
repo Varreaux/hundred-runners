@@ -62,9 +62,20 @@ its own catch, `AU.ctx` stays null and every sound method early-returns — the
 whole module then runs zero lines and looks green. The mock enforces what the
 real API enforces (finite and in-range gain, frequency, pan, delayTime and
 playback rate, and no exponential ramp to exactly zero), so sound bugs surface
-instead of hiding. The report prints `audio.nodesCreated`; if that is 0, the
-module is not being tested. `audio.stillLive` should stay at 2, the rumble and
-the footstep bed; anything higher is a leak.
+instead of hiding. Read `audio.nodesCreated` before you read the error text: 0
+means the module was never exercised, and a count far below what that build
+normally produces means it died early, which is the more confusing case because
+a real number looks like real coverage. `audio.stillLive` should stay at 2, the
+rumble and the footstep bed; anything higher is a leak.
+
+**Prove a check can fail before you trust it passing.** A check that has only
+ever been seen to pass tells you nothing about the check, only about the build.
+The cost is one deliberately broken copy and a few minutes, and it turns a claim
+into evidence. Injecting three audio faults this way is what proved the mock
+above actually fires, and it exposed a reporting bug: one defect whose value
+varied fragmented into an entry per value and would have buried a rarer second
+error. Applies equally to the death-cause paths in the end report and to the art
+critic, not just to this harness.
 
 If either file is missing, rebuild it. The harness stubs `document`, `window`,
 `performance`, `requestAnimationFrame`, `location`, `URLSearchParams` and
