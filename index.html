@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '31 the sweeper and the keypad';
+const BUILD = '32 the gears, the levers and the wires';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -242,10 +242,17 @@ const VERBS = {
   // elsewhere and drop straight in here. Contract: key() returns 'done' | 'ok' |
   // 'wrong' | null; anything that completes outside key() must set
   // room.pendingClear or auto-close can overtake it.
+  // Linh's logic, her randomisation and her difficulty. The panels are redrawn rather than
+  // ported: hers assume a panel about 220 tall and this one is 110, so copying her layout
+  // would have run every puzzle off the bottom of the frame.
   gears: {
-    hint: 'arrow keys to line the gears up',
+    hint: 'arrow keys rotate the train · line the marks up at every contact',
     solveKey: m => ((m.goal - m.phase + 12) % 12 <= 6 ? 'ARROWUP' : 'ARROWDOWN'),
-    start(diff) { return { phase: Math.floor(rand(3, 10)), goal: 0, n: 2 + Math.floor(rand(0, 2)) }; },
+    start(diff) {
+      // offsets 3 to 9 on a 12-tooth circle need at least three moves either way
+      const goal = Math.floor(rand(0, 12));
+      return { n: 2 + Math.floor(rand(0, 2)), goal, phase: (goal + Math.floor(rand(3, 10))) % 12 };
+    },
     key(m, k) {
       if (k === 'ARROWUP' || k === 'ARROWRIGHT') m.phase = (m.phase + 1) % 12;
       else if (k === 'ARROWDOWN' || k === 'ARROWLEFT') m.phase = (m.phase + 11) % 12;
@@ -254,20 +261,62 @@ const VERBS = {
     },
     update() {},
     progress(m) { const d = Math.min((m.phase - m.goal + 12) % 12, (m.goal - m.phase + 12) % 12); return 1 - d / 6; },
-    draw(m, px, py, pw) { stubPanel(m, px, py, pw, 'GEARS', `phase ${m.phase} of 12`); },
+    draw(m, px, py, pw) {
+      const r = 26, cy = py + 72, step = 66, off = (m.phase - m.goal) * Math.PI / 6;
+      for (let i = 0; i < m.n; i++) {
+        const x = px + pw / 2 + (i - (m.n - 1) / 2) * step, a = off * (i % 2 ? -1 : 1);
+        ctx.fillStyle = '#2b3340'; gearTeeth(x, cy, r, a);
+        ctx.fillStyle = '#3d4756'; gearTeeth(x, cy, r - 4, a);
+        ctx.fillStyle = '#151a22'; ctx.beginPath(); ctx.arc(x, cy, 7, 0, 6.28); ctx.fill();
+        // one coloured mark per contact: they meet when the train is aligned
+        for (const side of [-1, 1]) {
+          if ((side < 0 && i === 0) || (side > 0 && i === m.n - 1)) continue;
+          const th = a + (side < 0 ? Math.PI : 0);
+          ctx.fillStyle = m.phase === m.goal ? '#6ee7a0' : ['#f1c40f', '#ff7eb6'][side < 0 ? i - 1 : i];
+          ctx.beginPath(); ctx.arc(x + Math.cos(th) * (r - 4), cy + Math.sin(th) * (r - 4), 4, 0, 6.28); ctx.fill();
+        }
+      }
+      // no controls line in here: the verb's own hint is already printed across the bottom
+      // of the screen, and a second copy inside a 110-tall panel lands on the controls
+      ctx.textAlign = 'left';
+    },
   },
   levers: {
-    hint: 'push each lever the way it asks',
-    solveKey: m => m.seq[m.idx],
-    start(diff) { const n = 5 + Math.floor(rand(0, 2)); return { seq: Array.from({ length: n }, () => pick(ARROWS)), idx: 0 }; },
+    hint: 'set each lever the way the board above it asks',
+    // Linh stores DIRECTION INDICES in seq, not key names, so the bot has to translate.
+    // Returning m.seq[m.idx] here would hand the bot the number 2 and it would never solve.
+    solveKey: m => ARROWS[m.seq[m.idx]],
+    start(diff) {
+      const n = 5 + Math.floor(rand(0, 2));
+      return { seq: Array.from({ length: n }, () => Math.floor(rand(0, 4))), idx: 0, positions: [] };
+    },
     key(m, k) {
-      if (!ARROWS.includes(k)) return null;
-      if (k !== m.seq[m.idx]) return 'wrong';
+      const dir = ARROWS.indexOf(k); if (dir < 0) return null;
+      m.positions[m.idx] = dir;
+      if (dir !== m.seq[m.idx]) return 'wrong';
       return ++m.idx >= m.seq.length ? 'done' : 'ok';
     },
     update() {},
     progress(m) { return m.idx / m.seq.length; },
-    draw(m, px, py, pw) { stubPanel(m, px, py, pw, 'LEVERS', `${m.idx} of ${m.seq.length}`); },
+    draw(m, px, py, pw) {
+      const step = Math.min(64, (pw - 80) / m.seq.length);
+      ctx.textAlign = 'center';
+      m.seq.forEach((dir, i) => {
+        const x = px + pw / 2 + (i - (m.seq.length - 1) / 2) * step, done = i < m.idx, on = i === m.idx;
+        ctx.font = 'bold 17px monospace';
+        ctx.fillStyle = done ? '#6ee7a0' : on ? '#f1c40f' : '#6e7a8e';
+        ctx.fillText(['←', '↑', '→', '↓'][dir], x, py + 50);
+        ctx.fillStyle = '#242c37'; roundRect(x - 17, py + 58, 34, 40, 4); ctx.fill();
+        ctx.strokeStyle = on ? '#5ce1ff' : '#3c4654'; ctx.lineWidth = on ? 2 : 1; ctx.stroke();
+        // the lever itself points where it has been set, or hangs down untouched
+        const a = (m.positions[i] === undefined ? 3 : m.positions[i]) * Math.PI / 2 + Math.PI;
+        ctx.strokeStyle = '#98a2b1'; ctx.lineWidth = 3.4;
+        ctx.beginPath(); ctx.moveTo(x, py + 78); ctx.lineTo(x + Math.cos(a) * 13, py + 78 + Math.sin(a) * 13); ctx.stroke();
+        ctx.fillStyle = done ? '#6ee7a0' : '#d8d4c6';
+        ctx.beginPath(); ctx.arc(x + Math.cos(a) * 13, py + 78 + Math.sin(a) * 13, 4.6, 0, 6.28); ctx.fill();
+      });
+      ctx.textAlign = 'left';
+    },
   },
   lights: {
     takesDigits: true,
@@ -370,19 +419,58 @@ const VERBS = {
     },
   },
   wires: {
-    hint: 'arrow keys to splice each wire',
-    solveKey: m => (m.sel === m.idx ? 'ARROWRIGHT' : 'ARROWDOWN'),
-    start(diff) { const n = 3 + Math.floor(rand(0, 2)); return { left: Array.from({ length: n }, (_, i) => i), idx: 0, sel: 0 }; },
-    key(m, k) {
-      if (k === 'ARROWUP') { m.sel = (m.sel + m.left.length - 1) % m.left.length; return 'ok'; }
-      if (k === 'ARROWDOWN') { m.sel = (m.sel + 1) % m.left.length; return 'ok'; }
-      if (k !== 'ARROWRIGHT') return null;
-      if (m.sel !== m.idx) return 'wrong';
-      return ++m.idx >= m.left.length ? 'done' : 'ok';
+    hint: '→ pull the live wire · ↑↓ choose a socket · → again to connect',
+    // Two states per wire: pulled or not. Pull first, then walk the sockets until the
+    // colour matches, then connect. Returning ARROWRIGHT while the wrong socket is
+    // selected would make the bot fail the splice on every wire and stall the room.
+    solveKey: m => (!m.pulling || m.right[m.target] === m.left[m.idx] ? 'ARROWRIGHT' : 'ARROWDOWN'),
+    start(diff) {
+      const shuffle = list => { for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(rand(0, i + 1)); [list[i], list[j]] = [list[j], list[i]]; } return list; };
+      const left = shuffle([0, 1, 2, 3]).slice(0, 3 + Math.floor(rand(0, 2)));
+      const right = shuffle([...left]);
+      // a socket row that already matches would solve itself
+      if (right.every((c, i) => c === left[i])) [right[0], right[1]] = [right[1], right[0]];
+      return { left, right, idx: 0, target: 0, pulling: false, links: [], wrong: 0 };
     },
-    update() {},
+    key(m, k) {
+      if (m.idx >= m.left.length) return null;
+      if (m.pulling && (k === 'ARROWUP' || k === 'ARROWDOWN')) {
+        m.target = (m.target + (k === 'ARROWUP' ? m.right.length - 1 : 1)) % m.right.length; return 'ok';
+      }
+      if (k !== 'ARROWRIGHT') return null;
+      if (!m.pulling) { m.pulling = true; return 'ok'; }
+      if (m.left[m.idx] !== m.right[m.target]) { m.wrong = 0.3; return 'wrong'; }
+      m.links.push(m.target); m.idx++; m.pulling = false; m.target = 0;
+      return m.idx >= m.left.length ? 'done' : 'ok';
+    },
+    update(m, dt) { m.wrong = Math.max(0, m.wrong - dt); },
     progress(m) { return m.idx / m.left.length; },
-    draw(m, px, py, pw) { stubPanel(m, px, py, pw, 'WIRES', `${m.idx} of ${m.left.length}`); },
+    draw(m, px, py, pw) {
+      const COL = ['#ff706c', '#5ce1ff', '#f1c40f', '#ad8bfa'];
+      const lx = px + 96, rx = px + pw - 96, yy = i => py + 46 + i * 17;
+      ctx.textAlign = 'center'; ctx.font = 'bold 11px monospace';
+      for (let i = 0; i < m.left.length; i++) {
+        const on = i === m.idx;
+        if (on) { ctx.fillStyle = 'rgba(92,225,255,0.13)'; ctx.fillRect(lx - 40, yy(i) - 8, 84, 16); }
+        ctx.strokeStyle = COL[m.left[i]]; ctx.lineWidth = on ? 4 : 2.4;
+        ctx.beginPath(); ctx.moveTo(lx - 30, yy(i)); ctx.lineTo(lx + 30, yy(i)); ctx.stroke();
+        // the run across, once spliced or while being aimed
+        if (i < m.idx || (on && m.pulling)) {
+          const to = i < m.idx ? m.links[i] : m.target;
+          ctx.globalAlpha = on ? 1 : 0.6; ctx.lineWidth = on ? 3 : 2;
+          ctx.beginPath(); ctx.moveTo(lx + 30, yy(i));
+          ctx.bezierCurveTo(lx + 90, yy(i), rx - 90, yy(to), rx - 14, yy(to));
+          ctx.stroke(); ctx.globalAlpha = 1;
+        }
+        // the socket block
+        ctx.fillStyle = '#242c37'; ctx.fillRect(rx - 14, yy(i) - 8, 46, 16);
+        const aimed = m.pulling && m.target === i;
+        ctx.strokeStyle = aimed ? (m.wrong > 0 ? '#ff5555' : '#fff') : '#3c4654';
+        ctx.lineWidth = aimed ? 2 : 1; ctx.strokeRect(rx - 14, yy(i) - 8, 46, 16);
+        ctx.fillStyle = COL[m.right[i]]; ctx.beginPath(); ctx.arc(rx - 3, yy(i), 4.4, 0, 6.28); ctx.fill();
+      }
+      ctx.textAlign = 'left';
+    },
   },
   keys: {
     hint: 'hit the highlighted keys in order',
@@ -454,16 +542,6 @@ function lightRound(m) {
   m.minimum = len; m.idx = 0; m.watch = true; m.clock = 0;
 }
 const ARROWS = ['ARROWLEFT', 'ARROWUP', 'ARROWRIGHT', 'ARROWDOWN'];
-// placeholder panel body, replaced along with each stub verb above
-function stubPanel(m, px, py, pw, name, line) {
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#8a8fa3'; ctx.font = 'bold 15px monospace';
-  ctx.fillText(name + ' - placeholder', px + pw / 2, py + 56);
-  ctx.fillStyle = '#e8e4ea'; ctx.font = 'bold 26px monospace';
-  ctx.fillText(line, px + pw / 2, py + 92);
-  ctx.textAlign = 'left';
-}
-
 // ================================================================ sound (all synthesised in code, no audio files)
 const AU = {
   ctx: null, master: null, muted: false, rumble: null, white: null,
@@ -4923,10 +5001,13 @@ function devSolve() {
     fire(String(r.hot));
     let guard = 0;
     while (S.active === r && guard++ < 600) {
-      const m = r.mg, V = VERBS[r.verb];
+      // NOT `V`: that is the global view object, and `V.zoom` / `V.left` / `V.vw` appear
+      // several hundred times in this file. Shadowing it inside a loop means anyone who
+      // reaches for the camera in here silently gets undefined instead.
+      const m = r.mg, vb = VERBS[r.verb];
       if (r.verb === 'bar') { m.pos = m.zone + m.zoneW / 2; fire(' '); continue; }
-      if (V.solveKey) {
-        const k = V.solveKey(m);
+      if (vb.solveKey) {
+        const k = vb.solveKey(m);
         // null means "no key helps right now" -- the sweeper is playing its
         // demo and the puzzle is waiting on the clock, not on the player.
         // Firing into that 600 times and giving up is how an instrument
@@ -4934,12 +5015,12 @@ function devSolve() {
         if (k == null) break;
         fire(k); continue;
       }
-      const before = V.progress(m);
+      const before = vb.progress(m);
       let moved = false;
       for (const k of SOLVE_KEYS) {
         fire(k);
         if (S.active !== r) { moved = true; break; }
-        if (V.progress(m) > before) { moved = true; break; }
+        if (vb.progress(m) > before) { moved = true; break; }
       }
       if (!moved) break;
     }
