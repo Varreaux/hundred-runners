@@ -30,6 +30,14 @@ Morgan (GitHub login `Varreaux`). Read this before editing.
    Conflicts land most often in the `reset()` state literal and the runner
    object, because everyone adds fields there.
 
+**On a branch that will live more than an hour**, push a rebase onto
+`origin/Morgan` after each landing by anyone else, even while your own work is
+unfinished. Otherwise divergence piles up on the functions you are both in, and
+the branch sits on GitHub looking abandoned — Morgan reads that list and asks
+why it has not been merged. If you are deliberately holding a merge, say so in a
+message rather than letting the branch speak for you. Never force-push a shared
+branch to tidy this up; land the work instead.
+
 ## Talking to the other sessions
 
 Nothing is automatic. Use `ListAgents` to see who is live, then `SendMessage`
