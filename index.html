@@ -15,13 +15,14 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '7 art review fixes';
+const BUILD = '8 sound, collapse, spikes, streak';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
   packBack: 120, packFront: 540,   // the pack holds slots in this band ahead of the camera anchor
   jitter: 30,
-  tire: 0.25,             // how much the pack stretches by the end of the run
+  tire: 0.15,             // how much the pack stretches by the end of the run
+  collapseLead: -60,      // the collapse front runs this far behind the camera anchor; it buries anyone it catches
   armDist: 240,           // room unlocks when the front runner is this close
   baseY: 400,             // floor of tunnel 0; each tunnel above is laneGap higher
   laneGap: 190,
@@ -53,7 +54,7 @@ const CFG = {
     { x: 8200,  from: 4, to: 5, merge: 9800,  split: 0.6 },
   ],
   gates: [3150, 8150],
-  gateArm: 140, holdMax: 3, trampleEvery: 0.75,
+  gateArm: 140, holdMax: 8, trampleEvery: 0.75,
   names: ['IDA', 'BO', 'JUNO', 'MAX', 'PIP', 'SOL', 'TEO', 'ZARA'],
   rooms: [
     { x: 1300,  lane: 0, type: 'bridge',  diff: 1 },
@@ -156,7 +157,7 @@ function saveBest(n) { try { if (n > loadBest()) localStorage.setItem('hr_best',
 const V = { left: 0, zoom: 1, vw: W };
 function updateView(dt) {
   V.vw = W / V.zoom;
-  V.left = S.cam + CFG.packFront - 0.56 * V.vw;
+  V.left = S.cam + CFG.packFront - 0.64 * V.vw;
   // zoom out so every tunnel active in view fits
   let top = 0;
   for (let k = 1; k < CFG.laneCount; k++) {
@@ -231,6 +232,66 @@ const VERBS = {
   },
 };
 
+// ================================================================ sound (all synthesised in code, no audio files)
+const AU = {
+  ctx: null, master: null, muted: false, rumble: null, stepGain: null, white: null,
+  init() {
+    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
+    try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+    const c = this.ctx;
+    this.master = c.createGain(); this.master.gain.value = 0.5; this.master.connect(c.destination);
+    this.white = c.createBuffer(1, c.sampleRate, c.sampleRate);
+    const d = this.white.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // deep rumble inside the mountain
+    const brown = c.createBuffer(1, c.sampleRate * 2, c.sampleRate), bd = brown.getChannelData(0);
+    let last = 0; for (let i = 0; i < bd.length; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; bd[i] = last * 3.5; }
+    const src = c.createBufferSource(); src.buffer = brown; src.loop = true;
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 90;
+    this.rumble = c.createGain(); this.rumble.gain.value = 0;
+    src.connect(lp); lp.connect(this.rumble); this.rumble.connect(this.master); src.start();
+    // footsteps: band-limited noise pulsed per frame by the crowd size
+    const src2 = c.createBufferSource(); src2.buffer = this.white; src2.loop = true;
+    const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = 0.7;
+    this.stepGain = c.createGain(); this.stepGain.gain.value = 0;
+    src2.connect(bp); bp.connect(this.stepGain); this.stepGain.connect(this.master); src2.start();
+  },
+  tone(type, f0, f1, dur, gain = 0.2, delay = 0) {
+    if (!this.ctx || this.muted) return;
+    const c = this.ctx, t = c.currentTime + delay, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t); if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t + dur + 0.02);
+  },
+  noise(dur, gain = 0.2, filt = null, delay = 0) {
+    if (!this.ctx || this.muted) return;
+    const c = this.ctx, t = c.currentTime + delay, src = c.createBufferSource(), g = c.createGain();
+    src.buffer = this.white;
+    g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    let node = src;
+    if (filt) { const f = c.createBiquadFilter(); f.type = filt[0]; f.frequency.value = filt[1]; f.Q.value = filt[2] || 1; src.connect(f); node = f; }
+    node.connect(g); g.connect(this.master); src.start(t); src.stop(t + dur + 0.02);
+  },
+  arm() { this.tone('sawtooth', 660, 880, 0.12, 0.1); this.tone('sawtooth', 880, 660, 0.14, 0.08, 0.12); },
+  tick(p) { const f = 480 + p * 420; this.tone('square', f, f, 0.06, 0.07); },
+  wrong() { this.tone('sawtooth', 140, 90, 0.18, 0.14); },
+  thud() { this.tone('sine', 70, 40, 0.35, 0.5); this.noise(0.15, 0.2, ['lowpass', 400]); },
+  clank() { this.tone('square', 240, 180, 0.1, 0.12); this.noise(0.12, 0.2, ['highpass', 2000]); },
+  splash() { this.noise(0.35, 0.22, ['bandpass', 1800, 0.8]); },
+  scream() { this.tone('sawtooth', 900 + Math.random() * 300, 380, 0.3, 0.045); },
+  boom() { this.tone('sine', 50, 28, 0.9, 0.7); this.noise(0.5, 0.35, ['lowpass', 250]); },
+  rocks() { this.noise(0.25, 0.3, ['lowpass', 500]); this.tone('sine', 60, 40, 0.25, 0.3); },
+  cheer(n) { for (let i = 0; i < 3; i++) { const f = 440 * Math.pow(1.26, i) * (1 + Math.min(n, 8) * 0.06); this.tone('triangle', f, f * 1.5, 0.35, 0.08, i * 0.06); } },
+  fail() { this.tone('sawtooth', 200, 60, 0.5, 0.22); },
+  ambient(inside, running, near, dt) {
+    if (!this.ctx) return;
+    if (this.muted) { this.rumble.gain.value = 0; this.stepGain.gain.value = 0; return; }
+    const target = (inside ? 0.35 : 0.05) + (near ? 0.35 : 0);
+    this.rumble.gain.value += (target - this.rumble.gain.value) * Math.min(1, dt * 1.5);
+    const pulse = Math.pow(Math.max(0, Math.sin(S.t * 22)), 6);
+    this.stepGain.gain.value = (running / 100) * 0.06 * pulse * (inside ? 1 : 0.6);
+  },
+};
+
 // ================================================================ state
 let S;
 function reset() {
@@ -240,6 +301,7 @@ function reset() {
     particles: [], floaters: [], ripples: [], bubbles: [], sayT: 0, lastWordT: 0,
     stats: { dead: 0, arrived: 0 },
     finale: null, best: loadBest(),
+    collapseX: CFG.collapseLead, recent: [], spike: null, streak: 0, bestStreak: 0, lastScream: 0,
   };
   for (let i = 0; i < CFG.runnerCount; i++) {
     S.runners.push({
@@ -265,6 +327,13 @@ function armRoom(room) {
   const used = new Set(S.rooms.filter(r => r.state === 'armed').map(r => r.hot));
   let n = 1; while (used.has(n) && n < 9) n++;
   room.hot = n; room.mg = VERBS[room.verb].start(room.diff); room.state = 'armed';
+  AU.arm();
+}
+// a room resolved with nobody lost: the streak grows
+function cleanRoom(room) {
+  S.streak++; S.bestStreak = Math.max(S.bestStreak, S.streak);
+  S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 120, txt: S.streak > 1 ? `CLEAN x${S.streak}` : 'CLEAN', life: 1.4, color: '#2ecc71', big: S.streak > 1 });
+  AU.cheer(S.streak);
 }
 function say(r, pool, life = 2.2, pinned = false) {
   if (S.bubbles.some(b => b.r === r)) return;
@@ -274,9 +343,14 @@ function say(r, pool, life = 2.2, pinned = false) {
 }
 function killRunner(r, how) {
   r.state = 'dead'; S.stats.dead++; S.shake = Math.min(5, S.shake + 1.2);
+  S.recent.push(S.t); if (S.spike) S.spike.n++;
+  if (S.streak > 0) { S.streak = 0; S.floaters.push({ sx: W / 2, sy: 200, txt: 'STREAK LOST', life: 1, color: '#ff9a3c' }); }
+  if (how === 'splash') AU.splash(); else if (how === 'buried') AU.rocks(); else AU.noise(0.1, 0.18, ['lowpass', 300]);
+  if (S.t - S.lastScream > 0.2 && Math.random() < 0.6) { S.lastScream = S.t; AU.scream(); }
   if (how !== 'splash' && how !== 'dark' && Math.random() < 0.4 && S.t - S.lastWordT > 0.4) { S.lastWordT = S.t; say(r, how === 'crush' ? 'crush' : 'trample', 1.3); }
   if (how === 'splash') splash(r.x, CFG.riverY);
   else if (how === 'dark') dust(r.x, r.y + 50, '#3a3040');
+  else if (how === 'buried') { dust(r.x, r.y - 20, '#6b5a4a'); dust(r.x, r.y - 60, '#4a3f3a'); }
   else dust(r.x, r.y - 6, '#c0392b');
   S.floaters.push({ wx: r.x, wy: r.y - 10, txt: r.name ? `-${r.name}` : '-1', life: r.name ? 1.4 : 0.8, color: '#ff6b6b' });
 }
@@ -286,6 +360,8 @@ window.addEventListener('keydown', e => {
   if (e.repeat) return;
   const k = e.key.toUpperCase();
   if (k === ' ' || k === 'ENTER') e.preventDefault();
+  AU.init();
+  if (k === 'M' && !S.active) { AU.muted = !AU.muted; return; }
   if (S.mode === 'title') { if (k === ' ') S.mode = 'play'; return; }
   if (S.mode === 'win' || S.mode === 'lose') { if (k === 'R') { reset(); S.mode = 'play'; } return; }
   if (S.paused) { if (k === 'P') S.paused = false; else if (k === 'R') { reset(); S.mode = 'play'; } return; }
@@ -302,24 +378,26 @@ window.addEventListener('keydown', e => {
     if (!room) return;
     const res = VERBS[room.verb].key(room.mg, k);
     if (res === 'done') {
-      room.state = 'solved'; S.active = null;
-      S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 100, txt: 'CLEAR', life: 1, color: '#2ecc71' });
-    } else if (res === 'wrong') S.wrongFlash = 0.25;
+      room.state = 'solved'; S.active = null; AU.thud();
+      if (room.deaths === 0) cleanRoom(room);
+      else S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 100, txt: 'CLEAR', life: 1, color: '#2ecc71' });
+    } else if (res === 'wrong') { S.wrongFlash = 0.25; AU.wrong(); }
+    else if (res === 'ok') AU.tick(VERBS[room.verb].progress(room.mg));
   }
   if (S.mode === 'finale') {
     const f = S.finale;
     if (!CFG.keyPool.includes(k)) return;
     if (k === f.seq[f.idx]) {
-      f.idx++; f.timer = CFG.finale.keyTime;
+      f.idx++; f.timer = CFG.finale.keyTime; AU.tick(f.idx / f.len);
       if (f.idx >= f.len) { S.mode = 'win'; saveBest(f.attempts); }
     } else finaleFail();
   }
 });
 function toggleGate() {
   const holding = S.gates.find(g => g.state === 'holding');
-  if (holding) { holding.state = 'spent'; releaseGate(holding, 1 + CFG.tire * (S.cam / S.camMax)); return; }
+  if (holding) { holding.state = 'spent'; releaseGate(holding, 1 + CFG.tire * (S.cam / S.camMax)); AU.clank(); return; }
   const armed = S.gates.filter(g => g.state === 'armed').sort((a, b) => a.x - b.x)[0];
-  if (armed) { armed.state = 'holding'; armed.holdT = 0; armed.trampleT = 0; }
+  if (armed) { armed.state = 'holding'; armed.holdT = 0; armed.trampleT = 0; AU.clank(); }
 }
 // when a gate opens, the people it held keep their new place in the pack instead of sprinting back to their old slot
 function releaseGate(g, spread) {
@@ -332,7 +410,7 @@ function releaseGate(g, spread) {
 }
 function finaleFail() {
   const f = S.finale;
-  f.attempts--; f.idx = 0; f.timer = CFG.finale.keyTime; S.wrongFlash = 0.4; S.shake = 6;
+  f.attempts--; f.idx = 0; f.timer = CFG.finale.keyTime; S.wrongFlash = 0.4; S.shake = 6; AU.fail();
   f.seq = makeSeq(f.len);
   const r = f.line.pop();
   if (r) { r.state = 'gone'; f.leaving.push({ r, t: 0 }); }
@@ -361,6 +439,13 @@ function update(dt) {
   S.cam = Math.min(S.camMax, S.cam + CFG.scroll * dt);
   updateView(dt);
   const camStopped = S.cam >= S.camMax;
+  S.collapseX += CFG.scroll * dt;
+  S.recent = S.recent.filter(t => S.t - t < 1);
+  if (!S.spike && S.recent.length >= 5) { S.spike = { t: 0.7, n: S.recent.length }; S.shake = 8; AU.boom(); }
+  const inside = S.cam + CFG.packFront > CFG.entrance && S.cam + CFG.packFront < CFG.exit;
+  let nearest = 1e9; for (const r of S.runners) if (r.state === 'run') nearest = Math.min(nearest, r.x - S.collapseX);
+  if (S.collapseX > CFG.entrance && nearest < 140) { S.shake = Math.max(S.shake, 0.8); for (let i = 0; i < 2; i++) S.particles.push({ x: S.collapseX + rand(-10, 30), y: laneY(0) - rand(0, CFG.tunnelH), vx: rand(20, 90), vy: rand(-30, 40), life: rand(0.4, 0.9), c: '#6b5a4a' }); }
+  AU.ambient(inside, S.runners.filter(r => r.state === 'run').length, S.collapseX > CFG.entrance && nearest < 140, dt);
   const spread = 1 + CFG.tire * (S.cam / S.camMax);
   if (S.active) VERBS[S.active.verb].update(S.active.mg, dt);
   const holdGate = S.gates.find(g => g.state === 'holding');
@@ -376,6 +461,7 @@ function update(dt) {
       if (holdGate && r.x >= holdGate.x - 34 && r.x < holdGate.x + 6) { r.x = Math.min(r.x, holdGate.x - 8 - Math.abs(r.dy) * 1.2); r.held = true; }
       else r.held = false;
       if (r.x >= CFG.finale.x - 40) { r.state = 'arrived'; S.stats.arrived++; continue; }
+      if (S.collapseX > CFG.entrance && r.x < S.collapseX) { killRunner(r, 'buried'); continue; }
       updateLane(r);
       for (const room of S.rooms) {
         if (room.lane !== r.lane || room.state === 'solved') continue;
@@ -402,12 +488,14 @@ function update(dt) {
     if (room.state === 'armed' && !S.runners.some(r => (r.state === 'run' || r.state === 'fall') && canReach(r, room))) {
       room.state = 'passed';
       if (S.active === room) S.active = null;
-      S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 100, txt: room.deaths ? 'TOO LATE' : 'ALL THROUGH', life: 1.2, color: room.deaths ? '#ff8a8a' : '#8fd3ff' });
+      if (room.deaths) S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 100, txt: 'TOO LATE', life: 1.2, color: '#ff8a8a' });
+      else cleanRoom(room);
     }
     if (room.state === 'solved') room.bridge = Math.min(1, room.bridge + dt * 3.5);
     if (room.hazard === 'burst' && room.state !== 'solved') {
       const before = room.slamT; room.slamT += dt;
       if (before < 1.0 && room.slamT >= 1.0) {
+        if (inView(room.x, 0)) AU.thud();
         for (const r of S.runners) {
           if (r.state === 'run' && r.lane === room.lane && r.x >= room.x + 35 && r.x < room.x + 85) { killRunner(r, 'crush'); room.deaths++; }
         }
@@ -532,6 +620,7 @@ function draw() {
   drawRiver();
   carveTunnels();
   for (let k = CFG.laneCount - 1; k >= 0; k--) { drawLane(k); drawRunners(k); }
+  drawCollapse();
   drawFinish();
   if (S.mode === 'play' || S.mode === 'finale') drawFx();
   ctx.restore();
@@ -549,6 +638,50 @@ function draw() {
     ctx.fillText('PAUSED', W / 2, H / 2); ctx.font = '16px monospace'; ctx.fillText('P to resume   R to restart', W / 2, H / 2 + 36); ctx.textAlign = 'left';
   }
   if (S.wrongFlash > 0) { ctx.fillStyle = `rgba(255,40,40,${S.wrongFlash * 0.6})`; ctx.fillRect(0, 0, W, H); }
+  if (S.spike) {
+    const a = Math.min(1, S.spike.t / 0.35);
+    ctx.fillStyle = `rgba(20,0,0,${0.5 * a})`; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.globalAlpha = a;
+    ctx.fillStyle = '#ff3b3b'; ctx.font = 'bold 84px monospace'; ctx.fillText(`-${S.spike.n}`, W / 2, H / 2 + 10);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 16px monospace'; ctx.fillText('AT ONCE', W / 2, H / 2 + 40);
+    ctx.globalAlpha = 1; ctx.textAlign = 'left';
+  }
+}
+// the tunnel caving in behind the pack: rock fills every corridor left of the front, boulders tumble at the edge
+function drawCollapse() {
+  const fx = S.collapseX;
+  if (fx < CFG.entrance || fx - V.left < -60) return;
+  const x1 = fx - V.left, x0 = Math.max(CFG.entrance - 30, V.left - 60) - V.left;
+  const th = CFG.tunnelH;
+  ctx.fillStyle = '#241d29';
+  for (let k = 0; k < CFG.laneCount; k++) {
+    const y = laneY(k);
+    for (const [a, b] of LANE_SPANS[k]) {
+      const l = Math.max(x0, a - 30 - V.left), r = Math.min(x1, b + 30 - V.left);
+      if (r <= l) continue;
+      ctx.beginPath(); ctx.moveTo(l, y - th - 6);
+      for (let yy = y - th - 6; yy <= y + 46; yy += 12) ctx.lineTo(r + Math.sin(yy * 0.11 + S.t * 9 + k) * 9, yy);
+      ctx.lineTo(l, y + 46); ctx.closePath(); ctx.fill();
+    }
+  }
+  for (const f of CFG.forks) {
+    if (f.x + CFG.rampLen < fx) { ctx.save(); ctx.fillStyle = '#241d29'; slantCorridor(f.x, laneY(f.from), f.x + CFG.rampLen, laneY(f.to)); ctx.restore(); }
+    if (f.merge + CFG.rampLen < fx) { ctx.save(); ctx.fillStyle = '#241d29'; slantCorridor(f.merge, laneY(f.to), f.merge + CFG.rampLen, laneY(f.from)); ctx.restore(); }
+  }
+  // boulders at the front
+  for (let k = 0; k < CFG.laneCount; k++) {
+    if (!laneAt(k, fx)) continue;
+    const y = laneY(k);
+    for (let i = 0; i < 7; i++) {
+      const seed = i * 13 + k * 7, rr = 6 + hash(seed) * 12;
+      const bx = x1 + 4 + hash(seed + 1) * 26 + Math.sin(S.t * 6 + seed) * 4, by = y + 40 - hash(seed + 2) * (th + 30) + ((S.t * 90 + seed * 40) % (th + 40)) * 0.3;
+      ctx.fillStyle = i % 2 ? '#3d3442' : '#4a4050'; ctx.beginPath(); ctx.arc(bx, by, rr, 0, 6.28); ctx.fill();
+    }
+  }
+  // dust haze just ahead of the front
+  const hz = ctx.createLinearGradient(x1, 0, x1 + 140, 0);
+  hz.addColorStop(0, 'rgba(120,100,90,0.45)'); hz.addColorStop(1, 'rgba(120,100,90,0)');
+  ctx.fillStyle = hz; ctx.fillRect(x1, -1400, 140, 2000);
 }
 function drawSky() {
   const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -1199,6 +1332,8 @@ function drawHud() {
   x = pill(x, 'RUNNING', alive, '#2ecc71');
   x = pill(x, 'LOST', S.stats.dead, '#ff6b6b');
   x = pill(x, 'FINISHED', S.stats.arrived, '#f1c40f');
+  if (S.streak > 1) x = pill(x, 'CLEAN', `x${S.streak}`, '#5cff9a');
+  if (AU.muted) x = pill(x, 'MUTED', '', '#999');
   const tx = 690, tw = 256;
   ctx.fillStyle = '#2a2d3a'; roundRect(tx, 8, tw, 24, 4); ctx.fill();
   const p = Math.min(1, S.cam / S.camMax);
@@ -1218,8 +1353,13 @@ function drawHud() {
     if (S.active) hint = VERBS[S.active.verb].hint + '   (ESC to close)';
     else if (armed.length) hint = `press ${armed.map(r => r.hot).sort().join(' or ')} to open a flashing room`;
     if (gate) hint += gate.state === 'holding' ? '   ENTER releases the gate' : '   ENTER holds the crowd at the gate';
-    ctx.fillStyle = 'rgba(8,10,18,0.6)'; ctx.fillRect(0, H - 26, W, 26);
-    ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
+    let danger = false;
+    if (gate && gate.state === 'holding') {
+      const held = S.runners.filter(r => r.state === 'run' && r.held);
+      if (held.length && Math.min(...held.map(r => r.x)) - S.collapseX < 260) { hint = 'THE TUNNEL IS CAVING IN BEHIND THEM. ENTER TO RELEASE!'; danger = true; }
+    }
+    ctx.fillStyle = danger ? 'rgba(120,10,10,0.75)' : 'rgba(8,10,18,0.6)'; ctx.fillRect(0, H - 26, W, 26);
+    ctx.fillStyle = danger ? '#fff' : 'rgba(255,255,255,0.8)'; ctx.font = danger ? 'bold 13px monospace' : '13px monospace'; ctx.textAlign = 'center';
     ctx.fillText(hint, W / 2, H - 9); ctx.textAlign = 'left';
   }
 }
@@ -1271,7 +1411,8 @@ function drawTitle() {
     'The tunnels branch, and branch again. The view pulls back to show them all.',
     '',
     'NUMBER opens a flashing room. Then: hit keys in order, time the winch, or type the word.',
-    'ENTER holds the crowd at a gate for a moment, but the crush tramples people.',
+    'ENTER holds the crowd at a gate, but the crush tramples people and the tunnel is caving in behind them.',
+    'M mutes. Clear rooms with nobody lost to build a streak.',
     'Everyone who makes it out is one attempt at the final gate.',
   ];
   lines.forEach((l, i) => ctx.fillText(l, W / 2, 156 + i * 22));
@@ -1298,7 +1439,7 @@ function drawEnd() {
     const left = S.finale.attempts;
     const rank = left >= 50 ? 'S' : left >= 30 ? 'A' : left >= 15 ? 'B' : left >= 5 ? 'C' : 'D';
     const line = { S: 'the mountain never touched them', A: 'a good day under the rock', B: 'they will talk about this', C: 'the mountain remembers', D: 'barely' }[rank];
-    ctx.fillStyle = '#eee'; ctx.font = '18px monospace'; ctx.fillText(`Survivors: ${left}${left >= S.best && left > 0 ? '   new best' : ''}`, W / 2, 296);
+    ctx.fillStyle = '#eee'; ctx.font = '18px monospace'; ctx.fillText(`Survivors: ${left}${left >= S.best && left > 0 ? '   new best' : ''}   best streak x${S.bestStreak}`, W / 2, 296);
     ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 60px monospace'; ctx.fillText(`RANK ${rank}`, W / 2, 364);
     ctx.fillStyle = '#aaa'; ctx.font = '15px monospace'; ctx.fillText(line, W / 2, 392);
   } else {
@@ -1313,8 +1454,9 @@ function drawEnd() {
 // ================================================================ loop
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  update(dt); draw();
+  const real = Math.min(0.05, (now - last) / 1000); last = now;
+  update(S.spike ? real * 0.25 : real); draw();
+  if (S.spike) { S.spike.t -= real; if (S.spike.t <= 0) S.spike = null; }
   requestAnimationFrame(frame);
 }
 reset();
