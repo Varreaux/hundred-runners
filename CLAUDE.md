@@ -147,6 +147,18 @@ from `index.html` with the `'use strict'` line removed.
   console.log([...new Set([...s.matchAll(/AU\.(\w+)\s*\(/g)].map(m=>m[1]))].filter(c=>!d.has(c)))"
   ```
 
+- **A gradient's extent and its fill's extent are two numbers that drift apart.**
+  Both halves of this shipped within an hour of each other. `createLinearGradient`
+  holds its END COLOUR beyond its endpoints, so a fill wider than its gradient
+  smears the last stop outward -- harmless while that stop is transparent, and a
+  34% black wash over the wrong half of the course the moment it is not. A fill
+  NARROWER than its gradient truncates the ramp before it reaches zero, leaving a
+  hard edge at the fill boundary: 90px of a 300px ramp cut off at 0.154 alpha put
+  a visible bar down the full height of the rock. Neither is visible in the
+  source unless you deliberately compare the two numbers, and both survive a
+  syntax check, a sixty-game harness run and a glance at the frame. Feed both
+  from one constant so they cannot disagree, and whenever you change one, look at
+  the other.
 - **Non-ASCII and emoji in object keys** need a JavaScript `\u{...}` escape. A
   Python-style `\U` produces a key that silently never matches. Named runners
   have fixed appearances in a `LOOKS` table keyed by the exact name string, so a
