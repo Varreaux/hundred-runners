@@ -13,6 +13,15 @@
 // So every declaration form below is recognised, and anything it still cannot resolve is
 // reported separately as "unresolved" rather than as a fault.
 //
+// The stakes are worse than a wasted afternoon, which is why the false alarms below were
+// each hunted down rather than documented as quirks. This tool once reported `ordinal` as
+// dead. It is the function that turns a crossing number into "3rd", and its only two
+// callers live inside template literals, which an earlier version of the string-stripping
+// had erased. Acting on that report would not have crashed anything: the run report would
+// have kept drawing, every line quietly missing a word, and nobody would have connected it
+// to an audit run days earlier. A check that can cause a silent regression while sounding
+// certain is a more dangerous object than no check at all.
+//
 // Usage: node tools/audit-calls.js [path/to/index.html]
 
 const fs = require('fs'), path = require('path');

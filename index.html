@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '24 the water knows where the roof is';
+const BUILD = '25 brick and rock, seated';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -957,12 +957,17 @@ function draw() {
   ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.16; ctx.fillStyle = ctx.createPattern(grain(), 'repeat'); ctx.fillRect(0, 0, W, H); ctx.restore();
   // The red wash goes on BEFORE the overlays, so the room badge, the name tags and the
   // counters stay crisp in the one frame the player most needs to read them.
+  // The `S.mode !== 'win' && S.mode !== 'lose'` half of this condition is NOT decoration and
+  // appears on both halves of the split deliberately: without it a run that ends mid-spike
+  // lays the wash and the plate across the end screen's roll call. If either half moves
+  // again, the condition moves with it.
   if (S.spike && S.mode !== 'win' && S.mode !== 'lose') {
     ctx.fillStyle = `rgba(20,0,0,${0.5 * Math.min(1, S.spike.t / 0.35)})`; ctx.fillRect(0, 0, W, H);
   }
   if (S.mode === 'play' || S.mode === 'finale') drawOverlays();
   // The plate names deaths, so it points at the deaths without standing on them: it takes
   // the opposite half of the screen and reaches across with a stem.
+  // Same guard as the wash above, and for the same reason. See the note there.
   if (S.spike && S.mode !== 'win' && S.mode !== 'lose') {
     const a = Math.min(1, S.spike.t / 0.35);
     ctx.textAlign = 'center'; ctx.globalAlpha = a;
@@ -3002,8 +3007,8 @@ function drawSeamRock() {
   for (let y = -1000; y < CFG.worldBottom + 40; y += 54) {
     const sx = seamXAt(y) - V.left;
     const dk = ctx.createLinearGradient(sx, 0, sx + 300, 0);
-    dk.addColorStop(0, 'rgba(14,10,18,0.5)'); dk.addColorStop(1, 'rgba(14,10,18,0)');
-    ctx.fillStyle = dk; ctx.fillRect(sx, y, 300, 56);
+    dk.addColorStop(0, 'rgba(14,10,18,0.22)'); dk.addColorStop(1, 'rgba(14,10,18,0)');
+    ctx.fillStyle = dk; ctx.fillRect(sx, y, 90, 56);
   }
   // pick marks
   ctx.strokeStyle = 'rgba(0,0,0,0.32)'; ctx.lineWidth = 1.3;
