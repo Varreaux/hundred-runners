@@ -29,6 +29,13 @@ const CFG = {
   tunnelH: 130,
   entrance: 760,
   riverY: 470,
+  // Where rock stands over the water. The river darkens because there is rock above it,
+  // not because it has crossed the entrance, so the darkening is keyed to these. They are
+  // null for "the mouths", which is the same thing while the whole course is cave. If a
+  // stretch of the run ever has something else overhead, move roofFrom past it and the
+  // ramp follows, instead of darkening water that has a roof of its own.
+  roofFrom: null,
+  roofTo: null,
   worldBottom: 540,
   rampLen: 200,
   gapWidth: 120,
@@ -1076,8 +1083,13 @@ function drawRiver() {
   // Water going into a mountain gets darker because less sky reaches it, and that happens
   // over a distance. A flat 30% black across the clipped span put the change on the clip
   // edge instead, which is what made the surface look like two rectangles butted together.
-  const span = x - e, ramp = Math.min(0.42, 260 / Math.max(1, span));
-  const dk = ctx.createLinearGradient(e, 0, x, 0);
+  const span = x - e;
+  // the ramp spans the roofed stretch, not the whole course; a gradient holds its end
+  // colours past its endpoints, so water outside that stretch is simply left alone
+  const a = (CFG.roofFrom ?? CFG.entrance) - V.left - 48;
+  const b = (CFG.roofTo ?? CFG.exit) - V.left + 48;
+  const rspan = b - a, ramp = Math.min(0.42, 260 / Math.max(1, rspan));
+  const dk = ctx.createLinearGradient(a, 0, b, 0);
   dk.addColorStop(0, 'rgba(0,0,0,0)');
   dk.addColorStop(ramp, 'rgba(0,0,0,0.34)');
   dk.addColorStop(Math.max(ramp, 1 - ramp), 'rgba(0,0,0,0.34)');
