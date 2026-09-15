@@ -173,6 +173,30 @@ back dry. Four passes found fifty-nine issues, including a lantern glow clipped
 to a rect smaller than its own radius, which was flattening the light in every
 frame. Do not ship an art change without a pass.
 
+**The critic is not the decider.** It can see that something looks wrong; it
+cannot see what a change costs. Three kinds of finding come back that you do not
+simply implement:
+
+- **Changes the run, not the look.** It proposed moving the lane 1 and 2 merges
+  so the crowd would leave the mill out of three storeys instead of one. It was
+  right that it would look better, and it was still Morgan's call, because
+  runners would spend longer on upper lanes that carry their own crossings.
+  Asked, declined, settled -- do not re-raise.
+- **A correct calculation whose instruction is wrong.** It worked out that a
+  brick should be 3.7 units, which is exactly right: a runner is 29 units crown
+  to sole, so a unit is about 59mm. At 3.7 units a course is under a screen
+  pixel at play zoom and the mortar cannot be drawn at all. Accuracy that cannot
+  be rendered is not a target. Halved once, not twice, and said so.
+- **A real impression with the wrong diagnosis.** It reported the cave as
+  brighter than the mill you leave. Sweeping 40 to 500 units past the seam gives
+  61 55 52 64 68 45 32 37 against the mill at 31 to 39: not systematically
+  brighter, one lamp pool at about +260, and dark beyond it. Darkening the whole
+  of act two would have corrected four hundred units of it. Settled: the lamp
+  stays.
+
+Refuse with the number, not with an opinion, and write the refusal down or the
+next pass will find it again.
+
 ## Things that look like bugs and are not
 
 - **A process killed with exit 144 now has two possible causes**, and one of
