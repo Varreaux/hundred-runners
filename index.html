@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '41 a splash that sounds wet';
+const BUILD = '42 one bond, one gateway';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1420,6 +1420,7 @@ function draw() {
   // the bars go on after the bodies: a closed gate that people are drawn over is not a barrier
   drawIntro();
   for (let k = CFG.laneCount - 1; k >= 0; k--) { drawLane(k); drawRunners(k); drawRoomProps(k); for (const g of S.gates) drawGate(g, k, true); }
+  drawDoorSpill();   // after the ground, or the cinder apron buries it
   drawFinish();
   if (S.mode === 'play' || S.mode === 'finale') drawFx();
   ctx.restore();
@@ -4416,13 +4417,15 @@ function drawGateWall(y) {
   ctx.fillRect(x1, top - 150, 300, h + 168);
   ctx.fillRect(x0, top - 150, x1 - x0, 150);          // the spandrel OVER the opening
   // brick courses
-  ctx.fillStyle = 'rgba(0,0,0,0.16)';
-  for (let by = top - 148; by < y + 18; by += 6) {
-    const off = ((by / 6) | 0) % 2 ? 8 : 0;
-    for (let bx = x0 - 258 + off; bx < x0 - 2; bx += 16) ctx.fillRect(bx, by, 15, 5);
-    for (let bx = x1 + 2 + off; bx < x1 + 298; bx += 16) ctx.fillRect(bx, by, 15, 5);
-    if (by < top - 4) for (let bx = x0 + off; bx < x1; bx += 16) ctx.fillRect(bx, by, 15, 5);
-  }
+  // One bond for the whole wall. Three separate origins on a 16 pitch stepped the
+  // courses 2 units at the left jamb and 4 at the right, which put a full-height
+  // seam down each side of the doorway -- the first thing the eye found. brickFill
+  // keys its pattern to V.left, so every wall in the scene is in bond by
+  // construction, and it is the mill's own brick rather than a second one 2.5x
+  // life size meeting it at the gateway.
+  brickFill(x0 - 260, top - 150, 260, h + 168, 0.9);
+  brickFill(x1, top - 150, 300, h + 168, 0.9);
+  brickFill(x0, top - 150, x1 - x0, 150, 0.9);
   // coping along the top
   ctx.fillStyle = '#524657';                          // millYard's coping colour, not a lavender of my own
   ctx.fillRect(x0 - 262, top - 156, x1 - x0 + 566, 9);  // one unbroken coping across the whole wall
@@ -4446,7 +4449,7 @@ function drawGateWall(y) {
 function drawYardDoors(y) {
   const c = I(), cx = c.doors - V.left, h = 122, half = 44;
   const open = S.doorOpen;
-  const swing = open * open * (3 - 2 * open);          // ease, so the last of it settles
+  const swing = Math.pow(open, 1.7);                   // accelerating: a heavy leaf starts slow and flies
   // The hole itself. Without this the opening frames the mill's own window and the
   // parallax hillside, which says the building has no inside and flattens the facade.
   // up to the head of the FRAME, not the head of the leaves: the 10 units between them
@@ -4475,17 +4478,25 @@ function drawYardDoors(y) {
     ctx.fillStyle = `rgba(60,58,70,${shade})`;
     ctx.fillRect(-w, -h / 2 + 16, w, 7); ctx.fillRect(-w, h / 2 - 25, w, 7);
     // handle on the leading edge
-    ctx.fillStyle = '#8a7e84'; ctx.fillRect(-w + Math.min(3, w * 0.1), -6, Math.max(1, Math.min(4, w * 0.12)), 14);
+    // hand height on a 29-unit person, not chest height on a giant
+    ctx.fillStyle = '#8a7e84'; ctx.fillRect(-w + Math.min(3, w * 0.1), h * 0.12, Math.max(1, Math.min(4, w * 0.12)), 12);
     ctx.restore();
   }
   // light spilling through the widening gap
-  // Light out of a doorway lands on the threshold, so the spill is brightest at the
-  // floor and reaches out onto the cinder rather than glowing at the door head.
-  if (swing > 0.04) {
-    const g = ctx.createLinearGradient(cx, y - h, cx, y + 34);
-    g.addColorStop(0, 'rgba(255,228,170,0)'); g.addColorStop(1, `rgba(255,228,170,${0.34 * swing})`);
-    ctx.fillStyle = g; ctx.fillRect(cx - half - 26, y - h, half * 2 + 52, h + 34);
-  }
+}
+// The pool on the ground, drawn AFTER the lanes. Light out of a doorway lands on
+// the threshold, and the threshold is exactly the band millYard's cinder apron
+// covers, so drawing this with the doors painted the brightest part of the ramp
+// and then buried it. An open door with light behind it and no pool in front of
+// it reads as a hole cut in a flat.
+function drawDoorSpill() {
+  if (introAlpha() <= 0 || S.doorOpen <= 0.04) return;
+  const c = I(), y = laneY(0), cx = c.doors - V.left, half = 44, h = 122;
+  const swing = Math.pow(S.doorOpen, 1.7);
+  const g = ctx.createLinearGradient(cx, y - h, cx, y + 34);
+  g.addColorStop(0, 'rgba(255,228,170,0)');
+  g.addColorStop(1, `rgba(255,228,170,${0.34 * swing * introAlpha()})`);
+  ctx.fillStyle = g; ctx.fillRect(cx - half - 26, y - h, half * 2 + 52, h + 34);
 }
 function drawIntro() {
   const a = introAlpha();
