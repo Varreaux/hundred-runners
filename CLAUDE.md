@@ -42,6 +42,26 @@ why it has not been merged. If you are deliberately holding a merge, say so in a
 message rather than letting the branch speak for you. Never force-push a shared
 branch to tidy this up; land the work instead.
 
+## Never kill a process by pattern
+
+We all run the same commands from sibling worktrees, so `pkill -f` cannot tell
+us apart. `pkill -f "node tools/freeze-check.js"` matches every session's run at
+once. I killed another session's pre-push verification this way and cost them
+fifteen minutes; a second session nearly did the same thing an hour earlier and
+was saved only by checking first.
+
+**"I do not remember starting this" is not evidence of ownership.** Resolve the
+pid to its working directory before touching it:
+
+```
+lsof -a -p PID -d cwd          # which worktree is it running in?
+ps -o command= -p PID          # the shell snapshot id also differs per session
+```
+
+Kill by pid, never by pattern, and only once the working directory says it is
+yours. Leaving a stray running costs some CPU; killing someone else's run
+destroys work in progress.
+
 ## Talking to the other sessions
 
 Nothing is automatic. Use `ListAgents` to see who is live, then `SendMessage`
