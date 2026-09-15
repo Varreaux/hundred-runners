@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '18 no cave-in';
+const BUILD = '19 sound tidy';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -313,13 +313,12 @@ const AU = {
   splash() { this.noise(0.35, 0.22, ['bandpass', 1800, 0.8]); },
   scream() { this.tone('sawtooth', 900 + Math.random() * 300, 380, 0.3, 0.045); },
   boom() { this.tone('sine', 50, 28, 0.9, 0.7); this.noise(0.5, 0.35, ['lowpass', 250]); },
-  rocks() { this.noise(0.25, 0.3, ['lowpass', 500]); this.tone('sine', 60, 40, 0.25, 0.3); },
   cheer(n) { for (let i = 0; i < 3; i++) { const f = 440 * Math.pow(1.26, i) * (1 + Math.min(n, 8) * 0.06); this.tone('triangle', f, f * 1.5, 0.35, 0.08, i * 0.06); } },
   fail() { this.tone('sawtooth', 200, 60, 0.5, 0.22); },
-  ambient(inside, running, near, dt) {
+  ambient(inside, running, dt) {
     if (!this.ctx) return;
     if (this.muted) { this.rumble.gain.value = 0; this.stepGain.gain.value = 0; return; }
-    const target = (inside ? 0.35 : 0.05) + (near ? 0.35 : 0);
+    const target = inside ? 0.35 : 0.05;
     this.rumble.gain.value += (target - this.rumble.gain.value) * Math.min(1, dt * 1.5);
     const pulse = Math.pow(Math.max(0, Math.sin(S.t * 22)), 6);
     this.stepGain.gain.value = (running / 100) * 0.06 * pulse * (inside ? 1 : 0.6);
@@ -550,7 +549,7 @@ function update(dt) {
     S.spike = { t: 0.7, n: S.recent.length }; S.recent.length = 0; S.spikeCool = CFG.spikeCooldown; S.shake = 8; AU.boom();
   }
   const inside = S.cam + CFG.packFront > CFG.entrance && S.cam + CFG.packFront < CFG.exit;
-  AU.ambient(inside, S.runners.filter(r => r.state === 'run').length, false, dt);
+  AU.ambient(inside, S.runners.filter(r => r.state === 'run').length, dt);
   const spread = 1 + CFG.tire * (S.cam / S.camMax);
   if (S.active) VERBS[S.active.verb].update(S.active.mg, dt);
   const holdGate = S.gates.find(g => g.state === 'holding');
