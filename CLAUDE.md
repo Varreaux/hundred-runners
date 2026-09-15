@@ -58,6 +58,31 @@ If the harness is missing, rebuild it — it stubs `document`, `window`,
 non-finite coordinates), then evals the script text from `index.html` with the
 `'use strict'` line removed.
 
+## Editing this one big file without breaking it
+
+- **Never patch by replacing a whole function via "slice from this function name
+  to the next one".** Anything sitting *between* the two functions is silently
+  deleted. That is how a `let placedUI = []` declaration vanished and shipped a
+  crash. Anchor on a small unique string and replace that, and assert the anchor
+  appears exactly once before writing.
+- **Verify by evaluating, not by reading.** Source text lies: a JavaScript
+  escape like `'Matouš'` reads as eleven characters but *is* `Matouš` at
+  runtime, so a grep will report a mismatch that does not exist. Pull the
+  literal out and `eval` it, or check the value in the browser.
+- **Non-ASCII and emoji in object keys** need a JavaScript `\u{...}` escape. A
+  Python-style `\U` produces a key that silently never matches. Named runners
+  have fixed appearances in a `LOOKS` table keyed by the exact name string, so a
+  mistyped key costs that person their look with no error.
+
+## Art changes
+
+There is an adversarial art reviewer at `.claude/agents/art-critic.md`. The loop
+is: screenshot eight to ten fixed moments, hand it the paths plus the relevant
+drawing function names, fix everything it finds, re-shoot, repeat until it comes
+back dry. Four passes found fifty-nine issues, including a lantern glow clipped
+to a rect smaller than its own radius, which was flattening the light in every
+frame. Do not ship an art change without a pass.
+
 ## Things that look like bugs and are not
 
 - **A background tab stops animating.** Chrome suspends
