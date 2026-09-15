@@ -30,6 +30,13 @@ Leave one open only when Morgan asked to see it, or when you are mid-task and
 will use it again in the same turn — and say which it is so he knows the tab is
 deliberate. `tabs_context_mcp` lists what is open if you have lost track.
 
+**Better still, do not open one.** If all you need is a picture of a frame, run
+headless Chrome from the shell with `--screenshot`: it is its own process, it
+leaves nothing in Morgan's window, and there is no tab to remember to close. It
+costs a small script and it cannot click anything, so keep the real tab for
+things that need interaction or a live console. Stub the game loop out in the
+headless page if you want the frame to hold still.
+
 ## What our instruments cannot sense
 
 A passing test is a verdict only on what the test senses, never on whether the
