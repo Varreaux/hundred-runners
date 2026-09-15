@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '11 light and rubble';
+const BUILD = '12 freeze fixes';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -42,6 +42,7 @@ const CFG = {
     crusher: { verb: 'keys', title: 'jam the crusher',        hazard: 'burst', color: '#ffd23c' },
   },
   crusherPeriod: 1.6,
+  spikeCooldown: 3,      // real seconds before another death-spike slow-motion can fire
   // a fork sends `split` of the runners on tunnel `from` up a ramp into tunnel `to`; they come back at `merge`.
   // nested forks must merge before the fork they branched from.
   forks: [
@@ -358,7 +359,7 @@ function reset() {
     particles: [], rings: [], floaters: [], ripples: [], bubbles: [], sayT: 0, lastWordT: 0, ambT: 0,
     stats: { dead: 0, arrived: 0 },
     finale: null, best: loadBest(),
-    collapseX: CFG.collapseLead, recent: [], spike: null, streak: 0, bestStreak: 0, lastScream: 0,
+    collapseX: CFG.collapseLead, recent: [], spike: null, spikeCool: 0, streak: 0, bestStreak: 0, lastScream: 0,
   };
   for (let i = 0; i < CFG.runnerCount; i++) {
     S.runners.push({
@@ -502,7 +503,9 @@ function update(dt) {
   const camStopped = S.cam >= S.camMax;
   S.collapseX += CFG.scroll * dt;
   S.recent = S.recent.filter(t => S.t - t < 1);
-  if (!S.spike && S.recent.length >= 5) { S.spike = { t: 0.7, n: S.recent.length }; S.shake = 8; AU.boom(); }
+  if (!S.spike && S.spikeCool <= 0 && S.recent.length >= 5) {
+    S.spike = { t: 0.7, n: S.recent.length }; S.recent.length = 0; S.spikeCool = CFG.spikeCooldown; S.shake = 8; AU.boom();
+  }
   const inside = S.cam + CFG.packFront > CFG.entrance && S.cam + CFG.packFront < CFG.exit;
   let nearest = 1e9; for (const r of S.runners) if (r.state === 'run') nearest = Math.min(nearest, r.x - S.collapseX);
   if (S.collapseX > CFG.entrance && nearest < 140) {
@@ -1749,6 +1752,7 @@ function frame(now) {
   const real = Math.min(0.05, (now - last) / 1000); last = now;
   update(S.spike ? real * 0.25 : real); draw();
   if (S.spike) { S.spike.t -= real; if (S.spike.t <= 0) S.spike = null; }
+  if (S.spikeCool > 0) S.spikeCool -= real;
   requestAnimationFrame(frame);
 }
 reset();
