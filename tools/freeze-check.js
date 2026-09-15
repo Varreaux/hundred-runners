@@ -73,10 +73,16 @@ eval(src + `
         maxParticles=Math.max(maxParticles,S.particles.length); maxBubbles=Math.max(maxBubbles,S.bubbles.length);
         maxFloaters=Math.max(maxFloaters,S.floaters.length); maxRipples=Math.max(maxRipples,S.ripples.length);
         if (style === 0) {
-          for (const r of S.rooms.filter(r => r.state === 'armed')) {
-            // a digit puzzle eats digits, so hand them back before switching rooms
+          // Work ONE room at a time and stay with it. Round-robinning every frame
+          // looks thorough and is not: a puzzle that plays a timed demo pauses when
+          // its panel closes, so a bot that keeps switching can hold a demo paused
+          // for the whole run and then report the room unsolvable. Only pick a new
+          // room when nothing is open.
+          const open = S.rooms.find(r => r === S.active && r.state === 'armed');
+          const queue = open ? [open] : S.rooms.filter(r => r.state === 'armed').slice(0, 1);
+          for (const r of queue) {
             if (S.active && S.active !== r) press('ESCAPE');
-            press(String(r.hot));
+            if (S.active !== r) press(String(r.hot));
             let guard = 0;
             while (S.active === r && guard++ < 200) {
               const m = r.mg, V = VERBS[r.verb];

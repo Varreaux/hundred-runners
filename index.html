@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '32 the gears, the levers and the wires';
+const BUILD = '33 the sweeper gets its road';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -81,7 +81,12 @@ const CFG = {
     // machines belong. Interleaved with the existing crossings on lane 0.
     { x: 1750,  lane: 0, type: 'gears',    diff: 1 },
     { x: 2500,  lane: 0, type: 'conveyor', diff: 1 },
-    { x: 4000,  lane: 0, type: 'sweeper',  diff: 2 },
+    // The sweeper makes you WATCH two demos before it accepts a key: 5.6s at the
+    // shortest, 7.3s typical. With the standard 240px of warning that is 3.0s of road
+    // against 5.6s of puzzle, so it was unwinnable by arithmetic rather than by skill
+    // and cost 54 of the hundred even played perfectly. It gets the road it needs
+    // instead; nothing about Linh's puzzle changes. Undo by deleting warn.
+    { x: 4000,  lane: 0, type: 'sweeper',  diff: 2, warn: 900 },
     { x: 5300,  lane: 0, type: 'presses',  diff: 2 },
     { x: 5800,  lane: 0, type: 'wiring',   diff: 3 },
     { x: 2200,  lane: 0, type: 'rope',    diff: 1 },
@@ -992,7 +997,7 @@ function update(dt) {
 
   for (const room of S.rooms) {
     if (room.state === 'dormant') {
-      const near = S.runners.some(r => r.state === 'run' && r.lane === room.lane && r.x >= room.x - CFG.armDist);
+      const near = S.runners.some(r => r.state === 'run' && r.lane === room.lane && r.x >= room.x - (room.warn || CFG.armDist));
       if (near) armRoom(room);
     }
     // A verb that banks its win outside key() finishes here. The sweeper does it
