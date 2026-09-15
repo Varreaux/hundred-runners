@@ -45,9 +45,20 @@ eval(src + `
   // style 0 (bot, plays the whole course to the finale and hammers keys) 45.6s,
   // style 1 (no input) 3.1s, style 2 (random keys) 10.1s, style 3 (masher) 3.0s.
   // So the bot alone is two thirds of the total and the end screen is 11%.
-  // If this ever needs to be faster again, style 0 is the only lever that
-  // matters -- and it is also the only style that reaches the finale, so think
-  // before trimming it.
+  // Note the coupling: style = g % 4, so RUNS moves all four counts together
+  // when they are worth very different amounts. A bot run costs 45.6s and is the
+  // ONLY style that reaches the finale. One of each of the other three costs
+  // 16.2s combined, and the random-key and masher styles are where the freezes
+  // this harness exists for actually get caught -- that coverage is nearly free.
+  // So RUNS trades expensive finale coverage and cheap crash coverage as if they
+  // were the same thing. Going 60 -> 30 for runtime also took the bot runs from
+  // 15 to 8, which was not the intent.
+  //
+  // If you need more speed, style 0 is the only lever with real time in it, and
+  // it is the coverage you least want to lose. If you want more COVERAGE, the
+  // cheap styles are almost free: taking the masher from 7 runs to 20 costs
+  // about 39s. Splitting these into separate counts would let you hold one and
+  // move the other; it has not been done because 30 is what Morgan asked for.
   const errs = {}; let froze = 0; const RUNS = 30;
   let maxParticles=0, maxBubbles=0, maxFloaters=0, maxRipples=0, reachedEnd=0;
   // deterministic pseudo-random so runs differ but are reproducible
