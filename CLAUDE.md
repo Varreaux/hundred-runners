@@ -11,6 +11,10 @@ Morgan (GitHub login `Varreaux`). Read this before editing.
   and merging into it is Morgan's call, not ours.
 - `Morgan` is the single integration point. Merge into it as soon as a change is
   verified, so Morgan only ever has one build to play.
+- Working in a git worktree, push with `git push origin HEAD:Morgan` rather than
+  pushing the worktree's own branch name. Otherwise a half-finished branch
+  appears on GitHub, goes stale the moment you land the real work on `Morgan`,
+  and then reads as abandoned to anyone looking at the branch list.
 - Morgan plays at **http://localhost:8765**, which serves this checkout with
   no-cache headers. Do not point him at any other port. If you run your own
   server for screenshots, keep it to yourself and say so.
