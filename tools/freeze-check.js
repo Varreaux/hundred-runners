@@ -1,5 +1,6 @@
-const fs = require('fs');
-const raw = fs.readFileSync('process.argv[2] || require('path').join(__dirname,'..','index.html')','utf8');
+const fs = require('fs'), path = require('path');
+const target = process.argv[2] || path.join(__dirname, '..', 'index.html');
+const raw = fs.readFileSync(target, 'utf8');
 const src = raw.split('<script>')[1].split('</script>')[0].replace("'use strict';",'');
 
 function makeCtx() {
@@ -32,7 +33,7 @@ global.location = { search: '' }; global.URLSearchParams = class { has(){return 
 global.localStorage = { getItem:()=>null, setItem:()=>{} };
 // Real Web Audio mock. Without it AU.init throws into its own catch, AU.ctx stays
 // null and every sound method early-returns, so the whole module goes untested.
-const { makeAudioMock } = require(require('path').join(__dirname,'audio-mock.js'));
+const { makeAudioMock } = require(path.join(__dirname, 'audio-mock.js'));
 global.__audio = { nodes: 0, live: 0 };
 global.window.AudioContext = makeAudioMock(global.__audio);
 
