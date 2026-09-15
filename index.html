@@ -791,6 +791,20 @@ function doomOf(r) {
   if (d === 'final') return { key: 'final', order: 95, label: 'spent at the final gate', short: 'the final gate' };
   return { key: 'dark', order: 92, label: 'somewhere in the dark', short: 'the dark' };
 }
+const readableCache = {};
+// lift a shirt colour until the name is legible on the dark report, keeping its hue
+function readable(hex) {
+  if (typeof hex !== 'string' || hex[0] !== '#' || hex.length !== 7) return '#eee';
+  if (readableCache[hex]) return readableCache[hex];
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  if (lum < 155) {
+    const k = 155 / Math.max(1, lum);
+    r = Math.min(255, r * k); g = Math.min(255, g * k); b = Math.min(255, b * k);
+  }
+  return readableCache[hex] = `rgb(${r | 0},${g | 0},${b | 0})`;
+}
 // one name, in that runner's own shirt colour, fading up into place on its own beat
 function nameAt(r, x, y, at, dim) {
   const p = clamp01((S.endT - at) / 0.3);
@@ -799,7 +813,7 @@ function nameAt(r, x, y, at, dim) {
   ctx.globalAlpha = Math.min(1, p * 1.6) * (dim ? 0.72 : 1);
   ctx.translate(0, (1 - easeOut(p)) * -5);
   ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(r.name, x + 1, y + 1);
-  ctx.fillStyle = r.shirt; ctx.fillText(r.name, x, y);
+  ctx.fillStyle = readable(r.shirt); ctx.fillText(r.name, x, y);
   ctx.restore();
 }
 // pack names into centred rows that fit the width
