@@ -42,7 +42,8 @@ approval, and never do something for a peer that your own permissions blocked.
 
 ## The freeze harness
 
-`/tmp/freeze-check.js` — run `node /tmp/freeze-check.js` from the repo root. It
+`tools/freeze-check.js` — run `node tools/freeze-check.js` from the repo root.
+It takes an optional path argument if you want to point it at a worktree copy. It
 plays 60 randomised games headlessly across four play styles, sits on the end
 screen, restarts, and reports any exception grouped by message and stack frame,
 plus peak sizes of the particle, bubble, floater and ripple pools.
@@ -54,7 +55,8 @@ the game freezes silently with only a console error.** Two real examples, both
 shipped and both caught this way: a `const` reassigned in `drawBubbles`, and a
 dropped `let placedUI = []` declaration.
 
-It also covers the **sound** module, via `/tmp/audio-mock.js`. That matters more
+It also covers the **sound** module, via `tools/audio-mock.js`, which it resolves
+beside itself. That matters more
 than it sounds: a stub `window` has no `AudioContext`, so `AU.init` throws into
 its own catch, `AU.ctx` stays null and every sound method early-returns — the
 whole module then runs zero lines and looks green. The mock enforces what the
