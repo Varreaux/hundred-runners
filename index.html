@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '42 one bond, one gateway';
+const BUILD = '43 they stand on the belt now';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -29,7 +29,7 @@ const CFG = {
   tunnelH: 130,
   entrance: 760,
   // The opening: the shift comes off the line, the doors go up, the run starts.
-  intro: { belt: 30, drop: 300, doors: 640, lift: 104, deliver: 2.8, settle: 1.1, open: 1.3, hold: 0.45 },
+  intro: { belt: -220, drop: 300, doors: 640, lift: 104, deliver: 2.8, settle: 1.1, open: 1.3, hold: 0.45 },
   riverY: 470,
   // Where rock stands over the water. The river darkens because there is rock above it,
   // not because it has crossed the entrance, so the darkening is keyed to these. They are
@@ -1193,7 +1193,7 @@ function updateIntro(dt) {
   const gather = c.deliver + c.settle;
   const floor = laneY(0);
   for (const r of S.runners) {
-    if (S.introT < r.bornAt) { r.x = c.belt - 60 - (r.bornAt / c.deliver) * 420; r.y = floor - c.lift; r.onBelt = true; r.offLine = false; r.held = true; continue; }
+    if (S.introT < r.bornAt) { r.x = c.belt - 260 - (r.bornAt / c.deliver) * 900; r.y = floor - c.lift; r.onBelt = true; r.offLine = false; r.held = true; continue; }
     const since = S.introT - r.bornAt;
     const ride = 0.85, step = 0.5;                 // along the line, then down the stair
     // (a)8: a rider is carried, and someone standing in the queue is standing. r.held
@@ -1201,17 +1201,17 @@ function updateIntro(dt) {
     if (since < ride) {                            // carried along, feet still
       r.onBelt = true; r.offLine = false; r.held = true;
       r.x = c.belt + (since / ride) * (c.drop - c.belt);
-      r.y = floor - c.lift + 22;                   // stand ON the band, not shin-deep in it
+      r.y = floor - c.lift;                        // feet ON the band surface (drawBelt puts it here)
     } else if (since < ride + step) {              // down the stair, walking
       const k = (since - ride) / step;
       r.onBelt = false; r.offLine = true; r.held = false;
       r.x = c.drop + k * (STAIR_N * STAIR_TREAD);  // travel the stair's own width, so feet land on treads
-      r.y = floor - (c.lift - 22) * (1 - k);       // LINEAR: walking down is not falling
+      r.y = floor - c.lift * (1 - k);              // LINEAR: walking down is not falling
     } else {                                       // across the yard to the gate
       r.onBelt = false; r.offLine = false;
       r.y = floor;
       // press the pack up against the leaves instead of re-forming it 100-500 units back
-      const target = c.doors - 30 - (CFG.packFront - r.slot) * 0.55 - Math.abs(r.dy) * 0.9;
+      const target = c.doors - 46 - (CFG.packFront - r.slot) * 0.30 - Math.abs(r.dy) * 0.9;
       const from = c.drop + STAIR_N * STAIR_TREAD;
       const k = Math.min(1, (since - ride - step) / 0.9);
       r.x = from + k * (target - from);
@@ -4369,9 +4369,13 @@ function drawBelt(yFloor) {
   const top = y - h;
   // gantry legs down to the yard, behind everything else the belt draws
   ctx.fillStyle = '#2f2830';
-  for (let lx = x0 + 40; lx < x1 - 20; lx += 96) { ctx.fillRect(lx, y + 2, 9, c.lift - 2); ctx.fillRect(lx - 12, y + 2, 33, 6); }
+  for (let lx = x0 + 40; lx < x1 - 20; lx += 96) {
+    ctx.fillRect(lx, y + 2, 9, c.lift - 2);              // leg, all the way to the ground
+    ctx.fillRect(lx - 12, y + 2, 33, 6);                 // bracket under the frame
+    ctx.fillStyle = '#241f26'; ctx.fillRect(lx - 9, yFloor - 5, 27, 6); ctx.fillStyle = '#2f2830';  // base plate
+  }
   // the stair down at the delivery end
-  const sx = c.drop - V.left, riser = (c.lift - 22) / STAIR_N;
+  const sx = c.drop - V.left, riser = c.lift / STAIR_N;
   for (let i = 0; i < STAIR_N; i++) {
     const sy = y + (i + 1) * riser;
     ctx.fillStyle = i % 2 ? '#564c53' : '#4c4249';
@@ -4381,7 +4385,7 @@ function drawBelt(yFloor) {
   }
   // handrail on posts, so it is not a guy-wire in the frames where the stair is empty
   ctx.strokeStyle = '#6a5f66'; ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.moveTo(sx, y - 16); ctx.lineTo(sx + STAIR_N * STAIR_TREAD, y + c.lift - 22 - 16); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sx, y - 16); ctx.lineTo(sx + STAIR_N * STAIR_TREAD, y + c.lift - 16); ctx.stroke();
   for (let i = 0; i <= STAIR_N; i += 3) {
     const px = sx + i * STAIR_TREAD;
     ctx.beginPath(); ctx.moveTo(px, y - 16 + i * riser); ctx.lineTo(px, y + i * riser); ctx.stroke();
@@ -4389,7 +4393,6 @@ function drawBelt(yFloor) {
   // frame and legs
   ctx.fillStyle = '#3a3038'; ctx.fillRect(x0, top, x1 - x0, h);
   ctx.fillStyle = '#2a2229';
-  for (let lx = x0 + 24; lx < x1; lx += 62) ctx.fillRect(lx, y, 7, 30);
   // the running band, hatched so it reads as moving
   ctx.fillStyle = '#4c4249'; ctx.fillRect(x0, top, x1 - x0, 11);
   ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2;
@@ -4466,8 +4469,8 @@ function drawYardDoors(y) {
     ctx.save();
     ctx.translate(hinge, y - h / 2);
     ctx.scale(dir, 1);
-    // face, darker as it turns edge-on
-    const shade = 1 + swing * 0.25;   // they swing out toward the light, so they catch it
+    // face, and it swings out toward the sun so it catches the light rather than dimming
+    const shade = 1 + swing * 0.25;
     ctx.fillStyle = `rgb(${Math.round(86 * shade)},${Math.round(74 * shade)},${Math.round(62 * shade)})`;
     ctx.fillRect(-w, -h / 2, w, h);
     // planks and two straps
@@ -4479,7 +4482,15 @@ function drawYardDoors(y) {
     ctx.fillRect(-w, -h / 2 + 16, w, 7); ctx.fillRect(-w, h / 2 - 25, w, 7);
     // handle on the leading edge
     // hand height on a 29-unit person, not chest height on a giant
+    // hand height on a 29-unit person, not chest height on a giant
     ctx.fillStyle = '#8a7e84'; ctx.fillRect(-w + Math.min(3, w * 0.1), h * 0.12, Math.max(1, Math.min(4, w * 0.12)), 12);
+    // THE LEADING EDGE. A leaf with no thickness reads as a flat panel seen head on;
+    // the edge is what says this object has turned toward you. It widens as the door
+    // opens, because that is the face you see more of the further it swings.
+    const edge = 1.5 + swing * 5;
+    ctx.fillStyle = `rgba(${Math.round(150 * shade)},${Math.round(132 * shade)},${Math.round(112 * shade)},1)`;
+    ctx.fillRect(-w - edge, -h / 2, edge, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-w - edge, -h / 2, edge, 3);
     ctx.restore();
   }
   // light spilling through the widening gap
