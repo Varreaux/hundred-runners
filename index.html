@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '26 the ramp ends where the fill ends';
+const BUILD = '27 the rock is a material now';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1145,22 +1145,28 @@ function drawRiver() {
   // over a distance. A flat 30% black across the clipped span put the change on the clip
   // edge instead, which is what made the surface look like two rectangles butted together.
   const rf = CFG.roofFrom ?? CFG.entrance, rt = CFG.roofTo ?? CFG.exit;
-  // A fade belongs to the boundary, not to the darkening. At a daylight mouth the water
-  // really is lit and dims as it goes under, so it fades in over 260. At an interior
-  // boundary there is rock or building on both sides and nothing bright at the join, so
-  // fading from zero there would assert a light source that is not in the world: the
-  // darkening starts at full instead.
-  const fadeIn = rf === CFG.entrance ? 260 : 0;
-  const fadeOut = rt === CFG.exit ? 260 : 0;
-  const a = rf - V.left - 48, b = rt - V.left + 48;
+  // A fade belongs to the boundary, not to the darkening. At a daylight mouth the water is
+  // genuinely lit and dims as it goes under, so it fades over 260. An interior boundary has
+  // rock or building on both sides and nothing bright at the join, so it has no business
+  // fading over that distance.
+  // But "no fade" is not the same as "zero fade". Going straight to full strength put an
+  // unfeathered 34% rectangle edge in the water, which the mill's tailrace tint happened to
+  // sit over and attenuate to about 15%: still a hard vertical line, and invisible to a
+  // profile sampled every 60 because it is 5 units wide. An interior boundary gets a short
+  // fade CENTRED on it, which reads as immediate and has no edge.
+  const mouthIn = rf === CFG.entrance, mouthOut = rt === CFG.exit;
+  const fadeIn = mouthIn ? 260 : 70;
+  const fadeOut = mouthOut ? 260 : 70;
+  const a = rf - (mouthIn ? 48 : fadeIn / 2) - V.left;
+  const b = rt + (mouthOut ? 48 : fadeOut / 2) - V.left;
   const rspan = Math.max(1, b - a);
   const s0 = Math.min(0.45, fadeIn / rspan);
   const s1 = Math.max(s0, 1 - Math.min(0.45, fadeOut / rspan));
   const dk = ctx.createLinearGradient(a, 0, b, 0);
-  dk.addColorStop(0, `rgba(0,0,0,${fadeIn ? 0 : 0.34})`);
+  dk.addColorStop(0, 'rgba(0,0,0,0)');
   dk.addColorStop(s0, 'rgba(0,0,0,0.34)');
   dk.addColorStop(s1, 'rgba(0,0,0,0.34)');
-  dk.addColorStop(1, `rgba(0,0,0,${fadeOut ? 0 : 0.34})`);
+  dk.addColorStop(1, 'rgba(0,0,0,0)');
   // Fill only the roofed stretch. A gradient holds its END COLOUR past its endpoints, so
   // once a boundary stops fading to zero that held colour spills backwards and darkens the
   // water on the unroofed side as well. With fades the clamp changes nothing; without them
@@ -1269,6 +1275,7 @@ function drawMountain() {
     ctx.fillStyle = k % 3 === 0 ? 'rgba(255,255,255,0.04)' : k % 3 === 1 ? 'rgba(0,0,0,0.11)' : 'rgba(150,100,130,0.07)';
     strataBand(y + hash(k) * 8, 9 + hash(k * 7) * 9, k);
   }
+  rockFace(top, bottom);
   parallaxRange(1, 120, (seg, sx) => {
     for (let j = 0; j < 3; j++) {
       const h = hash(seg * 13 + j * 101); if (h < 0.6) continue;
@@ -1317,7 +1324,12 @@ function drawMountain() {
     let clear = true;
     for (let k = 0; k < CFG.laneCount; k++) {
       if (!laneAt(k, wx) && !laneAt(k, wx + w)) continue;
-      if (yy + hgt > laneY(k) - CFG.tunnelH - 30 && yy < laneY(k) + 56) { clear = false; break; }
+      // Narrower clearance than the old 30/56, which very nearly closed the gap between
+      // lanes at laneGap 190. Worth noting what this did NOT fix: placement went from 12-21
+      // per frame to 14-22, and the on-screen count did not move at all. The limit is not
+      // this test, it is that yy is spread over 1340 world units against a viewport a
+      // fraction of that, so most candidates are never on screen wherever the camera is.
+      if (yy + hgt > laneY(k) - CFG.tunnelH - 14 && yy < laneY(k) + 24) { clear = false; break; }
     }
     // and clear of each other, with rock left between: two dead ends 5px apart is not rock,
     // and two that touch merge into one stepped black polygon with a mitred corner
@@ -1361,18 +1373,27 @@ function drawMountain() {
 // mouth, a back wall a shade lighter, a floor catching whatever light there is.
 function working(x, y, w, h, salt, lit, vert) {
   const r = n => hash(salt * 100 + n);
-  // the rock around the mouth is bruised by the cut
+  // The rock around the mouth is bruised by the cut. This used to be a roundRect with an
+  // 8px radius, which gave every working a framed, radiused outline; next to a mill full of
+  // windows that silhouette said "window", not "drift". No axis-aligned edges, no corners.
   ctx.fillStyle = 'rgba(0,0,0,0.22)';
-  roundRect(x - 5, y - 4, w + 10, h + 9, 8); ctx.fill();
-  // silhouette of the void: flat floor, ragged arch overhead
-  const arch = Math.min(h * 0.42, 11);
   ctx.beginPath();
-  ctx.moveTo(x, y + h);
-  ctx.lineTo(x, y + arch);
-  ctx.quadraticCurveTo(x + w * 0.13, y - 1 + r(1) * 3, x + w * 0.38, y + 1 + r(2) * 2);
-  ctx.quadraticCurveTo(x + w * 0.62, y + 3 - r(3) * 4, x + w * 0.86, y + r(4) * 3);
-  ctx.quadraticCurveTo(x + w * 0.96, y + 1, x + w, y + arch);
-  ctx.lineTo(x + w, y + h);
+  ctx.moveTo(x - 6, y + h + 4);
+  ctx.quadraticCurveTo(x - 7, y + h * 0.4, x - 3 + r(9) * 4, y - 5);
+  ctx.quadraticCurveTo(x + w * 0.5, y - 8 - r(8) * 4, x + w + 3 - r(7) * 4, y - 5);
+  ctx.quadraticCurveTo(x + w + 7, y + h * 0.5, x + w + 6, y + h + 4);
+  ctx.closePath(); ctx.fill();
+  // Silhouette of the void: a broken floor and a roof that follows the rock. The arch used
+  // to be capped at 11 on cuts up to 46 tall, which flattened the roof into a near-straight
+  // line — the last thing making these read as panes rather than as holes.
+  const arch = h * (0.3 + r(6) * 0.26);
+  ctx.beginPath();
+  ctx.moveTo(x + r(10) * 5, y + h);
+  ctx.lineTo(x - 2 + r(11) * 6, y + arch * (0.7 + r(12) * 0.5));
+  ctx.quadraticCurveTo(x + w * 0.13, y - 2 + r(1) * 7, x + w * 0.38, y + 1 + r(2) * 6);
+  ctx.quadraticCurveTo(x + w * 0.62, y + 5 - r(3) * 9, x + w * 0.86, y + r(4) * 7);
+  ctx.quadraticCurveTo(x + w * 0.97, y + 1, x + w + 1 - r(13) * 5, y + arch * (0.7 + r(14) * 0.5));
+  ctx.lineTo(x + w - r(15) * 5, y + h);
   ctx.closePath();
   ctx.save(); ctx.clip();
   // air in the cut, darkest at the roof
@@ -1383,7 +1404,15 @@ function working(x, y, w, h, salt, lit, vert) {
   const bw = ctx.createLinearGradient(0, y + arch, 0, y + h);
   bw.addColorStop(0, lit ? 'rgba(96,74,56,0.5)' : 'rgba(58,50,70,0.34)');
   bw.addColorStop(1, lit ? 'rgba(52,38,32,0.5)' : 'rgba(32,28,42,0.34)');
-  ctx.fillStyle = bw; ctx.fillRect(x + w * 0.1, y + arch * 0.7, w * 0.8, h - arch * 0.7 - 3);
+  // back wall, set in from the mouth. Drawn as a centred inset rectangle it was the last
+  // window cue left: a pane with a margin round it. It follows the cut instead.
+  ctx.fillStyle = bw;
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.08 + r(16) * 6, y + h - 3);
+  ctx.lineTo(x + w * 0.1 + r(17) * 5, y + arch * 0.8);
+  ctx.quadraticCurveTo(x + w * 0.5, y + arch * 0.4 + r(18) * 5, x + w * 0.9 - r(19) * 5, y + arch * 0.8);
+  ctx.lineTo(x + w * 0.92 - r(20) * 6, y + h - 3);
+  ctx.closePath(); ctx.fill();
   // floor of the cut, and the lip of rock at its edge
   ctx.fillStyle = lit ? 'rgba(126,100,70,0.55)' : 'rgba(70,62,82,0.4)';
   ctx.fillRect(x, y + h - 3.4, w, 3.4);
@@ -1427,6 +1456,47 @@ function working(x, y, w, h, salt, lit, vert) {
   ctx.lineTo(x + w, y + arch);
   ctx.quadraticCurveTo(x + w * 0.5, y + 2, x, y + arch);
   ctx.fill();
+}
+// The brick carries a real surface: a world-locked pattern at full contrast. The rock
+// carried three strata alphas between 0.04 and 0.11 and nothing else, so the join was not
+// brick against rock, it was a drawn material against an undrawn one. Matching their
+// brightness bought nothing, because what separates two materials is texture.
+//
+// Fracture, not noise. Angular aggregate on a world-locked lattice so it holds still as the
+// camera moves, with each block lit on its upper-left face and dark on its lower-right,
+// which is also the one thing the strata cannot say: bedding runs flat, fracture runs across.
+function rockFace(top, bottom) {
+  const S1 = 74;
+  const x0 = Math.floor(V.left / S1) * S1, x1 = V.left + V.vw + S1;
+  const y0 = Math.floor(top / S1) * S1;
+  for (let wx = x0; wx < x1; wx += S1) {
+    const sx = wx - V.left;
+    for (let wy = y0; wy < bottom; wy += S1) {
+      const n = hash(wx * 0.013 + wy * 0.029);
+      if (n < 0.34) continue;
+      const jx = sx + (hash(wx * 0.07 + wy * 0.011) - 0.5) * S1 * 0.7;
+      const jy = wy + (hash(wx * 0.017 + wy * 0.083) - 0.5) * S1 * 0.7;
+      const r1 = 14 + n * 30, r2 = r1 * (0.5 + hash(wx + wy) * 0.5);
+      const rot = hash(wx * 0.31 + wy * 0.017) * 3.14;
+      const pts = [];
+      const sides = 5 + Math.floor(hash(wx * 0.9 + wy) * 3);
+      for (let s = 0; s < sides; s++) {
+        const a = rot + s / sides * 6.283;
+        const k = 0.72 + hash(wx * 0.5 + wy * 0.7 + s) * 0.5;
+        pts.push([jx + Math.cos(a) * r1 * k, jy + Math.sin(a) * r2 * k]);
+      }
+      const poly = () => { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let s = 1; s < pts.length; s++) ctx.lineTo(pts[s][0], pts[s][1]); ctx.closePath(); };
+      // the block, then its lit crown and its shaded underside, offset along the sun axis
+      ctx.fillStyle = `rgba(150,136,164,${0.05 + n * 0.05})`; poly(); ctx.fill();
+      ctx.save(); poly(); ctx.clip();
+      ctx.fillStyle = 'rgba(255,240,214,0.07)';
+      ctx.fillRect(jx - r1, jy - r2, r1 * 2, r2 * 0.75);
+      ctx.fillStyle = 'rgba(0,0,0,0.16)';
+      ctx.fillRect(jx - r1 * 0.2, jy + r2 * 0.1, r1 * 2, r2);
+      ctx.restore();
+      ctx.strokeStyle = `rgba(0,0,0,${0.1 + n * 0.12})`; ctx.lineWidth = 1.1; poly(); ctx.stroke();
+    }
+  }
 }
 function strataBand(y, h, k) {
   const step = 48, x0 = -60, x1 = V.vw + 60;
@@ -3061,6 +3131,10 @@ function drawForeground() {
   // There is only rock in front of the camera when the camera is inside rock. Outdoors this
   // band was reading as black mountains hanging in the sky and black teeth over the lake.
   const anchor = S.cam + CFG.packFront;
+  // Rock in front of the camera is a cave device. Inside the mill it was laying black rock
+  // teeth across the top of a brick hall and over the tailrace, which reads as a mistake
+  // rather than as depth: act one has a building overhead, not a mountain.
+  if (inMill(anchor)) return;
   const inside = clamp01(Math.min(anchor - CFG.entrance, CFG.exit - anchor) / 260);
   const fade = clamp01((V.zoom - 0.46) / 0.34) * inside;
   if (fade <= 0.01) return;
