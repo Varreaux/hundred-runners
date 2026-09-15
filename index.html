@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '5 auto-close rooms';
+const BUILD = '6 calm gate release';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -315,9 +315,18 @@ window.addEventListener('keydown', e => {
 });
 function toggleGate() {
   const holding = S.gates.find(g => g.state === 'holding');
-  if (holding) { holding.state = 'spent'; return; }
+  if (holding) { holding.state = 'spent'; releaseGate(holding, 1 + CFG.tire * (S.cam / S.camMax)); return; }
   const armed = S.gates.filter(g => g.state === 'armed').sort((a, b) => a.x - b.x)[0];
   if (armed) { armed.state = 'holding'; armed.holdT = 0; armed.trampleT = 0; }
+}
+// when a gate opens, the people it held keep their new place in the pack instead of sprinting back to their old slot
+function releaseGate(g, spread) {
+  for (const r of S.runners) {
+    if (r.state !== 'run' || !r.held) continue;
+    const wander = Math.sin(S.t * 0.7 + r.jit) * r.jitAmp;
+    r.slot = CFG.packFront - (S.cam + CFG.packFront + wander - r.x) / spread;
+    r.held = false;
+  }
 }
 function finaleFail() {
   const f = S.finale;
@@ -415,6 +424,7 @@ function update(dt) {
         if (held.length) { const v = pick(held); killRunner(v, 'trample'); g.deaths++; }
       }
       if (g.holdT >= CFG.holdMax) g.state = 'spent';
+      if (g.state === 'spent') releaseGate(g, spread);
     }
   }
 
