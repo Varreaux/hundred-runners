@@ -56,8 +56,8 @@ shipped and both caught this way: a `const` reassigned in `drawBubbles`, and a
 dropped `let placedUI = []` declaration.
 
 It also covers the **sound** module, via `tools/audio-mock.js`, which it resolves
-beside itself. That matters more
-than it sounds: a stub `window` has no `AudioContext`, so `AU.init` throws into
+beside itself. That matters more than it sounds: a stub `window` has no
+`AudioContext`, so `AU.init` throws into
 its own catch, `AU.ctx` stays null and every sound method early-returns — the
 whole module then runs zero lines and looks green. The mock enforces what the
 real API enforces (finite and in-range gain, frequency, pan, delayTime and
@@ -79,10 +79,12 @@ from `index.html` with the `'use strict'` line removed.
   deleted. That is how a `let placedUI = []` declaration vanished and shipped a
   crash. Anchor on a small unique string and replace that, and assert the anchor
   appears exactly once before writing.
-- **Verify by evaluating, not by reading.** Source text lies: a JavaScript
-  escape like `'Matouš'` reads as eleven characters but *is* `Matouš` at
-  runtime, so a grep will report a mismatch that does not exist. Pull the
-  literal out and `eval` it, or check the value in the browser.
+- **Verify by evaluating, not by reading.** Source text lies. The roster writes
+  one name with an escape and the `LOOKS` table writes it with the literal
+  character, so a grep reports that neither matches the other; evaluated as
+  JavaScript they are the same string and match fine. Pull the literal out and
+  `eval` it, or read the value in the browser. (This bit me: I nearly reported a
+  bug that did not exist.)
 - **Deleting a function is a freeze risk.** A call to a function that no longer
   exists throws, and an exception in `update()` or `draw()` kills the loop. This
   already happened: `AU.rocks` went with the cave-in, a new gate slam still
