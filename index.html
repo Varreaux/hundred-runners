@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '35 the shift comes off the line';
+const BUILD = '36 they run like people now';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -4434,9 +4434,12 @@ function drawFinish() {
 function backHair(r, hx, hy) {
   const s = r.style;
   if (s === 'long' || s === 'verylong') {
+    // The fall hangs BEHIND the head, not centred on it. Centred, it hung a slab of hair
+    // down the front of the face as well as the back, which is what made the head read as
+    // a box with a notch in it.
     const len = s === 'verylong' ? 25 : 15;
-    ctx.fillStyle = INK; roundRect(hx - 5.7, hy - 5.5, 11.4, len + 6.5, 4.6); ctx.fill();
-    ctx.fillStyle = r.hair; roundRect(hx - 4.9, hy - 4.7, 9.8, len + 5, 4); ctx.fill();
+    ctx.fillStyle = INK; roundRect(hx - 7, hy - 5.5, 10, len + 6.5, 4.4); ctx.fill();
+    ctx.fillStyle = r.hair; roundRect(hx - 6.2, hy - 4.7, 8.4, len + 5, 3.9); ctx.fill();
   } else if (s === 'dreads') {
     for (let i = -2; i <= 2; i++) {
       const x0 = hx + i * 2.1, len = 10 + Math.abs(i) * 1.6, sway = Math.sin(S.t * 3 + i + r.jit) * 0.8;
@@ -4457,8 +4460,9 @@ function backHair(r, hx, hy) {
     ctx.fillStyle = INK; roundRect(hx - 7.6, hy - 2, 15.2, 17, 5.2); ctx.fill();
     ctx.fillStyle = r.hair; roundRect(hx - 6.8, hy - 1.4, 13.6, 15.8, 4.6); ctx.fill();
   } else if (s === 'medium') {
-    ctx.fillStyle = INK; roundRect(hx - 5.7, hy - 4, 11.4, 11.5, 4.4); ctx.fill();
-    ctx.fillStyle = r.hair; roundRect(hx - 4.9, hy - 3.4, 9.8, 10.3, 3.9); ctx.fill();
+    // same correction as the long fall: sits behind the head rather than centred on it
+    ctx.fillStyle = INK; roundRect(hx - 7, hy - 4, 10, 11.5, 4.2); ctx.fill();
+    ctx.fillStyle = r.hair; roundRect(hx - 6.2, hy - 3.4, 8.4, 10.3, 3.7); ctx.fill();
   }
 }
 function frontHair(r, hx, hy) {
@@ -4486,10 +4490,18 @@ function frontHair(r, hx, hy) {
       ctx.lineTo(hx - 5 + (i + 1) * 2.5, hy - 2.5);
     }
   } else if (s === 'medium' || s === 'long' || s === 'verylong') {
-    // a cap that sweeps down past the ear on both sides, leaving the face clear
-    ctx.arc(hx, hy - 0.5, 5.4, Math.PI * 0.97, Math.PI * 2.03);
-    ctx.lineTo(hx + 5.5, hy + 1.6); ctx.lineTo(hx + 3.5, hy + 1.6); ctx.lineTo(hx + 3.5, hy - 2.2);
-    ctx.lineTo(hx - 3.5, hy - 2.2); ctx.lineTo(hx - 3.5, hy + 2.8); ctx.lineTo(hx - 5.5, hy + 2.8); ctx.closePath();
+    // These people are in profile, running right, so the hair sits on the crown and sweeps
+    // down the BACK of the head only. The shape this replaced hung a square panel down each
+    // side of a straight fringe, which boxed the face in: it read as a helmet with a notch
+    // cut out for the eye rather than as hair.
+    ctx.moveTo(hx + 4.5, hy - 2.7);                                  // hairline above the brow
+    ctx.quadraticCurveTo(hx + 3.4, hy - 6.3, hx - 1.2, hy - 6.4);    // fringe swept back
+    ctx.quadraticCurveTo(hx - 5.7, hy - 6.2, hx - 6.4, hy - 1.5);    // round the back of the skull
+    ctx.quadraticCurveTo(hx - 6.9, hy + 2.7, hx - 4.1, hy + 4.7);    // down behind the ear
+    ctx.quadraticCurveTo(hx - 3.4, hy + 1.2, hx - 3.6, hy - 1.4);    // inner edge, following the skull
+    ctx.quadraticCurveTo(hx - 3.0, hy - 4.3, hx + 0.6, hy - 4.7);
+    ctx.quadraticCurveTo(hx + 3.0, hy - 4.7, hx + 4.5, hy - 2.7);
+    ctx.closePath();
   } else {
     ctx.arc(hx, hy - 0.4, 5.1, Math.PI, 0);
   }
@@ -4502,25 +4514,44 @@ function drawFigure(r, sx, sy, phase, scale, alpha) {
   const moving = phase !== 0;
   const sn = Math.sin(phase), cs = Math.cos(phase);
   const idle = Math.sin(S.t * 1.6 + r.jit), stance = 1.2 + hash(r.jit * 10) * 1.6;
-  const lean = moving ? 0.3 : idle * 0.03;           // forward lean while running, a slow sway when standing
+  const LEAN = 0.18;                                 // radians of forward lean while running, about 10 degrees
+  const lean = moving ? LEAN : idle * 0.03;          // forward lean while running, a slow sway when standing
   const limb = (x0, y0, cx, cy, x1, y1, col, w) => {
     ctx.strokeStyle = INK; ctx.lineWidth = w + 1.6; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(cx, cy, x1, y1); ctx.stroke();
     ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(cx, cy, x1, y1); ctx.stroke();
   };
   const shoe = (x, y) => { ctx.fillStyle = INK; ctx.beginPath(); ctx.ellipse(x + 1.2, y + 0.6, 2.8, 1.5, 0, 0, 6.28); ctx.fill(); };
+  // An arm bows AWAY from the direction of travel: the elbow trails behind while the hand
+  // swings forward. Both arms used to put their control point ahead of the shoulder-to-hand
+  // line, which bulges the elbow forward and reads as a broken joint. Bowing is measured
+  // from the chord midpoint so it cannot drift out of step with the hand position.
+  const ARM_BOW = -1.8;
+  const arm = (x0, y0, x1, y1, col) =>
+    limb(x0, y0, (x0 + x1) / 2 + ARM_BOW, y0 + 3.5, x1, y1, col, 2.4);
+  // A leg bows the other way from an arm. The thigh runs hip forward-and-down to the knee
+  // and the shin runs knee backward-and-down to the foot, so the knee is the forward-most
+  // point and the hip-to-foot curve bulges TOWARD the direction of travel. Measured from
+  // the chord midpoint like the arm, which also drops the old double-count of `back`: the
+  // foot trail is already inside legA/legB, so adding it to the control point again bent
+  // the knee by an amount that changed with the lean.
+  const LEG_BOW = 2;
+  const leg = (x1, lift, col) =>
+    limb(0, hipY, x1 * 0.5 + LEG_BOW, hipY + 5 - lift, x1, 2 - lift, col, 3);
   const hipY = -7;
   const ax = Math.sin(lean), ay = -Math.cos(lean);          // torso axis
   const shX = ax * 10.5, shY = hipY + ay * 10.5;            // shoulders sit on the rotated torso
   const hx = ax * 18.2, hy = hipY + ay * 18.2;              // head centre, needed before the body for long hair
-  const back = moving ? 2 : 0;                              // feet trail the leaning mass
+  // Feet trail the leaning mass, so this is a function of the lean and not a free number.
+  // Left fixed while the lean came down, the figure reads as sitting back on its heels.
+  const back = moving ? LEAN * 6.67 : 0;
   const legA = (moving ? sn * 6 : stance) - back, legB = (moving ? -sn * 6 : -stance) - back;
   const liftA = moving ? Math.max(0, cs) * 3.5 : 0, liftB = moving ? Math.max(0, -cs) * 3.5 : 0;
   const armB = moving ? sn * 5 : idle * 1.2, armA = -armB;
   backHair(r, hx, hy);
   // back leg, back arm
-  limb(0, hipY, legB * 0.5 + 1.5 - back, hipY + 5 - liftB, legB, 2 - liftB, shade(r.pants), 3);
+  leg(legB, liftB, shade(r.pants));
   shoe(legB, 2 - liftB);
-  limb(shX - 1, shY, shX + armB * 0.5 + (moving ? 1.5 : -2), shY + 3.5, shX + armB - 1, shY + 8.5, shade(r.skin), 2.4);
+  arm(shX - 1, shY, shX + armB - 1, shY + 8.5, shade(r.skin));
   // torso
   ctx.save(); ctx.translate(0, hipY); ctx.rotate(lean);
   ctx.fillStyle = INK; roundRect(-4.9, -11.9, 9.8, 13.8, 4.6); ctx.fill();
@@ -4529,7 +4560,7 @@ function drawFigure(r, sx, sy, phase, scale, alpha) {
   ctx.fillStyle = 'rgba(255,255,255,0.18)'; roundRect(-3.2, -10, 3, 4, 1.5); ctx.fill();
   ctx.restore();
   // front leg
-  limb(0, hipY, legA * 0.5 - 1.5 - back, hipY + 5 - liftA, legA, 2 - liftA, r.pants, 3);
+  leg(legA, liftA, r.pants);
   shoe(legA, 2 - liftA);
   // neck, then the head on the torso axis
   const nx = ax * 13, ny = hipY + ay * 13;
@@ -4540,7 +4571,7 @@ function drawFigure(r, sx, sy, phase, scale, alpha) {
   frontHair(r, hx, hy);
   ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(hx + 2.5, hy - 0.3, 1.3, 0, 6.28); ctx.fill();
   // front arm
-  limb(shX + 1, shY, shX + armA * 0.5 + (moving ? 3 : 2), shY + 3.5, shX + armA + 1.5, shY + 8.5, r.skin, 2.4);
+  arm(shX + 1, shY, shX + armA + 1.5, shY + 8.5, r.skin);
   ctx.restore();
 }
 function deckDrop(r) {
