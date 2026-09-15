@@ -362,7 +362,7 @@ const AU = {
     // three wobbles whose periods do not divide into each other, so the bed never
     // settles into a beat the way a single rectified sine did
     const w = 0.62 + 0.2 * Math.sin(S.t * 5.7) + 0.12 * Math.sin(S.t * 9.31 + 1.7) + 0.1 * Math.sin(S.t * 14.13 + 4.1);
-    const bed = crowd * 0.05 * w * (inside ? 1 : 0.55) * (0.45 + 0.55 * near);
+    const bed = crowd * 0.19 * w * (inside ? 1 : 0.55) * (0.45 + 0.55 * near);
     this.bedGain.gain.value += (bed - this.bedGain.gain.value) * Math.min(1, dt * 12);
     this.bedFilter.frequency.value = 360 + 640 * near;
     this.tail.gain.value += ((inside ? 0.45 : 0.06) - this.tail.gain.value) * Math.min(1, dt * 2);
@@ -374,10 +374,10 @@ const AU = {
     while (this.grainT <= 0 && guard++ < 6) {
       this.grainT += Math.max(0.012, (0.45 + Math.random() * 1.3) / rate);
       if (crowd <= 0) break;
-      this.step((0.012 + Math.random() * 0.028) * (inside ? 1 : 0.6) * (0.4 + 0.6 * near),
+      this.step((0.05 + Math.random() * 0.11) * (inside ? 1 : 0.6) * (0.4 + 0.6 * near),
                 (Math.random() * 2 - 1) * 0.8, 0.35 + 0.65 * near);
       // every so often the weight of the pack rather than the scuff of it
-      if (Math.random() < 0.2) this.tone('sine', 60 + Math.random() * 24, 40, 0.07, 0.03 * crowd * near);
+      if (Math.random() < 0.2) this.tone('sine', 60 + Math.random() * 24, 40, 0.07, 0.1 * crowd * near);
     }
   },
 };
