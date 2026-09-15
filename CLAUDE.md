@@ -163,6 +163,71 @@ varied fragmented into an entry per value and would have buried a rarer second
 error. Applies equally to the death-cause paths in the end report and to the art
 critic, not just to this harness.
 
+**Count deaths everywhere, not in the room under test.** A fix that MOVES the
+damage and a fix that removes it look identical if you only count where you were
+already looking. The test bot used to visit every armed room each frame, which
+held the sweeper's demo paused all run, because `update()` runs the selected
+room's minigame and nobody else's. Making it commit to one room fixed the
+sweeper exactly as intended -- 0 runs solved to every run solved -- and the
+course got worse, because committing to the nearest armed room starves the one
+behind it. Round-robin lost 52 at the sweeper; commit-by-position lost 58 at the
+bridge; ranking armed rooms by distance-to-kill lost nobody. The middle one is
+the shape to watch for: structurally a fix, worse in outcome, and invisible to
+the per-room number everyone was quoting. Whenever a change is scored on one
+room, one hazard or one sound, take the total as well, or the regression simply
+relocates to wherever the metric is not.
+
+**A bot is an instrument, and it can be better than a player.** Both bots press
+keys as fast as the loop runs, so neither can tell a room that wants fourteen
+keys in two seconds from one that wants fourteen in eight. Every green we quoted
+on the machine rooms was true and was measuring the wrong thing -- not a broken
+instrument, an instrument with no concept of a human hand. The check that sees
+what it cannot is arithmetic: keys an optimal player needs, against road
+available at 110px/s. Run it on any new room before trusting a clean bot result.
+It caught two rooms the bots called fine:
+
+  wiring, before  240px  2.18s  14 keys  6.4 keys/sec  impossible, fixed
+  wiring, after   840px  7.64s  14 keys  1.8 keys/sec
+  conveyor        240px  2.18s   6 keys  2.75 keys/sec hard, left to Morgan
+  gears           240px  2.18s   4 keys  1.8 keys/sec  fine
+
+The bottom two rows are why you run the test instead of applying `warn` to
+everything: only the room that failed it got it. Conveyor is the line worth
+holding -- 6.4 keys/sec was a room that could not be solved, which is a bug;
+2.75 is a room that is hard, which is a difficulty judgement and Morgan's to
+make. Quote him the number, do not quietly pad the room.
+
+**That check is blind to any puzzle that wins outside `key()`**, and it does not
+fail quietly -- it reports its own guard limit as the puzzle's cost, which comes
+out as a large and entirely plausible number. Run against the sweeper it claimed
+14.9s of forced watching against 8.18s of road, i.e. that `warn: 900` had not
+fixed the room; driven through `verb.update` instead, the demo clears at about
+four seconds and `solveKey` starts returning digits. The room was fine and the
+instrument was not. `lights` sets `m.won` on its own clock rather than returning
+'done' from a keypress, so the arithmetic covers gears, levers, wires, code and
+keys, and measures nothing at all for a deferred win. Check which kind the verb
+is before believing the number.
+
+The same caution applies to the ranking bot: it triages better than a human
+reading the screen can, so "0 dead" from a scripted run is the ceiling for
+perfect play, not a report on difficulty. Do not quote it to Morgan as how the
+game plays.
+
+**Do not ship past a number you cannot explain, even once you have proved it is
+not yours.** This is the one that actually catches things, and it is followable
+when tired, where "audit your teammates' commits" is not. `reachedEnd` came back
+24/30 instead of 30/30. The change under test was two hunks, a BUILD string and
+`devSolve`, against a harness that never calls `devSolve` -- so it was provably
+not the cause, and the temptation was to push. Instrumenting the gap instead
+found that the random-key fuzzer had been dead since the opening scene landed:
+it presses P then R, R now resets into 'intro', and the loop only continued
+while the mode was 'play' or 'finale', so those runs exited at t 0 with a
+hundred still walking. Every 0/30 all three sessions had quoted for three hours
+was missing the style most likely to find an input-path crash. Had the number
+read 30, nobody would have looked. A total tells you how many runs ended; the
+exit STATE tells you what happened to the ones that did not, which is why the
+harness now reports mode, game time and walkers for every unfinished run.
+
 If either file is missing, rebuild it. The harness stubs `document`, `window`,
 `performance`, `requestAnimationFrame`, `location`, `URLSearchParams` and
 `localStorage`, mocks a canvas context (throwing on negative radii and

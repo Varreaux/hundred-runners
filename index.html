@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '39 rooms open the moment you can see them';
+const BUILD = '40 the bot triages like a player';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -5260,36 +5260,66 @@ const SOLVE_KEYS = ['ARROWUP', 'ARROWDOWN', 'ARROWLEFT', 'ARROWRIGHT', ' ',
   '1', '2', '3', '4', '5', '6', '7', '8', '9', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
 function devSolve() {
   const fire = k => window.dispatchEvent(new KeyboardEvent('keydown', { key: k }));
-  for (const r of S.rooms.filter(r => r.state === 'armed')) {
+  const armed = S.rooms.filter(r => r.state === 'armed' && !r.botStuck);
+  if (!armed.length) return;
+  // Sit in ONE room and triage which one, because both halves are load-bearing
+  // and each is useless alone. update() runs the SELECTED room's minigame and
+  // nobody else's, so a puzzle that plays a timed demo only gets dt while the
+  // bot is in it: round-robinning hands the sweeper zero seconds and then
+  // reports a working room as one that kills everybody. But committing to the
+  // nearest room instead just starves the one behind it and moves the deaths --
+  // measured on one scripted run, round-robin lost 52 at the sweeper, commit-by-
+  // position lost 58 at the bridge, and commit-by-urgency lost nobody. So rank
+  // by who dies soonest, which is the choice the game is actually asking the
+  // player to make.
+  const urgency = room => {
+    let best = Infinity;
+    for (const q of S.runners) {
+      if (q.state !== 'run' && q.state !== 'fall') continue;
+      if (!canReach(q, room)) continue;
+      best = Math.min(best, room.x + killFrom(room) - q.x);
+    }
+    return best;
+  };
+  let r = armed.reduce((a, b) => (urgency(b) < urgency(a) ? b : a));
+  // Hysteresis: hold the room already open unless something is meaningfully
+  // more urgent. A puzzle only runs its clock while selected, so a bot that
+  // re-decides every frame pauses every demo it has started.
+  if (armed.includes(S.active) && urgency(S.active) <= urgency(r) + 40) r = S.active;
+  if (S.active !== r) {
     // a digit puzzle eats digits, so hand them back to room selection first --
     // the same Escape a player has to press
-    if (S.active && S.active !== r) fire('ESCAPE');
+    if (S.active) fire('ESCAPE');
     fire(String(r.hot));
-    let guard = 0;
-    while (S.active === r && guard++ < 600) {
-      // NOT `V`: that is the global view object, and `V.zoom` / `V.left` / `V.vw` appear
-      // several hundred times in this file. Shadowing it inside a loop means anyone who
-      // reaches for the camera in here silently gets undefined instead.
-      const m = r.mg, vb = VERBS[r.verb];
-      if (r.verb === 'bar') { m.pos = m.zone + m.zoneW / 2; fire(' '); continue; }
-      if (vb.solveKey) {
-        const k = vb.solveKey(m);
-        // null means "no key helps right now" -- the sweeper is playing its
-        // demo and the puzzle is waiting on the clock, not on the player.
-        // Firing into that 600 times and giving up is how an instrument
-        // reports a working room as broken.
-        if (k == null) break;
-        fire(k); continue;
-      }
-      const before = vb.progress(m);
-      let moved = false;
-      for (const k of SOLVE_KEYS) {
-        fire(k);
-        if (S.active !== r) { moved = true; break; }
-        if (vb.progress(m) > before) { moved = true; break; }
-      }
-      if (!moved) break;
+    if (S.active !== r) return;
+  }
+  let guard = 0;
+  while (S.active === r && guard++ < 600) {
+    // NOT `V`: that is the global view object, and `V.zoom` / `V.left` / `V.vw` appear
+    // several hundred times in this file. Shadowing it inside a loop means anyone who
+    // reaches for the camera in here silently gets undefined instead.
+    const m = r.mg, vb = VERBS[r.verb];
+    if (r.verb === 'bar') { m.pos = m.zone + m.zoneW / 2; fire(' '); continue; }
+    if (vb.solveKey) {
+      const k = vb.solveKey(m);
+      // null means "no key helps right now" -- the sweeper is playing its demo
+      // and the puzzle is waiting on the clock, not on the player. Return
+      // rather than break, so the room stays SELECTED and collects the dt it is
+      // waiting for. Firing into that 600 times, or walking away to another
+      // room, is how an instrument reports a working room as broken.
+      if (k == null) return;
+      fire(k); continue;
     }
+    const before = vb.progress(m);
+    let moved = false;
+    for (const k of SOLVE_KEYS) {
+      fire(k);
+      if (S.active !== r) { moved = true; break; }
+      if (vb.progress(m) > before) { moved = true; break; }
+    }
+    // the blind fallback has run out of ideas; let the bot move on to rooms it
+    // can still help, instead of standing in this one forever
+    if (!moved) { r.botStuck = 1; break; }
   }
 }
 
