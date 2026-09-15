@@ -15,6 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
+const BUILD = '5 auto-close rooms';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1152,6 +1153,7 @@ function drawTitle() {
   ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 20px monospace';
   ctx.globalAlpha = 0.6 + 0.4 * Math.sin(S.t * 4); ctx.fillText('SPACE to start', W / 2, 350); ctx.globalAlpha = 1;
   if (S.best) { ctx.fillStyle = '#aaa'; ctx.font = '13px monospace'; ctx.fillText(`best run: ${S.best} survivors`, W / 2, 374); }
+  ctx.fillStyle = '#777'; ctx.font = '11px monospace'; ctx.fillText(`build ${BUILD}`, W / 2, H - 34);
   ctx.textAlign = 'left';
 }
 function drawEnd() {
