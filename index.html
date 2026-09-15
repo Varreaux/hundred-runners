@@ -387,7 +387,7 @@ const AU = {
 // emitter covers water, dust, sparks, embers, smoke, stone chips and light motes.
 const PK = {
   drop:  { g: 640, drag: 0.03, r0: 2.4, r1: 0.5, add: false, shape: 'drop' },
-  dust:  { g: 26,  drag: 1.8,  r0: 1.6, r1: 6,   add: false, shape: 'puff' },
+  dust:  { g: 26,  drag: 1.8,  r0: 1.4, r1: 3.8, add: false, shape: 'puff' },
   smoke: { g: -16, drag: 1.3,  r0: 3,   r1: 15,  add: false, shape: 'puff' },
   ember: { g: -30, drag: 0.8,  r0: 1.7, r1: 0.3, add: true,  shape: 'dot' },
   spark: { g: 340, drag: 0.9,  r0: 1.9, r1: 0.15, add: true, shape: 'streak' },
@@ -927,30 +927,35 @@ function draw() {
   drawForeground();
   drawVignette();
   ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.16; ctx.fillStyle = ctx.createPattern(grain(), 'repeat'); ctx.fillRect(0, 0, W, H); ctx.restore();
+  // The red wash goes on BEFORE the overlays, so the room badge, the name tags and the
+  // counters stay crisp in the one frame the player most needs to read them.
+  if (S.spike && S.mode !== 'win' && S.mode !== 'lose') {
+    ctx.fillStyle = `rgba(20,0,0,${0.5 * Math.min(1, S.spike.t / 0.35)})`; ctx.fillRect(0, 0, W, H);
+  }
   if (S.mode === 'play' || S.mode === 'finale') drawOverlays();
-  // The plate names deaths, so it stands over the deaths, and it goes under the HUD
-  // rather than over it: its red wash used to drain the colour out of the counters.
+  // The plate names deaths, so it points at the deaths without standing on them: it takes
+  // the opposite half of the screen and reaches across with a stem.
   if (S.spike && S.mode !== 'win' && S.mode !== 'lose') {
     const a = Math.min(1, S.spike.t / 0.35);
-    ctx.fillStyle = `rgba(20,0,0,${0.5 * a})`; ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center'; ctx.globalAlpha = a;
     ctx.font = 'bold 84px monospace';
     const pw = ctx.measureText(`-${S.spike.n}`).width + 80;
     const at = S.spike.at;
-    let px = W / 2, py = H / 2;
+    let px = W / 2, py = H / 2, kx = null, ky = null;
     if (at) {
-      const [kx, ky] = toScreen(at.x, at.y);
-      px = Math.max(pw / 2 + 16, Math.min(W - pw / 2 - 16, kx));
-      py = Math.max(150, Math.min(H - 120, ky - 128));
+      [kx, ky] = toScreen(at.x, at.y);
+      px = kx < W / 2 ? W - pw / 2 - 28 : pw / 2 + 28;
+      py = Math.max(132, Math.min(H - 150, ky - 190));
+    }
+    // the stem first, so the plate sits on top of its own line rather than under it
+    if (at) {
+      ctx.strokeStyle = `rgba(255,59,59,${0.4 * a})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(px, py + 54); ctx.lineTo(kx, Math.max(8, Math.min(H - 8, ky - 16))); ctx.stroke();
+      ctx.fillStyle = `rgba(255,59,59,${0.5 * a})`;
+      ctx.beginPath(); ctx.arc(kx, Math.max(8, Math.min(H - 8, ky - 16)), 4, 0, 6.28); ctx.fill();
     }
     ctx.fillStyle = 'rgba(10,6,10,0.82)'; roundRect(px - pw / 2, py - 62, pw, 116, 14); ctx.fill();
     ctx.strokeStyle = 'rgba(255,59,59,0.5)'; ctx.lineWidth = 2; ctx.stroke();
-    // a stem down to the spot, so the number is attached to the thing it counts
-    if (at) {
-      const [kx, ky] = toScreen(at.x, at.y);
-      ctx.strokeStyle = 'rgba(255,59,59,0.35)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(px, py + 54); ctx.lineTo(kx, Math.min(H - 8, ky)); ctx.stroke();
-    }
     ctx.fillStyle = '#ff3b3b'; ctx.fillText(`-${S.spike.n}`, px, py + 10);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 16px monospace'; ctx.fillText('AT ONCE', px, py + 40);
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
@@ -988,20 +993,26 @@ function drawSky() {
 }
 function drawOutside() {
   const horizon = CFG.riverY;
-  hills(0.2, 360, laneY(0) + 6, 70, 130, '#93b48c', 1);
-  hills(0.38, 260, laneY(0) + 4, 40, 90, '#6f9a6a', 2);
-  parallaxRange(1, 90, (seg, sx) => {
+  // A runner is about 36px. Trees at 34 and hills at 130 made the outdoors a model railway
+  // and undercut the scale the interior works hard to establish; these are the sizes that
+  // let a person read as a person standing in a mountain pass.
+  hills(0.2, 420, laneY(0) + 6, 170, 330, '#93b48c', 1);
+  hills(0.38, 300, laneY(0) + 4, 90, 190, '#6f9a6a', 2);
+  parallaxRange(1, 110, (seg, sx) => {
     if (hash(seg * 7) < 0.45) return;
-    const tx = sx + hash(seg * 3) * 60, th = 34 + hash(seg * 5) * 26, base = laneY(0) + 2;
-    ctx.strokeStyle = INK; ctx.lineWidth = 5.5; ctx.beginPath(); ctx.moveTo(tx, base); ctx.quadraticCurveTo(tx + 2, base - th * 0.5, tx, base - th * 0.7); ctx.stroke();
-    ctx.strokeStyle = '#3b2a1c'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(tx, base); ctx.quadraticCurveTo(tx + 2, base - th * 0.5, tx, base - th * 0.7); ctx.stroke();
-    const lobes = [[-9, -th * 0.55, 11, '#2f5d3a'], [9, -th * 0.6, 11, '#2f5d3a'], [0, -th * 0.85, 13, '#3a7047'], [-4, -th * 0.7, 9, '#4a8a55']];
+    const tx = sx + hash(seg * 3) * 60, th = 74 + hash(seg * 5) * 54, base = laneY(0) + 2;
+    ctx.strokeStyle = INK; ctx.lineWidth = 8.5; ctx.beginPath(); ctx.moveTo(tx, base); ctx.quadraticCurveTo(tx + 3, base - th * 0.5, tx, base - th * 0.7); ctx.stroke();
+    ctx.strokeStyle = '#3b2a1c'; ctx.lineWidth = 6.5; ctx.beginPath(); ctx.moveTo(tx, base); ctx.quadraticCurveTo(tx + 3, base - th * 0.5, tx, base - th * 0.7); ctx.stroke();
+    const lobes = [[-18, -th * 0.55, 22, '#2f5d3a'], [18, -th * 0.6, 22, '#2f5d3a'], [0, -th * 0.85, 26, '#3a7047'], [-8, -th * 0.7, 18, '#4a8a55']];
     ctx.fillStyle = INK; ctx.beginPath();
     for (const [dx, dy, rr] of lobes) { ctx.moveTo(tx + dx + rr + 1.2, base + dy); ctx.arc(tx + dx, base + dy, rr + 1.2, 0, 6.28); }
     ctx.fill();
     for (const [dx, dy, rr, col] of lobes) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(tx + dx, base + dy, rr, 0, 6.28); ctx.fill(); }
   });
-  const lake = laneY(0) + 34;
+  // One water surface for the whole course. The lake used to sit 36px above the river
+  // inside the mountain, so the two met at a dead vertical wall under the arch and the
+  // first thing the eye found in both daylight shots was a seam.
+  const lake = CFG.riverY;
   const wg = ctx.createLinearGradient(0, lake, 0, CFG.worldBottom + 400);
   wg.addColorStop(0, '#2b7fa6'); wg.addColorStop(1, '#0b2c45');
   ctx.fillStyle = wg; ctx.fillRect(-50, lake, V.vw + 100, 500);
@@ -1055,10 +1066,23 @@ function drawRiver() {
   if (x < 0 || e > V.vw) return;
   const top = CFG.riverY, depth = 58;
   ctx.save(); mountainPath(); ctx.clip();
-  const wg = ctx.createLinearGradient(0, top, 0, top + depth);
+  // Same stops AND the same span as the lake outside. Sharing only the endpoints while
+  // running the ramp over 58px here and over 500px out there put a different colour on
+  // each side of the clip at every depth, which is what kept the seam visible after the
+  // two surfaces were levelled.
+  const wg = ctx.createLinearGradient(0, top, 0, CFG.worldBottom + 400);
   wg.addColorStop(0, '#2b7fa6'); wg.addColorStop(1, '#0b2c45');
   ctx.fillStyle = wg; ctx.fillRect(e, top, x - e, depth);
-  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(e, top, x - e, depth);
+  // Water going into a mountain gets darker because less sky reaches it, and that happens
+  // over a distance. A flat 30% black across the clipped span put the change on the clip
+  // edge instead, which is what made the surface look like two rectangles butted together.
+  const span = x - e, ramp = Math.min(0.42, 260 / Math.max(1, span));
+  const dk = ctx.createLinearGradient(e, 0, x, 0);
+  dk.addColorStop(0, 'rgba(0,0,0,0)');
+  dk.addColorStop(ramp, 'rgba(0,0,0,0.34)');
+  dk.addColorStop(Math.max(ramp, 1 - ramp), 'rgba(0,0,0,0.34)');
+  dk.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = dk; ctx.fillRect(e, top, span, depth);
   ctx.save(); ctx.beginPath(); ctx.rect(e, top, x - e, depth); ctx.clip(); waves(top); ctx.restore();
   // lamplight smeared down the surface, drifting with it
   ctx.save(); ctx.beginPath(); ctx.rect(e, top, x - e, depth); ctx.clip();
@@ -1129,22 +1153,35 @@ function drawMountain() {
       const h = hash(seg * 13 + j * 101); if (h < 0.6) continue;
       const bx = sx + hash(seg + j) * 120, by = top + hash(seg * 3 + j * 17) * (bottom - top);
       const rw = 12 + h * 28, rh = rw * (0.45 + hash(seg * 5 + j) * 0.4);
-      // a boulder in the rock, not an outlined oval hanging in it: solid body,
-      // lit crown facing the sun upper-left, dark belly, and a shadow it sits in
-      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(bx + 3, by + 4, rw, rh, 0.25, 0, 6.28); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.beginPath(); ctx.ellipse(bx, by, rw, rh, 0.25, 0, 6.28); ctx.fill();
-      ctx.fillStyle = 'rgba(255,238,214,0.09)'; ctx.beginPath();
-      ctx.ellipse(bx - rw * 0.16, by - rh * 0.3, rw * 0.72, rh * 0.5, 0.25, 0, 6.28); ctx.fill();
-      ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath();
-      ctx.ellipse(bx + rw * 0.2, by + rh * 0.42, rw * 0.66, rh * 0.42, 0.25, 0, 6.28); ctx.fill();
+      // A boulder set in the rock. At 10% white on a flat wall these read as grease on the
+      // lens, so the body carries a real dark side, an ink rim and a contact shadow, and
+      // the silhouette is faceted rather than a clean ellipse.
+      const rot = 0.25 + hash(seg * 2.7 + j) * 0.5;
+      const face = (cx2, cy2, fx, fy, style) => {
+        ctx.beginPath();
+        for (let s = 0; s < 7; s++) {
+          const a2 = s / 7 * 6.283, k = 0.82 + hash(seg * 3.1 + j * 5.3 + s) * 0.3;
+          const px2 = cx2 + Math.cos(a2 + rot) * fx * k, py2 = cy2 + Math.sin(a2 + rot) * fy * k;
+          if (s === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
+        }
+        ctx.closePath(); ctx.fillStyle = style; ctx.fill();
+      };
+      face(bx + 3, by + 5, rw, rh, 'rgba(0,0,0,0.4)');
+      face(bx, by, rw, rh, 'rgba(126,112,132,0.5)');
+      face(bx + rw * 0.22, by + rh * 0.3, rw * 0.74, rh * 0.68, 'rgba(0,0,0,0.3)');
+      face(bx - rw * 0.2, by - rh * 0.34, rw * 0.6, rh * 0.44, 'rgba(255,240,216,0.16)');
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 1.6;
+      face(bx, by, rw, rh, 'rgba(0,0,0,0)'); ctx.stroke();
     }
   });
   // Old workings: drifts and shafts cut through the rock long ago, some still lit.
   // Each is a carved void with a back wall, a floor, prop timbers and rubble, so the
   // mountain reads as honeycombed rather than as a slab with black holes painted on.
+  // Kept across segments, not per segment: two cuts in neighbouring segments were free to
+  // overlap, and an excavation with a mitred right-angled corner reads as a UI panel.
+  const placed = [];
   parallaxRange(1, 150, (seg, sx) => {
-   const placed = [];
-   for (let j = 0; j < 7; j++) {
+   for (let j = 0; j < 6; j++) {
     const h = hash(seg * 17.3 + j * 41.7);
     if (h < 0.4) continue;
     const vert = hash(seg * 6.1 + j * 3.7) > 0.82;
@@ -1161,9 +1198,10 @@ function drawMountain() {
       if (!laneAt(k, wx) && !laneAt(k, wx + w)) continue;
       if (yy + hgt > laneY(k) - CFG.tunnelH - 30 && yy < laneY(k) + 56) { clear = false; break; }
     }
-    // and clear of each other, with rock left between: two dead ends 5px apart is not rock
+    // and clear of each other, with rock left between: two dead ends 5px apart is not rock,
+    // and two that touch merge into one stepped black polygon with a mitred corner
     if (clear) for (const p of placed) {
-      if (xx < p.x + p.w + 34 && xx + w + 34 > p.x && yy < p.y + p.h + 40 && yy + hgt + 40 > p.y) { clear = false; break; }
+      if (xx < p.x + p.w + 56 && xx + w + 56 > p.x && yy < p.y + p.h + 58 && yy + hgt + 58 > p.y) { clear = false; break; }
     }
     if (!clear) continue;
     placed.push({ x: xx, y: yy, w, h: hgt });
@@ -1324,13 +1362,16 @@ function ceilingRays(th) {
   for (let wx = Math.ceil((V.left - 300) / 330) * 330; wx < V.left + V.vw + 300; wx += 330) {
     if (hash(wx * 0.37) < 0.42 || !laneAt(top, wx)) continue;
     const sx = wx - V.left, lean = (hash(wx * 1.9) - 0.5) * 80;
-    const g = ctx.createLinearGradient(sx, y - th, sx + lean, y + 6);
-    g.addColorStop(0, 'rgba(205,224,255,0.13)'); g.addColorStop(1, 'rgba(205,224,255,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.moveTo(sx - 5, y - th); ctx.lineTo(sx + 6, y - th);
-    ctx.lineTo(sx + lean + 27, y + 6); ctx.lineTo(sx + lean - 25, y + 6);
-    ctx.closePath(); ctx.fill();
+    // feathered the same way as the mouth shafts: nested wedges, not one hard-sided quad
+    for (const [k, a] of [[1.3, 0.045], [1, 0.06], [0.6, 0.075]]) {
+      const g = ctx.createLinearGradient(sx, y - th, sx + lean, y + 6);
+      g.addColorStop(0, `rgba(205,224,255,${a})`); g.addColorStop(1, 'rgba(205,224,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(sx - 5 * k, y - th); ctx.lineTo(sx + 6 * k, y - th);
+      ctx.lineTo(sx + lean + 26 * k, y + 6); ctx.lineTo(sx + lean - 26 * k, y + 6);
+      ctx.closePath(); ctx.fill();
+    }
   }
   ctx.restore();
 }
@@ -1339,13 +1380,18 @@ function shaft(wx, dir) {
   if (!inView(wx, 240)) return;
   const sx = wx - V.left, y = laneY(0), th = CFG.tunnelH;
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
-  const g = ctx.createLinearGradient(sx, y - th, sx + dir * 190, y + 14);
-  g.addColorStop(0, 'rgba(255,241,205,0.15)'); g.addColorStop(1, 'rgba(255,241,205,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.moveTo(sx - dir * 30, y - th + 4); ctx.lineTo(sx + dir * 32, y - th + 4);
-  ctx.lineTo(sx + dir * 196, y + 14); ctx.lineTo(sx + dir * 104, y + 14);
-  ctx.closePath(); ctx.fill();
+  // Three nested wedges at falling alpha instead of one. A single quad with a gradient
+  // only along its length has two hard straight sides, so what the eye picks up is the
+  // boundary rather than the light, and it reads as a grey panel laid over the wall.
+  for (const [k, a] of [[1.25, 0.05], [1, 0.07], [0.62, 0.09]]) {
+    const g = ctx.createLinearGradient(sx, y - th, sx + dir * 190, y + 14);
+    g.addColorStop(0, `rgba(255,241,205,${a})`); g.addColorStop(1, 'rgba(255,241,205,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(sx - dir * 30 * k, y - th + 4); ctx.lineTo(sx + dir * 32 * k, y - th + 4);
+    ctx.lineTo(sx + dir * (150 + 46 * k), y + 14); ctx.lineTo(sx + dir * (150 - 46 * k), y + 14);
+    ctx.closePath(); ctx.fill();
+  }
   ctx.restore();
 }
 function corridor(wx0, wx1, y, lane = 0) {
@@ -1363,8 +1409,12 @@ function corridor(wx0, wx1, y, lane = 0) {
   for (let wx = Math.floor((x0 + V.left) / ribGap) * ribGap; wx < x1 + V.left + ribGap; wx += ribGap) {
     const rx = wx - V.left;
     if (rx < x0 - 40 || rx > x1 + 40) continue;
-    ctx.fillStyle = `rgba(0,0,0,${0.3 - d * 0.1})`; ctx.fillRect(rx - 5, cy + 8, 10, CFG.tunnelH - 8);
-    ctx.fillStyle = `rgba(255,255,255,${0.04 + d * 0.03})`; ctx.fillRect(rx - 5, cy + 8, 2.6, CFG.tunnelH - 8);
+    // no two ribs the same width or depth: identical strips at an identical pitch read
+    // as wallpaper once the camera pulls back, whatever the pitch is
+    const rw = 4 + hash(wx * 0.013 + y) * 4.4, rd = 0.24 + hash(wx * 0.031 + y) * 0.12;
+    const top = cy + 6 + hash(wx * 0.07 + y) * 6;
+    ctx.fillStyle = `rgba(0,0,0,${rd - d * 0.08})`; ctx.fillRect(rx - rw, top, rw * 2, y - top);
+    ctx.fillStyle = `rgba(255,255,255,${0.035 + d * 0.03})`; ctx.fillRect(rx - rw, top, rw * 0.55, y - top);
     ctx.strokeStyle = `rgba(0,0,0,${0.24 - d * 0.08})`; ctx.lineWidth = 7;
     ctx.beginPath(); ctx.moveTo(rx - 38, cy + 30); ctx.quadraticCurveTo(rx, cy + 7, rx + 38, cy + 30); ctx.stroke();
   }
@@ -1521,7 +1571,12 @@ function threshold(wx, y, dir) {
 function groundRect(wx0, wx1, y, style = 'in') {
   if (wx1 <= wx0) return;
   const x0 = wx0 - V.left, x1 = wx1 - V.left, inside = style === 'in';
-  ctx.fillStyle = inside ? '#3a3038' : '#4a3b2a'; ctx.fillRect(x0, y + 14, x1 - x0, inside ? 30 : 20);
+  // outside, the bank runs all the way down to the water rather than ending in a 20px
+  // crust with a gap under it, now that the lake sits at the same level as the river
+  // lane 0 runs down to the water on both sides of the mouth, so the bank does not step
+  // where the material changes; upper lanes keep their shallow band
+  const bandH = inside && y !== laneY(0) ? 30 : Math.max(20, CFG.riverY - (y + 14));
+  ctx.fillStyle = inside ? '#3a3038' : '#4a3b2a'; ctx.fillRect(x0, y + 14, x1 - x0, bandH);
   if (!inside) { ctx.fillStyle = '#3f5a2e'; ctx.fillRect(x0, y + 31, x1 - x0, 3); }
   ctx.fillStyle = inside ? '#2a2229' : '#3a2d20';
   for (let wx = Math.floor(wx0 / 12) * 12; wx < wx1; wx += 12) {
@@ -1577,7 +1632,10 @@ function ramp(wx0, y0, wx1, y1) {
 }
 function archway(wx, y, exit = false) {
   if (!inView(wx, 240)) return;
-  const sx = wx - V.left, th = CFG.tunnelH, half = 48, pw = 12, rr = half - pw / 2;
+  // The mountain's base is a vertical cut at the mouth, and an arch whose outer edge lands
+  // exactly on that cut reads as a pipe stub glued to the slope. Set it in, so there is
+  // always rock outboard of the jamb.
+  const sx = wx - V.left, th = CFG.tunnelH, half = 37, pw = 11, rr = half - pw / 2;
   // An arch is a hole cut in a wall, so it cannot stick out past the wall. Clipping it to
   // the mountain keeps the outer jamb from standing on its own against open sky.
   ctx.save(); mountainPath(); ctx.clip();
@@ -1625,15 +1683,28 @@ function drawGate(g, lane, front) {
   const cy = y - th;
   if (front) { gateBars(g, sx, y, th, cy, holding, lane); return; }
 
-  // stone jambs either side, so the gate stands in a doorway instead of hanging in a corridor
-  const jw = 11, jx = 27;
+  // One gate blocks every lane, so its masonry has to appear on every lane. Drawn
+  // identically it became five copies of one sprite stacked in a perfect column, which is
+  // the most artificial thing in the pulled-back shot. The machinery shaft below explains
+  // the column, and these per-lane variations stop it reading as a paste.
+  const v = hash(lane * 13.7 + 3.1), v2 = hash(lane * 5.9 + 11.3);
+  const jw = 9 + v * 5, jx = 25 + v2 * 5;
   for (const s of [-1, 1]) {
     const x = sx + s * jx - jw / 2;
     ctx.fillStyle = INK; ctx.fillRect(x - 1.2, cy - 2, jw + 2.4, th + 4);
     ctx.fillStyle = '#4a4353'; ctx.fillRect(x, cy, jw, th + 1);
     ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(x, cy, 3, th + 1);
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    for (let by = cy + 9; by < y; by += 17) ctx.fillRect(x, by, jw, 1.3);
+    for (let by = cy + 6 + v * 9; by < y; by += 15 + v2 * 6) ctx.fillRect(x, by, jw, 1.3);
+  }
+  // the shaft the chains run up, cut through the rock between this lane and the one above
+  if (lane < CFG.laneCount - 1 && laneAt(lane + 1, g.x)) {
+    const shTop = laneY(lane + 1) + 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(sx - 13, shTop, 26, cy - 15 - shTop);
+    ctx.fillStyle = 'rgba(255,226,180,0.05)'; ctx.fillRect(sx - 13, shTop, 2.2, cy - 15 - shTop);
+    ctx.strokeStyle = 'rgba(70,64,80,0.9)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(sx - 5, shTop); ctx.lineTo(sx - 5, cy - 15); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx + 5, shTop); ctx.lineTo(sx + 5, cy - 15); ctx.stroke();
   }
   // The channel the gate runs in. A shallow recess in the wall, not a hole through it:
   // filled opaque it read across six lanes as a column of black doorways.
@@ -1642,9 +1713,10 @@ function drawGate(g, lane, front) {
   ctx.fillStyle = 'rgba(255,226,180,0.05)'; ctx.fillRect(sx - 17.4, cy, 1.6, th + 1);
 
   // lintel spanning both jambs, with the slot the gate withdraws into
-  ctx.fillStyle = INK; ctx.fillRect(sx - jx - jw / 2 - 2, cy - 15, (jx + jw / 2 + 2) * 2, 17);
-  ctx.fillStyle = '#544b60'; ctx.fillRect(sx - jx - jw / 2, cy - 13, (jx + jw / 2) * 2, 14);
-  ctx.fillStyle = 'rgba(255,255,255,0.09)'; ctx.fillRect(sx - jx - jw / 2, cy - 13, (jx + jw / 2) * 2, 3);
+  const lh = 12 + v2 * 4;
+  ctx.fillStyle = INK; ctx.fillRect(sx - jx - jw / 2 - 2, cy - lh - 3, (jx + jw / 2 + 2) * 2, lh + 5);
+  ctx.fillStyle = '#544b60'; ctx.fillRect(sx - jx - jw / 2, cy - lh - 1, (jx + jw / 2) * 2, lh + 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.09)'; ctx.fillRect(sx - jx - jw / 2, cy - lh - 1, (jx + jw / 2) * 2, 3);
   ctx.fillStyle = '#0d0a12'; ctx.fillRect(sx - 17, cy - 8, 34, 9);
 }
 function gateBars(g, sx, y, th, cy, holding, lane) {
@@ -1709,20 +1781,19 @@ function gateBars(g, sx, y, th, cy, holding, lane) {
     ctx.strokeStyle = '#5ce1ff'; ctx.lineWidth = holding ? 3 : 2; ctx.strokeRect(sx - 38, cy - 16, 76, th + 18);
   }
 }
+// Masonry in the same stone as the gate jambs. This used to be cold blue-grey brick with
+// a hard outline and a visible brick grid, standing in warm brown tunnels that carry no
+// brick at all: it was the last object in the picture that looked imported from elsewhere.
 function drawTower(x, y, w, h) {
   ctx.fillStyle = INK; ctx.fillRect(x - 1.4, y - 5.4, w + 2.8, h + 5.4);
-  ctx.fillStyle = '#5b5b70'; ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1;
-  for (let row = 0; row < h; row += 10) {
-    const off = (row / 10) % 2 ? 6 : 0;
-    for (let cx = off - 6; cx < w; cx += 12) {
-      const bx = Math.max(x, x + cx), bw = Math.min(x + w, x + cx + 11) - bx;
-      if (bw <= 0) continue;
-      ctx.fillStyle = '#4c4c60'; ctx.fillRect(bx + 0.5, y + row + 1, bw - 1, 8); ctx.strokeRect(bx + 0.5, y + row + 1, bw - 1, 8);
-    }
-  }
-  ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(x, y, 4, h);
-  ctx.fillStyle = '#6a6a80'; ctx.fillRect(x - 2, y - 4, w + 4, 5);
+  const g = ctx.createLinearGradient(x, 0, x + w, 0);
+  g.addColorStop(0, '#564d63'); g.addColorStop(0.45, '#4a4353'); g.addColorStop(1, '#383243');
+  ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  for (let row = 9; row < h; row += 17) ctx.fillRect(x, y + row, w, 1.3);
+  ctx.fillStyle = 'rgba(255,226,180,0.08)'; ctx.fillRect(x, y, 3, h);
+  ctx.fillStyle = '#5e5570'; ctx.fillRect(x - 2, y - 4, w + 4, 5);
+  ctx.fillStyle = 'rgba(255,255,255,0.09)'; ctx.fillRect(x - 2, y - 4, w + 4, 1.6);
 }
 // Things that stand between the camera and the walkway, drawn after the crowd.
 function drawRoomProps(lane) {
@@ -1908,7 +1979,19 @@ function drawFinish() {
   if (S.finale) {
     const f = S.finale;
     const q = f.line.slice(0, 40).map((r, i) => ({ r, x: fx - 60 - i * 9 - (i % 2) * 3, y: y + (i % 3) * 5 + 1 })).sort((a, b) => a.y - b.y);
-    for (const { r, x, y: qy } of q) { ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(x, qy + 2, 6, 2, 0, 0, 6.28); ctx.fill(); drawFigure(r, x, qy, 0, r.height || 1, 1); }
+    // Forty bolt-upright figures in one pose at even spacing is inert, and this is the
+    // payoff moment of the run. Each one idles on its own phase, a few have turned to
+    // face back down the line, and the contact shadows are dark enough to read.
+    for (const { r, x, y: qy } of q) {
+      ctx.fillStyle = 'rgba(0,0,0,0.34)';
+      ctx.beginPath(); ctx.ellipse(x + 9, qy + 2, 9, 2.4, 0, 0, 6.28); ctx.fill();
+      const idle = Math.sin(S.t * 1.7 + r.jit) * 0.5 + 0.5;
+      const back = hash(r.jit * 7.3) > 0.82;
+      ctx.save(); ctx.translate(x, qy);
+      if (back) ctx.scale(-1, 1);
+      drawFigure(r, 0, 0, idle * 0.35, r.height || 1, 1);
+      ctx.restore();
+    }
     for (const l of f.leaving) drawFigure(l.r, fx - 60 - l.t * 60, y + 4, l.t * 12, l.r.height || 1, Math.max(0, 1 - l.t / 1.2));
     f.leaving = f.leaving.filter(l => l.t < 1.2);
   }
@@ -2144,6 +2227,17 @@ function drawFx() {
       } else if (d.shape === 'drop') {
         ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(p.vy, p.vx) + Math.PI / 2);
         ctx.beginPath(); ctx.moveTo(0, -rr * 2); ctx.quadraticCurveTo(rr, 0, 0, rr); ctx.quadraticCurveTo(-rr, 0, 0, -rr * 2); ctx.fill(); ctx.restore();
+      } else if (d.shape === 'puff') {
+        // Dust has no edge. One flat disc reads as gravel floating at knee height in front
+        // of everyone's shins. Three faint concentric discs give it a soft rim without a
+        // radial gradient, which would interpolate toward transparent BLACK and ring every
+        // pale puff with a dark halo.
+        const a0 = ctx.globalAlpha;
+        for (const [k, f] of [[1, 0.18], [0.68, 0.26], [0.36, 0.34]]) {
+          ctx.globalAlpha = a0 * f;
+          ctx.beginPath(); ctx.arc(x, y, rr * k, 0, 6.28); ctx.fill();
+        }
+        ctx.globalAlpha = a0;
       } else {
         ctx.beginPath(); ctx.arc(x, y, rr, 0, 6.28); ctx.fill();
       }
@@ -2162,39 +2256,53 @@ function drawOverlays() {
     if (room.state === 'armed') {
       const isActive = S.active === room, col = isActive ? '#5ce1ff' : room.color;
       const by = cy - 62 * V.zoom - (1 - V.zoom) * 26;
+      // The badge is fixed screen size over a world that shrinks, so at full zoom-out it
+      // grew taller than the corridor it points at and buried the winch, the gap and the
+      // crowd. It scales with the view, with a floor so it stays readable.
+      const z = Math.max(0.6, Math.min(1, V.zoom + 0.14));
+      const rad = 16 * z;
       // the reservation has to cover the widest thing inside it, which is the "N coming"
-      // line, not the 32px key disc; 52px left the text sticking out for tags to land on
-      claim(cx - 40, by - 16, 80, 58);
-      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, by, 16, 0, 6.28); ctx.fill();
-      ctx.fillStyle = '#111'; ctx.font = 'bold 18px monospace'; ctx.fillText(room.hot, cx, by + 6);
+      // line, not the key disc; 52px left the text sticking out for tags to land on
+      claim(cx - 40 * z, by - rad, 80 * z, 58 * z);
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, by, rad, 0, 6.28); ctx.fill();
+      ctx.fillStyle = '#111'; ctx.font = `bold ${Math.round(18 * z)}px monospace`; ctx.fillText(room.hot, cx, by + 6 * z);
       const ap = approaching(room);
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 11px monospace';
-      ctx.fillText(ap.n ? `${ap.n} coming` : 'clear', cx, by + 30);
-      const frac = clamp01(ap.eta / 3);
-      ctx.fillStyle = '#233'; ctx.fillRect(cx - 24, by + 34, 48, 4);
-      ctx.fillStyle = frac < 0.35 ? '#ff4646' : '#fff'; ctx.fillRect(cx - 24, by + 34, 48 * frac, 4);
+      ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(11 * z)}px monospace`;
+      ctx.fillText(ap.n ? `${ap.n} coming` : 'clear', cx, by + 30 * z);
+      const frac = clamp01(ap.eta / 3), bw = 48 * z;
+      ctx.fillStyle = '#233'; ctx.fillRect(cx - bw / 2, by + 34 * z, bw, 4);
+      ctx.fillStyle = frac < 0.35 ? '#ff4646' : '#fff'; ctx.fillRect(cx - bw / 2, by + 34 * z, bw * frac, 4);
     }
     if (room.deaths > 0) {
-      ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '11px monospace';
-      ctx.fillText(`${room.deaths} lost`, cx, room.lane === 0 ? cy + 100 * V.zoom : cy - (CFG.tunnelH - 6) * V.zoom - 4);
+      // flat grey text on open water is unreadable; give it the ink edge everything else has
+      const dy = room.lane === 0 ? cy + 100 * V.zoom : cy - (CFG.tunnelH - 6) * V.zoom - 4;
+      ctx.font = '11px monospace';
+      ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(`${room.deaths} lost`, cx + 1, dy + 1);
+      ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillText(`${room.deaths} lost`, cx, dy);
     }
   }
   for (const g of S.gates) {
     if (g.state === 'dormant' || g.state === 'spent' || !inView(g.x, 80)) continue;
     const holding = g.state === 'holding', col = '#5ce1ff';
-    const [gx, gy] = toScreen(g.x, laneY(0) - CFG.tunnelH);
-    claim(gx - 34, gy - 18, 68, 50);
+    const [gx0, gy] = toScreen(g.x, laneY(0) - CFG.tunnelH);
+    // Stand the control beside the gate, not on it. Centred on gx the pill covered the
+    // lintel and the top third of the portcullis, hiding the state it announces, and the
+    // label sat exactly on the selection box's top rail so it read as crossed out.
+    const gx = Math.max(60, Math.min(W - 60, gx0 + 78));
+    claim(gx - 36, gy - 34, 72, 68);
     ctx.font = 'bold 11px monospace';
-    // this label lands on a lit floor band at mid zoom, where thin cyan on stone is unreadable
-    ctx.fillStyle = 'rgba(6,6,12,0.8)'; ctx.fillText(holding ? 'holding...' : 'HOLD', gx + 1, gy - 7);
-    ctx.fillStyle = col; ctx.fillText(holding ? 'holding...' : 'HOLD', gx, gy - 8);
-    ctx.fillStyle = col; roundRect(gx - 34, gy - 2, 68, 24, 8); ctx.fill();
-    ctx.fillStyle = '#111'; ctx.font = 'bold 12px monospace'; ctx.fillText(holding ? 'RELEASE' : 'ENTER', gx, gy + 15);
+    ctx.fillStyle = 'rgba(6,6,12,0.8)'; ctx.fillText(holding ? 'holding...' : 'HOLD', gx + 1, gy - 25);
+    ctx.fillStyle = col; ctx.fillText(holding ? 'holding...' : 'HOLD', gx, gy - 26);
+    ctx.fillStyle = col; roundRect(gx - 34, gy - 20, 68, 24, 8); ctx.fill();
+    ctx.fillStyle = '#111'; ctx.font = 'bold 12px monospace'; ctx.fillText(holding ? 'RELEASE' : 'ENTER', gx, gy - 3);
     if (holding) {
       const frac = 1 - g.holdT / CFG.holdMax;
-      ctx.fillStyle = '#233'; ctx.fillRect(gx - 30, gy + 26, 60, 4);
-      ctx.fillStyle = col; ctx.fillRect(gx - 30, gy + 26, 60 * frac, 4);
+      ctx.fillStyle = '#233'; ctx.fillRect(gx - 30, gy + 8, 60, 4);
+      ctx.fillStyle = col; ctx.fillRect(gx - 30, gy + 8, 60 * frac, 4);
     }
+    // a short leader back to the gate itself, so the control is clearly about that gate
+    ctx.strokeStyle = 'rgba(92,225,255,0.4)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(gx - 34, gy - 8); ctx.lineTo(gx0 + 24, gy - 8); ctx.stroke();
   }
   const tagZoom = V.zoom > 0.52;
   ctx.font = tagZoom ? 'bold 9px monospace' : 'bold 8px monospace';
@@ -2206,9 +2314,19 @@ function drawOverlays() {
     let ny = ny0 - 36 * V.zoom - 2;
     const half = ctx.measureText(r.name).width / 2 + 3;
     // 26 tags over one dense pack needs a lot of stacking room before it gives up
-    // a 9px font stacked at 10px leaves a one-pixel gap and the rows read as one smear
-    for (let guard = 0; guard < 16; guard++) { const hit = tags.find(t => Math.abs(t.x - nx) < t.half + half && Math.abs(t.y - ny) < 13) || placedUI.find(q => nx + half > q.x && nx - half < q.x + q.w && ny > q.y && ny - 12 < q.y + q.h); if (!hit) break; ny = hit.y - 13; }
+    // A 9px font stacked at 10px leaves a one-pixel gap and the rows read as one smear, so
+    // rows are 13 apart. But sixteen of those is a 208px ladder climbing off the top of the
+    // arch with nothing joining it to a body: past four rows, give up and drop the tag.
+    const base = ny;
+    let rows = 0;
+    for (; rows < 5; rows++) { const hit = tags.find(t => Math.abs(t.x - nx) < t.half + half && Math.abs(t.y - ny) < 13) || placedUI.find(q => nx + half > q.x && nx - half < q.x + q.w && ny > q.y && ny - 12 < q.y + q.h); if (!hit) break; ny = hit.y - 13; }
+    if (rows >= 5) continue;
     tags.push({ x: nx, y: ny, half }); claim(nx - half, ny - 12, half * 2, 13);
+    // anything lifted more than a row gets a hairline back down to the head it belongs to
+    if (base - ny > 16) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(nx, ny + 2); ctx.lineTo(nx, base - 1); ctx.stroke();
+    }
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillText(r.name, nx + 1, ny + 1);
     ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillText(r.name, nx, ny);
   }
@@ -2270,7 +2388,12 @@ function drawBubbles() {
     placed.push({ x: bx, y: by, w, h });
     ctx.globalAlpha = a;
     ctx.fillStyle = '#fff'; roundRect(bx, by, w, h, 6); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(sx - 4, by + h); ctx.lineTo(sx + 4, by + h); ctx.lineTo(sx, by + h + 5); ctx.fill();
+    // The tail belongs to the bubble, not to the speaker. When the box steps sideways to
+    // find room, a tail left behind at sx detaches and floats on its own, pointing at
+    // nothing. Keep its root on the box and lean it toward whoever is talking.
+    const root = Math.max(bx + 7, Math.min(bx + w - 7, sx));
+    const tip = Math.max(bx + 2, Math.min(bx + w - 2, root + (sx - root) * 0.5));
+    ctx.beginPath(); ctx.moveTo(root - 4.5, by + h - 1); ctx.lineTo(root + 4.5, by + h - 1); ctx.lineTo(tip, by + h + 6); ctx.fill();
     ctx.fillStyle = '#111'; ctx.fillText(b.txt, bx + w / 2, by + (small ? 11 : 13));
   }
   ctx.globalAlpha = 1; ctx.textAlign = 'left';
