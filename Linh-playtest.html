@@ -1404,7 +1404,20 @@ if (qs.has('finale')) {
   S.stats.arrived = 12; S.cam = S.camMax; updateView(1);
   S.finale = { len: 6, seq: makeSeq(6), idx: 2, attempts: 12, timer: 0.9, line: S.runners.slice(0, 12), leaving: [] }; S.mode = 'finale';
 }
+
+// Standalone playtest only: jump to one new room without changing the full run.
+if (qs.has('room')) {
+ const room=S.rooms.find(r=>r.type===qs.get('room'));
+ if(room && ['gears','conveyor','sweeper','presses','wiring'].includes(room.type)) {
+  S.mode='play'; S.cam=room.x-CFG.armDist-CFG.packFront;
+  S.runners.forEach(r=>{r.x=S.cam+r.slot;r.lastForkX=room.x;});
+  S.rooms.forEach(r=>{if(r.x<room.x) {r.state='solved';r.bridge=1;}});
+  S.gates.forEach(g=>{if(g.x<room.x)g.state='spent';});
+  armRoom(room); S.active=room; updateView(1);
+ }
+}
 requestAnimationFrame(frame);
 </script>
+<nav style="position:fixed;bottom:0;left:0;right:0;text-align:center;font:14px monospace;z-index:2;color:#ccd5e0;background:#141925;padding:12px 0;border-top:1px solid #505b71">LINH · V3 PLAYTEST<br><div style="margin-top:10px"><a href="?" style="color:#5ce1ff">Chơi toàn màn</a> · <a href="?room=gears" style="color:#5ce1ff">1. Bánh răng</a> · <a href="?room=conveyor" style="color:#5ce1ff">2. Cần gạt</a> · <a href="?room=sweeper" style="color:#5ce1ff">3. Đèn nháy</a> · <a href="?room=presses" style="color:#151b25;background:#f1c40f;padding:6px 10px;text-decoration:none;font-weight:bold">4. MẬT MÃ / MÁY DẬP</a> · <a href="?room=wiring" style="color:#5ce1ff">5. Nối dây điện</a></div></nav>
 </body>
 </html>
