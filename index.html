@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '37 the toll, without stopping the clock';
+const BUILD = '38 the gate is a hole in a wall';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1105,29 +1105,38 @@ function update(dt) {
 // gather at the doors, and when the doors are up they are simply handed to the
 // normal pack formation -- the run has already started by the time you see it move.
 const I = () => CFG.intro;
+// One stair, two consumers: updateIntro walks it and drawBelt draws it. Separate
+// numbers here is how you get people descending past the treads.
+const STAIR_N = 10, STAIR_TREAD = 9;
 function updateIntro(dt) {
   const c = I();
   S.introT += dt;
   const gather = c.deliver + c.settle;
   const floor = laneY(0);
   for (const r of S.runners) {
-    if (S.introT < r.bornAt) { r.x = c.belt - 60; r.y = floor - c.lift; r.onBelt = true; r.offLine = false; continue; }
+    if (S.introT < r.bornAt) { r.x = c.belt - 60 - (r.bornAt / c.deliver) * 420; r.y = floor - c.lift; r.onBelt = true; r.offLine = false; r.held = true; continue; }
     const since = S.introT - r.bornAt;
     const ride = 0.85, step = 0.5;                 // along the line, then down the stair
+    // (a)8: a rider is carried, and someone standing in the queue is standing. r.held
+    // is what drawRunners already reads to stop the legs cycling.
     if (since < ride) {                            // carried along, feet still
-      r.onBelt = true; r.offLine = false;
+      r.onBelt = true; r.offLine = false; r.held = true;
       r.x = c.belt + (since / ride) * (c.drop - c.belt);
-      r.y = floor - c.lift;
-    } else if (since < ride + step) {              // down the stair, walking now
+      r.y = floor - c.lift + 22;                   // stand ON the band, not shin-deep in it
+    } else if (since < ride + step) {              // down the stair, walking
       const k = (since - ride) / step;
-      r.onBelt = false; r.offLine = true;
-      r.x = c.drop + k * 46;
-      r.y = floor - c.lift * (1 - k * k);          // eased, so the last of the drop is quick
-    } else {                                       // across the yard to your place at the gate
+      r.onBelt = false; r.offLine = true; r.held = false;
+      r.x = c.drop + k * (STAIR_N * STAIR_TREAD);  // travel the stair's own width, so feet land on treads
+      r.y = floor - (c.lift - 22) * (1 - k);       // LINEAR: walking down is not falling
+    } else {                                       // across the yard to the gate
       r.onBelt = false; r.offLine = false;
       r.y = floor;
-      const target = Math.min(r.slot, c.doors - 26 - Math.abs(r.dy) * 0.9);
-      r.x = (c.drop + 46) + Math.min(1, (since - ride - step) / 0.9) * (target - c.drop - 46);
+      // press the pack up against the leaves instead of re-forming it 100-500 units back
+      const target = c.doors - 30 - (CFG.packFront - r.slot) * 0.55 - Math.abs(r.dy) * 0.9;
+      const from = c.drop + STAIR_N * STAIR_TREAD;
+      const k = Math.min(1, (since - ride - step) / 0.9);
+      r.x = from + k * (target - from);
+      r.held = k >= 1;                             // arrived: stand still
     }
   }
   // doors
@@ -4282,14 +4291,21 @@ function drawBelt(yFloor) {
   ctx.fillStyle = '#2f2830';
   for (let lx = x0 + 40; lx < x1 - 20; lx += 96) { ctx.fillRect(lx, y + 2, 9, c.lift - 2); ctx.fillRect(lx - 12, y + 2, 33, 6); }
   // the stair down at the delivery end
-  const sx = c.drop - V.left, steps = 5;
-  for (let i = 0; i < steps; i++) {
-    const w = 14, sy = y + 6 + (i + 1) * ((c.lift - 6) / steps);
-    ctx.fillStyle = i % 2 ? '#4c4249' : '#564c53';
-    ctx.fillRect(sx + i * w, sy, w + 2, (c.lift - 6) / steps + 2);
+  const sx = c.drop - V.left, riser = (c.lift - 22) / STAIR_N;
+  for (let i = 0; i < STAIR_N; i++) {
+    const sy = y + (i + 1) * riser;
+    ctx.fillStyle = i % 2 ? '#564c53' : '#4c4249';
+    ctx.fillRect(sx + i * STAIR_TREAD, sy, STAIR_TREAD + 2, riser + 2);
+    ctx.fillStyle = 'rgba(214,204,210,0.22)';            // a lit nosing on each tread, or it is a ramp
+    ctx.fillRect(sx + i * STAIR_TREAD, sy, STAIR_TREAD + 2, 1.6);
   }
+  // handrail on posts, so it is not a guy-wire in the frames where the stair is empty
   ctx.strokeStyle = '#6a5f66'; ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.moveTo(sx, y - 6); ctx.lineTo(sx + steps * 14 + 8, y + c.lift - 4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sx, y - 16); ctx.lineTo(sx + STAIR_N * STAIR_TREAD, y + c.lift - 22 - 16); ctx.stroke();
+  for (let i = 0; i <= STAIR_N; i += 3) {
+    const px = sx + i * STAIR_TREAD;
+    ctx.beginPath(); ctx.moveTo(px, y - 16 + i * riser); ctx.lineTo(px, y + i * riser); ctx.stroke();
+  }
   // frame and legs
   ctx.fillStyle = '#3a3038'; ctx.fillRect(x0, top, x1 - x0, h);
   ctx.fillStyle = '#2a2229';
@@ -4319,26 +4335,44 @@ function drawGateWall(y) {
   ctx.fillStyle = '#4a3f45';
   ctx.fillRect(x0 - 260, top - 150, 260, h + 168);
   ctx.fillRect(x1, top - 150, 300, h + 168);
+  ctx.fillRect(x0, top - 150, x1 - x0, 150);          // the spandrel OVER the opening
   // brick courses
   ctx.fillStyle = 'rgba(0,0,0,0.16)';
-  for (let by = top - 148; by < y + 18; by += 11) {
-    const off = ((by / 11) | 0) % 2 ? 9 : 0;
-    for (let bx = x0 - 258 + off; bx < x0 - 2; bx += 18) ctx.fillRect(bx, by, 16, 4);
-    for (let bx = x1 + 2 + off; bx < x1 + 298; bx += 18) ctx.fillRect(bx, by, 16, 4);
+  for (let by = top - 148; by < y + 18; by += 6) {
+    const off = ((by / 6) | 0) % 2 ? 8 : 0;
+    for (let bx = x0 - 258 + off; bx < x0 - 2; bx += 16) ctx.fillRect(bx, by, 15, 5);
+    for (let bx = x1 + 2 + off; bx < x1 + 298; bx += 16) ctx.fillRect(bx, by, 15, 5);
+    if (by < top - 4) for (let bx = x0 + off; bx < x1; bx += 16) ctx.fillRect(bx, by, 15, 5);
   }
   // coping along the top
-  ctx.fillStyle = '#5b5b70';
-  ctx.fillRect(x0 - 262, top - 156, 264, 9); ctx.fillRect(x1 - 2, top - 156, 304, 9);
+  ctx.fillStyle = '#524657';                          // millYard's coping colour, not a lavender of my own
+  ctx.fillRect(x0 - 262, top - 156, x1 - x0 + 566, 9);  // one unbroken coping across the whole wall
+  // a relieving arch over the opening, so the masonry above it is carried rather than floating
+  ctx.strokeStyle = '#3c333c'; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.arc((x0 + x1) / 2, top, (x1 - x0) / 2 + 4, Math.PI, 0); ctx.stroke();
+  // a lit left return and a dark base, so the wall has a light on it and meets the ground
+  ctx.fillStyle = 'rgba(255,238,206,0.10)'; ctx.fillRect(x0 - 260, top - 150, 4, h + 168);
+  ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(x0 - 262, y + 10, x1 - x0 + 566, 8);
   // a painted sign on the left pier
-  ctx.fillStyle = 'rgba(232,228,234,0.30)'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
-  ctx.fillText('NO. 1 MILL', x0 - 130, top - 90);
-  ctx.fillText('GATE', x0 - 130, top - 72);
+  // paint, not UI: a serif face, a shadowed edge from a second offset pass, and the
+  // coverage broken up so it reads as weathered rather than printed
+  ctx.textAlign = 'center'; ctx.font = 'bold 16px Georgia, serif';
+  const tx = x0 - 104, ty = top - 78;
+  ctx.fillStyle = 'rgba(26,20,24,0.50)'; ctx.fillText('NO. 1 MILL', tx + 1.5, ty + 1.5);
+  ctx.fillStyle = 'rgba(228,216,208,0.36)'; ctx.fillText('NO. 1 MILL', tx, ty);
+  ctx.fillStyle = 'rgba(74,63,69,0.60)';
+  for (let i = 0; i < 11; i++) ctx.fillRect(tx - 48 + hash(i * 7) * 96, ty - 13 + hash(i * 3) * 17, 3 + hash(i) * 8, 3);
   ctx.textAlign = 'left';
 }
 function drawYardDoors(y) {
   const c = I(), cx = c.doors - V.left, h = 122, half = 44;
   const open = S.doorOpen;
   const swing = open * open * (3 - 2 * open);          // ease, so the last of it settles
+  // The hole itself. Without this the opening frames the mill's own window and the
+  // parallax hillside, which says the building has no inside and flattens the facade.
+  // up to the head of the FRAME, not the head of the leaves: the 10 units between them
+  // were leaking the mill's own window through the top of the opening
+  ctx.fillStyle = '#191316'; ctx.fillRect(cx - half, y - h - 10, half * 2, h + 10);
   // frame
   ctx.fillStyle = '#4c4455';
   ctx.fillRect(cx - half - 13, y - h - 10, 13, h + 10);
@@ -4351,33 +4385,39 @@ function drawYardDoors(y) {
     ctx.translate(hinge, y - h / 2);
     ctx.scale(dir, 1);
     // face, darker as it turns edge-on
-    const shade = 1 - swing * 0.45;
+    const shade = 1 + swing * 0.25;   // they swing out toward the light, so they catch it
     ctx.fillStyle = `rgb(${Math.round(86 * shade)},${Math.round(74 * shade)},${Math.round(62 * shade)})`;
     ctx.fillRect(-w, -h / 2, w, h);
     // planks and two straps
-    ctx.strokeStyle = `rgba(0,0,0,${0.35 * shade})`; ctx.lineWidth = 1.5;
-    for (let px = -w + 9; px < 0; px += 13) { ctx.beginPath(); ctx.moveTo(px, -h / 2); ctx.lineTo(px, h / 2); ctx.stroke(); }
+    // plank pitch is a fraction of the leaf, so boards compress with the door rather
+    // than popping out of existence one at a time as it turns edge-on
+    ctx.strokeStyle = `rgba(0,0,0,${0.35 * Math.min(1, shade)})`; ctx.lineWidth = 1.5;
+    for (let i = 1; i < 7; i++) { const px = -w + (w / 7) * i; ctx.beginPath(); ctx.moveTo(px, -h / 2); ctx.lineTo(px, h / 2); ctx.stroke(); }
     ctx.fillStyle = `rgba(60,58,70,${shade})`;
     ctx.fillRect(-w, -h / 2 + 16, w, 7); ctx.fillRect(-w, h / 2 - 25, w, 7);
     // handle on the leading edge
-    ctx.fillStyle = '#8a7e84'; ctx.fillRect(-w + 3, -6, 4, 14);
+    ctx.fillStyle = '#8a7e84'; ctx.fillRect(-w + Math.min(3, w * 0.1), -6, Math.max(1, Math.min(4, w * 0.12)), 14);
     ctx.restore();
   }
   // light spilling through the widening gap
+  // Light out of a doorway lands on the threshold, so the spill is brightest at the
+  // floor and reaches out onto the cinder rather than glowing at the door head.
   if (swing > 0.04) {
-    const g = ctx.createLinearGradient(cx, y - h, cx, y);
-    g.addColorStop(0, `rgba(255,228,170,${0.30 * swing})`); g.addColorStop(1, 'rgba(255,228,170,0)');
-    ctx.fillStyle = g; ctx.fillRect(cx - half, y - h, half * 2, h);
+    const g = ctx.createLinearGradient(cx, y - h, cx, y + 34);
+    g.addColorStop(0, 'rgba(255,228,170,0)'); g.addColorStop(1, `rgba(255,228,170,${0.34 * swing})`);
+    ctx.fillStyle = g; ctx.fillRect(cx - half - 26, y - h, half * 2 + 52, h + 34);
   }
 }
 function drawIntro() {
   const a = introAlpha();
   if (a <= 0) return;
   const y = laneY(0);
-  ctx.save(); ctx.globalAlpha = a;
+  // A 290-unit brick wall dissolving with hillside showing through it is worse than a
+  // hard cut, so only the machinery fades. The wall and doors leave by scrolling off.
   drawGateWall(y);
-  drawBelt(y);
   drawYardDoors(y);
+  ctx.save(); ctx.globalAlpha = a;
+  drawBelt(y);
   ctx.restore();
 }
 function drawFinish() {
@@ -4589,7 +4629,9 @@ function drawRunners(lane) {
     const drop = r.state === 'run' ? deckDrop(r) : 0;
     const sy = footY(r) + (r.state === 'fall' ? r.fy : 0) + bob + drop;
     const scale = (r.name ? 1.1 : 1) * (r.height || 1);
-    if (r.state === 'run') {
+    // A body 100 units up on the conveyor was still dropping a contact shadow at the
+    // feet line, so each rider carried a shadow through the air with them.
+    if (r.state === 'run' && !r.onBelt && !r.offLine) {
       // A shadow points away from its light. Outside the mountain that light is the sun,
       // fixed upper-left, so the shadow is long and thrown right; under a ceiling lamp it
       // is short and directly underfoot. The same blob for both is what flattened them.
@@ -5236,6 +5278,12 @@ if (qs.has('start')) {
   S.mode = 'play';
   const n = +(qs.get('skip') || 0) * 60, solve = qs.has('solve');
   for (let i = 0; i < n; i++) { update(1 / 60); if (solve) devSolve(); }
+}
+// ?intro=N holds the opening at N seconds, for headless screenshots of it
+if (qs.has('intro')) {
+  S.mode = 'intro'; S.introT = 0;
+  const n = Math.round(+(qs.get('intro') || 0) * 60);
+  for (let i = 0; i < n && S.mode === 'intro'; i++) update(1 / 60);
 }
 if (qs.has('finale')) {
   S.runners.slice(0, 12).forEach(r => { r.state = 'arrived'; });
