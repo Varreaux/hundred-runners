@@ -19,6 +19,19 @@ Morgan (GitHub login `Varreaux`). Read this before editing.
   no-cache headers. Do not point him at any other port. If you run your own
   server for screenshots, keep it to yourself and say so.
 
+## What our instruments cannot sense
+
+A passing test is a verdict only on what the test senses, never on whether the
+thing is good. The footstep sound measured clean on every axis we had — 112,867
+audio nodes, two left live, nothing out of range — and Morgan listened to it and
+said it was no good. Those measurements were not weak evidence of quality; they
+were no evidence of it at all.
+
+The correction is not a better instrument. It is **showing him the thing early,
+before any polish**, for anything whose worth is a judgement rather than a
+number: sound, art, and how the game feels to play. Three sessions verified that
+sound for hours and the one question that mattered took him ten seconds.
+
 ## Every change you push
 
 1. Verify it. Browser check for anything visual, and run the freeze harness
