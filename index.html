@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '30 the shafting can be stopped';
+const BUILD = '31 the sweeper and the keypad';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -271,37 +271,103 @@ const VERBS = {
   },
   lights: {
     takesDigits: true,
-    hint: 'repeat the flashes',
-    solveKey: m => String(m.seq[m.idx]),
-    start(diff) { const n = 3 + Math.floor(rand(0, 3)); return { seq: Array.from({ length: n }, () => 1 + Math.floor(rand(0, 9))), idx: 0, round: 1 }; },
+    hint: 'watch the sweeper, then repeat the order with 1-9',
+    solveKey: m => (m.watch || m.won ? null : m.seq[m.idx]),
+    start() { const m = { round: 0, minimum: 3, inputLight: null, inputT: 0, won: false }; lightRound(m); return m; },
     key(m, k) {
-      const n = +k; if (!(n >= 1 && n <= 9)) return null;
-      if (n !== m.seq[m.idx]) { m.idx = 0; return 'wrong'; }
-      return ++m.idx >= m.seq.length ? 'done' : 'ok';
+      // ignore input while the demo is playing, and after the win is banked
+      if (!/^[1-9]$/.test(k) || m.watch || m.won) return null;
+      m.inputLight = k; m.inputT = 0.28;
+      if (k !== m.seq[m.idx]) { m.idx = 0; m.watch = true; m.clock = 0; return 'wrong'; }
+      if (++m.idx < m.seq.length) return 'ok';
+      // Round won. On the second, DO NOT return 'done': the final key has to stay
+      // lit for its 0.28s, so the win is banked here and completed from the update
+      // loop. m.won is what stops auto-close overtaking it (see room.pendingClear).
+      if (++m.round === 2) { m.won = true; return 'ok'; }
+      lightRound(m); return 'ok';
     },
-    update() {},
-    progress(m) { return m.idx / m.seq.length; },
-    draw(m, px, py, pw) { stubPanel(m, px, py, pw, 'LIGHTS', `${m.idx} of ${m.seq.length}`); },
+    // Only ever called for the room the player has open, which is exactly why
+    // closing the panel PAUSES the demo clock instead of resetting it. Do not
+    // "fix" that by updating every armed room: it would silently break the pause.
+    update(m, dt) {
+      m.inputT = Math.max(0, m.inputT - dt);
+      if (m.watch) { m.clock += dt; if (m.clock >= 0.7 + m.seq.length * 0.7) { m.watch = false; m.idx = 0; } }
+    },
+    progress(m) { return (m.round + (m.seq.length ? m.idx / m.seq.length : 0)) / 2; },
+    draw(m, px, py, pw) {
+      const cx = px + pw / 2;
+      const tick = (m.clock - 0.7) / 0.7;
+      const lit = m.inputT > 0 ? m.inputLight
+        : m.watch && tick >= 0 && tick % 1 < 0.65 ? m.seq[Math.floor(tick)] : null;
+      const own = m.inputT > 0;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = m.watch ? '#ffc64d' : '#5ce1ff'; ctx.font = 'bold 12px monospace';
+      ctx.fillText(`ROUND ${Math.min(2, m.round + 1)} OF 2   ${m.watch ? 'WATCH' : 'YOUR TURN'}   ${m.seq.length} FLASHES`, cx, py + 44);
+      for (let i = 0; i < 9; i++) {
+        const isLit = lit === String(i + 1);
+        const x = cx - 74 + (i % 3) * 50, y = py + 54 + Math.floor(i / 3) * 38;
+        ctx.fillStyle = isLit ? (own ? '#5ce1ff' : '#ffc64d') : '#2a2d3a';
+        roundRect(x, y, 44, 32, 5); ctx.fill();
+        ctx.strokeStyle = isLit ? '#fff' : '#4c4455'; ctx.lineWidth = isLit ? 2 : 1;
+        roundRect(x, y, 44, 32, 5); ctx.stroke();
+        ctx.fillStyle = isLit ? '#15151b' : '#8a8fa3'; ctx.font = 'bold 17px monospace';
+        ctx.fillText(String(i + 1), x + 22, y + 22);
+      }
+      // progress pips for the round the player is part way through
+      for (let i = 0; i < m.seq.length; i++) {
+        ctx.fillStyle = !m.watch && i < m.idx ? '#2ecc71' : '#3d4256';
+        ctx.beginPath(); ctx.arc(cx + (i - (m.seq.length - 1) / 2) * 14, py + 175, 4, 0, 6.28); ctx.fill();
+      }
+      ctx.textAlign = 'left';
+    },
   },
   code: {
     takesDigits: true,
-    hint: 'find the order of the three marked keys',
-    solveKey: m => String(m.order[m.typed.length]),
-    start(diff) {
-      const keys = []; while (keys.length < 3) { const n = 1 + Math.floor(rand(0, 9)); if (!keys.includes(n)) keys.push(n); }
-      return { keys, order: keys.slice().sort(() => Math.random() - 0.5), typed: [] };
+    hint: 'the three fingerprinted keys, in the right order',
+    solveKey: m => m.secret[m.input.length],
+    start() {
+      const digits = Array.from({ length: 9 }, (_, i) => String(i + 1));
+      for (let i = digits.length - 1; i > 0; i--) { const j = Math.floor(rand(0, i + 1)); [digits[i], digits[j]] = [digits[j], digits[i]]; }
+      // marks are SORTED so the display gives away which keys, never their order
+      return { secret: digits.slice(0, 3).join(''), marks: digits.slice(0, 3).sort(), input: '', failed: false };
     },
     key(m, k) {
-      const n = +k; if (!(n >= 1 && n <= 9)) return null;
-      if (!m.keys.includes(n)) return 'wrong';
-      m.typed.push(n);
-      if (m.typed.length < 3) return 'ok';
-      const hit = m.typed.every((v, i) => v === m.order[i]);
-      m.typed = []; return hit ? 'done' : 'wrong';
+      if (!/^[1-9]$/.test(k)) return null;
+      if (!m.input) m.failed = false;
+      m.input += k;
+      if (m.input.length < 3) return 'ok';
+      if (m.input === m.secret) return 'done';
+      m.input = ''; m.failed = true; return 'wrong';
     },
     update() {},
-    progress(m) { return m.typed.length / 3; },
-    draw(m, px, py, pw) { stubPanel(m, px, py, pw, 'CODE', `keys ${m.keys.join(' ')}`); },
+    progress(m) { return m.input.length / 3; },
+    draw(m, px, py, pw) {
+      const cx = px + pw / 2;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = m.failed ? '#ff7777' : '#5ce1ff'; ctx.font = 'bold 20px monospace';
+      ctx.fillText(m.failed ? 'REJECTED' : m.input.padEnd(3, '\u00b7').split('').join('   '), cx, py + 46);
+      for (let i = 0; i < 9; i++) {
+        const d = String(i + 1), marked = m.marks.includes(d);
+        const x = cx - 74 + (i % 3) * 50, y = py + 56 + Math.floor(i / 3) * 38;
+        ctx.fillStyle = '#2a2d3a'; roundRect(x, y, 44, 32, 5); ctx.fill();
+        ctx.strokeStyle = marked ? '#a7987d' : '#4c4455'; ctx.lineWidth = marked ? 2 : 1;
+        roundRect(x, y, 44, 32, 5); ctx.stroke();
+        if (marked) {
+          // a greasy thumbprint: concentric arcs, clipped to the key
+          ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2, 40, 28); ctx.clip();
+          ctx.strokeStyle = 'rgba(190,170,130,0.75)'; ctx.lineWidth = 0.8;
+          for (let j = 0; j < 4; j++) {
+            ctx.beginPath(); ctx.ellipse(x + 32, y + 17, 2 + j * 1.4, 4 + j * 1.7, 0.15, 0.2, 5.4); ctx.stroke();
+          }
+          ctx.restore();
+        }
+        ctx.fillStyle = marked ? '#e8e4ea' : '#6a6270'; ctx.font = 'bold 17px monospace';
+        ctx.fillText(d, x + 16, y + 22);
+      }
+      ctx.fillStyle = '#8a8fa3'; ctx.font = '11px monospace';
+      ctx.fillText('three prints, six possible orders', cx, py + 178);
+      ctx.textAlign = 'left';
+    },
   },
   wires: {
     hint: 'arrow keys to splice each wire',
@@ -380,6 +446,13 @@ const VERBS = {
   },
 };
 
+// One round of the sweeper's demo. Each round is at least as long as the last,
+// so round two never feels easier than round one.
+function lightRound(m) {
+  const len = Math.floor(rand(m.minimum, 6));
+  m.seq = Array.from({ length: len }, () => String(Math.floor(rand(1, 10))));
+  m.minimum = len; m.idx = 0; m.watch = true; m.clock = 0;
+}
 const ARROWS = ['ARROWLEFT', 'ARROWUP', 'ARROWRIGHT', 'ARROWDOWN'];
 // placeholder panel body, replaced along with each stub verb above
 function stubPanel(m, px, py, pw, name, line) {
@@ -625,6 +698,15 @@ function reset() {
   for (const x of CFG.gates) S.gates.push({ x, state: 'dormant', holdT: 0, drop: 0.09, dropV: 0, landed: false, judder: 0, flash: 0 });
   V.zoom = 1; V.left = 0; V.vw = W;
 }
+// The one place a room becomes solved, so a win from the update loop looks
+// exactly like a win from a keypress. room.pendingClear is cleared here.
+function solveRoom(room) {
+  room.state = 'solved'; room.pendingClear = false;
+  if (S.active === room) S.active = null;
+  AU.thud(); solveBurst(room);
+  if (room.deaths === 0) cleanRoom(room);
+  else S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 100, txt: 'CLEAR', life: 1, color: '#2ecc71' });
+}
 function armRoom(room) {
   const used = new Set(S.rooms.filter(r => r.state === 'armed').map(r => r.hot));
   let n = 1; while (used.has(n) && n < 9) n++;
@@ -690,11 +772,8 @@ window.addEventListener('keydown', e => {
     const room = S.active;
     if (!room) return;
     const res = VERBS[room.verb].key(room.mg, k);
-    if (res === 'done') {
-      room.state = 'solved'; S.active = null; AU.thud(); solveBurst(room);
-      if (room.deaths === 0) cleanRoom(room);
-      else S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 100, txt: 'CLEAR', life: 1, color: '#2ecc71' });
-    } else if (res === 'wrong') { S.wrongFlash = 0.25; AU.wrong(); }
+    if (res === 'done') solveRoom(room);
+    else if (res === 'wrong') { S.wrongFlash = 0.25; AU.wrong(); }
     else if (res === 'ok') AU.tick(VERBS[room.verb].progress(room.mg));
   }
   if (S.mode === 'finale') {
@@ -837,6 +916,16 @@ function update(dt) {
     if (room.state === 'dormant') {
       const near = S.runners.some(r => r.state === 'run' && r.lane === room.lane && r.x >= room.x - CFG.armDist);
       if (near) armRoom(room);
+    }
+    // A verb that banks its win outside key() finishes here. The sweeper does it
+    // so the final key stays lit for its 0.28s; pendingClear is what stops
+    // auto-close from stealing the room inside that window. Only tick the hold
+    // for a room the player has CLOSED -- an open one is already ticking in
+    // VERBS.update, and doing both halves the time the last light is visible.
+    if (room.state === 'armed' && room.mg && room.mg.won) {
+      room.pendingClear = true;
+      if (S.active !== room) room.mg.inputT = Math.max(0, room.mg.inputT - dt);
+      if (room.mg.inputT <= 0) solveRoom(room);
     }
     // nobody left who can reach it: close it, whether it was fixed or not
     if (room.state === 'armed' && !room.pendingClear

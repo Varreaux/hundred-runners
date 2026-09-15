@@ -74,13 +74,21 @@ eval(src + `
         maxFloaters=Math.max(maxFloaters,S.floaters.length); maxRipples=Math.max(maxRipples,S.ripples.length);
         if (style === 0) {
           for (const r of S.rooms.filter(r => r.state === 'armed')) {
+            // a digit puzzle eats digits, so hand them back before switching rooms
+            if (S.active && S.active !== r) press('ESCAPE');
             press(String(r.hot));
             let guard = 0;
             while (S.active === r && guard++ < 200) {
-              const m = r.mg;
-              if (r.verb === 'keys') press(m.seq[m.idx]);
-              else if (r.verb === 'word') press(m.word[m.idx]);
-              else { m.pos = m.zone + m.zoneW/2; press(' '); }
+              const m = r.mg, V = VERBS[r.verb];
+              if (r.verb === 'bar') { m.pos = m.zone + m.zoneW/2; press(' '); continue; }
+              if (!V.solveKey) break;
+              const k = V.solveKey(m);
+              // null means "not yet": the puzzle is waiting on time, not on a key.
+              // Break so the OUTER frame loop advances the clock, and pick it up
+              // next frame. Spinning here instead just burns the guard and leaves
+              // the room unsolved, which reads as the puzzle being broken.
+              if (k === null || k === undefined) break;
+              press(k);
             }
           }
           if (S.mode === 'finale' && S.finale) press(S.finale.seq[S.finale.idx]);
