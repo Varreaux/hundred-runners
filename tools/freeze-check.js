@@ -59,7 +59,7 @@ eval(src + `
   // cheap styles are almost free: taking the masher from 7 runs to 20 costs
   // about 39s. Splitting these into separate counts would let you hold one and
   // move the other; it has not been done because 30 is what Morgan asked for.
-  const errs = {}; let froze = 0; const RUNS = 30;
+  const errs = {}, unfinished = {}; let froze = 0; const RUNS = 30;
   let maxParticles=0, maxBubbles=0, maxFloaters=0, maxRipples=0, reachedEnd=0;
   // deterministic pseudo-random so runs differ but are reproducible
   let seed = 12345;
@@ -128,6 +128,10 @@ eval(src + `
       }
       // 'intro' is explicitly NOT an ending: counting it would hide the same failure again
       if (S.mode === 'win' || S.mode === 'lose' || S.mode === 'finale') reachedEnd++;
+      else {
+        const why = S.mode + ' @ ' + S.t.toFixed(0) + 's, ' + S.runners.filter(r => r.state === 'run').length + ' still walking';
+        unfinished[why] = (unfinished[why] || 0) + 1;
+      }
       // Sit on the end screen: it is animated (endT, embers, staggered cards, typing)
       // and has broken before. 6s, not the 20s this used to be. Measured by
       // stepping endT and hashing the canvas until the frame stops changing:
@@ -152,7 +156,7 @@ eval(src + `
       if (!errs[key].styles.includes(style)) errs[key].styles.push(style);
     }
   }
-  console.log(JSON.stringify({ frozenRuns: froze + '/' + RUNS, reachedEnd, errors: errs,
+  console.log(JSON.stringify({ frozenRuns: froze + '/' + RUNS, reachedEnd, unfinished, errors: errs,
     audio: { contextCreated: !!AU.ctx, nodesCreated: global.__audio.nodes, stillLive: global.__audio.live },
     peaks: { particles: maxParticles, bubbles: maxBubbles, floaters: maxFloaters, ripples: maxRipples } }, null, 1));
 })();`);
