@@ -922,6 +922,7 @@ function draw() {
   drawFinish();
   if (S.mode === 'play' || S.mode === 'finale') drawFx();
   ctx.restore();
+  drawForeground();
   drawVignette();
   ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.16; ctx.fillStyle = ctx.createPattern(grain(), 'repeat'); ctx.fillRect(0, 0, W, H); ctx.restore();
   if (S.mode === 'play' || S.mode === 'finale') drawOverlays();
@@ -1031,6 +1032,17 @@ function drawRiver() {
   ctx.fillStyle = wg; ctx.fillRect(e, top, x - e, depth);
   ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(e, top, x - e, depth);
   ctx.save(); ctx.beginPath(); ctx.rect(e, top, x - e, depth); ctx.clip(); waves(top); ctx.restore();
+  // lamplight smeared down the surface, drifting with it
+  ctx.save(); ctx.beginPath(); ctx.rect(e, top, x - e, depth); ctx.clip();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let wx = Math.ceil((V.left - 260) / 240) * 240; wx < V.left + V.vw + 260; wx += 240) {
+    if (!laneAt(0, wx) || Math.abs(wx - CFG.entrance) < 80 || Math.abs(wx - CFG.exit) < 80) continue;
+    const sx = wx - V.left + Math.sin(S.t * 1.3 + wx * 0.01) * 4;
+    const rg = ctx.createLinearGradient(0, top, 0, top + depth);
+    rg.addColorStop(0, 'rgba(255,190,110,0.24)'); rg.addColorStop(1, 'rgba(255,190,110,0)');
+    ctx.fillStyle = rg; ctx.fillRect(sx - 9, top, 18, depth);
+  }
+  ctx.restore();
   // rock ceiling shadow on the water and a rough rock bed beneath it
   ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(e, top, x - e, 7);
   ctx.fillStyle = '#2b2431'; ctx.beginPath(); ctx.moveTo(e, top + depth + 30);
@@ -1070,6 +1082,42 @@ function drawMountain() {
       ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.beginPath(); ctx.ellipse(bx, by, rw, rh, 0.25, 0, 6.28); ctx.fill();
       ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1.4; ctx.stroke();
     }
+  });
+  // old workings: short dead corridors cut through the rock long ago, some still lit, no way in or out.
+  // They are what makes the mountain read as honeycombed rather than as a solid slab.
+  parallaxRange(1, 140, (seg, sx) => {
+   for (let j = 0; j < 8; j++) {
+    const h = hash(seg * 17.3 + j * 41.7);
+    if (h < 0.42) continue;
+    const w = 58 + h * 120, hgt = 20 + hash(seg * 5.5 + j * 13.1) * 16;
+    const yy = -800 + hash(seg * 9.1 + j * 27.3) * 1320;
+    // only keep clear of tunnels that actually exist at this point in the course
+    const wx = sx + V.left;
+    let clear = true;
+    for (let k = 0; k < CFG.laneCount; k++) {
+      if (!laneAt(k, wx) && !laneAt(k, wx + w)) continue;
+      if (yy + hgt > laneY(k) - CFG.tunnelH - 26 && yy < laneY(k) + 52) { clear = false; break; }
+    }
+    if (!clear) continue;
+    ctx.fillStyle = 'rgba(6,4,10,0.82)'; roundRect(sx, yy, w, hgt, 5); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(sx + 2, yy, w - 4, 2.2);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(sx + 2, yy + hgt - 2.4, w - 4, 2.4);
+    if (hash(seg * 3.3) > 0.55) {
+      const lx = sx + w * 0.34, ly = yy + hgt * 0.5;
+      const gl = ctx.createRadialGradient(lx, ly, 2, lx, ly, 36);
+      gl.addColorStop(0, 'rgba(255,186,92,0.2)'); gl.addColorStop(1, 'rgba(255,186,92,0)');
+      ctx.fillStyle = gl; ctx.fillRect(lx - 36, yy - 12, 72, hgt + 24);
+      ctx.fillStyle = '#c9a25a'; ctx.fillRect(lx - 1.4, yy + hgt * 0.34, 2.8, 4);
+    }
+   }
+  });
+  // mineral seams catching what little light there is
+  parallaxRange(1, 300, (seg, sx) => {
+    if (hash(seg * 7.7) < 0.62) return;
+    const yy = -300 + hash(seg * 4.4) * 900, len = 60 + hash(seg * 2.2) * 130;
+    ctx.strokeStyle = 'rgba(170,150,190,0.1)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(sx, yy);
+    ctx.quadraticCurveTo(sx + len * 0.5, yy + 26, sx + len, yy + 14); ctx.stroke();
   });
   ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1.6;
   parallaxRange(1, 140, (seg, sx) => {
@@ -1126,6 +1174,29 @@ function carveTunnels() {
   ctx.fillStyle = '#231b28';
   for (const wx of [CFG.entrance, CFG.exit]) { if (!inView(wx, 100)) continue; const ax = wx - V.left, cy = laneY(0) - th; ctx.fillRect(ax - 36, cy - 3, 72, 22); ctx.beginPath(); ctx.arc(ax, cy - 2, 36, Math.PI, 0); ctx.fill(); }
   shaft(CFG.entrance, 1); shaft(CFG.exit, -1);
+  ceilingRays(th);
+}
+// thin shafts of daylight reaching the topmost tunnel through cracks in the rock above
+function ceilingRays(th) {
+  let top = -1;
+  for (let k = CFG.laneCount - 1; k >= 0; k--) {
+    if (LANE_SPANS[k].some(([a, b]) => b > V.left - 100 && a < V.left + V.vw + 100)) { top = k; break; }
+  }
+  if (top < 0) return;
+  const y = laneY(top);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (let wx = Math.ceil((V.left - 300) / 330) * 330; wx < V.left + V.vw + 300; wx += 330) {
+    if (hash(wx * 0.37) < 0.42 || !laneAt(top, wx)) continue;
+    const sx = wx - V.left, lean = (hash(wx * 1.9) - 0.5) * 80;
+    const g = ctx.createLinearGradient(sx, y - th, sx + lean, y + 6);
+    g.addColorStop(0, 'rgba(205,224,255,0.13)'); g.addColorStop(1, 'rgba(205,224,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(sx - 5, y - th); ctx.lineTo(sx + 6, y - th);
+    ctx.lineTo(sx + lean + 27, y + 6); ctx.lineTo(sx + lean - 25, y + 6);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
 }
 // a wedge of daylight leaning into the tunnel from a mouth
 function shaft(wx, dir) {
@@ -1146,6 +1217,15 @@ function corridor(wx0, wx1, y) {
   if (x1 <= x0) return;
   const cy = y - CFG.tunnelH;
   ctx.fillStyle = '#231b28'; ctx.fillRect(x0, cy, x1 - x0, CFG.tunnelH + 1);
+  // ribs cut into the back wall at intervals, so the corridor has an inside rather than a flat face
+  for (let wx = Math.floor((x0 + V.left) / 118) * 118; wx < x1 + V.left + 118; wx += 118) {
+    const rx = wx - V.left;
+    if (rx < x0 - 40 || rx > x1 + 40) continue;
+    ctx.fillStyle = 'rgba(0,0,0,0.26)'; ctx.fillRect(rx - 5, cy + 8, 10, CFG.tunnelH - 8);
+    ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(rx - 5, cy + 8, 2.6, CFG.tunnelH - 8);
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.moveTo(rx - 38, cy + 30); ctx.quadraticCurveTo(rx, cy + 7, rx + 38, cy + 30); ctx.stroke();
+  }
   // hand-cut ceiling: rock lip with bumps, then a soft shadow under it
   ctx.fillStyle = '#2b2431'; ctx.beginPath(); ctx.moveTo(x0, cy - 2);
   for (let x = Math.floor((x0 + V.left) / 24) * 24 - V.left; x <= x1; x += 24) {
@@ -1184,6 +1264,37 @@ function parallaxRange(p, size, fn) {
   const off = V.left * p;
   const s0 = Math.floor((off - size) / size), s1 = Math.floor((off + V.vw + size) / size);
   for (let seg = s0; seg <= s1; seg++) fn(seg, seg * size - off);
+}
+// rock between the camera and the world, moving faster than it. It fades out as the view pulls
+// back, so the six-tunnel shot is never obstructed.
+function drawForeground() {
+  const fade = clamp01((V.zoom - 0.46) / 0.34);
+  if (fade <= 0.01) return;
+  const p = 1.5, step = 76, off = V.left * p;
+  const k0 = Math.floor((off - step) / step), k1 = Math.floor((off + W + step) / step) + 1;
+  const lip = (k, salt) => 14 + hash(k * 2.3 + salt) * 44;
+  const band = (fromTop, salt) => {
+    const g = fromTop
+      ? ctx.createLinearGradient(0, -10, 0, 104)
+      : ctx.createLinearGradient(0, H + 10, 0, H - 96);
+    g.addColorStop(0, 'rgba(9,6,13,0.97)'); g.addColorStop(1, 'rgba(9,6,13,0.66)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(k0 * step - off, fromTop ? -20 : H + 20);
+    for (let k = k0; k <= k1; k++) {
+      const sx = k * step - off;
+      const a = lip(k, salt), b = lip(k + 1, salt);
+      const mid = 14 + hash(k * 5.1 + salt + 7) * 64;
+      ctx.lineTo(sx, fromTop ? a : H - a);
+      ctx.quadraticCurveTo(sx + step / 2, fromTop ? mid : H - mid, sx + step, fromTop ? b : H - b);
+    }
+    ctx.lineTo(k1 * step - off + step, fromTop ? -20 : H + 20);
+    ctx.closePath(); ctx.fill();
+  };
+  ctx.save();
+  ctx.globalAlpha = fade;
+  band(true, 0); band(false, 91);
+  ctx.restore();
 }
 function drawVignette() {
   const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, H * 0.95);
@@ -1678,6 +1789,17 @@ function drawRunners(lane) {
     }
     else if (r.hop > 0) ctx.rotate(-0.7 * Math.sin(r.hop / 0.5 * Math.PI));
     drawFigure(r, 0, 0, phase, scale, alpha);
+    // lamplight picking a runner out as they pass beneath it
+    if (r.state === 'run' && r.x > CFG.entrance && r.x < CFG.exit) {
+      const lampX = Math.round((r.x - lane * 40) / 240) * 240 + lane * 40;
+      const warm = 1 - Math.min(1, Math.abs(r.x - lampX) / 118);
+      if (warm > 0.03) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = warm * warm * 0.26;
+        ctx.fillStyle = '#ffcf8c';
+        ctx.beginPath(); ctx.ellipse(0, -13 * scale, 6.5 * scale, 12.5 * scale, 0, 0, 6.28); ctx.fill();
+        ctx.restore();
+      }
+    }
     ctx.restore();
   }
 }
