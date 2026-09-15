@@ -41,6 +41,11 @@ const CFG = {
   gapWidth: 120,
   keyPool: 'QWERASDF',
   types: {
+    gears:    { verb: 'gears',  title: 'align the drive train',      hazard: 'machine', color: '#ff9a3c' },
+    conveyor: { verb: 'levers', title: 'stop the conveyor',          hazard: 'machine', color: '#ff9a3c' },
+    sweeper:  { verb: 'lights', title: 'shut down the sweeper',      hazard: 'machine', color: '#ff9a3c' },
+    presses:  { verb: 'code',   title: 'unlock the press controls',  hazard: 'press',   color: '#ffd23c' },
+    wiring:   { verb: 'wires',  title: 'make the wiring safe',       hazard: 'machine', color: '#ff9a3c' },
     bridge:  { verb: 'keys', title: 'lower the drawbridge',   hazard: 'all',   color: '#ff4646' },
     winch:   { verb: 'bar',  title: 'crank the winch',        hazard: 'all',   color: '#ff4646' },
     rope:    { verb: 'word', title: 'pull the rope bridge',   hazard: 'all',   color: '#ff4646' },
@@ -48,6 +53,9 @@ const CFG = {
     crusher: { verb: 'keys', title: 'jam the crusher',        hazard: 'burst', color: '#ffd23c' },
   },
   crusherPeriod: 1.6,
+  // hazard -> how far into the room it starts killing; canReach asks this
+  // instead of assuming 8, so the next hazard added cannot reintroduce the bug
+  killFrom: { all: 8, half: 8, burst: 35, machine: 88, press: 1 },
   spikeCooldown: 3,      // real seconds before another death-spike slow-motion can fire
   // a fork sends `split` of the runners on tunnel `from` up a ramp into tunnel `to`; they come back at `merge`.
   // nested forks must merge before the fork they branched from.
@@ -69,6 +77,13 @@ const CFG = {
           'Nikita', 'Paula', 'Hoda', 'Sithe', 'Valeria', 'Violeta\u{1F49C}', 'Wilson', 'BOOM\u{1F4A3}'],
   rooms: [
     { x: 1300,  lane: 0, type: 'bridge',  diff: 1 },
+    // Linh's five, all inside the mill (712..5950), which is where factory
+    // machines belong. Interleaved with the existing crossings on lane 0.
+    { x: 1750,  lane: 0, type: 'gears',    diff: 1 },
+    { x: 2500,  lane: 0, type: 'conveyor', diff: 1 },
+    { x: 4000,  lane: 0, type: 'sweeper',  diff: 2 },
+    { x: 5300,  lane: 0, type: 'presses',  diff: 2 },
+    { x: 5800,  lane: 0, type: 'wiring',   diff: 3 },
     { x: 2200,  lane: 0, type: 'rope',    diff: 1 },
     { x: 3300,  lane: 0, type: 'winch',   diff: 2 },
     { x: 3450,  lane: 1, type: 'bridge',  diff: 2 },
@@ -223,8 +238,89 @@ const inView = (wx, margin = 100) => wx > V.left - margin && wx < V.left + V.vw 
 
 // ================================================================ mini-game verbs
 const VERBS = {
+  // ---- the five factory puzzles. STUBS: real versions are being written
+  // elsewhere and drop straight in here. Contract: key() returns 'done' | 'ok' |
+  // 'wrong' | null; anything that completes outside key() must set
+  // room.pendingClear or auto-close can overtake it.
+  gears: {
+    hint: 'arrow keys to line the gears up',
+    solveKey: m => ((m.goal - m.phase + 12) % 12 <= 6 ? 'ARROWUP' : 'ARROWDOWN'),
+    start(diff) { return { phase: Math.floor(rand(3, 10)), goal: 0, n: 2 + Math.floor(rand(0, 2)) }; },
+    key(m, k) {
+      if (k === 'ARROWUP' || k === 'ARROWRIGHT') m.phase = (m.phase + 1) % 12;
+      else if (k === 'ARROWDOWN' || k === 'ARROWLEFT') m.phase = (m.phase + 11) % 12;
+      else return null;
+      return m.phase === m.goal ? 'done' : 'ok';
+    },
+    update() {},
+    progress(m) { const d = Math.min((m.phase - m.goal + 12) % 12, (m.goal - m.phase + 12) % 12); return 1 - d / 6; },
+    draw(m, px, py, pw) { stubPanel(m, px, py, pw, 'GEARS', `phase ${m.phase} of 12`); },
+  },
+  levers: {
+    hint: 'push each lever the way it asks',
+    solveKey: m => m.seq[m.idx],
+    start(diff) { const n = 5 + Math.floor(rand(0, 2)); return { seq: Array.from({ length: n }, () => pick(ARROWS)), idx: 0 }; },
+    key(m, k) {
+      if (!ARROWS.includes(k)) return null;
+      if (k !== m.seq[m.idx]) return 'wrong';
+      return ++m.idx >= m.seq.length ? 'done' : 'ok';
+    },
+    update() {},
+    progress(m) { return m.idx / m.seq.length; },
+    draw(m, px, py, pw) { stubPanel(m, px, py, pw, 'LEVERS', `${m.idx} of ${m.seq.length}`); },
+  },
+  lights: {
+    takesDigits: true,
+    hint: 'repeat the flashes',
+    solveKey: m => String(m.seq[m.idx]),
+    start(diff) { const n = 3 + Math.floor(rand(0, 3)); return { seq: Array.from({ length: n }, () => 1 + Math.floor(rand(0, 9))), idx: 0, round: 1 }; },
+    key(m, k) {
+      const n = +k; if (!(n >= 1 && n <= 9)) return null;
+      if (n !== m.seq[m.idx]) { m.idx = 0; return 'wrong'; }
+      return ++m.idx >= m.seq.length ? 'done' : 'ok';
+    },
+    update() {},
+    progress(m) { return m.idx / m.seq.length; },
+    draw(m, px, py, pw) { stubPanel(m, px, py, pw, 'LIGHTS', `${m.idx} of ${m.seq.length}`); },
+  },
+  code: {
+    takesDigits: true,
+    hint: 'find the order of the three marked keys',
+    solveKey: m => String(m.order[m.typed.length]),
+    start(diff) {
+      const keys = []; while (keys.length < 3) { const n = 1 + Math.floor(rand(0, 9)); if (!keys.includes(n)) keys.push(n); }
+      return { keys, order: keys.slice().sort(() => Math.random() - 0.5), typed: [] };
+    },
+    key(m, k) {
+      const n = +k; if (!(n >= 1 && n <= 9)) return null;
+      if (!m.keys.includes(n)) return 'wrong';
+      m.typed.push(n);
+      if (m.typed.length < 3) return 'ok';
+      const hit = m.typed.every((v, i) => v === m.order[i]);
+      m.typed = []; return hit ? 'done' : 'wrong';
+    },
+    update() {},
+    progress(m) { return m.typed.length / 3; },
+    draw(m, px, py, pw) { stubPanel(m, px, py, pw, 'CODE', `keys ${m.keys.join(' ')}`); },
+  },
+  wires: {
+    hint: 'arrow keys to splice each wire',
+    solveKey: m => (m.sel === m.idx ? 'ARROWRIGHT' : 'ARROWDOWN'),
+    start(diff) { const n = 3 + Math.floor(rand(0, 2)); return { left: Array.from({ length: n }, (_, i) => i), idx: 0, sel: 0 }; },
+    key(m, k) {
+      if (k === 'ARROWUP') { m.sel = (m.sel + m.left.length - 1) % m.left.length; return 'ok'; }
+      if (k === 'ARROWDOWN') { m.sel = (m.sel + 1) % m.left.length; return 'ok'; }
+      if (k !== 'ARROWRIGHT') return null;
+      if (m.sel !== m.idx) return 'wrong';
+      return ++m.idx >= m.left.length ? 'done' : 'ok';
+    },
+    update() {},
+    progress(m) { return m.idx / m.left.length; },
+    draw(m, px, py, pw) { stubPanel(m, px, py, pw, 'WIRES', `${m.idx} of ${m.left.length}`); },
+  },
   keys: {
     hint: 'hit the highlighted keys in order',
+    solveKey: m => m.seq[m.idx],
     start(diff) { return { seq: themeWord(diff).split(''), idx: 0 }; },
     key(m, k) {
       if (!/^[A-Z]$/.test(k)) return null;
@@ -271,6 +367,7 @@ const VERBS = {
   },
   word: {
     hint: 'type the word',
+    solveKey: m => m.word[m.idx],
     start(diff) { return { word: themeWord(diff), idx: 0 }; },
     key(m, k) {
       if (k.length !== 1 || k < 'A' || k > 'Z') return null;
@@ -282,6 +379,17 @@ const VERBS = {
     draw(m, px, py, pw) { drawWordPrompt(m.word, m.idx, px, py, pw); },
   },
 };
+
+const ARROWS = ['ARROWLEFT', 'ARROWUP', 'ARROWRIGHT', 'ARROWDOWN'];
+// placeholder panel body, replaced along with each stub verb above
+function stubPanel(m, px, py, pw, name, line) {
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#8a8fa3'; ctx.font = 'bold 15px monospace';
+  ctx.fillText(name + ' - placeholder', px + pw / 2, py + 56);
+  ctx.fillStyle = '#e8e4ea'; ctx.font = 'bold 26px monospace';
+  ctx.fillText(line, px + pw / 2, py + 92);
+  ctx.textAlign = 'left';
+}
 
 // ================================================================ sound (all synthesised in code, no audio files)
 const AU = {
@@ -558,6 +666,9 @@ window.addEventListener('keydown', e => {
   if (e.repeat) return;
   const k = e.key.toUpperCase();
   if (k === ' ' || k === 'ENTER') e.preventDefault();
+  // the machine puzzles are driven with the arrows; without this the browser
+  // scrolls the page out from under the game while you play them
+  if (k.startsWith('ARROW')) e.preventDefault();
   AU.init();
   if (k === 'M' && !S.active) { AU.muted = !AU.muted; return; }
   if (S.mode === 'title') { if (k === ' ') S.mode = 'play'; return; }
@@ -565,7 +676,11 @@ window.addEventListener('keydown', e => {
   if (S.paused) { if (k === 'P') S.paused = false; else if (k === 'R') { reset(); S.mode = 'play'; } return; }
   if (k === 'P' && !S.active) { S.paused = true; return; }
   if (S.mode === 'play') {
-    if (k >= '1' && k <= '9') {
+    // Digits pick a room, EXCEPT while a puzzle that reads digits is open --
+    // the sweeper and the press keypad both do. Escape closes the panel and
+    // hands 1-9 back to room selection.
+    const numRoom = S.active && VERBS[S.active.verb].takesDigits;
+    if (k >= '1' && k <= '9' && !numRoom) {
       const room = S.rooms.find(r => r.state === 'armed' && r.hot === +k);
       if (room) S.active = room;
       return;
@@ -696,7 +811,15 @@ function update(dt) {
       updateLane(r);
       for (const room of S.rooms) {
         if (room.lane !== r.lane || room.state === 'solved') continue;
-        if (r.x < room.x + 8 || r.x >= room.x + CFG.gapWidth) continue;
+        // the presses run on their own cadence in the room loop below
+        if (room.hazard === 'press') continue;
+        if (room.hazard === 'machine') {
+          if (r.x >= room.x + killFrom(room) && r.x < room.x + CFG.gapWidth) {
+            r.doom = room; killRunner(r, room.type === 'wiring' ? 'electric' : 'crush'); room.deaths++; break;
+          }
+          continue;
+        }
+        if (r.x < room.x + killFrom(room) || r.x >= room.x + CFG.gapWidth) continue;
         if (room.hazard === 'burst') continue;
         if (room.hazard === 'half') { if (r.rolled === room) continue; r.rolled = room; if (Math.random() < 0.5) continue; }
         r.state = 'fall'; r.doom = room; r.vy = 0; r.fy = 0; r.fallLimit = r.lane === 0 ? CFG.riverY - r.y : 60; room.deaths++;
@@ -716,11 +839,26 @@ function update(dt) {
       if (near) armRoom(room);
     }
     // nobody left who can reach it: close it, whether it was fixed or not
-    if (room.state === 'armed' && !S.runners.some(r => (r.state === 'run' || r.state === 'fall') && canReach(r, room))) {
+    if (room.state === 'armed' && !room.pendingClear
+        && !S.runners.some(r => (r.state === 'run' || r.state === 'fall') && canReach(r, room))) {
       room.state = 'passed';
       if (S.active === room) S.active = null;
       if (room.deaths) S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 100, txt: 'TOO LATE', life: 1.2, color: '#ff8a8a' });
       else cleanRoom(room);
+    }
+    // Three presses on a rota, each taking at most one person. The clock runs
+    // whenever the room is unsolved, including before the panel is ever opened,
+    // so walking into an untouched press room is as dangerous as it looks.
+    if (room.hazard === 'press' && room.state !== 'solved') {
+      const before = Math.floor((room.pressT || 0) / 0.65);
+      room.pressT = (room.pressT || 0) + dt;
+      const beat = Math.floor(room.pressT / 0.65);
+      if (beat > before) {
+        const centre = room.x + 20 + ((beat - 1) % 3) * 40;
+        if (inView(room.x, 120)) AU.thud();
+        const victim = S.runners.find(r => r.state === 'run' && r.lane === room.lane && Math.abs(r.x - centre) < 19);
+        if (victim) { victim.doom = room; killRunner(victim, 'crush'); room.deaths++; }
+      }
     }
     if (room.state === 'solved') room.bridge = Math.min(1, room.bridge + dt * 3.5);
     room.flash = Math.max(0, room.flash - dt * 1.8);
@@ -853,8 +991,9 @@ function dust(wx, y, c) {
   emit('chip', 3, wx, y, { sx: 5, vx: [-75, 75], vy: [-135, -40], life: [0.4, 0.8], c: shade(c, 0.7) });
 }
 // can this runner still arrive at the room? Same tunnel, or a tunnel that forks into it before the room.
+const killFrom = room => CFG.killFrom[room.hazard] ?? 8;
 function canReach(r, room) {
-  if (r.x >= room.x + 8) return false;
+  if (r.x >= room.x + killFrom(room)) return false;
   const lanes = new Set([room.lane]);
   let grew = true;
   while (grew) {
@@ -3384,7 +3523,11 @@ function drawLane(lane) {
   const spans = lane === 0
     ? [[-1e9, CFG.entrance - 48, 'out'], [CFG.entrance - 48, CFG.exit + 48, 'in'], [CFG.exit + 48, 1e9, 'out']]
     : LANE_SPANS[lane].map(([a, b]) => [a, b, 'in']);
-  const gaps = S.rooms.filter(r => r.lane === lane && r.hazard !== 'burst').map(r => [r.x, r.x + CFG.gapWidth]).sort((a, b) => a[0] - b[0]);
+  // Only the chasms are holes in the floor. A machine stands ON the deck, so
+  // cutting a gap under one would drop the mill's tailrace through the middle
+  // of a working machine.
+  const solid = { burst: 1, machine: 1, press: 1 };
+  const gaps = S.rooms.filter(r => r.lane === lane && !solid[r.hazard]).map(r => [r.x, r.x + CFG.gapWidth]).sort((a, b) => a[0] - b[0]);
   for (const [s0, s1, style] of spans) {
     let cur = Math.max(s0, view0);
     const end = Math.min(s1, view1);
@@ -3717,6 +3860,7 @@ function drawRoomProps(lane) {
 }
 function drawRoom(room, y) {
   if (!inView(room.x, 240)) return;
+  if (room.hazard === 'machine' || room.hazard === 'press') { drawMachineRoom(room, y); return; }
   const sx = room.x - V.left, gw = CFG.gapWidth;
   const b = room.bridge, prog = room.mg && room.state === 'armed' ? VERBS[room.verb].progress(room.mg) : 0;
   // in the mill the crossings are steel plate and wire rope; in the rock, timber and hemp
@@ -3864,6 +4008,36 @@ function drawRoom(room, y) {
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
+  }
+}
+// The machine rooms stand ON the deck rather than being holes in it. The art
+// for each is being built elsewhere by promoting the plant millCorridor already
+// draws in the background, rather than importing a second visual language for
+// the same objects. This placeholder keeps the room readable until then.
+function drawMachineRoom(room, y) {
+  const sx = room.x - V.left, gw = CFG.gapWidth;
+  ctx.fillStyle = '#121018'; ctx.fillRect(sx + 6, y - 74, gw - 12, 74);
+  ctx.fillStyle = '#232c2b'; ctx.fillRect(sx + 8, y - 72, gw - 16, 72);
+  ctx.fillStyle = 'rgba(186,212,236,0.3)'; ctx.fillRect(sx + 8, y - 72, gw - 16, 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(sx + gw - 14, y - 72, 6, 72);
+  // a status lamp: the room says whether it is still dangerous
+  const lit = room.state === 'solved';
+  const lx = sx + gw / 2, ly = y - 60;
+  ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(lx, ly, 7.4, 0, 6.28); ctx.fill();
+  const pulse = lit ? 1 : 0.55 + 0.45 * Math.sin(S.t * 6);
+  ctx.fillStyle = lit ? 'rgba(46,204,113,0.95)' : `rgba(255,120,60,${pulse})`;
+  ctx.beginPath(); ctx.arc(lx, ly, 5.4, 0, 6.28); ctx.fill();
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g2 = ctx.createRadialGradient(lx, ly, 1, lx, ly, 34);
+  g2.addColorStop(0, lit ? 'rgba(46,204,113,0.28)' : `rgba(255,120,60,${0.26 * pulse})`);
+  g2.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g2; ctx.fillRect(lx - 34, ly - 34, 68, 68);
+  ctx.restore();
+  if (room.state === 'armed') {
+    const p = 0.6 + 0.4 * Math.sin(S.t * 10);
+    ctx.strokeStyle = S.active === room ? '#5ce1ff' : room.color;
+    ctx.globalAlpha = S.active === room ? 1 : p; ctx.lineWidth = 2.4 / V.zoom;
+    ctx.strokeRect(sx + 4, y - 78, gw - 8, 80); ctx.globalAlpha = 1;
   }
 }
 function drawFinish() {
@@ -4643,19 +4817,39 @@ reset();
 updateView(1);
 const qs = new URLSearchParams(location.search);
 // ?start&skip=N runs N seconds of play; add &solve to have a bot clear every room it meets
+// The test bot. Each verb exposes solveKey(m): the key a player who had already
+// worked the puzzle out would press next. That is a deliberate hook rather than
+// a shortcut -- a blind "press things until progress goes up" search cannot
+// solve any puzzle that RESETS on a wrong key, because after a reset it can
+// only climb back to where it was and never above, so it concludes it is stuck.
+// Verbs without the hook fall back to the blind search.
+const SOLVE_KEYS = ['ARROWUP', 'ARROWDOWN', 'ARROWLEFT', 'ARROWRIGHT', ' ',
+  '1', '2', '3', '4', '5', '6', '7', '8', '9', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
 function devSolve() {
   const fire = k => window.dispatchEvent(new KeyboardEvent('keydown', { key: k }));
   for (const r of S.rooms.filter(r => r.state === 'armed')) {
+    // a digit puzzle eats digits, so hand them back to room selection first --
+    // the same Escape a player has to press
+    if (S.active && S.active !== r) fire('ESCAPE');
     fire(String(r.hot));
     let guard = 0;
-    while (S.active === r && guard++ < 200) {
-      const m = r.mg;
-      if (r.verb === 'keys') fire(m.seq[m.idx]);
-      else if (r.verb === 'word') fire(m.word[m.idx]);
-      else { m.pos = m.zone + m.zoneW / 2; fire(' '); }
+    while (S.active === r && guard++ < 600) {
+      const m = r.mg, V = VERBS[r.verb];
+      if (r.verb === 'bar') { m.pos = m.zone + m.zoneW / 2; fire(' '); continue; }
+      if (V.solveKey) { fire(V.solveKey(m)); continue; }
+      const before = V.progress(m);
+      let moved = false;
+      for (const k of SOLVE_KEYS) {
+        fire(k);
+        if (S.active !== r) { moved = true; break; }
+        if (V.progress(m) > before) { moved = true; break; }
+      }
+      if (!moved) break;
     }
   }
 }
+
+
 if (qs.has('start')) {
   S.mode = 'play';
   const n = +(qs.get('skip') || 0) * 60, solve = qs.has('solve');
