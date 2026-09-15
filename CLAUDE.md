@@ -61,7 +61,15 @@ sound for hours and the one question that mattered took him ten seconds.
    once bumped from 18 at the same moment and both shipped a `19`.
 3. Rebase onto `origin/Morgan`, push, then **message the other sessions** (see
    below) with the commit hash, the new BUILD, and what changed.
-4. If you resolved a conflict in someone else's code, say exactly what you kept.
+4. **Never write "mine" or "I" into a commit message.** Every commit on this
+   branch carries Varreaux as author, so a first-person pronoun identifies
+   nobody and actively misleads: "same fault as the sweeper, mine" meant the
+   author claiming the ROOM, and was read by two sessions as a session claiming
+   the COMMIT. Name the thing instead. What does identify you is the
+   `Claude-Session` trailer in the body; if your commits do not carry one, add
+   it, and then `git log -1 --format='%b' HASH | grep Claude-Session` answers
+   "who wrote this" without anyone having to ask.
+5. If you resolved a conflict in someone else's code, say exactly what you kept.
    Conflicts land most often in the `reset()` state literal and the runner
    object, because everyone adds fields there.
 
