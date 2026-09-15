@@ -54,9 +54,15 @@ was saved only by checking first.
 pid to its working directory before touching it:
 
 ```
-lsof -a -p PID -d cwd          # which worktree is it running in?
-ps -o command= -p PID          # the shell snapshot id also differs per session
+lsof -a -p PID -d cwd          # the only reliable answer: which worktree is it in?
+ps -o ppid= -p PID             # then the PARENT shell, whose command carries a
+                               # per-session snapshot id, unlike the node process
 ```
+
+The working directory is the check that matters. `ps -o args=` on the process
+itself will not help: every session's `node tools/freeze-check.js` is
+byte-identical. The distinguishing snapshot id lives in the parent shell's
+command line, not in the node process, so look one level up or not at all.
 
 Kill by pid, never by pattern, and only once the working directory says it is
 yours. Leaving a stray running costs some CPU; killing someone else's run
