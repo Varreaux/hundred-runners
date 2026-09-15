@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '33 the sweeper gets its road';
+const BUILD = '34 the wiring gets its road too';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -88,7 +88,12 @@ const CFG = {
     // instead; nothing about Linh's puzzle changes. Undo by deleting warn.
     { x: 4000,  lane: 0, type: 'sweeper',  diff: 2, warn: 900 },
     { x: 5300,  lane: 0, type: 'presses',  diff: 2 },
-    { x: 5800,  lane: 0, type: 'wiring',   diff: 3 },
+    // Same arithmetic fault as the sweeper, in my own room. Splicing a wire costs a pull,
+    // a walk along the sockets and a connect, and over 4000 layouts an optimal player needs
+    // 14 keys, median and worst alike. The standard 240px of warning is 2.18s of road, so
+    // it demands 6.4 keys a second with no time to read the colours. 840px is 7.6s, which
+    // is about 1.8 keys a second and leaves a moment to look at it. Undo by deleting warn.
+    { x: 5800,  lane: 0, type: 'wiring',   diff: 3, warn: 840 },
     { x: 2200,  lane: 0, type: 'rope',    diff: 1 },
     { x: 3300,  lane: 0, type: 'winch',   diff: 2 },
     { x: 3450,  lane: 1, type: 'bridge',  diff: 2 },
