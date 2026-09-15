@@ -37,7 +37,7 @@ const CFG = {
     gears: { verb: 'gears', title: 'align the damaged machine', hazard: 'machine', color: '#ff9a3c' },
     conveyor: { verb: 'levers', title: 'stop the conveyor', hazard: 'machine', color: '#ff9a3c' },
     sweeper: { verb: 'lights', title: 'disable the cleaning robot', hazard: 'machine', color: '#f1c40f' },
-    presses: { verb: 'code', title: 'unlock the press controls', hazard: 'press', color: '#ffd23c' },
+    calculation: { verb: 'calculation', title: 'clear the calculation terminal', hazard: 'machine', color: '#91e3b1' },
     wiring: { verb: 'wires', title: 'repair the live wires', hazard: 'machine', color: '#72dcff' },
     bridge:  { verb: 'keys', title: 'lower the drawbridge',   hazard: 'all',   color: '#ff4646' },
     winch:   { verb: 'bar',  title: 'crank the winch',        hazard: 'all',   color: '#ff4646' },
@@ -57,7 +57,7 @@ const CFG = {
     { x: 7800,  from: 3, to: 4, merge: 10100, split: 0.6 },
     { x: 8200,  from: 4, to: 5, merge: 9800,  split: 0.6 },
   ],
-  gates: [3150, 8150],
+  gates: [],
   gateArm: 140, holdMax: 3, trampleEvery: 0.75,
   names: ['IDA', 'BO', 'JUNO', 'MAX', 'PIP', 'SOL', 'TEO', 'ZARA'],
   rooms: [
@@ -70,7 +70,7 @@ const CFG = {
     { x: 3600,  lane: 1, type: 'bridge',  diff: 2 },
     { x: 4400,  lane: 2, type: 'rope',    diff: 2 },
     { x: 4600,  lane: 0, type: 'crusher', diff: 2 },
-    { x: 5300,  lane: 0, type: 'presses', diff: 1 },
+    { x: 5300,  lane: 0, type: 'calculation', diff: 1 },
     { x: 5800,  lane: 0, type: 'wiring', diff: 1 },
     { x: 4900,  lane: 1, type: 'rickety', diff: 2 },
     { x: 6200,  lane: 0, type: 'winch',   diff: 3 },
@@ -249,14 +249,35 @@ function gearShape(x, y, radius, angle, color = '#657183') {
   ctx.strokeStyle = '#9aa7ba'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, radius * 0.6, 0, Math.PI * 2); ctx.stroke();
   ctx.restore();
 }
+const LIGHT_BEAT = 0.7 / 1.2; // Playback is 20% faster; input feedback keeps its duration.
 function lightRound(m) {
-  const len = Math.floor(rand(m.minimum, 6));
+  const len = 4;
   m.seq = Array.from({ length: len }, () => String(Math.floor(rand(1, 10))));
-  m.minimum = len; m.idx = 0; m.watch = true; m.clock = 0;
+  m.idx = 0; m.watch = true; m.clock = 0;
+}
+const GEAR_LAYOUT = { step: 76, orbit: 38, markerRadius: 6 };
+function gearMarkPoint(m, gear, side) {
+  const angle = (m.phase - m.goal) * Math.PI / 6 * (gear % 2 ? -1 : 1) + (side < 0 ? Math.PI : 0);
+  return { x: gear * GEAR_LAYOUT.step + Math.cos(angle) * GEAR_LAYOUT.orbit, y: Math.sin(angle) * GEAR_LAYOUT.orbit };
+}
+function gearsAligned(m) {
+  // Winning uses the same colored circles as rendering, including their visible radii.
+  for (let i = 0; i < m.n - 1; i++) {
+    const a = gearMarkPoint(m, i, 1), b = gearMarkPoint(m, i + 1, -1);
+    if (Math.hypot(a.x - b.x, a.y - b.y) > 2 * GEAR_LAYOUT.markerRadius + 0.01) return false;
+  }
+  return true;
+}
+function connectMatchingWire(m) {
+  if (!m.pulling || m.links.includes(m.target) || m.left[m.idx] !== m.right[m.target]) return 'ok';
+  m.links.push(m.target); m.idx++; m.pulling = false;
+  if (m.idx === m.left.length) return 'done';
+  m.target = m.right.findIndex((_, i) => !m.links.includes(i));
+  return 'ok';
 }
 Object.assign(VERBS, {
   wires: {
-    hint: 'RIGHT pull / connect · UP/DOWN choose socket · ESC close',
+    hint: 'RIGHT pull · UP/DOWN choose free socket · matching colors connect automatically',
     start() {
       const shuffle = list => { for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(rand(0, i + 1)); [list[i], list[j]] = [list[j], list[i]]; } return list; };
       const left = shuffle([0, 1, 2, 3]).slice(0, Math.floor(rand(3, 5)));
@@ -266,12 +287,13 @@ Object.assign(VERBS, {
     },
     key(m, k) {
       if (m.idx >= m.left.length) return null;
-      if (m.pulling && (k === 'ARROWUP' || k === 'ARROWDOWN')) { m.target = (m.target + (k === 'ARROWUP' ? m.right.length - 1 : 1)) % m.right.length; return 'ok'; }
-      if (k !== 'ARROWRIGHT') return null;
-      if (!m.pulling) { m.pulling = true; return 'ok'; }
-      if (m.left[m.idx] !== m.right[m.target]) { m.wrong = 0.3; return 'wrong'; }
-      m.links.push(m.target); m.idx++; m.pulling = false; m.target = 0;
-      return m.idx === m.left.length ? 'done' : 'ok';
+      if (m.pulling && (k === 'ARROWUP' || k === 'ARROWDOWN')) {
+        do { m.target = (m.target + (k === 'ARROWUP' ? m.right.length - 1 : 1)) % m.right.length; } while (m.links.includes(m.target));
+        return connectMatchingWire(m);
+      }
+      if (k !== 'ARROWRIGHT' || m.pulling) return null;
+      m.pulling = true;
+      return connectMatchingWire(m);
     },
     update(m, dt) { m.wrong = Math.max(0, m.wrong - dt); },
     progress(m) { return m.idx / m.left.length; },
@@ -289,30 +311,32 @@ Object.assign(VERBS, {
           ctx.lineWidth = current ? 5 : 3; ctx.globalAlpha = current ? 1 : 0.65;
           ctx.beginPath(); ctx.moveTo(lx + 35, yy(i)); ctx.bezierCurveTo(lx + 115, yy(i), rx - 115, yy(target), rx - 16, yy(target)); ctx.stroke(); ctx.globalAlpha = 1;
         }
-        ctx.fillStyle = '#273142'; ctx.fillRect(rx - 18, yy(i) - 12, 63, 24);
+        ctx.fillStyle = m.links.includes(i) ? '#234539' : '#273142'; ctx.fillRect(rx - 18, yy(i) - 12, 63, 24);
         ctx.strokeStyle = m.pulling && m.target === i ? (m.wrong > 0 ? '#ff5555' : '#fff') : '#57677d'; ctx.lineWidth = m.pulling && m.target === i ? 2 : 1; ctx.strokeRect(rx - 18, yy(i) - 12, 63, 24);
         ctx.fillStyle = colors[m.right[i]]; ctx.beginPath(); ctx.arc(rx - 5, yy(i), 6, 0, Math.PI * 2); ctx.fill();
-        factoryText(String(i + 1), rx + 25, yy(i) + 4, '#d4dcea', 12);
+        factoryText(m.links.includes(i) ? 'OK' : String(i + 1), rx + 25, yy(i) + 4, '#d4dcea', 12);
       }
-      factoryText(m.pulling ? '↑ ↓ choose socket · → connect · wrong: try again' : 'Highlighted wire is next · → pull it to the sockets', px + pw / 2, py + 201, '#5ce1ff', 12);
+      factoryText(m.pulling ? '↑ ↓ choose a free socket · matching color auto-connects' : 'Highlighted wire is next · → pull it to the sockets', px + pw / 2, py + 201, '#5ce1ff', 12);
     },
   },
   gears: {
     hint: 'Arrow keys rotate the linked gears',
     start() {
       const n = Math.floor(rand(2, 4)), goal = Math.floor(rand(0, 12));
-      // On the 12-step circle, offsets 3–9 require at least three moves in either direction.
-      const offset = Math.floor(rand(3, 10));
+      // Marks touch within one step of the exact center; offsets 4–8 still need at least three moves.
+      const offset = Math.floor(rand(4, 9));
       return { n, goal, phase: mod12(goal + offset) };
     },
     key(m, k) {
       if (!ARROWS.includes(k)) return null;
+      if (gearsAligned(m)) return 'done';
       m.phase = mod12(m.phase + (k === 'ARROWUP' || k === 'ARROWRIGHT' ? 1 : -1));
-      return m.phase === m.goal ? 'done' : 'ok';
+      return gearsAligned(m) ? 'done' : 'ok';
     },
-    update() {}, progress(m) { return m.phase === m.goal ? 1 : 0; },
+    update() {}, progress(m) { return gearsAligned(m) ? 1 : 0; },
     draw(m, px, py, pw) {
-      const r = 40, cy = py + 108, step = 76;
+      const r = 40, cy = py + 108, step = GEAR_LAYOUT.step;
+      const origin = px + pw / 2 - (m.n - 1) / 2 * step;
       const angle = (m.phase - m.goal) * Math.PI / 6;
       for (let i = 0; i < m.n; i++) {
         const x = px + pw / 2 + (i - (m.n - 1) / 2) * step, a = angle * (i % 2 ? -1 : 1);
@@ -320,9 +344,9 @@ Object.assign(VERBS, {
         // The middle gear has one colored marker for each neighboring contact.
         for (const side of [-1, 1]) {
           if ((side < 0 && i === 0) || (side > 0 && i === m.n - 1)) continue;
-          const theta = a + (side < 0 ? Math.PI : 0), pair = side < 0 ? i - 1 : i;
+          const point = gearMarkPoint(m, i, side), pair = side < 0 ? i - 1 : i;
           ctx.fillStyle = ['#f1c40f', '#ff7eb6'][pair];
-          ctx.beginPath(); ctx.arc(x + Math.cos(theta) * 36, cy + Math.sin(theta) * 36, 5, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(origin + point.x, cy + point.y, GEAR_LAYOUT.markerRadius, 0, Math.PI * 2); ctx.fill();
         }
         factoryText(String(i + 1), x, cy + 5, '#fff');
       }
@@ -357,7 +381,7 @@ Object.assign(VERBS, {
   },
   lights: {
     hint: 'Watch the flashes, then repeat with number keys 1–9',
-    start() { const m = { round: 0, minimum: 3, inputLight: null, inputT: 0 }; lightRound(m); return m; },
+    start() { const m = { round: 0, inputLight: null, inputT: 0 }; lightRound(m); return m; },
     key(m, k) {
       if (!/^[1-9]$/.test(k) || m.watch || m.round >= 2) return null;
       m.inputLight = k; m.inputT = 0.28;
@@ -366,10 +390,10 @@ Object.assign(VERBS, {
       if (++m.round === 2) return 'done';
       lightRound(m); return 'ok';
     },
-    update(m, dt) { m.inputT = Math.max(0, m.inputT - dt); if (m.watch) { m.clock += dt; if (m.clock >= 0.7 + m.seq.length * 0.7) { m.watch = false; m.idx = 0; } } },
+    update(m, dt) { m.inputT = Math.max(0, m.inputT - dt); if (m.watch) { m.clock += dt; if (m.clock >= LIGHT_BEAT * (1 + m.seq.length)) { m.watch = false; m.idx = 0; } } },
     progress(m) { return m.round / 2; },
     draw(m, px, py, pw) {
-      const tick = (m.clock - 0.7) / 0.7;
+      const tick = (m.clock - LIGHT_BEAT) / LIGHT_BEAT;
       const lit = m.inputT > 0 ? m.inputLight : m.watch && tick >= 0 && tick % 1 < 0.65 ? m.seq[Math.floor(tick)] : null;
       factoryText(`ROUND ${Math.min(2, m.round + 1)}/2 · ${m.watch ? 'WATCH' : 'YOUR TURN'} · ${m.seq.length} flashes`, px + pw / 2, py + 49, '#f1c40f');
       for (let i = 0; i < 9; i++) {
@@ -381,36 +405,48 @@ Object.assign(VERBS, {
       factoryText(m.watch ? 'Remember the order · repeated lights count again' : `Input ${m.idx}/${m.seq.length} · wrong: replay this round`, px + pw / 2, py + 202, '#5ce1ff', 12);
     },
   },
-  code: {
-    hint: 'Use the three fingerprinted digits · type a 3-digit code with 1–9',
+  calculation: {
+    hint: 'Type 0–100 · correct answers advance automatically · BACKSPACE edit · ESC close',
     start() {
-      const digits = Array.from({ length: 9 }, (_, i) => String(i + 1));
-      for (let i = digits.length - 1; i > 0; i--) { const j = Math.floor(rand(0, i + 1)); [digits[i], digits[j]] = [digits[j], digits[i]]; }
-      return { secret: digits.slice(0, 3).join(''), marks: digits.slice(0, 3).sort(), input: '', failed: false };
+      const ops = ['+', '−', '×', '÷'];
+      for (let i = ops.length - 1; i > 0; i--) { const j = Math.floor(rand(0, i + 1)); [ops[i], ops[j]] = [ops[j], ops[i]]; }
+      const questions = ops.slice(0, 3).map(op => {
+        const integer = max => Math.floor(rand(0, max + 1));
+        let a, b, answer;
+        if (op === '+') { answer = integer(100); a = integer(answer); b = answer - a; }
+        else if (op === '−') { answer = integer(100); b = integer(200 - answer); a = b + answer; }
+        else if (op === '×') { a = 2 + integer(18); b = integer(Math.floor(100 / a)); answer = a * b; }
+        else { b = 2 + integer(18); answer = integer(Math.min(100, Math.floor(200 / b))); a = b * answer; }
+        return { a, b, op, answer };
+      });
+      return { questions, idx: 0, input: '', failed: false };
     },
     key(m, k) {
-      if (!/^[1-9]$/.test(k)) return null;
-      if (!m.input) m.failed = false;
-      m.input += k; if (m.input.length < 3) return 'ok';
-      if (m.input === m.secret) return 'done';
-      m.input = ''; m.failed = true; return 'wrong';
-    },
-    update() {}, progress() { return 0; },
-    draw(m, px, py, pw) {
-      const center = px + pw / 2;
-      factoryText(m.failed ? 'CODE REJECTED — TRY AGAIN' : m.input.padEnd(3, '_').split('').join('  '), center, py + 50, m.failed ? '#ff7777' : '#5ce1ff', 17);
-      for (let i = 0; i < 9; i++) {
-        const x = center - 73 + (i % 3) * 52, y = py + 62 + Math.floor(i / 3) * 42, marked = m.marks.includes(String(i + 1));
-        ctx.fillStyle = '#242b37'; ctx.fillRect(x, y, 43, 35); ctx.strokeStyle = '#687281'; ctx.lineWidth = 1; ctx.strokeRect(x, y, 43, 35);
-        if (marked) {
-          ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2, 39, 31); ctx.clip();
-          ctx.strokeStyle = '#a7987d'; ctx.lineWidth = 0.8;
-          for (let j = 0; j < 4; j++) { ctx.beginPath(); ctx.ellipse(x + 31, y + 19, 2 + j * 1.4, 4 + j * 1.7, 0.15, 0.2, 5.4); ctx.stroke(); }
-          ctx.restore();
-        }
-        factoryText(String(i + 1), x + 13, y + 25, '#fff', 20);
+      if (m.idx >= 3) return null;
+      if (k === 'BACKSPACE') { m.input = m.input.slice(0, -1); m.failed = false; return 'ok'; }
+      if (!/^[0-9]$/.test(k) || m.input.length >= 3) return null;
+      m.input += k;
+      if (Number(m.input) !== m.questions[m.idx].answer) {
+        m.failed = !String(m.questions[m.idx].answer).startsWith(m.input);
+        return 'ok';
       }
-      factoryText('3 fingerprints · find their order · ESC close', center, py + 203, '#5ce1ff', 12);
+      m.idx++; m.input = ''; m.failed = false;
+      return m.idx === 3 ? 'done' : 'ok';
+    },
+    update() {}, progress(m) { return m.idx / 3; },
+    draw(m, px, py, pw) {
+      const center = px + pw / 2, q = m.questions[Math.min(m.idx, 2)];
+      for (let i = 0; i < 3; i++) {
+        const x = center + (i - 1) * 76;
+        ctx.fillStyle = i < m.idx ? '#2ecc71' : i === m.idx ? '#426378' : '#273142'; ctx.fillRect(x - 28, py + 38, 56, 22);
+        factoryText(i < m.idx ? 'DONE' : 'Q' + (i + 1), x, py + 54, '#fff', 12);
+      }
+      factoryText(q.a + ' ' + q.op + ' ' + q.b + ' = ?', center, py + 103, '#f1c40f', 28);
+      ctx.fillStyle = '#18232f'; ctx.fillRect(center - 88, py + 117, 176, 40);
+      ctx.strokeStyle = m.failed ? '#ff7777' : '#5ce1ff'; ctx.lineWidth = 2; ctx.strokeRect(center - 88, py + 117, 176, 40);
+      factoryText(m.input || '_', center, py + 146, '#fff', 26);
+      factoryText(m.failed ? 'Not correct — BACKSPACE to edit' : 'Three questions · whole-number answers from 0 to 100', center, py + 180, m.failed ? '#ff7777' : '#b8c2d2', 12);
+      factoryText('Type the answer to continue automatically · ESC close', center, py + 202, '#5ce1ff', 12);
     },
   },
 });
@@ -453,18 +489,13 @@ function drawMachineRoom(room, y) {
       ctx.strokeStyle = '#b6f5ff'; ctx.lineWidth = 2; ctx.beginPath();
       ctx.moveTo(x + 99, y - 33); ctx.lineTo(x + 91 + Math.sin(t * 23) * 4, y - 22); ctx.lineTo(x + 108, y - 15); ctx.lineTo(x + 96, y - 3); ctx.stroke();
     }
-  } else {
-    const timer = room.pressT || 0, beat = Math.floor(timer / 0.65), phase = timer % 0.65;
-    for (let i = 0; i < 3; i++) {
-      const hit = !clear && beat > 0 && (beat - 1) % 3 === i;
-      const drop = hit ? Math.max(0, 1 - phase / 0.35) : 0, top = y - 95 + drop * 73;
-      ctx.fillStyle = '#8e97a8'; ctx.fillRect(x + 17 + i * 40, y - 107, 6, top - y + 109);
-      ctx.fillStyle = '#626b7e'; ctx.fillRect(x + 3 + i * 40, top, 34, 21);
-      ctx.fillStyle = '#c4a253'; ctx.fillRect(x + 3 + i * 40, top + 16, 34, 5);
-    }
-    ctx.fillStyle = '#384553'; ctx.fillRect(x + 123, y - 59, 22, 59);
-    ctx.fillStyle = lamp; ctx.fillRect(x + 127, y - 50, 13, 8);
-    for (let i = 0; i < 9; i++) { ctx.fillStyle = '#b8c0cc'; ctx.fillRect(x + 127 + (i % 3) * 5, y - 35 + Math.floor(i / 3) * 6, 3, 4); }
+  } else if (room.type === 'calculation') {
+    ctx.fillStyle = '#4a5d68'; ctx.fillRect(x + 22, y - 99, 79, 89);
+    ctx.fillStyle = '#111e26'; ctx.fillRect(x + 30, y - 90, 63, 38);
+    factoryText(clear ? 'ACCESS' : '+ − × ÷', x + 61, y - 67, clear ? '#2ecc71' : '#91e3b1', 13);
+    for (let i = 0; i < 9; i++) { ctx.fillStyle = '#a0adb9'; ctx.fillRect(x + 34 + (i % 3) * 19, y - 45 + Math.floor(i / 3) * 10, 13, 6); }
+    ctx.fillStyle = clear ? '#355e4b' : '#ff6b4a'; ctx.fillRect(x + 106, y - 64, 5, 64);
+    factoryText(clear ? 'SAFE' : 'LOCKED', x + 62, y - 105, lamp, 10);
   }
   if (room.state === 'armed') { ctx.strokeStyle = S.active === room ? '#5ce1ff' : room.color; ctx.lineWidth = 2 / V.zoom; ctx.strokeRect(x - 14, y - 123, 148, 137); }
 }
@@ -523,18 +554,17 @@ function killRunner(r, how) {
 window.addEventListener('keydown', e => {
   if (e.repeat) return;
   const k = e.key.toUpperCase();
-  if (k === ' ' || k === 'ENTER' || k.startsWith('ARROW')) e.preventDefault();
+  if (k === ' ' || k === 'ENTER' || k === 'BACKSPACE' || k.startsWith('ARROW')) e.preventDefault();
   if (S.mode === 'title') { if (k === ' ') S.mode = 'play'; return; }
   if (S.mode === 'win' || S.mode === 'lose') { if (k === 'R') { reset(); S.mode = 'play'; } return; }
   if (S.paused) { if (k === 'P') S.paused = false; else if (k === 'R') { reset(); S.mode = 'play'; } return; }
   if (k === 'P' && !S.active) { S.paused = true; return; }
   if (S.mode === 'play') {
-    if (k >= '1' && k <= '9' && !(S.active && ['lights', 'code'].includes(S.active.verb))) {
+    if (k >= '1' && k <= '9' && !(S.active && ['lights', 'calculation'].includes(S.active.verb))) {
       const room = S.rooms.find(r => r.state === 'armed' && r.hot === +k);
       if (room) S.active = room;
       return;
     }
-    if (k === 'ENTER') { toggleGate(); return; }
     if (k === 'ESCAPE') { S.active = null; return; }
     const room = S.active;
     if (!room) return;
@@ -574,6 +604,34 @@ function finaleFail() {
 }
 
 // V3: travel as a group; feed dangerous rooms one runner at a time.
+// Keep a room selectable while any living runner can still reach it, including
+// runners on future forks or returning from nested branches. Do not predict deaths.
+function canReachRoom(r, room) {
+  const end = room.x + CFG.gapWidth + 8;
+  if (r.state !== 'run' || r.x >= end) return false;
+  const forks = CFG.forks.filter(f => f.x > r.lastForkX && f.x >= r.x && f.x < end);
+  function visit(x, lane, route, nextFork) {
+    const fork = forks[nextFork], top = route[route.length - 1];
+    const forkX = fork ? fork.x : Infinity;
+    const mergeX = top ? Math.max(x, top.mergeX) : Infinity;
+    const nextX = Math.min(forkX, mergeX, end);
+    if (lane === room.lane && Math.max(x, room.x) < nextX) return true;
+    if (nextX >= end) return false;
+    if (mergeX < forkX) return visit(mergeX, top.back, route.slice(0, -1), nextFork);
+    if (fork.from !== lane) return visit(forkX, lane, route, nextFork + 1);
+    if (fork.split < 1 && visit(forkX, lane, route, nextFork + 1)) return true;
+    return fork.split > 0 && visit(forkX, fork.to,
+      [...route, { mergeX: fork.merge, back: fork.from }], nextFork + 1);
+  }
+  return visit(r.x, r.lane, r.route, 0);
+}
+function retireEmptyRooms() {
+  for (const room of S.rooms) {
+    if (room.state !== 'armed' || S.runners.some(r => canReachRoom(r, room))) continue;
+    room.state = 'spent'; room.hot = null;
+    if (S.active === room) S.active = null;
+  }
+}
 function roomEntry(room) { return room.x + (room.hazard === 'machine' ? 72 : -2); }
 function moveFormation(dt) {
   for (let lane = 0; lane < CFG.laneCount; lane++) {
@@ -626,6 +684,7 @@ function update(dt) {
   S.cam = Math.min(S.camMax, S.cam + CFG.scroll * dt, Math.max(S.cam, frontRunner - CFG.packFront));
   updateView(dt);
   if (S.active) VERBS[S.active.verb].update(S.active.mg, dt);
+  if (S.active && S.active.verb === 'gears' && gearsAligned(S.active.mg)) clearRoom(S.active);
   for (const room of S.rooms) {
     if (room.state === 'armed' && room.verb === 'lights' && room.mg.round === 2) {
       if (S.active !== room) room.mg.inputT = Math.max(0, room.mg.inputT - dt);
@@ -661,9 +720,10 @@ function update(dt) {
     }
   }
 
+  retireEmptyRooms();
   for (const room of S.rooms) {
     if (room.state === 'dormant') {
-      const near = S.runners.some(r => r.state === 'run' && r.lane === room.lane && r.x >= room.x - CFG.armDist);
+      const near = S.runners.some(r => r.state === 'run' && r.lane === room.lane && r.x >= room.x - CFG.armDist && r.x < room.x + CFG.gapWidth + 8);
       if (near) armRoom(room);
     }
     if (room.hazard === 'press' && room.state !== 'solved') {
@@ -1350,7 +1410,7 @@ function drawTitle() {
     'The tunnels branch, and branch again. The view pulls back to show them all.',
     '',
     'NUMBER opens a flashing room. Then: hit keys in order, time the winch, or type the word.',
-    'ENTER holds the crowd at a gate for a moment, but the crush tramples people.',
+    'Calculation terminals: type the correct answer to continue. ESC closes a puzzle.',
     'Everyone who makes it out is one attempt at the final gate.',
   ];
   lines.forEach((l, i) => ctx.fillText(l, W / 2, 156 + i * 22));
