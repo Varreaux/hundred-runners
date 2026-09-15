@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '27 the rock is a material now';
+const BUILD = '28 two octaves and an honest sky';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1016,11 +1016,20 @@ function drawSky() {
   ctx.fillStyle = '#fff3cf'; ctx.beginPath(); ctx.arc(sunX, sunY, 26, 0, 6.28); ctx.fill();
   for (let i = 0; i < 7; i++) {
     const cx = ((hash(i) * 1400 - V.left * 0.06 - S.t * 6) % 1400 + 1400) % 1400 - 200, cy = 40 + hash(i + 50) * 150, sc = 0.7 + hash(i + 90) * 0.8;
+    // Lobes of unequal size on an uneven line, and the shaded underside offset AWAY from the
+    // sun. Five equal ellipses in a row with the shadow dropped straight down gave every
+    // cloud the same silhouette and the same lighting whichever side of the sun it sat on,
+    // which is what made them read as caterpillars.
+    const away = cx < sunX ? -1 : 1;
+    const lobe = j => {
+      const wob = hash(i * 3.1 + j * 7.7);
+      return { ex: cx + (j - 2) * (19 + wob * 9) * sc, rx: (11 + wob * 17) * sc, dy: (hash(i * 5.3 + j) - 0.5) * 11 * sc };
+    };
     ctx.fillStyle = 'rgba(150,170,200,0.4)'; ctx.beginPath();
-    for (let j = 0; j < 5; j++) { const ex = cx + (j - 2) * 22 * sc, ey = cy + 10 * sc + (j % 2) * 6 * sc; ctx.moveTo(ex + 24 * sc, ey); ctx.ellipse(ex, ey, (24 - Math.abs(j - 2) * 5) * sc, 7 * sc, 0, 0, 6.28); }
+    for (let j = 0; j < 5; j++) { const L = lobe(j); const ex = L.ex + away * 5 * sc, ey = cy + L.dy + 9 * sc; ctx.moveTo(ex + L.rx, ey); ctx.ellipse(ex, ey, L.rx * 0.92, 7 * sc, 0, 0, 6.28); }
     ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.88)'; ctx.beginPath();
-    for (let j = 0; j < 5; j++) { const ex = cx + (j - 2) * 22 * sc, ey = cy + (j % 2) * 6 * sc, rx = (26 - Math.abs(j - 2) * 5) * sc; ctx.moveTo(ex + rx, ey); ctx.ellipse(ex, ey, rx, 16 * sc, 0, 0, 6.28); }
+    for (let j = 0; j < 5; j++) { const L = lobe(j); const ey = cy + L.dy; ctx.moveTo(L.ex + L.rx, ey); ctx.ellipse(L.ex, ey, L.rx, (12 + hash(i + j * 2.3) * 8) * sc, 0, 0, 6.28); }
     ctx.fill();
   }
   // the mill makes its own weather: the sky browns over for the whole of act one
@@ -1600,7 +1609,9 @@ function rockCorridor(wx0, wx1, y, lane = 0) {
   // Six identical shelves is a diagram, not a picture. The higher a tunnel sits the nearer
   // the open air it is, so its back wall lifts and cools; the bottom lane is the deep one.
   const d = CFG.laneCount > 1 ? lane / (CFG.laneCount - 1) : 0;
-  ctx.fillStyle = `rgb(${35 + d * 18 | 0},${27 + d * 16 | 0},${40 + d * 18 | 0})`;
+  // an 18-point swing across the whole stack was too small to see, so six corridors read as
+  // six identical shelves; tripled, the bottom one is now visibly the deep one
+  ctx.fillStyle = `rgb(${30 + d * 52 | 0},${23 + d * 46 | 0},${35 + d * 52 | 0})`;
   ctx.fillRect(x0, cy, x1 - x0, CFG.tunnelH + 1);
   // ribs cut into the back wall at intervals, so the corridor has an inside rather than a flat face.
   // Their spacing is keyed to the lane so the shelves do not line up into a grid.
@@ -1618,10 +1629,15 @@ function rockCorridor(wx0, wx1, y, lane = 0) {
     ctx.beginPath(); ctx.moveTo(rx - 38, cy + 30); ctx.quadraticCurveTo(rx, cy + 7, rx + 38, cy + 30); ctx.stroke();
   }
   // hand-cut ceiling: rock lip with bumps, then a soft shadow under it
+  // Two octaves. The fast one is the 24-unit chisel wobble it always had; the slow one sags
+  // and rises the roof over 300 units, and without it the ceiling ran dead straight for the
+  // width of the screen, which says the tunnel was extruded rather than cut. The lane index
+  // shifts the slow wave so six corridors do not sag in step.
+  const sag = wx => Math.sin(wx / 302 + lane * 1.7) * 13 + Math.sin(wx / 121 + lane * 0.9) * 6;
   ctx.fillStyle = '#2b2431'; ctx.beginPath(); ctx.moveTo(x0, cy - 2);
   for (let x = Math.floor((x0 + V.left) / 24) * 24 - V.left; x <= x1; x += 24) {
     const wx = x + V.left, k = Math.floor(wx / 24);
-    ctx.quadraticCurveTo(x + 12, cy + 4 + hash(k * 1.7 + y) * 10, x + 24, cy + hash(k * 2.3 + y) * 5);
+    ctx.quadraticCurveTo(x + 12, cy + 4 + sag(wx + 12) + hash(k * 1.7 + y) * 14, x + 24, cy + sag(wx + 24) + hash(k * 2.3 + y) * 8);
   }
   ctx.lineTo(x1, cy - 2); ctx.closePath(); ctx.fill();
   const g = ctx.createLinearGradient(0, cy, 0, cy + 46); g.addColorStop(0, 'rgba(0,0,0,0.5)'); g.addColorStop(1, 'rgba(0,0,0,0)');
@@ -4117,7 +4133,10 @@ function pill(x, label, value, color) {
 }
 function drawHud() {
   const alive = S.runners.filter(r => r.state === 'run').length;
-  ctx.fillStyle = 'rgba(8,10,18,0.72)'; ctx.fillRect(0, 0, W, 40);
+  // 0.72 let 28% of the artwork through the chrome, so stray highlights landed inside the
+  // bar and its lower edge read as a cut across the picture rather than as a frame round it
+  ctx.fillStyle = 'rgba(8,10,18,0.93)'; ctx.fillRect(0, 0, W, 40);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 40, W, 2);
   let x = 10;
   x = pill(x, 'RUNNING', alive, '#2ecc71');
   x = pill(x, 'LOST', S.stats.dead, '#ff6b6b');
