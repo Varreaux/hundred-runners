@@ -174,8 +174,40 @@ frame. Do not ship an art change without a pass.
   And every session verifying at once runs its own sixty-game harness: two of us
   once had eighteen and eleven `freeze-check` processes on the box between us,
   and the same scene read 74ms under that load and 3.9ms on a quiet machine.
-  Run `ps aux | grep freeze-check` before you believe a bad number, and never
-  benchmark while your own harness is running.
+  Count them with `ps aux | grep freeze-check` before you believe a bad number,
+  and never benchmark while ANY session's harness is running, not just your own
+  -- most of that load was other people's. Counting is all grep is good for
+  here; see "Never kill a process by pattern" for why it cannot tell you whose
+  a process is.
+
+## Measuring the canvas
+
+Three sessions spent an afternoon trading luminance numbers at each other and
+produced six wrong ones between them. Not one was a defect in the game; every
+one was in how we were looking. If a number is going to change the art, take it
+like this.
+
+- **Say what the sample IS, by hue, not by where you expected it to land.** This
+  catches more than the rest put together. It found a probe sitting in the HUD
+  reported as sky, hills reported as sky, a lamp pool reported as window glass,
+  and it separates a lamplit tunnel wall (red dominant) from the rock beside it
+  (purple) at the same brightness. Return `[r,g,b]` beside every luminance.
+- **Average a patch, never one pixel.** `grain()` builds a `Math.random()` noise
+  field once per load and `draw()` lays it over everything at 0.16 in `overlay`,
+  so a one-pixel `getImageData` samples that field: steady within a load, up to
+  sixteen points different after a reload. A 25x11 patch reproduces to a tenth.
+  Freeze `S.t` as well, or lamp flicker moves it.
+- **Take it twice. A number with no error bar is not a measurement.** Measure,
+  change nothing, measure again. None of the six survived that.
+- **Compare a surface to the light at the same height in the same frame.** "The
+  sky" is not a number -- it runs about 130 to 185 across one frame and washes
+  out near the sun glow -- so "the glass must sit under the sky" is unfalsifiable
+  until you say which sky.
+- **Never compute a pixel from the source.** The hardest one to catch, because it
+  feels like reading rather than guessing. Working out the mill's glass from its
+  gradient stops gave a value more than twice the real one: grime, leading and
+  backing are all real paint drawn afterwards and the stops know nothing about
+  them.
 
 ## Dev shortcuts
 
