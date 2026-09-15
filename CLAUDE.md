@@ -137,6 +137,15 @@ normally produces means it died early, which is the more confusing case because
 a real number looks like real coverage. `audio.stillLive` should stay at 2, the
 rumble and the footstep bed; anything higher is a leak.
 
+**Know which lines your green covers.** Three times in one day a passing check
+was a verdict on something other than the change: the sound module ran zero
+lines because the stub had no `AudioContext`; a bot fix was scored on deaths at
+the room under test while it quietly moved 43 of them to another room; and a
+`devSolve` change ran green on a harness that never calls `devSolve` at all,
+since the harness has its own inline bot and only `?start&solve` reaches the
+other one. None of those greens were wrong, they were about something else. Say
+what your run covers when you report it, in the same breath as the result.
+
 **Prove a check can fail before you trust it passing.** A check that has only
 ever been seen to pass tells you nothing about the check, only about the build.
 The cost is one deliberately broken copy and a few minutes, and it turns a claim
