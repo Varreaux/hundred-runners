@@ -21,7 +21,9 @@ Morgan (GitHub login `Varreaux`). Read this before editing.
    (below) for anything that touches game code.
 2. Bump `BUILD` near the top of the script (`const BUILD = '17 whatever'`). It
    prints on the title screen, so Morgan can tell what he is looking at and we
-   can tell whether he is on a stale tab. Increment the number; never reuse one.
+   can tell whether he is on a stale tab. **Rebase first, then pick the number**,
+   reading it off the tip rather than off the copy you started from — two of us
+   once bumped from 18 at the same moment and both shipped a `19`.
 3. Rebase onto `origin/Morgan`, push, then **message the other sessions** (see
    below) with the commit hash, the new BUILD, and what changed.
 4. If you resolved a conflict in someone else's code, say exactly what you kept.
@@ -52,11 +54,21 @@ the game freezes silently with only a console error.** Two real examples, both
 shipped and both caught this way: a `const` reassigned in `drawBubbles`, and a
 dropped `let placedUI = []` declaration.
 
-If the harness is missing, rebuild it — it stubs `document`, `window`,
+It also covers the **sound** module, via `/tmp/audio-mock.js`. That matters more
+than it sounds: a stub `window` has no `AudioContext`, so `AU.init` throws into
+its own catch, `AU.ctx` stays null and every sound method early-returns — the
+whole module then runs zero lines and looks green. The mock enforces what the
+real API enforces (finite and in-range gain, frequency, pan, delayTime and
+playback rate, and no exponential ramp to exactly zero), so sound bugs surface
+instead of hiding. The report prints `audio.nodesCreated`; if that is 0, the
+module is not being tested. `audio.stillLive` should stay at 2, the rumble and
+the footstep bed; anything higher is a leak.
+
+If either file is missing, rebuild it. The harness stubs `document`, `window`,
 `performance`, `requestAnimationFrame`, `location`, `URLSearchParams` and
 `localStorage`, mocks a canvas context (throwing on negative radii and
-non-finite coordinates), then evals the script text from `index.html` with the
-`'use strict'` line removed.
+non-finite coordinates), installs the audio mock, then evals the script text
+from `index.html` with the `'use strict'` line removed.
 
 ## Editing this one big file without breaking it
 
