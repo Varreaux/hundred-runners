@@ -269,7 +269,8 @@ const VERBS = {
 
 // ================================================================ sound (all synthesised in code, no audio files)
 const AU = {
-  ctx: null, master: null, muted: false, rumble: null, stepGain: null, white: null,
+  ctx: null, master: null, muted: false, rumble: null, white: null,
+  bedGain: null, bedFilter: null, stepBus: null, tail: null, grainT: 0,
   init() {
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
     try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
@@ -284,11 +285,23 @@ const AU = {
     const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 90;
     this.rumble = c.createGain(); this.rumble.gain.value = 0;
     src.connect(lp); lp.connect(this.rumble); this.rumble.connect(this.master); src.start();
-    // footsteps: band-limited noise pulsed per frame by the crowd size
-    const src2 = c.createBufferSource(); src2.buffer = this.white; src2.loop = true;
-    const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = 0.7;
-    this.stepGain = c.createGain(); this.stepGain.gain.value = 0;
-    src2.connect(bp); bp.connect(this.stepGain); this.stepGain.connect(this.master); src2.start();
+    // Footsteps are two layers. Most of a hundred people is too far away and too
+    // overlapped to pick apart, so that is a bed of filtered noise; only the nearest
+    // few land as separate scuffs, and those are scheduled at random intervals.
+    const bedSrc = c.createBufferSource(); bedSrc.buffer = this.white; bedSrc.loop = true;
+    const bedBp = c.createBiquadFilter(); bedBp.type = 'bandpass'; bedBp.frequency.value = 300; bedBp.Q.value = 0.5;
+    this.bedFilter = c.createBiquadFilter(); this.bedFilter.type = 'lowpass'; this.bedFilter.frequency.value = 800;
+    this.bedGain = c.createGain(); this.bedGain.gain.value = 0;
+    bedSrc.connect(bedBp); bedBp.connect(this.bedFilter); this.bedFilter.connect(this.bedGain);
+    this.bedGain.connect(this.master); bedSrc.start();
+    // the scuffs run through a short stone tail so the tunnels sound like tunnels
+    this.stepBus = c.createGain(); this.stepBus.gain.value = 1; this.stepBus.connect(this.master);
+    const dly = c.createDelay(0.5); dly.delayTime.value = 0.085;
+    const fb = c.createGain(); fb.gain.value = 0.3;
+    const tailLp = c.createBiquadFilter(); tailLp.type = 'lowpass'; tailLp.frequency.value = 650;
+    this.tail = c.createGain(); this.tail.gain.value = 0;
+    this.stepBus.connect(dly); dly.connect(tailLp); tailLp.connect(fb); fb.connect(dly);
+    tailLp.connect(this.tail); this.tail.connect(this.master);
   },
   tone(type, f0, f1, dur, gain = 0.2, delay = 0) {
     if (!this.ctx || this.muted) return;
@@ -306,6 +319,29 @@ const AU = {
     if (filt) { const f = c.createBiquadFilter(); f.type = filt[0]; f.frequency.value = filt[1]; f.Q.value = filt[2] || 1; src.connect(f); node = f; }
     node.connect(g); g.connect(this.master); src.start(t); src.stop(t + dur + 0.02);
   },
+  // one pair of feet: a short scuff, pitched and panned differently every time so
+  // no two land alike and the ear never finds a pulse to lock onto
+  step(gain, pan, near) {
+    if (!this.ctx || this.muted) return;
+    // land it somewhere inside the coming frame, so scuffs are not pinned to a 60 Hz grid
+    const c = this.ctx, t = c.currentTime + Math.random() * 0.016;
+    const src = c.createBufferSource(); src.buffer = this.white;
+    src.playbackRate.value = 0.65 + Math.random() * 0.7;
+    const bp = c.createBiquadFilter(); bp.type = 'bandpass';
+    bp.frequency.value = 170 + Math.random() * 430 * near;   // distance takes the top off
+    bp.Q.value = 0.8 + Math.random() * 0.9;
+    const g = c.createGain();
+    const dur = 0.02 + Math.random() * 0.032;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(gain, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+    src.connect(bp);
+    let node = bp;
+    if (c.createStereoPanner) { const pn = c.createStereoPanner(); pn.pan.value = pan; bp.connect(pn); node = pn; }
+    node.connect(g); g.connect(this.stepBus);
+    src.onended = () => { try { g.disconnect(); } catch (e) {} };
+    src.start(t); src.stop(t + dur + 0.03);
+  },
   arm() { this.tone('sawtooth', 660, 880, 0.12, 0.1); this.tone('sawtooth', 880, 660, 0.14, 0.08, 0.12); },
   tick(p) { const f = 480 + p * 420; this.tone('square', f, f, 0.06, 0.07); },
   wrong() { this.tone('sawtooth', 140, 90, 0.18, 0.14); },
@@ -316,13 +352,33 @@ const AU = {
   boom() { this.tone('sine', 50, 28, 0.9, 0.7); this.noise(0.5, 0.35, ['lowpass', 250]); },
   cheer(n) { for (let i = 0; i < 3; i++) { const f = 440 * Math.pow(1.26, i) * (1 + Math.min(n, 8) * 0.06); this.tone('triangle', f, f * 1.5, 0.35, 0.08, i * 0.06); } },
   fail() { this.tone('sawtooth', 200, 60, 0.5, 0.22); },
-  ambient(inside, running, dt) {
+  ambient(inside, moving, dt) {
     if (!this.ctx) return;
-    if (this.muted) { this.rumble.gain.value = 0; this.stepGain.gain.value = 0; return; }
-    const target = inside ? 0.35 : 0.05;
-    this.rumble.gain.value += (target - this.rumble.gain.value) * Math.min(1, dt * 1.5);
-    const pulse = Math.pow(Math.max(0, Math.sin(S.t * 22)), 6);
-    this.stepGain.gain.value = (running / 100) * 0.06 * pulse * (inside ? 1 : 0.6);
+    if (this.muted) { this.rumble.gain.value = 0; this.bedGain.gain.value = 0; this.tail.gain.value = 0; return; }
+    this.rumble.gain.value += ((inside ? 0.35 : 0.05) - this.rumble.gain.value) * Math.min(1, dt * 1.5);
+
+    const crowd = Math.min(1, moving / 70);
+    const near = clamp01(V.zoom);            // zoomed out is further away, so duller and quieter
+    // three wobbles whose periods do not divide into each other, so the bed never
+    // settles into a beat the way a single rectified sine did
+    const w = 0.62 + 0.2 * Math.sin(S.t * 5.7) + 0.12 * Math.sin(S.t * 9.31 + 1.7) + 0.1 * Math.sin(S.t * 14.13 + 4.1);
+    const bed = crowd * 0.05 * w * (inside ? 1 : 0.55) * (0.45 + 0.55 * near);
+    this.bedGain.gain.value += (bed - this.bedGain.gain.value) * Math.min(1, dt * 12);
+    this.bedFilter.frequency.value = 360 + 640 * near;
+    this.tail.gain.value += ((inside ? 0.45 : 0.06) - this.tail.gain.value) * Math.min(1, dt * 2);
+
+    // and the handful close enough to hear as individual feet
+    const rate = 3 + 17 * crowd * (0.4 + 0.6 * near);
+    this.grainT -= dt;
+    let guard = 0;
+    while (this.grainT <= 0 && guard++ < 6) {
+      this.grainT += Math.max(0.012, (0.45 + Math.random() * 1.3) / rate);
+      if (crowd <= 0) break;
+      this.step((0.012 + Math.random() * 0.028) * (inside ? 1 : 0.6) * (0.4 + 0.6 * near),
+                (Math.random() * 2 - 1) * 0.8, 0.35 + 0.65 * near);
+      // every so often the weight of the pack rather than the scuff of it
+      if (Math.random() < 0.2) this.tone('sine', 60 + Math.random() * 24, 40, 0.07, 0.03 * crowd * near);
+    }
   },
 };
 
@@ -573,7 +629,7 @@ function update(dt) {
     S.spike = { t: 0.7, n: S.recent.length }; S.recent.length = 0; S.spikeCool = CFG.spikeCooldown; S.shake = 8; AU.boom();
   }
   const inside = S.cam + CFG.packFront > CFG.entrance && S.cam + CFG.packFront < CFG.exit;
-  AU.ambient(inside, S.runners.filter(r => r.state === 'run').length, dt);
+  AU.ambient(inside, S.runners.filter(r => r.state === 'run' && !r.held).length, dt);
   const spread = 1 + CFG.tire * (S.cam / S.camMax);
   if (S.active) VERBS[S.active.verb].update(S.active.mg, dt);
   const holdGate = S.gates.find(g => g.state === 'holding' && g.drop > 0.5);
