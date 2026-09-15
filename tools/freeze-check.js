@@ -68,7 +68,13 @@ eval(src + `
     reset(); S.mode = 'play';
     const style = g % 4; // 0 bot, 1 no input, 2 random keys, 3 gate masher
     try {
-      for (let i = 0; i < 60*140 && (S.mode === 'play' || S.mode === 'finale'); i++) {
+      // 'intro' belongs here. R from the pause screen now restarts into the opening
+      // rather than straight into play, and the random-key style presses both P and R,
+      // so without 'intro' the loop exits the instant a fuzz run restarts itself -- which
+      // silently ended roughly a quarter of every run set for several builds. Any key
+      // skips the opening, and the fuzzer presses one on the next frame, so including it
+      // restores the old restart-and-keep-hammering behaviour.
+      for (let i = 0; i < 60*140 && (S.mode === 'play' || S.mode === 'finale' || S.mode === 'intro'); i++) {
         update(1/60); draw();
         maxParticles=Math.max(maxParticles,S.particles.length); maxBubbles=Math.max(maxBubbles,S.bubbles.length);
         maxFloaters=Math.max(maxFloaters,S.floaters.length); maxRipples=Math.max(maxRipples,S.ripples.length);
@@ -120,6 +126,7 @@ eval(src + `
           if (rnd() < 0.2) press('QWERASDF'[Math.floor(rnd()*8)]);
         }
       }
+      // 'intro' is explicitly NOT an ending: counting it would hide the same failure again
       if (S.mode === 'win' || S.mode === 'lose' || S.mode === 'finale') reachedEnd++;
       // Sit on the end screen: it is animated (endT, embers, staggered cards, typing)
       // and has broken before. 6s, not the 20s this used to be. Measured by
