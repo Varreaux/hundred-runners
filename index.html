@@ -373,6 +373,7 @@ function reset() {
       name: null,
       phase: Math.random() * 6.28,
       state: 'run', vy: 0, fy: 0, rot: 0, fallLimit: 70, hop: 0, rolled: null, fs: false, squash: 0,
+      doom: null, endX: 0, deathT: 0,
       lane: 0, lastForkX: -1, route: [], ramp: null, held: false,
     });
   }
@@ -381,11 +382,11 @@ function reset() {
   const deck = S.runners.slice();
   for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
   CFG.names.forEach((nm, i) => { if (deck[i]) deck[i].name = nm; });
-  for (const r of CFG.rooms) {
+  CFG.rooms.forEach((r, i) => {
     const t = CFG.types[r.type];
-    S.rooms.push({ ...r, verb: t.verb, hazard: t.hazard, title: t.title, color: t.color,
+    S.rooms.push({ ...r, ord: i + 1, verb: t.verb, hazard: t.hazard, title: t.title, color: t.color,
                    hot: null, mg: null, state: 'dormant', bridge: 0, deaths: 0, flash: 0, slamT: rand(0, CFG.crusherPeriod) });
-  }
+  });
   for (const x of CFG.gates) S.gates.push({ x, state: 'dormant', holdT: 0, trampleT: 0, deaths: 0 });
   V.zoom = 1; V.left = 0; V.vw = W;
 }
@@ -412,7 +413,7 @@ function say(r, pool, life = 2.2, pinned = false) {
   S.bubbles.push({ r, wx: r.x, wy: footY(r) - (r.name ? 36 : 33), txt: pick(fresh.length ? fresh : LINES[pool]), life, max: life, pinned });
 }
 function killRunner(r, how) {
-  r.state = 'dead'; S.stats.dead++; S.shake = Math.min(5, S.shake + 1.2);
+  r.state = 'dead'; r.endX = r.x; r.deathT = S.t; S.stats.dead++; S.shake = Math.min(5, S.shake + 1.2);
   S.recent.push(S.t); if (S.spike) S.spike.n++;
   if (S.streak > 0) { S.streak = 0; S.floaters.push({ sx: W / 2, sy: 200, txt: 'STREAK LOST', life: 1, color: '#ff9a3c' }); }
   if (how === 'splash') AU.splash(); else if (how === 'buried') AU.rocks(); else AU.noise(0.1, 0.18, ['lowpass', 300]);
@@ -483,7 +484,7 @@ function finaleFail() {
   f.attempts--; f.idx = 0; f.timer = CFG.finale.keyTime; S.wrongFlash = 0.4; S.shake = 6; AU.fail();
   f.seq = makeSeq(f.len);
   const r = f.line.pop();
-  if (r) { r.state = 'gone'; f.leaving.push({ r, t: 0 }); }
+  if (r) { r.state = 'gone'; r.doom = 'final'; r.deathT = S.t; f.leaving.push({ r, t: 0 }); }
   S.floaters.push({ sx: W / 2, sy: H / 2 - 40, txt: r && r.name ? `${r.name} IS LOST` : 'ATTEMPT LOST', life: 1.2, color: '#ff5555', big: true });
   if (f.attempts <= 0) S.mode = 'lose';
 }
@@ -550,15 +551,15 @@ function update(dt) {
         if (!r.held && V.zoom > 0.34 && inView(r.x, 40) && Math.random() < 0.6)
           emit('dust', 1, r.x - 3, footY(r) + 2, { vx: [-30, -6], vy: [-20, -5], life: [0.3, 0.6], c: 'rgba(196,180,160,0.6)', sz: 1.1 });
       }
-      if (r.x >= CFG.finale.x - 40) { r.state = 'arrived'; S.stats.arrived++; continue; }
-      if (S.collapseX > CFG.entrance && r.x < S.collapseX) { killRunner(r, 'buried'); continue; }
+      if (r.x >= CFG.finale.x - 40) { r.state = 'arrived'; r.endX = CFG.finale.x; S.stats.arrived++; continue; }
+      if (S.collapseX > CFG.entrance && r.x < S.collapseX) { r.doom = 'cave-in'; killRunner(r, 'buried'); continue; }
       updateLane(r);
       for (const room of S.rooms) {
         if (room.lane !== r.lane || room.state === 'solved') continue;
         if (r.x < room.x + 8 || r.x >= room.x + CFG.gapWidth) continue;
         if (room.hazard === 'burst') continue;
         if (room.hazard === 'half') { if (r.rolled === room) continue; r.rolled = room; if (Math.random() < 0.5) continue; }
-        r.state = 'fall'; r.vy = 0; r.fy = 0; r.fallLimit = r.lane === 0 ? CFG.riverY - r.y : 60; room.deaths++;
+        r.state = 'fall'; r.doom = room; r.vy = 0; r.fy = 0; r.fallLimit = r.lane === 0 ? CFG.riverY - r.y : 60; room.deaths++;
         r.rotRate = rand(1.5, 3.5) * (Math.random() < 0.5 ? -1 : 1); r.vx0 = CFG.scroll * 0.3; r.rv0 = r.rotRate;
         if (Math.random() < 0.35 && S.t - S.lastWordT > 0.4) { S.lastWordT = S.t; S.bubbles = S.bubbles.filter(b => b.r !== r); say(r, 'fall', 1.4, true); }
         break;
@@ -592,7 +593,7 @@ function update(dt) {
       if (before < 1.0 && room.slamT >= 1.0) {
         if (inView(room.x, 0)) AU.thud();
         for (const r of S.runners) {
-          if (r.state === 'run' && r.lane === room.lane && r.x >= room.x + 35 && r.x < room.x + 85) { killRunner(r, 'crush'); room.deaths++; }
+          if (r.state === 'run' && r.lane === room.lane && r.x >= room.x + 35 && r.x < room.x + 85) { r.doom = room; killRunner(r, 'crush'); room.deaths++; }
         }
       }
       if (room.slamT >= CFG.crusherPeriod) room.slamT -= CFG.crusherPeriod;
@@ -607,7 +608,7 @@ function update(dt) {
       if (g.trampleT >= CFG.trampleEvery) {
         g.trampleT = 0;
         const held = S.runners.filter(r => r.state === 'run' && r.held);
-        if (held.length) { const v = pick(held); killRunner(v, 'trample'); g.deaths++; }
+        if (held.length) { const v = pick(held); v.doom = 'gate'; killRunner(v, 'trample'); g.deaths++; }
       }
       if (g.holdT >= CFG.holdMax) g.state = 'spent';
       if (g.state === 'spent') releaseGate(g, spread);
@@ -740,32 +741,41 @@ function endEmbers(dt) {
   S.endEmb = S.endEmb.filter(e => e.life > 0 && e.y > -24);
 }
 // one runner, remembered: their own colours, popped into place, lit if they made it and dimmed if they did not
-function nameCard(r, x, y, w, h, good, at) {
-  const p = clamp01((S.endT - at) / 0.34);
+function ordinal(n) {
+  const suf = ['th', 'st', 'nd', 'rd'], v = n % 100;
+  return n + (suf[(v - 20) % 10] || suf[v] || suf[0]);
+}
+const PLACE = { bridge: 'drawbridge', winch: 'winch plank', rope: 'rope bridge', rickety: 'rickety bridge', crusher: 'crusher' };
+// where a runner's run ended, as a phrase and as a sort key along the course
+function doomOf(r) {
+  const d = r.doom;
+  if (d && d.type) return { key: 'r' + d.ord, order: d.ord, label: `${ordinal(d.ord)} crossing · ${PLACE[d.type]}`, short: `the ${ordinal(d.ord)} crossing` };
+  if (d === 'gate') return { key: 'gate', order: 90, label: 'crushed at a hold gate', short: 'a hold gate' };
+  if (d === 'cave-in') return { key: 'cave', order: 91, label: 'caught by the cave-in', short: 'the cave-in' };
+  if (d === 'final') return { key: 'final', order: 95, label: 'spent at the final gate', short: 'the final gate' };
+  return { key: 'dark', order: 92, label: 'somewhere in the dark', short: 'the dark' };
+}
+// one name, in that runner's own shirt colour, fading up into place on its own beat
+function nameAt(r, x, y, at, dim) {
+  const p = clamp01((S.endT - at) / 0.3);
   if (p <= 0) return;
-  const sc = 0.55 + 0.45 * easeBack(p);
   ctx.save();
-  ctx.translate(x + w / 2, y + h / 2); ctx.scale(sc, sc); ctx.translate(-w / 2, -h / 2);
-  ctx.globalAlpha = Math.min(1, p * 1.5);
-  ctx.fillStyle = good ? 'rgba(46,204,113,0.14)' : 'rgba(255,80,80,0.09)';
-  roundRect(0, 0, w, h, 7); ctx.fill();
-  ctx.strokeStyle = good ? 'rgba(96,232,158,0.55)' : 'rgba(255,124,124,0.3)'; ctx.lineWidth = 1.2; ctx.stroke();
-  if (good) {
-    const gl = ctx.createLinearGradient(0, h, 0, 0);
-    gl.addColorStop(0, 'rgba(120,255,180,0.16)'); gl.addColorStop(1, 'rgba(120,255,180,0)');
-    ctx.fillStyle = gl; roundRect(0, 0, w, h, 7); ctx.fill();
+  ctx.globalAlpha = Math.min(1, p * 1.6) * (dim ? 0.72 : 1);
+  ctx.translate(0, (1 - easeOut(p)) * -5);
+  ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(r.name, x + 1, y + 1);
+  ctx.fillStyle = r.shirt; ctx.fillText(r.name, x, y);
+  ctx.restore();
+}
+// pack names into centred rows that fit the width
+function nameRows(list, maxW, gap) {
+  const rows = []; let row = [], w = 0;
+  for (const r of list) {
+    const nw = ctx.measureText(r.name).width;
+    if (row.length && w + gap + nw > maxW) { rows.push({ items: row, w }); row = []; w = 0; }
+    w += (row.length ? gap : 0) + nw; row.push({ r, w: nw });
   }
-  ctx.save(); ctx.translate(20, h - 4);
-  if (!good) ctx.globalAlpha *= 0.5;
-  drawFigure(r, 0, 0, good ? Math.sin(S.t * 2.2 + at * 9) * 0.4 : 0, 0.82, 1);
-  ctx.restore();
-  let fs = 11; ctx.font = `bold ${fs}px monospace`;
-  while (ctx.measureText(r.name).width > w - 40 && fs > 7) { fs--; ctx.font = `bold ${fs}px monospace`; }
-  ctx.textAlign = 'left';
-  ctx.fillStyle = good ? '#dcffe9' : '#ffb3b3';
-  ctx.fillText(r.name, 35, h / 2 + fs * 0.36);
-  ctx.restore();
-  ctx.textAlign = 'center';
+  if (row.length) rows.push({ items: row, w });
+  return rows;
 }
 // text that arrives a character at a time
 function typeLine(txt, x, y, at, cps = 34) {
@@ -1801,8 +1811,7 @@ function rollCall(label, names, colour, y) {
 }
 function drawEnd() {
   const T = S.endT, win = S.mode === 'win';
-  // the world stays faintly alive behind the scrim rather than being blacked out
-  ctx.fillStyle = `rgba(6,4,10,${0.46 + 0.34 * clamp01(T / 0.7)})`; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = `rgba(6,4,10,${0.5 + 0.34 * clamp01(T / 0.7)})`; ctx.fillRect(0, 0, W, H);
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
   for (const e of S.endEmb) {
     ctx.globalAlpha = Math.min(1, e.life / e.max) * Math.min(1, (e.max - e.life) * 2) * 0.75;
@@ -1815,9 +1824,9 @@ function drawEnd() {
   const tp = clamp01(T / 0.44), tk = easeBack(tp), tsc = 1.75 - 0.75 * tk;
   const shake = Math.max(0, 1 - T / 0.3) * 7;
   ctx.save();
-  ctx.translate(W / 2 + rand(-shake, shake), 122 + rand(-shake, shake)); ctx.scale(tsc, tsc);
+  ctx.translate(W / 2 + rand(-shake, shake), 104 + rand(-shake, shake)); ctx.scale(tsc, tsc);
   ctx.globalAlpha = Math.min(1, tp * 2.2);
-  ctx.font = 'bold 50px monospace';
+  ctx.font = 'bold 46px monospace';
   ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillText(win ? 'THEY MADE IT' : 'NOBODY MADE IT', 3, 4);
   ctx.fillStyle = win ? '#2ecc71' : '#ff4646';
   ctx.fillText(win ? 'THEY MADE IT' : 'NOBODY MADE IT', 0, 0);
@@ -1826,76 +1835,147 @@ function drawEnd() {
     const rr = 40 + 420 * easeOut(tp);
     ctx.strokeStyle = win ? `rgba(46,204,113,${(1 - tp) * 0.45})` : `rgba(255,70,70,${(1 - tp) * 0.45})`;
     ctx.lineWidth = 6 * (1 - tp);
-    ctx.beginPath(); ctx.ellipse(W / 2, 112, rr, rr * 0.34, 0, 0, 6.28); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(W / 2, 96, rr, rr * 0.34, 0, 0, 6.28); ctx.stroke();
   }
 
   // the tallies climb instead of simply being there
   const cp = easeOut(clamp01((T - 0.45) / 0.8));
-  ctx.globalAlpha = Math.min(1, clamp01((T - 0.4) / 0.3));
-  ctx.fillStyle = '#eee'; ctx.font = '18px monospace';
-  ctx.fillText(`Lost ${Math.round(S.stats.dead * cp)}   Reached the exit ${Math.round(S.stats.arrived * cp)}`, W / 2, 168);
+  ctx.globalAlpha = clamp01((T - 0.4) / 0.3);
+  ctx.fillStyle = '#eee'; ctx.font = '16px monospace';
+  ctx.fillText(`Lost ${Math.round(S.stats.dead * cp)}   Reached the exit ${Math.round(S.stats.arrived * cp)}   best streak x${S.bestStreak}`, W / 2, 142);
   ctx.globalAlpha = 1;
 
   const named = S.runners.filter(r => r.name);
-  const out = named.filter(r => r.state === 'arrived'), gone = named.filter(r => r.state !== 'arrived');
-  const groups = win ? [['Made it', out, true], ['Lost', gone, false]] : [['Lost', gone, false], ['Made it', out, true]];
-  const cw = 108, gap = 8, perRow = 8, pitch = 32;
-  let y = 190, at = 1.05, last = at;
-  for (const [label, list, good] of groups) {
-    const hp = clamp01((T - (at - 0.12)) / 0.3);
-    ctx.globalAlpha = hp;
-    ctx.fillStyle = good ? 'rgba(150,240,190,0.85)' : 'rgba(255,160,160,0.85)';
-    ctx.font = 'bold 11px monospace';
-    ctx.fillText(list.length ? `${label} — ${list.length}` : `${label}: nobody you knew`, W / 2, y);
-    ctx.globalAlpha = 1;
-    y += list.length ? 15 : 22;
-    for (let i = 0; i < list.length; i += perRow) {
-      const row = list.slice(i, i + perRow);
-      const rowW = row.length * cw + (row.length - 1) * gap;
-      let x = W / 2 - rowW / 2;
-      for (const r of row) { nameCard(r, x, y, cw, 27, good, at); x += cw + gap; at += 0.045; last = at; }
-      y += pitch;
-    }
-    y += 14; at += 0.12;
+  const out = named.filter(r => r.state === 'arrived');
+  const gone = named.filter(r => r.state !== 'arrived');
+  let y = 176, at = 1.0;
+
+  // who walked out
+  ctx.font = 'bold 11px monospace';
+  ctx.globalAlpha = clamp01((T - 0.88) / 0.3);
+  ctx.fillStyle = 'rgba(150,240,190,0.9)';
+  ctx.fillText(out.length ? `MADE IT OUT — ${out.length}` : 'NOT ONE OF THEM MADE IT OUT', W / 2, y);
+  ctx.globalAlpha = 1;
+  y += out.length ? 20 : 10;
+  ctx.font = 'bold 13px monospace';
+  for (const row of nameRows(out, W - 90, 16)) {
+    let x = W / 2 - row.w / 2;
+    ctx.textAlign = 'left';
+    for (const it of row.items) { nameAt(it.r, x, y, at, false); x += it.w + 16; at += 0.035; }
+    ctx.textAlign = 'center';
+    y += 19;
   }
 
-  const tail = last + 0.3;
+  // and where everyone else stopped, in the order they hit it
+  y += 14; at += 0.15;
+  ctx.font = 'bold 11px monospace';
+  ctx.globalAlpha = clamp01((T - (at - 0.1)) / 0.3);
+  ctx.fillStyle = 'rgba(255,160,160,0.9)';
+  ctx.fillText(gone.length ? 'WHERE THE REST FELL' : 'EVERY ONE OF THEM WALKED OUT', W / 2, y);
+  ctx.globalAlpha = 1;
+  y += 18;
+
+  if (gone.length) {
+    const places = new Map();
+    for (const r of gone) {
+      const d = doomOf(r);
+      if (!places.has(d.key)) places.set(d.key, { ...d, list: [] });
+      places.get(d.key).list.push(r);
+    }
+    let rows = [...places.values()].sort((a, b) => a.order - b.order);
+    // keep the report short enough to read: fold any tail into one last line
+    const CAP = 12;
+    if (rows.length > CAP) {
+      const tail = rows.slice(CAP - 1);
+      rows = rows.slice(0, CAP - 1);
+      rows.push({ label: 'deeper in', list: tail.flatMap(t => t.list) });
+    }
+    const labelR = W / 2 - 132, namesL = W / 2 - 120, maxX = W - 40, LINES_CAP = 15;
+    let lines = 0, spilled = 0;
+    for (const row of rows) {
+      let i = 0, firstLine = true;
+      while (i < row.list.length) {
+        if (lines >= LINES_CAP) { spilled += row.list.length - i; break; }
+        if (firstLine) {
+          const lp = clamp01((S.endT - at) / 0.3);
+          if (lp > 0) {
+            ctx.save();
+            ctx.globalAlpha = Math.min(1, lp * 1.6);
+            ctx.textAlign = 'right'; ctx.font = '11px monospace'; ctx.fillStyle = 'rgba(210,180,180,0.75)';
+            ctx.fillText(row.label, labelR, y);
+            ctx.restore();
+          }
+        }
+        // names wrap onto continuation lines rather than being cut off
+        ctx.textAlign = 'left'; ctx.font = 'bold 12px monospace';
+        let x = namesL, shown = 0;
+        while (i < row.list.length) {
+          const r = row.list[i], nw = ctx.measureText(r.name).width;
+          if (shown && x + nw > maxX) break;
+          nameAt(r, x, y, at + shown * 0.026, true);
+          x += nw + 13; shown++; i++;
+        }
+        ctx.textAlign = 'center';
+        at += 0.07 + shown * 0.024;
+        y += 15; lines++; firstLine = false;
+      }
+      if (lines >= LINES_CAP && i < row.list.length) continue;
+      at += 0.04;
+    }
+    if (spilled) {
+      ctx.textAlign = 'left'; ctx.font = '11px monospace'; ctx.fillStyle = 'rgba(200,150,150,0.7)';
+      ctx.fillText(`and ${spilled} more, further in`, namesL, y);
+      ctx.textAlign = 'center'; y += 15;
+    }
+
+    // the two facts they will actually argue about
+    const furthest = gone.reduce((a, b) => b.endX > a.endX ? b : a);
+    const first = gone.reduce((a, b) => b.deathT < a.deathT ? b : a);
+    y += 12;
+    ctx.font = '13px monospace';
+    const l1 = clamp01((S.endT - at) / 0.35), l2 = clamp01((S.endT - at - 0.3) / 0.35);
+    if (l1 > 0) {
+      ctx.globalAlpha = Math.min(1, l1 * 1.6);
+      ctx.fillStyle = '#ffd27a';
+      ctx.fillText(`Got furthest: ${furthest.name} — ${Math.round(furthest.endX / CFG.finale.x * 100)}% of the way, at ${doomOf(furthest).short}`, W / 2, y);
+      ctx.globalAlpha = 1;
+    }
+    if (l2 > 0) {
+      ctx.globalAlpha = Math.min(1, l2 * 1.6);
+      ctx.fillStyle = 'rgba(255,150,150,0.85)';
+      ctx.fillText(`First to go: ${first.name} — ${doomOf(first).short}, ${first.deathT.toFixed(0)}s in`, W / 2, y + 18);
+      ctx.globalAlpha = 1;
+    }
+    at += 0.7;
+  }
+
+  // the rank is stamped into the corner so the report keeps the middle of the screen
   if (win) {
     const left = S.finale.attempts;
     const rank = left >= 50 ? 'S' : left >= 30 ? 'A' : left >= 15 ? 'B' : left >= 5 ? 'C' : 'D';
     const line = { S: 'the mountain never touched them', A: 'a good day under the rock', B: 'they will talk about this', C: 'the mountain remembers', D: 'barely' }[rank];
-    const sy = Math.min(y + 24, H - 118);
-    ctx.globalAlpha = clamp01((T - tail + 0.2) / 0.3);
-    ctx.fillStyle = '#eee'; ctx.font = '17px monospace';
-    ctx.fillText(`Survivors: ${left}${left >= S.best && left > 0 ? '   new best' : ''}   best streak x${S.bestStreak}`, W / 2, sy);
-    ctx.globalAlpha = 1;
-    // the rank is stamped, not printed
-    const sp = clamp01((T - tail) / 0.42);
+    const sp = clamp01((T - 0.75) / 0.42), k = easeBack(sp);
     if (sp > 0) {
-      const k = easeBack(sp);
       ctx.save();
-      ctx.translate(W / 2, sy + 42); ctx.scale(2.3 - 1.3 * k, 2.3 - 1.3 * k); ctx.rotate((1 - k) * -0.22);
+      ctx.translate(W - 112, 96); ctx.rotate(-0.16 + (1 - k) * -0.3); ctx.scale(2.1 - 1.1 * k, 2.1 - 1.1 * k);
       ctx.globalAlpha = Math.min(1, sp * 2.4);
-      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.font = 'bold 50px monospace'; ctx.fillText(`RANK ${rank}`, 3, 4);
-      ctx.fillStyle = '#f1c40f'; ctx.fillText(`RANK ${rank}`, 0, 0);
+      ctx.strokeStyle = 'rgba(241,196,15,0.5)'; ctx.lineWidth = 2; roundRect(-58, -26, 116, 52, 8); ctx.stroke();
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.font = 'bold 30px monospace'; ctx.fillText(`RANK ${rank}`, 2, 12);
+      ctx.fillStyle = '#f1c40f'; ctx.fillText(`RANK ${rank}`, 0, 10);
       ctx.restore();
       if (sp < 1) {
-        const rr = 26 + 250 * easeOut(sp);
-        ctx.strokeStyle = `rgba(241,196,15,${(1 - sp) * 0.55})`; ctx.lineWidth = 6 * (1 - sp);
-        ctx.beginPath(); ctx.ellipse(W / 2, sy + 36, rr, rr * 0.36, 0, 0, 6.28); ctx.stroke();
+        const rr = 20 + 190 * easeOut(sp);
+        ctx.strokeStyle = `rgba(241,196,15,${(1 - sp) * 0.5})`; ctx.lineWidth = 5 * (1 - sp);
+        ctx.beginPath(); ctx.arc(W - 112, 96, rr, 0, 6.28); ctx.stroke();
       }
     }
-    ctx.fillStyle = '#aaa'; ctx.font = '15px monospace';
-    typeLine(line, W / 2, sy + 66, tail + 0.45);
-  } else {
-    const worst = S.rooms.reduce((a, b) => b.deaths > a.deaths ? b : a, S.rooms[0]);
-    ctx.fillStyle = '#eee'; ctx.font = '16px monospace';
-    if (worst.deaths > 0) typeLine(`Worst crossing: ${worst.deaths} lost at the ${worst.type}`, W / 2, Math.min(y + 26, H - 72), tail);
+    ctx.fillStyle = '#aaa'; ctx.font = '14px monospace';
+    typeLine(`${left} survivor${left === 1 ? '' : 's'} — ${line}`, W / 2, H - 52, at);
   }
 
   ctx.globalAlpha = 0.55 + 0.45 * Math.sin(S.t * 3.4);
-  ctx.fillStyle = '#eee'; ctx.font = '18px monospace';
-  ctx.fillText('R to run it again', W / 2, H - 26);
+  ctx.fillStyle = '#eee'; ctx.font = '17px monospace';
+  ctx.fillText('R to run it again', W / 2, H - 24);
   ctx.globalAlpha = 1; ctx.textAlign = 'left';
 }
 
