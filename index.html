@@ -422,7 +422,7 @@ function reset() {
     S.rooms.push({ ...r, ord: i + 1, verb: t.verb, hazard: t.hazard, title: t.title, color: t.color,
                    hot: null, mg: null, state: 'dormant', bridge: 0, deaths: 0, flash: 0, slamT: rand(0, CFG.crusherPeriod) });
   });
-  for (const x of CFG.gates) S.gates.push({ x, state: 'dormant', holdT: 0 });
+  for (const x of CFG.gates) S.gates.push({ x, state: 'dormant', holdT: 0, drop: 0.09, dropV: 0, landed: false, judder: 0, flash: 0 });
   V.zoom = 1; V.left = 0; V.vw = W;
 }
 function armRoom(room) {
@@ -502,14 +502,30 @@ function toggleGate() {
   const holding = S.gates.find(g => g.state === 'holding');
   if (holding) { holding.state = 'spent'; releaseGate(holding, 1 + CFG.tire * (S.cam / S.camMax)); AU.clank(); return; }
   const armed = S.gates.filter(g => g.state === 'armed').sort((a, b) => a.x - b.x)[0];
-  if (armed) { armed.state = 'holding'; armed.holdT = 0; AU.clank(); }
+  if (armed) { armed.state = 'holding'; armed.holdT = 0; armed.landed = false; armed.dropV = -1; AU.clank(); }
 }
 // when a gate opens, the people it held keep their new place in the pack instead of sprinting back to their old slot
+// iron meeting stone: grit, sparks, a ring and a kick, in every tunnel this gate crosses
+function gateSlam(g) {
+  g.judder = 1; g.flash = 1;
+  S.shake = Math.max(S.shake, 5);
+  AU.thud(); AU.clank();
+  for (let k = 0; k < CFG.laneCount; k++) {
+    if (!laneAt(k, g.x)) continue;
+    const y = laneY(k);
+    ring(g.x, y, 72, 0.4, 'rgba(210,225,255,0.85)', 3, 0.34);
+    emit('grit', 9, g.x, y - 4, { sx: 15, vx: [-130, 130], vy: [-95, -20], life: [0.3, 0.6], c: '#9a8d80' });
+    emit('dust', 5, g.x, y - 2, { sx: 20, vx: [-75, 75], vy: [-42, -8], life: [0.5, 0.95], c: 'rgba(150,140,130,0.5)' });
+    emit('spark', 9, g.x, y - 3, { sx: 13, vx: [-160, 160], vy: [-130, -30], life: [0.25, 0.5], c: '#ffe0a0' });
+  }
+}
 function releaseGate(g, spread) {
   for (const r of S.runners) {
     if (r.state !== 'run' || !r.held) continue;
     const wander = Math.sin(S.t * 0.7 + r.jit) * r.jitAmp;
-    r.slot = CFG.packFront - (S.cam + CFG.packFront + wander - r.x) / spread;
+    // a runner the camera has left behind would otherwise be handed a slot behind the pack and stay there
+    // for good, drifting off the left edge; the back of the pack is as far back as anyone is ever placed
+    r.slot = Math.max(CFG.packBack, CFG.packFront - (S.cam + CFG.packFront + wander - r.x) / spread);
     r.held = false;
     r.catchUp = 1;                       // a burst of pace, spent as they rejoin the pack
   }
@@ -560,7 +576,7 @@ function update(dt) {
   AU.ambient(inside, S.runners.filter(r => r.state === 'run').length, dt);
   const spread = 1 + CFG.tire * (S.cam / S.camMax);
   if (S.active) VERBS[S.active.verb].update(S.active.mg, dt);
-  const holdGate = S.gates.find(g => g.state === 'holding');
+  const holdGate = S.gates.find(g => g.state === 'holding' && g.drop > 0.5);
 
   for (const r of S.runners) {
     if (r.state === 'run') {
@@ -574,7 +590,7 @@ function update(dt) {
         const rel = Math.max(-80, Math.min(cap, (target - r.x) * 2));
         r.x += (CFG.scroll + rel) * dt;
       }
-      if (holdGate && r.x >= holdGate.x - 34 && r.x < holdGate.x + 6) { r.x = Math.min(r.x, holdGate.x - 8 - Math.abs(r.dy) * 1.2); r.held = true; }
+      if (holdGate && holdGate.drop > 0.5 && r.x >= holdGate.x - 34 && r.x < holdGate.x + 6) { r.x = Math.min(r.x, holdGate.x - 8 - Math.abs(r.dy) * 1.2); r.held = true; }
       else r.held = false;
       // footfall: a puff of dust off the back foot and a beat of squash
       const step = Math.sin(r.phase) > 0;
@@ -639,6 +655,18 @@ function update(dt) {
       if (g.holdT >= CFG.holdMax) g.state = 'spent';
       if (g.state === 'spent') releaseGate(g, spread);
     }
+    if (g.state === 'holding') {
+      if (g.drop < 1) {
+        g.dropV += 18 * dt;
+        g.drop = Math.max(-0.05, g.drop + g.dropV * dt);
+        if (g.drop >= 1) { g.drop = 1; g.dropV = 0; if (!g.landed) { g.landed = true; gateSlam(g); } }
+      }
+    } else {
+      g.landed = false; g.dropV = 0;
+      g.drop = Math.max(0.09, g.drop - dt * 1.6);          // winched back up into the ceiling
+    }
+    g.judder = Math.max(0, g.judder - dt * 4.2);
+    g.flash = Math.max(0, g.flash - dt * 3.4);
   }
 
   chatter(dt);
@@ -1235,14 +1263,42 @@ function drawGate(g, lane) {
   ctx.fillStyle = INK; ctx.fillRect(sx - 20, y - th - 8, 40, 14);
   ctx.fillStyle = '#4c4455'; ctx.fillRect(sx - 19, y - th - 7, 38, 12);
   ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(sx - 19, y - th - 7, 38, 3);
-  const drop = holding ? th : 12;
+
+  const jud = g.judder > 0 ? Math.sin(S.t * 64) * g.judder * 2.4 : 0;
+  const drop = Math.max(2, g.drop * th + jud), down = g.drop > 0.95;
+  // streaks off the bars while it is really moving
+  if (g.dropV > 1.4) {
+    ctx.fillStyle = 'rgba(190,200,220,0.22)';
+    const tail = Math.min(40, g.dropV * 16);
+    for (let i = -12; i <= 12; i += 8) ctx.fillRect(sx + i - 1, y - th + 2 + drop - tail, 2, tail);
+  }
   ctx.fillStyle = INK;
   for (let i = -12; i <= 12; i += 8) ctx.fillRect(sx + i - 2.2, y - th + 2, 4.4, drop + 1);
-  for (let k = 0; k < (holding ? 4 : 1); k++) ctx.fillRect(sx - 15, y - th + 8 + k * 34 - 1.2, 30, 4.4);
+  const bars = Math.max(1, Math.floor((drop - 6) / 34) + 1);
+  for (let k = 0; k < bars; k++) ctx.fillRect(sx - 15, y - th + 8 + k * 34 - 1.2, 30, 4.4);
   ctx.fillStyle = holding ? '#8a8aa0' : '#6a6a7e';
   for (let i = -12; i <= 12; i += 8) ctx.fillRect(sx + i - 1.2, y - th + 2, 2.4, drop);
-  for (let k = 0; k < (holding ? 4 : 1); k++) ctx.fillRect(sx - 14, y - th + 8 + k * 34, 28, 2.4);
-  if (holding) { ctx.fillStyle = INK; ctx.fillRect(sx - 16, y - 1, 32, 5); ctx.fillStyle = '#5b5b70'; ctx.fillRect(sx - 15, y, 30, 3); }
+  for (let k = 0; k < bars; k++) ctx.fillRect(sx - 14, y - th + 8 + k * 34, 28, 2.4);
+  // the spiked bottom edge, so it reads as a portcullis rather than a grille
+  const tipY = y - th + 2 + drop;
+  ctx.fillStyle = INK;
+  for (let i = -12; i <= 12; i += 8) {
+    ctx.beginPath(); ctx.moveTo(sx + i - 2.6, tipY - 1); ctx.lineTo(sx + i, tipY + 6); ctx.lineTo(sx + i + 2.6, tipY - 1); ctx.fill();
+  }
+  ctx.fillStyle = holding ? '#9a9ab0' : '#7a7a8e';
+  for (let i = -12; i <= 12; i += 8) {
+    ctx.beginPath(); ctx.moveTo(sx + i - 1.5, tipY - 1); ctx.lineTo(sx + i, tipY + 4.4); ctx.lineTo(sx + i + 1.5, tipY - 1); ctx.fill();
+  }
+  if (down) { ctx.fillStyle = INK; ctx.fillRect(sx - 16, y - 1, 32, 5); ctx.fillStyle = '#5b5b70'; ctx.fillRect(sx - 15, y, 30, 3); }
+  // the white-hot line where it struck the floor
+  if (g.flash > 0) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = g.flash;
+    const w = 26 + (1 - g.flash) * 30;
+    const gl = ctx.createLinearGradient(sx - w, 0, sx + w, 0);
+    gl.addColorStop(0, 'rgba(255,220,150,0)'); gl.addColorStop(0.5, 'rgba(255,235,190,0.9)'); gl.addColorStop(1, 'rgba(255,220,150,0)');
+    ctx.fillStyle = gl; ctx.fillRect(sx - w, y - 3, w * 2, 4);
+    ctx.restore();
+  }
   if (lane === 0 && (g.state === 'armed' || holding)) {
     ctx.fillStyle = holding ? 'rgba(92,225,255,0.10)' : 'rgba(92,225,255,0.06)';
     ctx.fillRect(sx - 30, y - th, 60, th + 44);
