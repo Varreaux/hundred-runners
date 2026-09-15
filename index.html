@@ -292,13 +292,68 @@ const AU = {
   },
 };
 
+// ================================================================ particles
+// Each kind carries its own gravity, drag, size curve, shape and blend, so one
+// emitter covers water, dust, sparks, embers, smoke, stone chips and light motes.
+const PK = {
+  drop:  { g: 640, drag: 0.03, r0: 2.4, r1: 0.5, add: false, shape: 'drop' },
+  dust:  { g: 26,  drag: 1.8,  r0: 1.6, r1: 6,   add: false, shape: 'puff' },
+  smoke: { g: -16, drag: 1.3,  r0: 3,   r1: 15,  add: false, shape: 'puff' },
+  ember: { g: -30, drag: 0.8,  r0: 1.7, r1: 0.3, add: true,  shape: 'dot' },
+  spark: { g: 340, drag: 0.9,  r0: 1.9, r1: 0.15, add: true, shape: 'streak' },
+  chip:  { g: 800, drag: 0.15, r0: 2.8, r1: 2.4, add: false, shape: 'chip' },
+  mote:  { g: -2,  drag: 0.3,  r0: 1.0, r1: 1.0, add: true,  shape: 'dot' },
+};
+const PCAP = 420;
+function emit(k, n, x, y, o = {}) {
+  if (S.particles.length > PCAP) return;
+  const vx = o.vx || [-30, 30], vy = o.vy || [-60, -10], lf = o.life || [0.4, 0.9];
+  for (let i = 0; i < n; i++) {
+    const life = rand(lf[0], lf[1]);
+    S.particles.push({
+      k, x: x + rand(-(o.sx || 0), o.sx || 0), y: y + rand(-(o.sy || 0), o.sy || 0),
+      vx: rand(vx[0], vx[1]), vy: rand(vy[0], vy[1]),
+      life, max: life, c: o.c || '#a08c70', sz: o.sz || 1, rot: rand(0, 6.28), rv: rand(-7, 7),
+    });
+  }
+}
+// an expanding ring: shockwaves at armed rooms, light bursts when one is solved, splash crowns
+function ring(x, y, r1, life, c, w = 4, sq = 1) {
+  S.rings.push({ x, y, r0: 4, r1, life, max: life, c, w, sq });
+}
+function solveBurst(room) {
+  const cx = room.x + CFG.gapWidth / 2, y = laneY(room.lane);
+  ring(cx, y - 20, 116, 0.38, '#ffd27a', 3, 0.7);
+  emit('spark', 11, cx, y - 6, { sx: CFG.gapWidth / 2, vx: [-60, 60], vy: [-200, -70], life: [0.35, 0.8], c: '#ffe0a0' });
+  emit('dust', 6, cx, y - 2, { sx: CFG.gapWidth / 2, vx: [-30, 30], vy: [-30, -6], life: [0.5, 0.9], c: 'rgba(160,140,112,0.45)' });
+  room.flash = 1;
+}
+// idle life in the tunnels: embers off the lanterns, dust motes turning in the light
+function ambient(dt) {
+  if (V.zoom < 0.45) return;
+  S.ambT -= dt;
+  if (S.ambT > 0) return;
+  S.ambT = 0.06;
+  const lit = [];
+  for (let wx = Math.ceil((V.left - 100) / 240) * 240; wx < V.left + V.vw + 100; wx += 240) {
+    for (let k = 0; k < CFG.laneCount; k++) {
+      const lx = wx + k * 40;
+      if (laneAt(k, lx) && Math.abs(lx - CFG.entrance) > 80 && Math.abs(lx - CFG.exit) > 80) lit.push([lx, laneY(k) - CFG.tunnelH + 2]);
+    }
+  }
+  if (!lit.length) return;
+  const [lx, ly] = pick(lit);
+  emit('ember', 1, lx, ly + 13, { sx: 2, vx: [-7, 7], vy: [-28, -12], life: [0.7, 1.5], c: '#ffb457' });
+  if (Math.random() < 0.7) emit('mote', 1, lx + rand(-80, 80), ly + rand(20, 100), { vx: [-5, 5], vy: [-4, 4], life: [1.6, 3.2], c: 'rgba(255,214,150,0.5)' });
+}
+
 // ================================================================ state
 let S;
 function reset() {
   S = {
     mode: 'title', t: 0, cam: 0, camMax: CFG.finale.x - 480, paused: false,
     runners: [], rooms: [], gates: [], active: null, wrongFlash: 0, shake: 0,
-    particles: [], floaters: [], ripples: [], bubbles: [], sayT: 0, lastWordT: 0,
+    particles: [], rings: [], floaters: [], ripples: [], bubbles: [], sayT: 0, lastWordT: 0, ambT: 0,
     stats: { dead: 0, arrived: 0 },
     finale: null, best: loadBest(),
     collapseX: CFG.collapseLead, recent: [], spike: null, streak: 0, bestStreak: 0, lastScream: 0,
@@ -310,7 +365,7 @@ function reset() {
       skin: pick(SKIN), shirt: pick(SHIRT), pants: pick(PANTS), hair: pick(HAIR), hairStyle: Math.floor(Math.random() * 4),
       name: i < CFG.names.length ? CFG.names[i] : null,
       phase: Math.random() * 6.28,
-      state: 'run', vy: 0, fy: 0, rot: 0, fallLimit: 70, hop: 0, rolled: null,
+      state: 'run', vy: 0, fy: 0, rot: 0, fallLimit: 70, hop: 0, rolled: null, fs: false, squash: 0,
       lane: 0, lastForkX: -1, route: [], ramp: null, held: false,
     });
   }
@@ -318,7 +373,7 @@ function reset() {
   for (const r of CFG.rooms) {
     const t = CFG.types[r.type];
     S.rooms.push({ ...r, verb: t.verb, hazard: t.hazard, title: t.title, color: t.color,
-                   hot: null, mg: null, state: 'dormant', bridge: 0, deaths: 0, slamT: rand(0, CFG.crusherPeriod) });
+                   hot: null, mg: null, state: 'dormant', bridge: 0, deaths: 0, flash: 0, slamT: rand(0, CFG.crusherPeriod) });
   }
   for (const x of CFG.gates) S.gates.push({ x, state: 'dormant', holdT: 0, trampleT: 0, deaths: 0 });
   V.zoom = 1; V.left = 0; V.vw = W;
@@ -328,11 +383,15 @@ function armRoom(room) {
   let n = 1; while (used.has(n) && n < 9) n++;
   room.hot = n; room.mg = VERBS[room.verb].start(room.diff); room.state = 'armed';
   AU.arm();
+  // the room wakes: a shockwave and dust shaken off the ceiling
+  ring(room.x + CFG.gapWidth / 2, laneY(room.lane) - 40, 92, 0.4, room.color, 3, 1);
+  emit('dust', 8, room.x + CFG.gapWidth / 2, laneY(room.lane) - CFG.tunnelH + 8, { sx: 60, vx: [-10, 10], vy: [12, 52], life: [0.6, 1.2], c: 'rgba(122,110,102,0.5)' });
 }
 // a room resolved with nobody lost: the streak grows
 function cleanRoom(room) {
   S.streak++; S.bestStreak = Math.max(S.bestStreak, S.streak);
   S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 120, txt: S.streak > 1 ? `CLEAN x${S.streak}` : 'CLEAN', life: 1.4, color: '#2ecc71', big: S.streak > 1 });
+  emit('spark', 7 + Math.min(9, S.streak), room.x + CFG.gapWidth / 2, laneY(room.lane) - 26, { sx: 34, vx: [-46, 46], vy: [-230, -120], life: [0.45, 0.95], c: '#8affbc' });
   AU.cheer(S.streak);
 }
 function say(r, pool, life = 2.2, pinned = false) {
@@ -378,7 +437,7 @@ window.addEventListener('keydown', e => {
     if (!room) return;
     const res = VERBS[room.verb].key(room.mg, k);
     if (res === 'done') {
-      room.state = 'solved'; S.active = null; AU.thud();
+      room.state = 'solved'; S.active = null; AU.thud(); solveBurst(room);
       if (room.deaths === 0) cleanRoom(room);
       else S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 100, txt: 'CLEAR', life: 1, color: '#2ecc71' });
     } else if (res === 'wrong') { S.wrongFlash = 0.25; AU.wrong(); }
@@ -425,7 +484,7 @@ function update(dt) {
   S.wrongFlash = Math.max(0, S.wrongFlash - dt);
   S.shake = Math.max(0, S.shake - dt * 14);
   updateFx(dt);
-  for (const r of S.runners) { r.phase += dt * 14; r.hop = Math.max(0, r.hop - dt); }
+  for (const r of S.runners) { r.phase += dt * 14; r.hop = Math.max(0, r.hop - dt); r.squash = Math.max(0, r.squash - dt * 7); }
   if (S.mode === 'finale') {
     const f = S.finale;
     f.timer -= dt;
@@ -444,7 +503,8 @@ function update(dt) {
   if (!S.spike && S.recent.length >= 5) { S.spike = { t: 0.7, n: S.recent.length }; S.shake = 8; AU.boom(); }
   const inside = S.cam + CFG.packFront > CFG.entrance && S.cam + CFG.packFront < CFG.exit;
   let nearest = 1e9; for (const r of S.runners) if (r.state === 'run') nearest = Math.min(nearest, r.x - S.collapseX);
-  if (S.collapseX > CFG.entrance && nearest < 140) { S.shake = Math.max(S.shake, 0.8); for (let i = 0; i < 2; i++) S.particles.push({ x: S.collapseX + rand(-10, 30), y: laneY(0) - rand(0, CFG.tunnelH), vx: rand(20, 90), vy: rand(-30, 40), life: rand(0.4, 0.9), c: '#6b5a4a' }); }
+  if (S.collapseX > CFG.entrance && nearest < 140) { S.shake = Math.max(S.shake, 0.8); emit('chip', 2, S.collapseX + 10, laneY(0) - rand(0, CFG.tunnelH), { sx: 20, vx: [20, 95], vy: [-30, 45], life: [0.4, 0.9], c: '#6b5a4a' });
+    emit('dust', 1, S.collapseX + 14, laneY(0) - rand(10, CFG.tunnelH), { sx: 16, vx: [10, 60], vy: [-14, 20], life: [0.7, 1.4], c: 'rgba(120,104,92,0.5)' }); }
   AU.ambient(inside, S.runners.filter(r => r.state === 'run').length, S.collapseX > CFG.entrance && nearest < 140, dt);
   const spread = 1 + CFG.tire * (S.cam / S.camMax);
   if (S.active) VERBS[S.active.verb].update(S.active.mg, dt);
@@ -460,6 +520,13 @@ function update(dt) {
       }
       if (holdGate && r.x >= holdGate.x - 34 && r.x < holdGate.x + 6) { r.x = Math.min(r.x, holdGate.x - 8 - Math.abs(r.dy) * 1.2); r.held = true; }
       else r.held = false;
+      // footfall: a puff of dust off the back foot and a beat of squash
+      const step = Math.sin(r.phase) > 0;
+      if (step !== r.fs) {
+        r.fs = step; r.squash = 1;
+        if (!r.held && V.zoom > 0.5 && inView(r.x, 40) && Math.random() < 0.28)
+          emit('dust', 1, r.x - 3, footY(r) + 2, { vx: [-28, -6], vy: [-18, -4], life: [0.25, 0.5], c: 'rgba(150,135,120,0.45)', sz: 0.7 });
+      }
       if (r.x >= CFG.finale.x - 40) { r.state = 'arrived'; S.stats.arrived++; continue; }
       if (S.collapseX > CFG.entrance && r.x < S.collapseX) { killRunner(r, 'buried'); continue; }
       updateLane(r);
@@ -469,7 +536,7 @@ function update(dt) {
         if (room.hazard === 'burst') continue;
         if (room.hazard === 'half') { if (r.rolled === room) continue; r.rolled = room; if (Math.random() < 0.5) continue; }
         r.state = 'fall'; r.vy = 0; r.fy = 0; r.fallLimit = r.lane === 0 ? CFG.riverY - r.y : 60; room.deaths++;
-        r.rotRate = rand(1.5, 3.5) * (Math.random() < 0.5 ? -1 : 1);
+        r.rotRate = rand(1.5, 3.5) * (Math.random() < 0.5 ? -1 : 1); r.vx0 = CFG.scroll * 0.3; r.rv0 = r.rotRate;
         if (Math.random() < 0.35 && S.t - S.lastWordT > 0.4) { S.lastWordT = S.t; S.bubbles = S.bubbles.filter(b => b.r !== r); say(r, 'fall', 1.4, true); }
         break;
       }
@@ -492,8 +559,11 @@ function update(dt) {
       else cleanRoom(room);
     }
     if (room.state === 'solved') room.bridge = Math.min(1, room.bridge + dt * 3.5);
+    room.flash = Math.max(0, room.flash - dt * 1.8);
     if (room.hazard === 'burst' && room.state !== 'solved') {
       const before = room.slamT; room.slamT += dt;
+      if (before < 0.78 && room.slamT >= 0.78 && inView(room.x, 120))
+        emit('dust', 5, room.x + 60, laneY(room.lane) - CFG.tunnelH + 20, { sx: 26, vx: [-14, 14], vy: [24, 70], life: [0.5, 0.9], c: 'rgba(132,120,110,0.55)' });
       if (before < 1.0 && room.slamT >= 1.0) {
         if (inView(room.x, 0)) AU.thud();
         for (const r of S.runners) {
@@ -520,6 +590,7 @@ function update(dt) {
   }
 
   chatter(dt);
+  ambient(dt);
   const settled = S.runners.every(r => r.state !== 'run' && r.state !== 'fall');
   if (settled) {
     if (S.stats.arrived === 0) { S.mode = 'lose'; return; }
@@ -567,8 +638,16 @@ function chatter(dt) {
   else say(r, 'ambient');
 }
 function updateFx(dt) {
-  for (const p of S.particles) { p.vy += (p.c === '#9fdcff' ? 600 : 60) * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; }
+  for (const p of S.particles) {
+    const d = PK[p.k] || PK.dust;
+    p.vy += d.g * dt;
+    const f = Math.max(0, 1 - d.drag * dt);
+    p.vx *= f; p.vy *= f;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.rv * dt; p.life -= dt;
+  }
   S.particles = S.particles.filter(p => p.life > 0);
+  for (const r of S.rings) r.life -= dt;
+  S.rings = S.rings.filter(r => r.life > 0);
   for (const f of S.floaters) { if (f.wy !== undefined) f.wy -= 30 * dt; else f.sy -= 30 * dt; f.life -= dt; }
   S.floaters = S.floaters.filter(f => f.life > 0);
   for (const r of S.ripples) { r.r += 40 * dt; r.life -= dt; }
@@ -581,11 +660,14 @@ function updateFx(dt) {
   S.bubbles = S.bubbles.filter(b => b.life > 0);
 }
 function splash(wx, y) {
-  for (let i = 0; i < 10; i++) S.particles.push({ x: wx, y, vx: rand(-100, 100), vy: rand(-280, -90), life: rand(0.4, 0.9), c: '#9fdcff' });
+  emit('drop', 14, wx, y, { sx: 3, vx: [-130, 130], vy: [-340, -120], life: [0.45, 1] , c: '#bfe6ff' });
+  emit('smoke', 3, wx, y - 4, { sx: 6, vx: [-18, 18], vy: [-26, -8], life: [0.5, 0.9], c: 'rgba(205,238,255,0.32)' });
   S.ripples.push({ x: wx, y, r: 3, life: 0.9 });
+  ring(wx, y, 34, 0.5, 'rgba(200,240,255,0.9)', 3, 0.32);
 }
 function dust(wx, y, c = '#a08c70') {
-  for (let i = 0; i < 6; i++) S.particles.push({ x: wx + rand(-6, 6), y: y - rand(0, 6), vx: rand(-40, 40), vy: rand(-60, -10), life: rand(0.3, 0.6), c });
+  emit('dust', 7, wx, y, { sx: 6, sy: 4, vx: [-48, 48], vy: [-72, -14], life: [0.35, 0.75], c });
+  emit('chip', 3, wx, y, { sx: 5, vx: [-75, 75], vy: [-135, -40], life: [0.4, 0.8], c: shade(c, 0.7) });
 }
 // can this runner still arrive at the room? Same tunnel, or a tunnel that forks into it before the room.
 function canReach(r, room) {
@@ -828,13 +910,22 @@ function carveTunnels() {
   const lamp = (wx, y) => {
     if (!inView(wx, 150)) return;
     const sx = wx - V.left;
-    const gl = ctx.createRadialGradient(sx, y + 10, 4, sx, y + 10, 200);
-    gl.addColorStop(0, 'rgba(255,190,90,0.3)'); gl.addColorStop(0.5, 'rgba(255,190,90,0.1)'); gl.addColorStop(1, 'rgba(255,190,90,0)');
+    const fl = 0.86 + 0.1 * Math.sin(S.t * 9 + wx) + 0.06 * Math.sin(S.t * 23 + wx * 1.7);
+    const gl = ctx.createRadialGradient(sx, y + 12, 4, sx, y + 12, 200 * fl);
+    gl.addColorStop(0, `rgba(255,190,90,${0.3 * fl})`); gl.addColorStop(0.5, `rgba(255,190,90,${0.1 * fl})`); gl.addColorStop(1, 'rgba(255,190,90,0)');
     ctx.fillStyle = gl; ctx.fillRect(sx - 200, y - 20, 400, CFG.tunnelH + 40);
     ctx.fillStyle = INK; ctx.fillRect(sx - 2, y - 1, 4, 10); ctx.fillRect(sx - 6.2, y + 5.8, 12.4, 15.4);
     ctx.fillStyle = '#6e6e7a'; ctx.fillRect(sx - 1, y, 2, 8);
-    ctx.fillStyle = '#ffd27a'; ctx.fillRect(sx - 4, y + 8, 8, 10);
-    ctx.fillStyle = '#fff3c0'; ctx.fillRect(sx - 2, y + 10, 3, 4);
+    ctx.fillStyle = '#3a2f1c'; ctx.fillRect(sx - 4, y + 8, 8, 10);
+    // flame: leans and breathes, and its brightness drives the glow above
+    const lean = Math.sin(S.t * 3.1 + wx) * 1.3, ht = 6 + fl * 3.2;
+    ctx.fillStyle = '#e8892f'; ctx.beginPath();
+    ctx.moveTo(sx, y + 17); ctx.quadraticCurveTo(sx + 3.4, y + 13, sx + lean, y + 17 - ht);
+    ctx.quadraticCurveTo(sx - 3.4, y + 13, sx, y + 17); ctx.fill();
+    ctx.fillStyle = '#ffd27a'; ctx.beginPath();
+    ctx.moveTo(sx, y + 17); ctx.quadraticCurveTo(sx + 2, y + 14, sx + lean * 0.6, y + 18 - ht * 0.62);
+    ctx.quadraticCurveTo(sx - 2, y + 14, sx, y + 17); ctx.fill();
+    ctx.fillStyle = '#fff6d0'; ctx.beginPath(); ctx.ellipse(sx + lean * 0.3, y + 15, 1.1, 2, 0, 0, 6.28); ctx.fill();
     ctx.fillStyle = '#7a5a20'; ctx.fillRect(sx - 5, y + 7, 10, 2); ctx.fillRect(sx - 5, y + 18, 10, 2);
   };
   for (let wx = Math.ceil((V.left - 200) / 240) * 240; wx < V.left + V.vw + 200; wx += 240) {
@@ -842,6 +933,21 @@ function carveTunnels() {
   }
   ctx.fillStyle = '#231b28';
   for (const wx of [CFG.entrance, CFG.exit]) { if (!inView(wx, 100)) continue; const ax = wx - V.left, cy = laneY(0) - th; ctx.fillRect(ax - 36, cy - 3, 72, 22); ctx.beginPath(); ctx.arc(ax, cy - 2, 36, Math.PI, 0); ctx.fill(); }
+  shaft(CFG.entrance, 1); shaft(CFG.exit, -1);
+}
+// a wedge of daylight leaning into the tunnel from a mouth
+function shaft(wx, dir) {
+  if (!inView(wx, 240)) return;
+  const sx = wx - V.left, y = laneY(0), th = CFG.tunnelH;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createLinearGradient(sx, y - th, sx + dir * 190, y + 14);
+  g.addColorStop(0, 'rgba(255,241,205,0.15)'); g.addColorStop(1, 'rgba(255,241,205,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(sx - dir * 30, y - th + 4); ctx.lineTo(sx + dir * 32, y - th + 4);
+  ctx.lineTo(sx + dir * 196, y + 14); ctx.lineTo(sx + dir * 104, y + 14);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
 }
 function corridor(wx0, wx1, y) {
   const x0 = Math.max(-10, wx0 - V.left), x1 = Math.min(V.vw + 10, wx1 - V.left);
@@ -936,8 +1042,18 @@ function groundRect(wx0, wx1, y, style = 'in') {
   for (let wx = Math.floor(wx0 / 12) * 12; wx < wx1; wx += 12) {
     if (hash(wx + y) > 0.7) { ctx.beginPath(); ctx.ellipse(wx - V.left + hash(wx * 3 + y) * 8, y + 20 + hash(wx * 5 + y) * 20, 2.2, 1.4, 0, 0, 6.28); ctx.fill(); }
   }
-  ctx.fillStyle = inside ? '#6a5f66' : '#6b8e4e'; ctx.fillRect(x0, y, x1 - x0, 14);
-  ctx.fillStyle = inside ? '#8a7e84' : '#8fb15f'; ctx.fillRect(x0, y, x1 - x0, 3);
+  // hand-cut top surface: the lit edge wanders instead of ruling straight across
+  const lip = (h, col) => {
+    ctx.fillStyle = col; ctx.beginPath();
+    let first = true;
+    for (let wx = Math.floor(wx0 / 14) * 14; wx <= wx1 + 14; wx += 14) {
+      const px = wx - V.left, py = y + (hash(wx * 1.7 + y) - 0.5) * 2.8;
+      if (first) { ctx.moveTo(px, py); first = false; } else ctx.lineTo(px, py);
+    }
+    ctx.lineTo(x1 + 14, y + h); ctx.lineTo(x0 - 14, y + h); ctx.closePath(); ctx.fill();
+  };
+  lip(14, inside ? '#6a5f66' : '#6b8e4e');
+  lip(3.4, inside ? '#8a7e84' : '#8fb15f');
   ctx.fillStyle = inside ? '#4c4249' : '#3f5a2e'; ctx.fillRect(x0, y + 12, x1 - x0, 2);
   ctx.lineWidth = 1;
   for (let wx = Math.floor(wx0 / 36) * 36; wx < wx1; wx += 36) {
@@ -1141,6 +1257,15 @@ function drawRoom(room, y) {
     for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(sx + 60 - bw / 2 + 3 + i * 10, top + bh - 2); ctx.lineTo(sx + 60 - bw / 2 + 8 + i * 10, top + bh + 6); ctx.lineTo(sx + 60 - bw / 2 + 13 + i * 10, top + bh - 2); ctx.closePath(); ctx.fillStyle = '#b0b0c4'; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1.2; ctx.stroke(); }
     if (room.state === 'solved') { ctx.fillStyle = INK; ctx.fillRect(sx + 60 - bw / 2 - 7, y - th + 1, bw + 14, 8); ctx.fillStyle = '#c9b27a'; ctx.fillRect(sx + 60 - bw / 2 - 6, y - th + 2, bw + 12, 6); }
   }
+  if (room.flash > 0) {
+    const t = 1 - room.flash;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const lx = sx - 50 + t * (gw + 100);
+    const g = ctx.createLinearGradient(lx - 26, 0, lx + 26, 0);
+    g.addColorStop(0, 'rgba(255,220,150,0)'); g.addColorStop(0.5, `rgba(255,220,150,${0.45 * room.flash})`); g.addColorStop(1, 'rgba(255,220,150,0)');
+    ctx.fillStyle = g; ctx.fillRect(sx - 30, y - 74, gw + 60, 100);
+    ctx.restore();
+  }
   if (room.state === 'armed') {
     const pulse = 0.6 + 0.4 * Math.sin(S.t * 10);
     const isActive = S.active === room;
@@ -1258,8 +1383,15 @@ function drawRunners(lane) {
       ctx.beginPath(); ctx.ellipse(sx, footY(r) + 2 + drop, 6 * scale, 2, 0, 0, 6.28); ctx.fill();
     }
     ctx.save(); ctx.translate(sx, sy);
+    if (moving && r.squash > 0) { const q = Math.sin(r.squash * Math.PI) * 0.13; ctx.scale(1 + q, 1 - q); }
     let alpha = 1, phase = moving ? r.phase : 0;
     if (r.state === 'fall') {
+      for (let g = 2; g >= 1; g--) {
+        ctx.save(); ctx.translate(-r.vx0 * g * 0.012 || 0, -r.vy * g * 0.012);
+        ctx.translate(0, -12); ctx.rotate(r.rot - r.rv0 * g * 0.012); ctx.translate(0, 12);
+        drawFigure(r, 0, 0, S.t * 22 + r.jit, scale, 0.16 / g);
+        ctx.restore();
+      }
       ctx.translate(0, -12); ctx.rotate(r.rot); ctx.translate(0, 12);
       phase = S.t * 22 + r.jit;
       if (r.lane > 0) alpha = Math.max(0, 1 - Math.max(0, r.fy - r.fallLimit * 0.6) / (r.fallLimit * 0.4));
@@ -1270,15 +1402,49 @@ function drawRunners(lane) {
   }
 }
 function drawFx() {
+  // water rings on the river surface
   ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5;
   for (const r of S.ripples) {
     ctx.globalAlpha = r.life;
     ctx.beginPath(); ctx.ellipse(r.x - V.left, r.y, r.r * 1.6, r.r * 0.5, 0, 0, 6.28); ctx.stroke();
   }
-  for (const p of S.particles) { ctx.fillStyle = p.c; ctx.globalAlpha = Math.min(1, p.life * 2); ctx.beginPath(); ctx.arc(p.x - V.left, p.y, 1.1 + p.life * 1.4, 0, 6.28); ctx.fill(); }
-  ctx.globalAlpha = 1;
+  // shockwaves
+  for (const r of S.rings) {
+    const t = 1 - r.life / r.max, rr = r.r0 + (r.r1 - r.r0) * (1 - (1 - t) * (1 - t));
+    ctx.globalAlpha = (r.life / r.max) * 0.85;
+    ctx.strokeStyle = r.c; ctx.lineWidth = Math.max(0.5, r.w * (1 - t) * (1 - t));
+    ctx.beginPath(); ctx.ellipse(r.x - V.left, r.y, rr, rr * r.sq, 0, 0, 6.28); ctx.stroke();
+  }
+  // particles: solid pass, then an additive pass for anything that glows
+  for (const add of [false, true]) {
+    ctx.globalCompositeOperation = add ? 'lighter' : 'source-over';
+    for (const p of S.particles) {
+      const d = PK[p.k] || PK.dust;
+      if (!!d.add !== add) continue;
+      const t = 1 - p.life / p.max, rr = Math.max(0.3, (d.r0 + (d.r1 - d.r0) * t) * p.sz);
+      ctx.globalAlpha = Math.min(1, (p.life / p.max) * 1.6) * (add ? 0.85 : 1);
+      ctx.fillStyle = p.c;
+      const x = p.x - V.left, y = p.y;
+      if (d.shape === 'streak') {
+        const sp = Math.min(2.6, Math.hypot(p.vx, p.vy) / 90);
+        ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(p.vy, p.vx));
+        ctx.globalAlpha *= 0.55; ctx.fillRect(-rr * 2 * sp, -rr * 0.3, rr * 2 * sp, rr * 0.6);
+        ctx.globalAlpha /= 0.55; ctx.beginPath(); ctx.arc(0, 0, rr * 0.75, 0, 6.28); ctx.fill();
+        ctx.restore();
+      } else if (d.shape === 'chip') {
+        ctx.save(); ctx.translate(x, y); ctx.rotate(p.rot);
+        ctx.fillRect(-rr, -rr * 0.65, rr * 2, rr * 1.3); ctx.restore();
+      } else if (d.shape === 'drop') {
+        ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(p.vy, p.vx) + Math.PI / 2);
+        ctx.beginPath(); ctx.moveTo(0, -rr * 2); ctx.quadraticCurveTo(rr, 0, 0, rr); ctx.quadraticCurveTo(-rr, 0, 0, -rr * 2); ctx.fill(); ctx.restore();
+      } else {
+        ctx.beginPath(); ctx.arc(x, y, rr, 0, 6.28); ctx.fill();
+      }
+    }
+  }
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
 }
-// screen-space labels that must stay readable when zoomed out: badges, gate controls, names, bubbles, floaters
+// rectangles already taken by on-screen labels this frame, so nothing overlaps
 let placedUI = [];
 function claim(x, y, w, h) { placedUI.push({ x, y, w, h }); }
 function drawOverlays() {
@@ -1349,7 +1515,7 @@ function drawBubbles() {
     const [sx, sy] = toScreen(b.wx, b.wy);
     const a = Math.min(1, b.life / 0.35) * Math.min(1, (b.max - b.life) / 0.12 + 0.2);
     const w = ctx.measureText(b.txt).width + 12, h = small ? 15 : 18;
-    const bx = Math.max(4, Math.min(W - w - 4, sx - w / 2));
+    let bx = Math.max(4, Math.min(W - w - 4, sx - w / 2));
     let by = sy - h - 6;
     for (let guard = 0; guard < 6; guard++) {
       const hit = placed.find(q => bx < q.x + q.w + 4 && bx + w + 4 > q.x && by < q.y + q.h + 2 && by + h + 2 > q.y);
@@ -1512,7 +1678,25 @@ function frame(now) {
 reset();
 updateView(1);
 const qs = new URLSearchParams(location.search);
-if (qs.has('start')) { S.mode = 'play'; const n = +(qs.get('skip') || 0) * 60; for (let i = 0; i < n; i++) update(1 / 60); }
+// ?start&skip=N runs N seconds of play; add &solve to have a bot clear every room it meets
+function devSolve() {
+  const fire = k => window.dispatchEvent(new KeyboardEvent('keydown', { key: k }));
+  for (const r of S.rooms.filter(r => r.state === 'armed')) {
+    fire(String(r.hot));
+    let guard = 0;
+    while (S.active === r && guard++ < 200) {
+      const m = r.mg;
+      if (r.verb === 'keys') fire(m.seq[m.idx]);
+      else if (r.verb === 'word') fire(m.word[m.idx]);
+      else { m.pos = m.zone + m.zoneW / 2; fire(' '); }
+    }
+  }
+}
+if (qs.has('start')) {
+  S.mode = 'play';
+  const n = +(qs.get('skip') || 0) * 60, solve = qs.has('solve');
+  for (let i = 0; i < n; i++) { update(1 / 60); if (solve) devSolve(); }
+}
 if (qs.has('finale')) {
   S.runners.slice(0, 12).forEach(r => { r.state = 'arrived'; });
   S.stats.arrived = 12; S.cam = S.camMax; updateView(1);
