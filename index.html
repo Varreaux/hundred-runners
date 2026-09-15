@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '44 hair that knows which way it is going';
+const BUILD = '45 the wall stops at the gate';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -29,7 +29,11 @@ const CFG = {
   tunnelH: 130,
   entrance: 760,
   // The opening: the shift comes off the line, the doors go up, the run starts.
-  intro: { belt: -220, drop: 300, doors: 640, lift: 104, deliver: 2.8, settle: 1.1, open: 1.3, hold: 0.45 },
+  // half is the opening either side of doors, jamb the frame outside that, so the
+  // clear span is doors +/- (half + jamb). drawGateWall, drawYardDoors, drawDoorSpill
+  // and millYard all read these two, the last to decide where NOT to build its wall
+  // -- if a copy of them ever drifts, the threshold grows a sill and nothing says so.
+  intro: { belt: -220, drop: 300, doors: 640, half: 44, jamb: 13, lift: 104, deliver: 2.8, settle: 1.1, open: 1.3, hold: 0.45 },
   riverY: 470,
   // Where rock stands over the water. The river darkens because there is rock above it,
   // not because it has crossed the entrance, so the darkening is keyed to these. They are
@@ -3597,15 +3601,25 @@ function millYard() {
     if (hv < 0.45) continue;
     ctx.fillRect(wx - V.left, base + 2 + hv * 12, 3 + hv * 4, 1.8);
   }
-  // a low soot-stained boundary wall running back from the gable
+  // a low soot-stained boundary wall running back from the gable, broken by the
+  // gateway. A wall across the opening puts a 44-unit sill under the doors and the
+  // crowd stands in front of the threshold it is meant to walk through: it reads as
+  // a hatch rather than a doorway.
   const wy = base - 44;
-  ctx.fillStyle = '#332b31'; ctx.fillRect(sx0, wy, sx1 - sx0, 44);
-  ctx.save(); ctx.beginPath(); ctx.rect(sx0, wy, sx1 - sx0, 44); ctx.clip();
-  brickFill(sx0, wy, sx1 - sx0, 44, 0.75);
-  ctx.fillStyle = 'rgba(30,26,32,0.3)'; ctx.fillRect(sx0, wy, sx1 - sx0, 44);
-  ctx.restore();
-  ctx.fillStyle = '#4c4350'; ctx.fillRect(sx0, wy - 5, sx1 - sx0, 6);
-  ctx.fillStyle = 'rgba(255,244,220,0.18)'; ctx.fillRect(sx0, wy - 5, sx1 - sx0, 1.6);
+  const gc = I(), clear = gc.half + gc.jamb;
+  const gsx0 = gc.doors - clear - V.left, gsx1 = gc.doors + clear - V.left;
+  for (const [a, b] of [[sx0, Math.min(sx1, gsx0)], [Math.max(sx0, gsx1), sx1]]) {
+    if (b <= a) continue;
+    ctx.fillStyle = '#332b31'; ctx.fillRect(a, wy, b - a, 44);
+    // brickFill locks its pattern origin to V.left, not to the rect it is handed,
+    // so the two segments stay in one bond across the gap without being asked to
+    ctx.save(); ctx.beginPath(); ctx.rect(a, wy, b - a, 44); ctx.clip();
+    brickFill(a, wy, b - a, 44, 0.75);
+    ctx.fillStyle = 'rgba(30,26,32,0.3)'; ctx.fillRect(a, wy, b - a, 44);
+    ctx.restore();
+    ctx.fillStyle = '#4c4350'; ctx.fillRect(a, wy - 5, b - a, 6);
+    ctx.fillStyle = 'rgba(255,244,220,0.18)'; ctx.fillRect(a, wy - 5, b - a, 1.6);
+  }
   // a gate pier rather than a square butt end in open grass
   const px = x0 - V.left;
   if (px > sx0 - 20 && px < sx1) {
@@ -3619,7 +3633,9 @@ function millYard() {
     ctx.fillStyle = 'rgba(255,238,206,0.12)'; ctx.fillRect(px - 9, wy - 18, 3.4, 62);
   }
   // crates and a barrel stacked against it
-  for (const [off, kind] of [[46, 0], [104, 1], [150, 0], [214, 2]]) {
+  // all four sit left of the gateway: at the old offsets the handcart stood at world
+  // 626 to 660, which is the middle of the opening, and the last crate crossed its jamb
+  for (const [off, kind] of [[18, 2], [70, 0], [110, 1], [134, 0]]) {
     const cx = x0 + off - V.left;
     if (cx < sx0 - 40 || cx > sx1 + 10) continue;
     if (kind === 0) {
@@ -3651,7 +3667,13 @@ function millYard() {
   }
 }
 function millSkyline() {
-  const smog = clamp01((FAC.seam + 420 - (V.left + V.vw * 0.5)) / 900);
+  // Not behind the opening: the smog factor keys off distance from the seam, so at
+  // camera 0 it is pinned at full strength and paints parallax sheds across the whole
+  // yard, competing with the one thing the scene is about. Ride introAlpha's ramp
+  // rather than returning early -- a hard gate on a continuous quantity popped a
+  // whole shed into existence in one frame at the handover, which is worse than the
+  // sheds never leaving. They now arrive over the same 260 units the wall leaves on.
+  const smog = clamp01((FAC.seam + 420 - (V.left + V.vw * 0.5)) / 900) * (1 - introAlpha());
   if (smog < 0.02) return;
   const base = laneY(0) - 26;
   // further layers sit higher: they were all standing on one ground line
@@ -4419,8 +4441,8 @@ function drawBelt(yFloor) {
 // with a horizontal squeeze rather than a real rotation: the leaf keeps its
 // height and loses its width as it turns, which is what a door does from side on.
 function drawGateWall(y) {
-  const c = I(), cx = c.doors - V.left, half = 44, h = 122;
-  const top = y - h - 18, x0 = cx - half - 13, x1 = cx + half + 13;
+  const c = I(), cx = c.doors - V.left, half = c.half, h = 122;
+  const top = y - h - 18, x0 = cx - half - c.jamb, x1 = cx + half + c.jamb;
   // the wall runs off the top of the frame on both sides of the opening
   ctx.fillStyle = '#4a3f45';
   ctx.fillRect(x0 - 260, top - 150, 260, h + 168);
@@ -4457,7 +4479,7 @@ function drawGateWall(y) {
   ctx.textAlign = 'left';
 }
 function drawYardDoors(y) {
-  const c = I(), cx = c.doors - V.left, h = 122, half = 44;
+  const c = I(), cx = c.doors - V.left, h = 122, half = c.half, jamb = c.jamb;
   const open = S.doorOpen;
   const swing = Math.pow(open, 1.7);                   // accelerating: a heavy leaf starts slow and flies
   // The hole itself. Without this the opening frames the mill's own window and the
@@ -4467,9 +4489,9 @@ function drawYardDoors(y) {
   ctx.fillStyle = '#191316'; ctx.fillRect(cx - half, y - h - 10, half * 2, h + 10);
   // frame
   ctx.fillStyle = '#4c4455';
-  ctx.fillRect(cx - half - 13, y - h - 10, 13, h + 10);
-  ctx.fillRect(cx + half, y - h - 10, 13, h + 10);
-  ctx.fillRect(cx - half - 13, y - h - 18, half * 2 + 26, 9);
+  ctx.fillRect(cx - half - jamb, y - h - 10, jamb, h + 10);
+  ctx.fillRect(cx + half, y - h - 10, jamb, h + 10);
+  ctx.fillRect(cx - half - jamb, y - h - 18, half * 2 + jamb * 2, 9);
   for (const dir of [-1, 1]) {
     const w = half * (1 - swing * 0.92);
     const hinge = cx + dir * half;
@@ -4500,7 +4522,6 @@ function drawYardDoors(y) {
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-w - edge, -h / 2, edge, 3);
     ctx.restore();
   }
-  // light spilling through the widening gap
 }
 // The pool on the ground, drawn AFTER the lanes. Light out of a doorway lands on
 // the threshold, and the threshold is exactly the band millYard's cinder apron
@@ -4509,12 +4530,12 @@ function drawYardDoors(y) {
 // it reads as a hole cut in a flat.
 function drawDoorSpill() {
   if (introAlpha() <= 0 || S.doorOpen <= 0.04) return;
-  const c = I(), y = laneY(0), cx = c.doors - V.left, half = 44, h = 122;
+  const c = I(), y = laneY(0), cx = c.doors - V.left, half = c.half, h = 122;
   const swing = Math.pow(S.doorOpen, 1.7);
   const g = ctx.createLinearGradient(cx, y - h, cx, y + 34);
   g.addColorStop(0, 'rgba(255,228,170,0)');
   g.addColorStop(1, `rgba(255,228,170,${0.34 * swing * introAlpha()})`);
-  ctx.fillStyle = g; ctx.fillRect(cx - half - 26, y - h, half * 2 + 52, h + 34);
+  ctx.fillStyle = g; ctx.fillRect(cx - half - c.jamb * 2, y - h, half * 2 + c.jamb * 4, h + 34);
 }
 function drawIntro() {
   const a = introAlpha();
