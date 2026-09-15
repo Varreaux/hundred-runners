@@ -303,10 +303,12 @@ const PK = {
   spark: { g: 340, drag: 0.9,  r0: 1.9, r1: 0.15, add: true, shape: 'streak' },
   chip:  { g: 800, drag: 0.15, r0: 2.8, r1: 2.4, add: false, shape: 'chip' },
   mote:  { g: -2,  drag: 0.3,  r0: 1.0, r1: 1.0, add: true,  shape: 'dot' },
+  grit:  { g: 520, drag: 0.1,  r0: 1.5, r1: 0.9, add: false, shape: 'dot' },
 };
 const PCAP = 420;
 function emit(k, n, x, y, o = {}) {
-  if (S.particles.length > PCAP) return;
+  n = Math.min(n, PCAP - S.particles.length);
+  if (n <= 0) return;
   const vx = o.vx || [-30, 30], vy = o.vy || [-60, -10], lf = o.life || [0.4, 0.9];
   for (let i = 0; i < n; i++) {
     const life = rand(lf[0], lf[1]);
@@ -323,14 +325,14 @@ function ring(x, y, r1, life, c, w = 4, sq = 1) {
 }
 function solveBurst(room) {
   const cx = room.x + CFG.gapWidth / 2, y = laneY(room.lane);
-  ring(cx, y - 20, 116, 0.38, '#ffd27a', 3, 0.7);
+  ring(cx, y - 24, 96, 0.38, '#ffd27a', 3, 0.42);
   emit('spark', 11, cx, y - 6, { sx: CFG.gapWidth / 2, vx: [-60, 60], vy: [-200, -70], life: [0.35, 0.8], c: '#ffe0a0' });
   emit('dust', 6, cx, y - 2, { sx: CFG.gapWidth / 2, vx: [-30, 30], vy: [-30, -6], life: [0.5, 0.9], c: 'rgba(160,140,112,0.45)' });
   room.flash = 1;
 }
 // idle life in the tunnels: embers off the lanterns, dust motes turning in the light
 function ambient(dt) {
-  if (V.zoom < 0.45) return;
+  if (V.zoom < 0.3) return;
   S.ambT -= dt;
   if (S.ambT > 0) return;
   S.ambT = 0.06;
@@ -384,7 +386,7 @@ function armRoom(room) {
   room.hot = n; room.mg = VERBS[room.verb].start(room.diff); room.state = 'armed';
   AU.arm();
   // the room wakes: a shockwave and dust shaken off the ceiling
-  ring(room.x + CFG.gapWidth / 2, laneY(room.lane) - 40, 92, 0.4, room.color, 3, 1);
+  ring(room.x + CFG.gapWidth / 2, laneY(room.lane) - 34, 74, 0.4, room.color, 3, 0.5);
   emit('dust', 8, room.x + CFG.gapWidth / 2, laneY(room.lane) - CFG.tunnelH + 8, { sx: 60, vx: [-10, 10], vy: [12, 52], life: [0.6, 1.2], c: 'rgba(122,110,102,0.5)' });
 }
 // a room resolved with nobody lost: the streak grows
@@ -503,8 +505,17 @@ function update(dt) {
   if (!S.spike && S.recent.length >= 5) { S.spike = { t: 0.7, n: S.recent.length }; S.shake = 8; AU.boom(); }
   const inside = S.cam + CFG.packFront > CFG.entrance && S.cam + CFG.packFront < CFG.exit;
   let nearest = 1e9; for (const r of S.runners) if (r.state === 'run') nearest = Math.min(nearest, r.x - S.collapseX);
-  if (S.collapseX > CFG.entrance && nearest < 140) { S.shake = Math.max(S.shake, 0.8); emit('chip', 2, S.collapseX + 10, laneY(0) - rand(0, CFG.tunnelH), { sx: 20, vx: [20, 95], vy: [-30, 45], life: [0.4, 0.9], c: '#6b5a4a' });
-    emit('dust', 1, S.collapseX + 14, laneY(0) - rand(10, CFG.tunnelH), { sx: 16, vx: [10, 60], vy: [-14, 20], life: [0.7, 1.4], c: 'rgba(120,104,92,0.5)' }); }
+  if (S.collapseX > CFG.entrance && nearest < 140) {
+    S.shake = Math.max(S.shake, 0.8);
+    // one buried tunnel per frame throws rubble, so six lanes cannot flood the particle pool
+    const buried = [];
+    for (let k = 0; k < CFG.laneCount; k++) if (laneAt(k, S.collapseX)) buried.push(k);
+    if (buried.length && inView(S.collapseX, 160)) {
+      const k = pick(buried);
+      emit('chip', 2, S.collapseX + 10, laneY(k) - rand(0, CFG.tunnelH), { sx: 20, vx: [20, 95], vy: [-30, 45], life: [0.4, 0.9], c: '#6b5a4a' });
+      emit('dust', 1, S.collapseX + 14, laneY(k) - rand(10, CFG.tunnelH), { sx: 16, vx: [10, 60], vy: [-14, 20], life: [0.7, 1.4], c: 'rgba(120,104,92,0.5)' });
+    }
+  }
   AU.ambient(inside, S.runners.filter(r => r.state === 'run').length, S.collapseX > CFG.entrance && nearest < 140, dt);
   const spread = 1 + CFG.tire * (S.cam / S.camMax);
   if (S.active) VERBS[S.active.verb].update(S.active.mg, dt);
@@ -524,8 +535,8 @@ function update(dt) {
       const step = Math.sin(r.phase) > 0;
       if (step !== r.fs) {
         r.fs = step; r.squash = 1;
-        if (!r.held && V.zoom > 0.5 && inView(r.x, 40) && Math.random() < 0.28)
-          emit('dust', 1, r.x - 3, footY(r) + 2, { vx: [-28, -6], vy: [-18, -4], life: [0.25, 0.5], c: 'rgba(150,135,120,0.45)', sz: 0.7 });
+        if (!r.held && V.zoom > 0.34 && inView(r.x, 40) && Math.random() < 0.6)
+          emit('dust', 1, r.x - 3, footY(r) + 2, { vx: [-30, -6], vy: [-20, -5], life: [0.3, 0.6], c: 'rgba(196,180,160,0.6)', sz: 1.1 });
       }
       if (r.x >= CFG.finale.x - 40) { r.state = 'arrived'; S.stats.arrived++; continue; }
       if (S.collapseX > CFG.entrance && r.x < S.collapseX) { killRunner(r, 'buried'); continue; }
@@ -562,8 +573,10 @@ function update(dt) {
     room.flash = Math.max(0, room.flash - dt * 1.8);
     if (room.hazard === 'burst' && room.state !== 'solved') {
       const before = room.slamT; room.slamT += dt;
-      if (before < 0.78 && room.slamT >= 0.78 && inView(room.x, 120))
-        emit('dust', 5, room.x + 60, laneY(room.lane) - CFG.tunnelH + 20, { sx: 26, vx: [-14, 14], vy: [24, 70], life: [0.5, 0.9], c: 'rgba(132,120,110,0.55)' });
+      if (before < 0.78 && room.slamT >= 0.78 && inView(room.x, 120)) {
+        emit('grit', 7, room.x + 60, laneY(room.lane) - CFG.tunnelH + 16, { sx: 26, vx: [-12, 12], vy: [20, 70], life: [0.4, 0.7], c: '#9a8d80' });
+        emit('chip', 3, room.x + 60, laneY(room.lane) - CFG.tunnelH + 16, { sx: 22, vx: [-24, 24], vy: [10, 40], life: [0.5, 0.9], c: '#6f6459' });
+      }
       if (before < 1.0 && room.slamT >= 1.0) {
         if (inView(room.x, 0)) AU.thud();
         for (const r of S.runners) {
@@ -627,6 +640,7 @@ function updateLane(r) {
 }
 function chatter(dt) {
   S.sayT -= dt;
+  if (S.spike) return;
   if (S.sayT > 0 || S.bubbles.length >= (V.zoom < 0.6 ? 1 : 3)) return;
   S.sayT = rand(0.8, 1.6);
   const vis = S.runners.filter(r => r.state === 'run' && inView(r.x, -40) && !S.bubbles.some(b => b.r === r));
@@ -660,10 +674,13 @@ function updateFx(dt) {
   S.bubbles = S.bubbles.filter(b => b.life > 0);
 }
 function splash(wx, y) {
-  emit('drop', 14, wx, y, { sx: 3, vx: [-130, 130], vy: [-340, -120], life: [0.45, 1] , c: '#bfe6ff' });
-  emit('smoke', 3, wx, y - 4, { sx: 6, vx: [-18, 18], vy: [-26, -8], life: [0.5, 0.9], c: 'rgba(205,238,255,0.32)' });
+  // the more bodies hitting the water together, the bigger the column of spray
+  const n = 1 + S.recent.filter(t => S.t - t < 0.35).length;
+  const big = Math.min(10, n);
+  emit('drop', 10 + big * 3, wx, y, { sx: 3 + big, vx: [-130 - big * 12, 130 + big * 12], vy: [-330 - big * 22, -120], life: [0.45, 1], c: '#bfe6ff' });
+  emit('smoke', 2 + Math.ceil(big / 2), wx, y - 4, { sx: 6 + big * 2, vx: [-20, 20], vy: [-30, -8], life: [0.5, 1.1], c: 'rgba(205,238,255,0.32)' });
   S.ripples.push({ x: wx, y, r: 3, life: 0.9 });
-  ring(wx, y, 34, 0.5, 'rgba(200,240,255,0.9)', 3, 0.32);
+  ring(wx, y, 30 + big * 6, 0.5, 'rgba(200,240,255,0.9)', 3, 0.32);
 }
 function dust(wx, y, c = '#a08c70') {
   emit('dust', 7, wx, y, { sx: 6, sy: 4, vx: [-48, 48], vy: [-72, -14], life: [0.35, 0.75], c });
@@ -726,7 +743,11 @@ function draw() {
     const a = Math.min(1, S.spike.t / 0.35);
     ctx.fillStyle = `rgba(20,0,0,${0.5 * a})`; ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center'; ctx.globalAlpha = a;
-    ctx.fillStyle = '#ff3b3b'; ctx.font = 'bold 84px monospace'; ctx.fillText(`-${S.spike.n}`, W / 2, H / 2 + 10);
+    ctx.font = 'bold 84px monospace';
+    const pw = ctx.measureText(`-${S.spike.n}`).width + 80;
+    ctx.fillStyle = 'rgba(10,6,10,0.82)'; roundRect(W / 2 - pw / 2, H / 2 - 62, pw, 116, 14); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,59,59,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#ff3b3b'; ctx.fillText(`-${S.spike.n}`, W / 2, H / 2 + 10);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 16px monospace'; ctx.fillText('AT ONCE', W / 2, H / 2 + 40);
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
   }
@@ -737,35 +758,57 @@ function drawCollapse() {
   if (fx < CFG.entrance || fx - V.left < -60) return;
   const x1 = fx - V.left, x0 = Math.max(CFG.entrance - 30, V.left - 60) - V.left;
   const th = CFG.tunnelH;
-  ctx.fillStyle = '#241d29';
+  const bury = (l, r, y) => {
+    if (r <= l) return;
+    ctx.save();
+    ctx.beginPath(); ctx.moveTo(l, y - th - 6);
+    for (let yy = y - th - 6; yy <= y + 46; yy += 12) ctx.lineTo(r + Math.sin(yy * 0.11 + S.t * 9) * 9, yy);
+    ctx.lineTo(l, y + 46); ctx.closePath();
+    ctx.fillStyle = '#241d29'; ctx.fill(); ctx.clip();
+    // the same strata and grit as the rest of the mountain, so it reads as fill, not a silhouette
+    for (let yy = y - th - 6; yy < y + 46; yy += 13) {
+      const k = Math.floor(yy / 13);
+      ctx.fillStyle = k % 2 ? 'rgba(255,255,255,0.028)' : 'rgba(0,0,0,0.12)';
+      ctx.fillRect(l - 4, yy + Math.sin(k + l * 0.02) * 2, r - l + 12, 6.5);
+    }
+    for (let wx = Math.floor((l + V.left) / 16) * 16; wx < r + V.left; wx += 16) {
+      const h = hash(wx * 2.3 + y); if (h < 0.45) continue;
+      ctx.fillStyle = h > 0.8 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.22)';
+      ctx.beginPath(); ctx.ellipse(wx - V.left, y - th + h * (th + 40), 2 + h * 4, 1.4 + h * 3, h * 2, 0, 6.28); ctx.fill();
+    }
+    ctx.restore();
+  };
   for (let k = 0; k < CFG.laneCount; k++) {
     const y = laneY(k);
-    for (const [a, b] of LANE_SPANS[k]) {
-      const l = Math.max(x0, a - 30 - V.left), r = Math.min(x1, b + 30 - V.left);
-      if (r <= l) continue;
-      ctx.beginPath(); ctx.moveTo(l, y - th - 6);
-      for (let yy = y - th - 6; yy <= y + 46; yy += 12) ctx.lineTo(r + Math.sin(yy * 0.11 + S.t * 9 + k) * 9, yy);
-      ctx.lineTo(l, y + 46); ctx.closePath(); ctx.fill();
-    }
+    for (const [a, b] of LANE_SPANS[k]) bury(Math.max(x0, a - 30 - V.left), Math.min(x1, b + 30 - V.left), y);
   }
+  ctx.fillStyle = '#241d29';
   for (const f of CFG.forks) {
     if (f.x + CFG.rampLen < fx) { ctx.save(); ctx.fillStyle = '#241d29'; slantCorridor(f.x, laneY(f.from), f.x + CFG.rampLen, laneY(f.to)); ctx.restore(); }
     if (f.merge + CFG.rampLen < fx) { ctx.save(); ctx.fillStyle = '#241d29'; slantCorridor(f.merge, laneY(f.to), f.merge + CFG.rampLen, laneY(f.from)); ctx.restore(); }
   }
-  // boulders at the front
+  // haze, but only inside the corridors it belongs to
+  for (let k = 0; k < CFG.laneCount; k++) {
+    if (!laneAt(k, fx)) continue;
+    const y = laneY(k);
+    const hz = ctx.createLinearGradient(x1 - 10, 0, x1 + 130, 0);
+    hz.addColorStop(0, 'rgba(120,100,90,0.42)'); hz.addColorStop(1, 'rgba(120,100,90,0)');
+    ctx.fillStyle = hz; ctx.fillRect(x1 - 10, y - th, 140, th + 34);
+  }
+  // rubble tumbling at the face: spread out, kept inside the corridor, and outlined like everything solid
   for (let k = 0; k < CFG.laneCount; k++) {
     if (!laneAt(k, fx)) continue;
     const y = laneY(k);
     for (let i = 0; i < 7; i++) {
-      const seed = i * 13 + k * 7, rr = 6 + hash(seed) * 12;
-      const bx = x1 + 4 + hash(seed + 1) * 26 + Math.sin(S.t * 6 + seed) * 4, by = y + 40 - hash(seed + 2) * (th + 30) + ((S.t * 90 + seed * 40) % (th + 40)) * 0.3;
+      const seed = i * 13 + k * 7, rr = 5 + hash(seed) * 11;
+      const bx = x1 - 14 + hash(seed + 1) * 90 + Math.sin(S.t * 6 + seed) * 5;
+      const span = th - rr * 2;
+      const by = y - th + rr + ((hash(seed + 2) * span + S.t * 120 + seed * 30) % span);
+      ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(bx, by, rr + 1.3, 0, 6.28); ctx.fill();
       ctx.fillStyle = i % 2 ? '#3d3442' : '#4a4050'; ctx.beginPath(); ctx.arc(bx, by, rr, 0, 6.28); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.beginPath(); ctx.arc(bx - rr * 0.3, by - rr * 0.35, rr * 0.55, 0, 6.28); ctx.fill();
     }
   }
-  // dust haze just ahead of the front
-  const hz = ctx.createLinearGradient(x1, 0, x1 + 140, 0);
-  hz.addColorStop(0, 'rgba(120,100,90,0.45)'); hz.addColorStop(1, 'rgba(120,100,90,0)');
-  ctx.fillStyle = hz; ctx.fillRect(x1, -1400, 140, 2000);
 }
 function drawSky() {
   const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -822,15 +865,20 @@ function hills(p, size, base, hmin, hmax, col, salt) {
   });
 }
 function waves(horizon) {
-  for (let band = 0; band < 5; band++) {
-    const y = horizon + 8 + band * 20;
-    ctx.strokeStyle = `rgba(200,240,255,${0.28 - band * 0.05})`; ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let x = -60; x <= V.vw + 60; x += 12) {
-      const wx = x + V.left;
-      ctx.lineTo(x, y + Math.sin(wx * 0.045 + S.t * 1.6 + band) * 3 + Math.sin(wx * 0.013 - S.t * 0.6) * 2);
+  for (let band = 0; band < 6; band++) {
+    const h = hash(band * 5.3);
+    const y = horizon + 6 + band * 17 + h * 9;
+    const amp = 1.6 + h * 2.6, sp = 1.1 + h * 1.4, len = 34 + h * 90;
+    ctx.strokeStyle = `rgba(200,240,255,${0.3 - band * 0.042})`; ctx.lineWidth = 1.2 + h * 1.4;
+    // broken crests rather than one stroke ruled across the whole river
+    for (let x = -60 - ((S.t * (7 + h * 12)) % (len * 2)); x <= V.vw + 60; x += len * 2) {
+      ctx.beginPath();
+      for (let d = 0; d <= len; d += 11) {
+        const wx = x + d + V.left;
+        ctx.lineTo(x + d, y + Math.sin(wx * 0.045 + S.t * sp + band) * amp + Math.sin(wx * 0.013 - S.t * 0.6) * 1.6);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
   }
 }
 function drawRiver() {
@@ -911,9 +959,13 @@ function carveTunnels() {
     if (!inView(wx, 150)) return;
     const sx = wx - V.left;
     const fl = 0.86 + 0.1 * Math.sin(S.t * 9 + wx) + 0.06 * Math.sin(S.t * 23 + wx * 1.7);
-    const gl = ctx.createRadialGradient(sx, y + 12, 4, sx, y + 12, 200 * fl);
+    const R = 200 * fl;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(sx - 240, y - 1, 480, CFG.tunnelH + 2); ctx.clip();
+    const gl = ctx.createRadialGradient(sx, y + 12, 4, sx, y + 12, R);
     gl.addColorStop(0, `rgba(255,190,90,${0.3 * fl})`); gl.addColorStop(0.5, `rgba(255,190,90,${0.1 * fl})`); gl.addColorStop(1, 'rgba(255,190,90,0)');
-    ctx.fillStyle = gl; ctx.fillRect(sx - 200, y - 20, 400, CFG.tunnelH + 40);
+    ctx.fillStyle = gl; ctx.fillRect(sx - R, y + 12 - R, R * 2, R * 2);
+    ctx.restore();
     ctx.fillStyle = INK; ctx.fillRect(sx - 2, y - 1, 4, 10); ctx.fillRect(sx - 6.2, y + 5.8, 12.4, 15.4);
     ctx.fillStyle = '#6e6e7a'; ctx.fillRect(sx - 1, y, 2, 8);
     ctx.fillStyle = '#3a2f1c'; ctx.fillRect(sx - 4, y + 8, 8, 10);
@@ -1028,9 +1080,12 @@ function lampPools(lane) {
     const lx = wx + lane * 40;
     if (!laneAt(lane, lx) || !inView(lx, 120) || Math.abs(lx - CFG.entrance) < 80 || Math.abs(lx - CFG.exit) < 80) continue;
     const sx = lx - V.left;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(sx - 160, y - CFG.tunnelH, 320, CFG.tunnelH + 18); ctx.clip();
     const g = ctx.createRadialGradient(sx, y + 3, 4, sx, y + 3, 140);
     g.addColorStop(0, 'rgba(255,200,110,0.30)'); g.addColorStop(0.5, 'rgba(255,200,110,0.1)'); g.addColorStop(1, 'rgba(255,200,110,0)');
-    ctx.fillStyle = g; ctx.fillRect(sx - 140, y - 40, 280, 58);
+    ctx.fillStyle = g; ctx.fillRect(sx - 140, y - 137, 280, 280);
+    ctx.restore();
   }
 }
 function groundRect(wx0, wx1, y, style = 'in') {
@@ -1257,22 +1312,31 @@ function drawRoom(room, y) {
     for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(sx + 60 - bw / 2 + 3 + i * 10, top + bh - 2); ctx.lineTo(sx + 60 - bw / 2 + 8 + i * 10, top + bh + 6); ctx.lineTo(sx + 60 - bw / 2 + 13 + i * 10, top + bh - 2); ctx.closePath(); ctx.fillStyle = '#b0b0c4'; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1.2; ctx.stroke(); }
     if (room.state === 'solved') { ctx.fillStyle = INK; ctx.fillRect(sx + 60 - bw / 2 - 7, y - th + 1, bw + 14, 8); ctx.fillStyle = '#c9b27a'; ctx.fillRect(sx + 60 - bw / 2 - 6, y - th + 2, bw + 12, 6); }
   }
-  if (room.flash > 0) {
-    const t = 1 - room.flash;
-    ctx.save(); ctx.globalCompositeOperation = 'lighter';
-    const lx = sx - 50 + t * (gw + 100);
-    const g = ctx.createLinearGradient(lx - 26, 0, lx + 26, 0);
-    g.addColorStop(0, 'rgba(255,220,150,0)'); g.addColorStop(0.5, `rgba(255,220,150,${0.45 * room.flash})`); g.addColorStop(1, 'rgba(255,220,150,0)');
-    ctx.fillStyle = g; ctx.fillRect(sx - 30, y - 74, gw + 60, 100);
-    ctx.restore();
-  }
   if (room.state === 'armed') {
     const pulse = 0.6 + 0.4 * Math.sin(S.t * 10);
     const isActive = S.active === room;
-    ctx.fillStyle = isActive ? 'rgba(92,225,255,0.10)' : `rgba(255,70,70,${0.06 + 0.08 * pulse})`;
-    ctx.fillRect(sx - 14, y - 90, gw + 28, 134);
-    ctx.strokeStyle = isActive ? '#5ce1ff' : room.color; ctx.globalAlpha = isActive ? 1 : pulse; ctx.lineWidth = 3 / V.zoom;
-    ctx.strokeRect(sx - 14, y - 90, gw + 28, 134); ctx.globalAlpha = 1;
+    // danger reads off the floor and the tunnel, not a box drawn over the scene
+    const col = isActive ? '#5ce1ff' : room.color, ch = CFG.tunnelH - 6;
+    const wash = ctx.createLinearGradient(0, y - ch, 0, y + 20);
+    wash.addColorStop(0, 'rgba(0,0,0,0)');
+    wash.addColorStop(1, isActive ? `rgba(92,225,255,${0.16 + 0.05 * pulse})` : `rgba(255,70,70,${0.13 + 0.07 * pulse})`);
+    ctx.fillStyle = wash; ctx.fillRect(sx - 12, y - ch, gw + 24, ch + 20);
+    // hazard chevrons crawling along both lips of the gap
+    ctx.save(); ctx.beginPath(); ctx.rect(sx - 12, y - 10, gw + 24, 22); ctx.clip();
+    ctx.globalAlpha = isActive ? 0.9 : 0.55 + 0.3 * pulse; ctx.fillStyle = col;
+    const off = (S.t * 34) % 24;
+    for (let cx2 = sx - 36 + off; cx2 < sx + gw + 24; cx2 += 24) {
+      ctx.beginPath(); ctx.moveTo(cx2, y + 6); ctx.lineTo(cx2 + 9, y - 6); ctx.lineTo(cx2 + 16, y - 6); ctx.lineTo(cx2 + 7, y + 6); ctx.fill();
+    }
+    ctx.restore(); ctx.globalAlpha = 1;
+    // a thin bracket at the mouth of the gap instead of a full rectangle
+    ctx.strokeStyle = col; ctx.globalAlpha = isActive ? 1 : pulse; ctx.lineWidth = 2.4 / V.zoom;
+    for (const [ex, dir] of [[sx - 12, 1], [sx + gw + 12, -1]]) {
+      ctx.beginPath();
+      ctx.moveTo(ex + dir * 16, y - ch); ctx.lineTo(ex, y - ch); ctx.lineTo(ex, y + 16); ctx.lineTo(ex + dir * 16, y + 16);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
   }
 }
 function drawFinish() {
@@ -1387,9 +1451,9 @@ function drawRunners(lane) {
     let alpha = 1, phase = moving ? r.phase : 0;
     if (r.state === 'fall') {
       for (let g = 2; g >= 1; g--) {
-        ctx.save(); ctx.translate(-r.vx0 * g * 0.012 || 0, -r.vy * g * 0.012);
-        ctx.translate(0, -12); ctx.rotate(r.rot - r.rv0 * g * 0.012); ctx.translate(0, 12);
-        drawFigure(r, 0, 0, S.t * 22 + r.jit, scale, 0.16 / g);
+        ctx.save(); ctx.translate(-(r.vx0 || 0) * g * 0.035, -r.vy * g * 0.035);
+        ctx.translate(0, -12); ctx.rotate(r.rot - r.rv0 * g * 0.035); ctx.translate(0, 12);
+        drawFigure(r, 0, 0, S.t * 22 + r.jit, scale, 0.42 / g);
         ctx.restore();
       }
       ctx.translate(0, -12); ctx.rotate(r.rot); ctx.translate(0, 12);
@@ -1402,6 +1466,17 @@ function drawRunners(lane) {
   }
 }
 function drawFx() {
+  // a band of warm light sweeping across each newly lowered crossing, over the crowd on it
+  for (const room of S.rooms) {
+    if (room.flash <= 0 || !inView(room.x, 200)) continue;
+    const sx = room.x - V.left, y = laneY(room.lane), t = 1 - room.flash;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const lx = sx - 50 + t * (CFG.gapWidth + 100);
+    const g = ctx.createLinearGradient(lx - 26, 0, lx + 26, 0);
+    g.addColorStop(0, 'rgba(255,220,150,0)'); g.addColorStop(0.5, `rgba(255,220,150,${0.45 * room.flash})`); g.addColorStop(1, 'rgba(255,220,150,0)');
+    ctx.fillStyle = g; ctx.fillRect(sx - 30, y - 74, CFG.gapWidth + 60, 100);
+    ctx.restore();
+  }
   // water rings on the river surface
   ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5;
   for (const r of S.ripples) {
@@ -1421,7 +1496,7 @@ function drawFx() {
     for (const p of S.particles) {
       const d = PK[p.k] || PK.dust;
       if (!!d.add !== add) continue;
-      const t = 1 - p.life / p.max, rr = Math.max(0.3, (d.r0 + (d.r1 - d.r0) * t) * p.sz);
+      const t = 1 - p.life / p.max, rr = Math.max(1.4 / V.zoom, (d.r0 + (d.r1 - d.r0) * t) * p.sz);
       ctx.globalAlpha = Math.min(1, (p.life / p.max) * 1.6) * (add ? 0.85 : 1);
       ctx.fillStyle = p.c;
       const x = p.x - V.left, y = p.y;
@@ -1507,6 +1582,7 @@ function drawOverlays() {
   ctx.textAlign = 'left';
 }
 function drawBubbles() {
+  if (S.spike) return;
   const small = V.zoom < 0.6;
   ctx.font = small ? 'bold 9px monospace' : 'bold 10px monospace'; ctx.textAlign = 'center';
   const placed = placedUI;
