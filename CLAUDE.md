@@ -145,6 +145,15 @@ normally produces means it died early, which is the more confusing case because
 a real number looks like real coverage. `audio.stillLive` should stay at 2, the
 rumble and the footstep bed; anything higher is a leak.
 
+**Which of these numbers are a verdict and which are spread.** The harness seeds
+its own key presses, but the game calls `Math.random()` directly in about thirty
+places — `grain()`, the particle and ripple paths, the runner jitter — so the
+totals move between runs on byte-identical code. Two runs of the same build gave
+52,385 and 53,206 audio nodes, 36 and 38 floaters. That is the expected spread,
+not a signal, and if two runs ever agreed to the digit it would be worth asking
+why. The verdict is the criteria: frozen count, runs reaching an ending, an empty
+error map, and `stillLive` at 2. Reproduce on those, never on the totals.
+
 **Know which lines your green covers.** Three times in one day a passing check
 was a verdict on something other than the change: the sound module ran zero
 lines because the stub had no `AudioContext`; a bot fix was scored on deaths at
