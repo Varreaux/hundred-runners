@@ -22,7 +22,6 @@ const CFG = {
   packBack: 120, packFront: 540,   // the pack holds slots in this band ahead of the camera anchor
   jitter: 30,
   tire: 0.15,             // how much the pack stretches by the end of the run
-  collapseLead: -60,      // the collapse front runs this far behind the camera anchor; it buries anyone it catches
   armDist: 240,           // room unlocks when the front runner is this close
   baseY: 400,             // floor of tunnel 0; each tunnel above is laneGap higher
   laneGap: 190,
@@ -394,7 +393,7 @@ function reset() {
     stats: { dead: 0, arrived: 0 },
     finale: null, best: loadBest(), rollBottom: 254,
     endT: 0, endEmb: [], endSpawn: 0, endRoll: null,
-    collapseX: CFG.collapseLead, recent: [], spike: null, spikeCool: 0, streak: 0, bestStreak: 0, lastScream: 0,
+    recent: [], spike: null, spikeCool: 0, streak: 0, bestStreak: 0, lastScream: 0,
   };
   for (let i = 0; i < CFG.runnerCount; i++) {
     S.runners.push({
@@ -452,12 +451,11 @@ function killRunner(r, how) {
   r.state = 'dead'; r.endX = r.x; r.deathT = S.t; S.stats.dead++; S.shake = Math.min(5, S.shake + 1.2);
   S.recent.push(S.t); if (S.spike) S.spike.n++;
   if (S.streak > 0) { S.streak = 0; S.floaters.push({ sx: W / 2, sy: 200, txt: 'STREAK LOST', life: 1, color: '#ff9a3c' }); }
-  if (how === 'splash') AU.splash(); else if (how === 'buried') AU.rocks(); else AU.noise(0.1, 0.18, ['lowpass', 300]);
+  if (how === 'splash') AU.splash(); else AU.noise(0.1, 0.18, ['lowpass', 300]);
   if (S.t - S.lastScream > 0.2 && Math.random() < 0.6) { S.lastScream = S.t; AU.scream(); }
   if (how !== 'splash' && how !== 'dark' && Math.random() < 0.4 && S.t - S.lastWordT > 0.4) { S.lastWordT = S.t; say(r, how === 'crush' ? 'crush' : 'trample', 1.3); }
   if (how === 'splash') splash(r.x, CFG.riverY);
   else if (how === 'dark') dust(r.x, r.y + 50, '#3a3040');
-  else if (how === 'buried') { dust(r.x, r.y - 20, '#6b5a4a'); dust(r.x, r.y - 60, '#4a3f3a'); }
   else dust(r.x, r.y - 6, '#c0392b');
   S.floaters.push({ wx: r.x, wy: r.y - 10, txt: r.name ? `-${r.name}` : '-1', life: r.name ? 1.4 : 0.8, color: '#ff6b6b' });
 }
@@ -547,25 +545,12 @@ function update(dt) {
   S.cam = Math.min(S.camMax, S.cam + CFG.scroll * dt);
   updateView(dt);
   const camStopped = S.cam >= S.camMax;
-  S.collapseX += CFG.scroll * dt;
   S.recent = S.recent.filter(t => S.t - t < 1);
   if (!S.spike && S.spikeCool <= 0 && S.recent.length >= 5) {
     S.spike = { t: 0.7, n: S.recent.length }; S.recent.length = 0; S.spikeCool = CFG.spikeCooldown; S.shake = 8; AU.boom();
   }
   const inside = S.cam + CFG.packFront > CFG.entrance && S.cam + CFG.packFront < CFG.exit;
-  let nearest = 1e9; for (const r of S.runners) if (r.state === 'run') nearest = Math.min(nearest, r.x - S.collapseX);
-  if (S.collapseX > CFG.entrance && nearest < 140) {
-    S.shake = Math.max(S.shake, 0.8);
-    // one buried tunnel per frame throws rubble, so six lanes cannot flood the particle pool
-    const buried = [];
-    for (let k = 0; k < CFG.laneCount; k++) if (laneAt(k, S.collapseX)) buried.push(k);
-    if (buried.length && inView(S.collapseX, 160)) {
-      const k = pick(buried);
-      emit('chip', 2, S.collapseX + 10, laneY(k) - rand(0, CFG.tunnelH), { sx: 20, vx: [20, 95], vy: [-30, 45], life: [0.4, 0.9], c: '#6b5a4a' });
-      emit('dust', 1, S.collapseX + 14, laneY(k) - rand(10, CFG.tunnelH), { sx: 16, vx: [10, 60], vy: [-14, 20], life: [0.7, 1.4], c: 'rgba(120,104,92,0.5)' });
-    }
-  }
-  AU.ambient(inside, S.runners.filter(r => r.state === 'run').length, S.collapseX > CFG.entrance && nearest < 140, dt);
+  AU.ambient(inside, S.runners.filter(r => r.state === 'run').length, false, dt);
   const spread = 1 + CFG.tire * (S.cam / S.camMax);
   if (S.active) VERBS[S.active.verb].update(S.active.mg, dt);
   const holdGate = S.gates.find(g => g.state === 'holding');
@@ -588,7 +573,6 @@ function update(dt) {
           emit('dust', 1, r.x - 3, footY(r) + 2, { vx: [-30, -6], vy: [-20, -5], life: [0.3, 0.6], c: 'rgba(196,180,160,0.6)', sz: 1.1 });
       }
       if (r.x >= CFG.finale.x - 40) { r.state = 'arrived'; r.endX = CFG.finale.x; S.stats.arrived++; continue; }
-      if (S.collapseX > CFG.entrance && r.x < S.collapseX) { r.doom = 'cave-in'; killRunner(r, 'buried'); continue; }
       updateLane(r);
       for (const room of S.rooms) {
         if (room.lane !== r.lane || room.state === 'solved') continue;
@@ -787,7 +771,6 @@ function doomOf(r) {
   const d = r.doom;
   if (d && d.type) return { key: 'r' + d.ord, order: d.ord, label: `${ordinal(d.ord)} crossing · ${PLACE[d.type]}`, short: `the ${ordinal(d.ord)} crossing` };
   if (d === 'gate') return { key: 'gate', order: 90, label: 'crushed at a hold gate', short: 'a hold gate' };
-  if (d === 'cave-in') return { key: 'cave', order: 91, label: 'caught by the cave-in', short: 'the cave-in' };
   if (d === 'final') return { key: 'final', order: 95, label: 'spent at the final gate', short: 'the final gate' };
   return { key: 'dark', order: 92, label: 'somewhere in the dark', short: 'the dark' };
 }
@@ -847,7 +830,6 @@ function draw() {
   drawRiver();
   carveTunnels();
   for (let k = CFG.laneCount - 1; k >= 0; k--) { drawLane(k); drawRunners(k); }
-  drawCollapse();
   drawFinish();
   if (S.mode === 'play' || S.mode === 'finale') drawFx();
   ctx.restore();
@@ -877,64 +859,6 @@ function draw() {
     ctx.fillStyle = '#ff3b3b'; ctx.fillText(`-${S.spike.n}`, W / 2, H / 2 + 10);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 16px monospace'; ctx.fillText('AT ONCE', W / 2, H / 2 + 40);
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
-  }
-}
-// the tunnel caving in behind the pack: rock fills every corridor left of the front, boulders tumble at the edge
-function drawCollapse() {
-  const fx = S.collapseX;
-  if (fx < CFG.entrance || fx - V.left < -60) return;
-  const x1 = fx - V.left, x0 = Math.max(CFG.entrance - 30, V.left - 60) - V.left;
-  const th = CFG.tunnelH;
-  const bury = (l, r, y) => {
-    if (r <= l) return;
-    ctx.save();
-    ctx.beginPath(); ctx.moveTo(l, y - th - 6);
-    for (let yy = y - th - 6; yy <= y + 46; yy += 12) ctx.lineTo(r + Math.sin(yy * 0.11 + S.t * 9) * 9, yy);
-    ctx.lineTo(l, y + 46); ctx.closePath();
-    ctx.fillStyle = '#241d29'; ctx.fill(); ctx.clip();
-    // the same strata and grit as the rest of the mountain, so it reads as fill, not a silhouette
-    for (let yy = y - th - 6; yy < y + 46; yy += 13) {
-      const k = Math.floor(yy / 13);
-      ctx.fillStyle = k % 2 ? 'rgba(255,255,255,0.028)' : 'rgba(0,0,0,0.12)';
-      ctx.fillRect(l - 4, yy + Math.sin(k + l * 0.02) * 2, r - l + 12, 6.5);
-    }
-    for (let wx = Math.floor((l + V.left) / 16) * 16; wx < r + V.left; wx += 16) {
-      const h = hash(wx * 2.3 + y); if (h < 0.45) continue;
-      ctx.fillStyle = h > 0.8 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.22)';
-      ctx.beginPath(); ctx.ellipse(wx - V.left, y - th + h * (th + 40), 2 + h * 4, 1.4 + h * 3, h * 2, 0, 6.28); ctx.fill();
-    }
-    ctx.restore();
-  };
-  for (let k = 0; k < CFG.laneCount; k++) {
-    const y = laneY(k);
-    for (const [a, b] of LANE_SPANS[k]) bury(Math.max(x0, a - 30 - V.left), Math.min(x1, b + 30 - V.left), y);
-  }
-  ctx.fillStyle = '#241d29';
-  for (const f of CFG.forks) {
-    if (f.x + CFG.rampLen < fx) { ctx.save(); ctx.fillStyle = '#241d29'; slantCorridor(f.x, laneY(f.from), f.x + CFG.rampLen, laneY(f.to)); ctx.restore(); }
-    if (f.merge + CFG.rampLen < fx) { ctx.save(); ctx.fillStyle = '#241d29'; slantCorridor(f.merge, laneY(f.to), f.merge + CFG.rampLen, laneY(f.from)); ctx.restore(); }
-  }
-  // haze, but only inside the corridors it belongs to
-  for (let k = 0; k < CFG.laneCount; k++) {
-    if (!laneAt(k, fx)) continue;
-    const y = laneY(k);
-    const hz = ctx.createLinearGradient(x1 - 10, 0, x1 + 130, 0);
-    hz.addColorStop(0, 'rgba(120,100,90,0.42)'); hz.addColorStop(1, 'rgba(120,100,90,0)');
-    ctx.fillStyle = hz; ctx.fillRect(x1 - 10, y - th, 140, th + 34);
-  }
-  // rubble tumbling at the face: spread out, kept inside the corridor, and outlined like everything solid
-  for (let k = 0; k < CFG.laneCount; k++) {
-    if (!laneAt(k, fx)) continue;
-    const y = laneY(k);
-    for (let i = 0; i < 7; i++) {
-      const seed = i * 13 + k * 7, rr = 5 + hash(seed) * 11;
-      const bx = x1 - 14 + hash(seed + 1) * 90 + Math.sin(S.t * 6 + seed) * 5;
-      const span = th - rr * 2;
-      const by = y - th + rr + ((hash(seed + 2) * span + S.t * 120 + seed * 30) % span);
-      ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(bx, by, rr + 1.3, 0, 6.28); ctx.fill();
-      ctx.fillStyle = i % 2 ? '#3d3442' : '#4a4050'; ctx.beginPath(); ctx.arc(bx, by, rr, 0, 6.28); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.beginPath(); ctx.arc(bx - rr * 0.3, by - rr * 0.35, rr * 0.55, 0, 6.28); ctx.fill();
-    }
   }
 }
 function drawSky() {
@@ -1824,13 +1748,8 @@ function drawHud() {
     if (S.active) hint = VERBS[S.active.verb].hint + '   (ESC to close)';
     else if (armed.length) hint = `press ${armed.map(r => r.hot).sort().join(' or ')} to open a flashing room`;
     if (gate) hint += gate.state === 'holding' ? '   ENTER releases the gate' : '   ENTER holds the crowd at the gate';
-    let danger = false;
-    if (gate && gate.state === 'holding') {
-      const held = S.runners.filter(r => r.state === 'run' && r.held);
-      if (held.length && Math.min(...held.map(r => r.x)) - S.collapseX < 260) { hint = 'THE TUNNEL IS CAVING IN BEHIND THEM. ENTER TO RELEASE!'; danger = true; }
-    }
-    ctx.fillStyle = danger ? 'rgba(120,10,10,0.75)' : 'rgba(8,10,18,0.6)'; ctx.fillRect(0, H - 26, W, 26);
-    ctx.fillStyle = danger ? '#fff' : 'rgba(255,255,255,0.8)'; ctx.font = danger ? 'bold 13px monospace' : '13px monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(8,10,18,0.6)'; ctx.fillRect(0, H - 26, W, 26);
+    ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
     ctx.fillText(hint, W / 2, H - 9); ctx.textAlign = 'left';
   }
 }
