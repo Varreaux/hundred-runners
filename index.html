@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '25 brick and rock, seated';
+const BUILD = '26 the ramp ends where the fill ends';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3003,12 +3003,22 @@ function drawSeamRock() {
     const hv = hash(y * 0.17), d = 40 + hv * 200;
     ctx.beginPath(); ctx.moveTo(seamXAt(y) - V.left, y); ctx.lineTo(seamXAt(y) - V.left + d, y + 7 + hash(y * 0.31 + 5) * 16); ctx.stroke();
   }
-  // the rock reads mauve and flat next to the brick, so sink it where they meet
+  // Contact shadow where the two materials meet. This is not a correction to the rock:
+  // with it removed the rock holds a flat 35 to 40 across the join, which is correct on its
+  // own. It is the darkening any two surfaces have where they touch, and it stops there.
+  // It used to be 300 wide at 0.5, to sink a rock mass that was one flat value and read as
+  // a pale slab beside the brick. The mass has had a value structure since, so that reason
+  // is retired; at that width it was also eight runner-heights across, far wider than the
+  // overhang that would cast it.
+  // The gradient ends where the fill ends. When those two numbers disagree the ramp is cut
+  // off mid-slope and leaves a hard vertical bar the full height of the seam: at 90 wide
+  // against a 300 gradient this stopped at alpha 0.154 and measured a 3-point step.
+  const WASH = 90;
   for (let y = -1000; y < CFG.worldBottom + 40; y += 54) {
     const sx = seamXAt(y) - V.left;
-    const dk = ctx.createLinearGradient(sx, 0, sx + 300, 0);
+    const dk = ctx.createLinearGradient(sx, 0, sx + WASH, 0);
     dk.addColorStop(0, 'rgba(14,10,18,0.22)'); dk.addColorStop(1, 'rgba(14,10,18,0)');
-    ctx.fillStyle = dk; ctx.fillRect(sx, y, 90, 56);
+    ctx.fillStyle = dk; ctx.fillRect(sx, y, WASH, 56);
   }
   // pick marks
   ctx.strokeStyle = 'rgba(0,0,0,0.32)'; ctx.lineWidth = 1.3;
