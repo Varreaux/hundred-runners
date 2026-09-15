@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '40 the bot triages like a player';
+const BUILD = '41 a splash that sounds wet';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -634,7 +634,64 @@ const AU = {
   wrong() { this.tone('sawtooth', 140, 90, 0.18, 0.14); },
   thud() { this.tone('sine', 70, 40, 0.35, 0.5); this.noise(0.15, 0.2, ['lowpass', 400]); },
   clank() { this.tone('square', 240, 180, 0.1, 0.12); this.noise(0.12, 0.2, ['highpass', 2000]); },
-  splash() { this.noise(0.35, 0.22, ['bandpass', 1800, 0.8]); },
+  // A splash is three sounds, and the old one had only the middle sound: a static
+  // band of noise, which is a "shh" rather than water. What makes water read as
+  // water is the other two.
+  //   1. the surface breaking -- a bright crack, gone in 30ms
+  //   2. the mass thrown up and falling back -- noise under a lowpass that SWEEPS
+  //      DOWN. A fixed filter is static; the downward sweep is the wetness.
+  //   3. bubbles -- short sines RISING in pitch. A bubble entrained under the
+  //      surface resonates higher as it shrinks, which is the "plink" the ear
+  //      recognises as water and nothing else. This is the ingredient that was
+  //      missing entirely.
+  // Everything is jittered per call, because twenty people drowning at one
+  // crossing must not sound like one sample fired twenty times.
+  splash(size = 1) {
+    if (!this.ctx || this.muted) return;
+    const c = this.ctx, t = c.currentTime, R = Math.random;
+    const sz = Math.max(0.5, Math.min(2, size));
+
+    // 1. the break
+    const crack = c.createBufferSource(); crack.buffer = this.white;
+    crack.playbackRate.value = 1.2 + R() * 0.5;
+    const ch = c.createBiquadFilter(); ch.type = 'highpass'; ch.frequency.value = 1400 + R() * 900;
+    const cg = c.createGain();
+    cg.gain.setValueAtTime(0.0001, t);
+    cg.gain.linearRampToValueAtTime(0.16 * sz, t + 0.004);
+    cg.gain.exponentialRampToValueAtTime(0.0006, t + 0.055);
+    crack.connect(ch); ch.connect(cg); cg.connect(this.master);
+    crack.start(t); crack.stop(t + 0.09);
+
+    // 2. the body, with the filter falling away
+    const body = c.createBufferSource(); body.buffer = this.white;
+    body.playbackRate.value = 0.8 + R() * 0.4;
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 1.1;
+    const dur = (0.30 + R() * 0.16) * sz;
+    lp.frequency.setValueAtTime(3200 + R() * 1400, t);
+    lp.frequency.exponentialRampToValueAtTime(320, t + dur);     // bright to dull: the wetness
+    const bg = c.createGain();
+    bg.gain.setValueAtTime(0.0001, t);
+    bg.gain.linearRampToValueAtTime(0.2 * sz, t + 0.02);
+    bg.gain.exponentialRampToValueAtTime(0.0007, t + dur);
+    body.connect(lp); lp.connect(bg); bg.connect(this.master);
+    body.start(t); body.stop(t + dur + 0.04);
+
+    // 3. the bubbles
+    const n = 2 + Math.floor(R() * 3);
+    for (let i = 0; i < n; i++) {
+      const at = t + 0.05 + R() * 0.26 * sz;
+      const f0 = 380 + R() * 520;
+      const o = c.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(f0, at);
+      o.frequency.exponentialRampToValueAtTime(f0 * (1.7 + R() * 1.3), at + 0.05);  // RISING: a shrinking bubble
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.linearRampToValueAtTime(0.05 + R() * 0.05, at + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0004, at + 0.07);
+      o.connect(g); g.connect(this.master);
+      o.start(at); o.stop(at + 0.1);
+    }
+  },
   scream() { this.tone('sawtooth', 900 + Math.random() * 300, 380, 0.3, 0.045); },
   boom() { this.tone('sine', 50, 28, 0.9, 0.7); this.noise(0.5, 0.35, ['lowpass', 250]); },
   millBeat() {
@@ -835,7 +892,9 @@ function killRunner(r, how) {
   S.recent.push(S.t); if (S.spike) S.spike.n++;
   S.lastKill = { x: r.x, y: laneY(r.lane) };      // so the death plate can point at where it happened
   if (S.streak > 0) { S.streak = 0; S.floaters.push({ sx: W / 2, sy: 200, txt: 'STREAK LOST', life: 1, color: '#ff9a3c' }); }
-  if (how === 'splash') AU.splash(); else AU.noise(0.1, 0.18, ['lowpass', 300]);
+  // twenty going in at once is a bigger noise than one, and twenty identical
+  // splashes on top of each other is mud rather than a crowd
+  if (how === 'splash') AU.splash(1 + Math.min(0.8, S.recent.length * 0.12)); else AU.noise(0.1, 0.18, ['lowpass', 300]);
   if (S.t - S.lastScream > 0.2 && Math.random() < 0.6) { S.lastScream = S.t; AU.scream(); }
   if (how !== 'splash' && how !== 'dark' && Math.random() < 0.4 && S.t - S.lastWordT > 0.4) { S.lastWordT = S.t; say(r, 'crush', 1.3); }
   if (how === 'splash') splash(r.x, CFG.riverY);
