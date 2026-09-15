@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '22 the mountain has an inside';
+const BUILD = '23 a mill, then the mountain';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -34,7 +34,7 @@ const CFG = {
   // null for "the mouths", which is the same thing while the whole course is cave. If a
   // stretch of the run ever has something else overhead, move roofFrom past it and the
   // ramp follows, instead of darkening water that has a roof of its own.
-  roofFrom: null,
+  roofFrom: 5950,          // the seam: act one has a mill overhead, not rock
   roofTo: null,
   worldBottom: 540,
   rampLen: 200,
@@ -357,6 +357,12 @@ const AU = {
   splash() { this.noise(0.35, 0.22, ['bandpass', 1800, 0.8]); },
   scream() { this.tone('sawtooth', 900 + Math.random() * 300, 380, 0.3, 0.045); },
   boom() { this.tone('sine', 50, 28, 0.9, 0.7); this.noise(0.5, 0.35, ['lowpass', 250]); },
+  millBeat() {
+    if (!this.ctx || this.muted) return;
+    this.tone('square', 92, 58, 0.09, 0.035);
+    this.noise(0.06, 0.035, ['bandpass', 1500, 1.6]);
+    this.tone('sine', 44, 30, 0.16, 0.06, 0.05);
+  },
   cheer(n) { for (let i = 0; i < 3; i++) { const f = 440 * Math.pow(1.26, i) * (1 + Math.min(n, 8) * 0.06); this.tone('triangle', f, f * 1.5, 0.35, 0.08, i * 0.06); } },
   fail() { this.tone('sawtooth', 200, 60, 0.5, 0.22); },
   ambient(inside, moving, dt) {
@@ -428,7 +434,14 @@ function solveBurst(room) {
   room.flash = 1;
 }
 // idle life in the tunnels: embers off the lanterns, dust motes turning in the light
+// the mill runs to a beat; the cave does not
+let millBeatT = 0;
 function ambient(dt) {
+  const camX = S.cam + CFG.packFront;
+  if (inMill(camX)) {
+    millBeatT -= dt;
+    if (millBeatT <= 0) { millBeatT = 0.82; AU.millBeat(); }
+  }
   if (V.zoom < 0.3) return;
   S.ambT -= dt;
   if (S.ambT > 0) return;
@@ -442,6 +455,13 @@ function ambient(dt) {
   }
   if (!lit.length) return;
   const [lx, ly] = pick(lit);
+  if (inMill(lx)) {
+    // the mill breathes steam and turns dust in the window light; nothing is on fire
+    if (Math.random() < 0.45) emit('smoke', 1, lx + rand(-90, 90), ly + rand(26, 42), { sx: 3, vx: [-9, 15], vy: [-17, -5], life: [1.1, 2.2], c: 'rgba(198,206,208,0.15)', sz: 0.7 });
+    if (Math.random() < 0.85) emit('mote', 1, lx + rand(-100, 100), ly + rand(20, 110), { vx: [-6, 9], vy: [-5, 5], life: [1.8, 3.6], c: 'rgba(214,232,248,0.45)' });
+    if (Math.random() < 0.09) emit('spark', 1, lx + rand(-70, 70), ly + rand(74, 98), { vx: [-46, 46], vy: [-46, 12], life: [0.18, 0.42], c: '#ffdca6' });
+    return;
+  }
   emit('ember', 1, lx, ly + 13, { sx: 2, vx: [-7, 7], vy: [-28, -12], life: [0.7, 1.5], c: '#ffb457' });
   if (Math.random() < 0.7) emit('mote', 1, lx + rand(-80, 80), ly + rand(20, 100), { vx: [-5, 5], vy: [-4, 4], life: [1.6, 3.2], c: 'rgba(255,214,150,0.5)' });
 }
@@ -813,7 +833,8 @@ function splash(wx, y) {
   S.ripples.push({ x: wx, y, r: 3, life: 0.9 });
   ring(wx, y, 30 + big * 6, 0.5, 'rgba(200,240,255,0.9)', 3, 0.32);
 }
-function dust(wx, y, c = '#a08c70') {
+function dust(wx, y, c) {
+  c = c || (inMill(wx) ? '#8d929a' : '#a08c70');
   emit('dust', 7, wx, y, { sx: 6, sy: 4, vx: [-48, 48], vy: [-72, -14], life: [0.35, 0.75], c });
   emit('chip', 3, wx, y, { sx: 5, vx: [-75, 75], vy: [-135, -40], life: [0.4, 0.8], c: shade(c, 0.7) });
 }
@@ -997,9 +1018,21 @@ function drawSky() {
     for (let j = 0; j < 5; j++) { const ex = cx + (j - 2) * 22 * sc, ey = cy + (j % 2) * 6 * sc, rx = (26 - Math.abs(j - 2) * 5) * sc; ctx.moveTo(ex + rx, ey); ctx.ellipse(ex, ey, rx, 16 * sc, 0, 0, 6.28); }
     ctx.fill();
   }
+  // the mill makes its own weather: the sky browns over for the whole of act one
+  const smog = clamp01((FAC.seam + 420 - (V.left + V.vw * 0.5)) / 900);
+  if (smog > 0.01) {
+    const hz = ctx.createLinearGradient(0, 0, 0, H);
+    hz.addColorStop(0, `rgba(146,132,110,${0.3 * smog})`);
+    hz.addColorStop(0.55, `rgba(178,158,126,${0.4 * smog})`);
+    hz.addColorStop(1, `rgba(200,178,140,${0.2 * smog})`);
+    ctx.fillStyle = hz; ctx.fillRect(0, 0, W, H);
+  }
 }
 function drawOutside() {
   const horizon = CFG.riverY;
+  // the works on the horizon go behind the hills and at a slower parallax than either,
+  // so the furthest thing in the frame is also the highest and the palest
+  millSkyline();
   // A runner is about 36px. Trees at 34 and hills at 130 made the outdoors a model railway
   // and undercut the scale the interior works hard to establish; these are the sizes that
   // let a person read as a person standing in a mountain pass.
@@ -1020,6 +1053,29 @@ function drawOutside() {
   // inside the mountain, so the two met at a dead vertical wall under the arch and the
   // first thing the eye found in both daylight shots was a seam.
   const lake = CFG.riverY;
+  // and the band that opens up above it is a bank, not a flat fill
+  const bTop = laneY(0) + 30, bH = lake - bTop + 2;
+  const bg2 = ctx.createLinearGradient(0, bTop, 0, lake);
+  bg2.addColorStop(0, '#54432f'); bg2.addColorStop(0.55, '#463829'); bg2.addColorStop(1, '#31281e');
+  ctx.fillStyle = bg2; ctx.fillRect(-50, bTop, V.vw + 100, bH);
+  // turf hanging over the lip, then stones and shingle down the slope
+  ctx.fillStyle = '#3f5a2e'; ctx.fillRect(-50, bTop - 1, V.vw + 100, 3.4);
+  ctx.fillStyle = '#4c6b37';
+  for (let wx = Math.floor((V.left - 40) / 13) * 13; wx < V.left + V.vw + 40; wx += 13) {
+    const hv = hash(wx * 2.3);
+    if (hv < 0.4) continue;
+    ctx.fillRect(wx - V.left, bTop + 2, 5 + hv * 6, 1.4 + hv * 4);
+  }
+  for (let wx = Math.floor((V.left - 40) / 11) * 11; wx < V.left + V.vw + 40; wx += 11) {
+    const hv = hash(wx * 1.7), hv2 = hash(wx * 3.1);
+    if (hv < 0.35) continue;
+    const sy2 = bTop + 6 + hv2 * (bH - 12), rr = 1.6 + hv * 2.8;
+    ctx.fillStyle = '#5d4d38'; ctx.beginPath(); ctx.ellipse(wx - V.left, sy2, rr, rr * 0.7, hv * 3, 0, 6.28); ctx.fill();
+    ctx.fillStyle = 'rgba(232,220,196,0.16)'; ctx.beginPath(); ctx.ellipse(wx - V.left - rr * 0.25, sy2 - rr * 0.3, rr * 0.5, rr * 0.3, hv * 3, 0, 6.28); ctx.fill();
+  }
+  // the wet band the water keeps dark
+  ctx.fillStyle = 'rgba(28,36,30,0.45)'; ctx.fillRect(-50, lake - 11, V.vw + 100, 12);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-50, lake - 5, V.vw + 100, 6);
   const wg = ctx.createLinearGradient(0, lake, 0, CFG.worldBottom + 400);
   wg.addColorStop(0, '#2b7fa6'); wg.addColorStop(1, '#0b2c45');
   ctx.fillStyle = wg; ctx.fillRect(-50, lake, V.vw + 100, 500);
@@ -1096,6 +1152,36 @@ function drawRiver() {
   dk.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = dk; ctx.fillRect(e, top, span, depth);
   ctx.save(); ctx.beginPath(); ctx.rect(e, top, x - e, depth); ctx.clip(); waves(top); ctx.restore();
+  // under the mill it is a tailrace: oily, green, with scum turning on it. It goes on
+  // before the lamplight so the reflections sit on the tinted water rather than under it.
+  // the tint runs a little way past the seam and dies there: it is the same water
+  // flowing on, and ending it exactly on the boundary left a hard vertical edge
+  const me = Math.max(e, FAC.x0 - V.left), mx = Math.min(x, FAC.seam - V.left + 130);
+  if (mx > me) {
+    // Lay the tint in bands whose ALPHA ramps at each end, rather than painting it
+    // everywhere and then painting the clean colour back over it: restoring a flat
+    // top-of-gradient colour erased the water's own depth gradient.
+    ctx.save(); ctx.beginPath(); ctx.rect(me, top, mx - me, depth); ctx.clip();
+    const og = ctx.createLinearGradient(0, top, 0, top + depth);
+    og.addColorStop(0, 'rgba(56,72,50,0.5)'); og.addColorStop(1, 'rgba(24,34,28,0.62)');
+    const band = 14;
+    for (let bx2 = me; bx2 < mx; bx2 += band) {
+      // fades in under the gable, and out again inside the rock where the
+      // rock-overhead ramp has taken over
+      const a2 = Math.min(Math.min(1, (bx2 - me) / 150), Math.min(1, (mx - bx2) / 130));
+      if (a2 <= 0.01) continue;
+      ctx.globalAlpha = a2;
+      ctx.fillStyle = og; ctx.fillRect(bx2, top, band + 1, depth);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    ctx.fillStyle = 'rgba(158,176,136,0.09)';
+    for (let wx = Math.floor((me + V.left) / 46) * 46; wx < mx + V.left; wx += 46) {
+      const hv = hash(wx * 0.9), px = wx - V.left + Math.sin(S.t * 0.4 + hv * 6) * 9;
+      if (px < me || px > mx) continue;
+      ctx.beginPath(); ctx.ellipse(px, top + 6 + hv * 20, 13 + hv * 16, 2.4 + hv * 2, 0, 0, 6.28); ctx.fill();
+    }
+  }
   // lamplight smeared down the surface, drifting with it
   ctx.save(); ctx.beginPath(); ctx.rect(e, top, x - e, depth); ctx.clip();
   ctx.globalCompositeOperation = 'lighter';
@@ -1114,17 +1200,19 @@ function drawRiver() {
   ctx.lineTo(x, top + depth + 30); ctx.closePath(); ctx.fill();
   ctx.restore();
 }
+// The outline of everything solid: the mill's stepped brick bays from the
+// entrance to the seam, the hillside climbing out of the seam, the ridge, then
+// the old flank coming back down at the exit. Tunnels are carved out of this.
 function mountainPath() {
-  const e = CFG.entrance - V.left, x = CFG.exit - V.left, y0 = CFG.riverY;
-  const base = [[-48, y0], [-48, 330], [-30, 250], [80, 150], [220, 20], [400, -160], [600, -380], [800, -650], [1000, -950], [1250, -1300]];
-  const flank = [];
-  for (let i = 0; i < base.length; i++) {
-    flank.push(base[i]);
-    if (i < base.length - 1) { const [ax, ay] = base[i], [bx, by] = base[i + 1]; flank.push([(ax + bx) / 2 + (hash(i * 3) - 0.5) * 30, (ay + by) / 2 + (hash(i * 5) - 0.5) * 36]); }
-  }
-  ctx.beginPath(); ctx.moveTo(e - 48, CFG.worldBottom + 400);
-  for (const [dx, dy] of flank) ctx.lineTo(e + dx, dy);
-  for (let i = flank.length - 1; i >= 0; i--) ctx.lineTo(x - flank[i][0] + (hash(i * 7) - 0.5) * 20, flank[i][1]);
+  const fx = FAC.x0 - V.left, sm = FAC.seam - V.left, x = CFG.exit - V.left;
+  ctx.beginPath(); ctx.moveTo(fx, CFG.worldBottom + 400);
+  let prev = FAC.bays[0].y;
+  for (const b of FAC.bays) { ctx.lineTo(b.x0 - V.left, prev); ctx.lineTo(b.x0 - V.left, b.y); prev = b.y; }
+  ctx.lineTo(sm, prev);
+  for (const [dx, dy] of HILL) ctx.lineTo(sm + dx, dy + (dx === 0 ? 0 : (hash(dx * 1.3) - 0.5) * 22));
+  const ra = FAC.seam + HILL[HILL.length - 1][0], rb = CFG.exit - ROCK[ROCK.length - 1][0];
+  for (let i = 1; i < 8; i++) { const t = i / 8; ctx.lineTo(ra + (rb - ra) * t - V.left, -1336 + (hash(i * 31) - 0.5) * 96); }
+  for (let i = ROCK.length - 1; i >= 0; i--) ctx.lineTo(x - ROCK[i][0] + (hash(i * 7) - 0.5) * 20, ROCK[i][1]);
   ctx.lineTo(x + 48, CFG.worldBottom + 400); ctx.closePath();
 }
 function drawMountain() {
@@ -1142,6 +1230,11 @@ function drawMountain() {
   mass.addColorStop(1, '#171320');
   ctx.fillStyle = mass; ctx.fill();
   ctx.clip();
+  // brick one side of the seam, rock the other: one solid, two materials
+  ctx.save(); seamClip(-1); ctx.clip();
+  drawMillMass();
+  ctx.restore();
+  ctx.save(); seamClip(1); ctx.clip();
   // sun wash down the upper-left flank; the sun sits upper-left in drawSky
   const sun = ctx.createLinearGradient(0, top, V.vw * 0.8, top + 900);
   sun.addColorStop(0, 'rgba(255,224,176,0.16)');
@@ -1234,6 +1327,9 @@ function drawMountain() {
     const cx = sx + hash(seg) * 100, cy = top + hash(seg * 3) * (bottom - top);
     ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo(cx + 14, cy + 18, cx + 5, cy + 36); ctx.quadraticCurveTo(cx - 3, cy + 48, cx + 6, cy + 62); ctx.stroke();
   });
+  drawSeamRock();
+  ctx.restore();
+  drawSeamFace();
   ctx.restore();
   // Rim light where the rock meets the sky. The high ground faces open sky and catches it;
   // the lower flanks are shaded by the mass above them, so the hairline has to die out
@@ -1243,6 +1339,7 @@ function drawMountain() {
   rim.addColorStop(0.55, 'rgba(230,222,240,0.12)');
   rim.addColorStop(1, 'rgba(230,222,240,0)');
   mountainPath(); ctx.strokeStyle = rim; ctx.lineWidth = 3; ctx.stroke();
+  drawMillRoof();
 }
 // One abandoned excavation. Drawn as a void you can see into: dark air at the
 // mouth, a back wall a shade lighter, a floor catching whatever light there is.
@@ -1331,6 +1428,7 @@ function carveTunnels() {
     slantCorridor(f.merge, laneY(f.to), f.merge + CFG.rampLen, laneY(f.from));
   }
   const lamp = (wx, y) => {
+    if (inMill(wx)) return millLamp(wx, y);
     if (!inView(wx, 150)) return;
     const sx = wx - V.left;
     const fl = 0.86 + 0.1 * Math.sin(S.t * 9 + wx) + 0.06 * Math.sin(S.t * 23 + wx * 1.7);
@@ -1359,7 +1457,7 @@ function carveTunnels() {
     for (let k = 0; k < CFG.laneCount; k++) { const lx = wx + k * 40; if (laneAt(k, lx) && Math.abs(lx - CFG.entrance) > 80 && Math.abs(lx - CFG.exit) > 80) lamp(lx, laneY(k) - th + 2); }
   }
   ctx.fillStyle = '#231b28';
-  for (const wx of [CFG.entrance, CFG.exit]) { if (!inView(wx, 100)) continue; const ax = wx - V.left, cy = laneY(0) - th; ctx.fillRect(ax - 36, cy - 3, 72, 22); ctx.beginPath(); ctx.arc(ax, cy - 2, 36, Math.PI, 0); ctx.fill(); }
+  for (const wx of [CFG.entrance, CFG.exit]) { if (!inView(wx, 100) || inMill(wx)) continue; const ax = wx - V.left, cy = laneY(0) - th; ctx.fillRect(ax - 36, cy - 3, 72, 22); ctx.beginPath(); ctx.arc(ax, cy - 2, 36, Math.PI, 0); ctx.fill(); }
   shaft(CFG.entrance, 1); shaft(CFG.exit, -1);
   ceilingRays(th);
 }
@@ -1407,6 +1505,9 @@ function shaft(wx, dir) {
   ctx.restore();
 }
 function corridor(wx0, wx1, y, lane = 0) {
+  splitSeam(wx0, wx1, (a, b, mill) => mill ? millCorridor(a, b, y, lane) : rockCorridor(a, b, y, lane));
+}
+function rockCorridor(wx0, wx1, y, lane = 0) {
   const x0 = Math.max(-10, wx0 - V.left), x1 = Math.min(V.vw + 10, wx1 - V.left);
   if (x1 <= x0) return;
   const cy = y - CFG.tunnelH;
@@ -1444,6 +1545,7 @@ function corridor(wx0, wx1, y, lane = 0) {
   ctx.fillStyle = '#17121c';
 }
 function slantCorridor(wx0, y0, wx1, y1) {
+  if (inMill(wx0)) return millShaftWell(wx0, y0, wx1, y1);
   if (!inView(wx0, 260)) return;
   const x0 = wx0 - V.left, x1 = wx1 - V.left, th = CFG.tunnelH;
   ctx.fillStyle = '#231b28';
@@ -1463,6 +1565,1464 @@ function slantCorridor(wx0, y0, wx1, y1) {
     ctx.beginPath(); ctx.moveTo(x0, a); ctx.lineTo(x1, b); ctx.lineTo(x1, b + 9); ctx.lineTo(x0, a + 9); ctx.fill();
   }
   ctx.fillStyle = '#17121c';
+}
+// ================================================================ the mill (act one)
+// The run starts inside a factory built against the foot of the mountain: brick,
+// cast iron and daylight as far as the seam, rock beyond it. The change of world
+// is architectural, not a cross-fade — the crowd walks the length of the mill and
+// out through a shored portal into the workings.
+const FAC = {
+  x0: CFG.entrance - 48,
+  seam: 5950,
+  // the mill steps up in bays as the upper floors come in; y is the roofline
+  bays: [{ x0: CFG.entrance - 48, y: 196 }, { x0: 2560, y: 44 }, { x0: 3640, y: -168 }],
+  stacks: [4160, 4980],      // chimneys on the tall hall
+  tower: 2290,               // water tower, on the low bay so its tank is in frame
+};
+for (let i = 0; i < FAC.bays.length; i++) FAC.bays[i].x1 = i < FAC.bays.length - 1 ? FAC.bays[i + 1].x0 : FAC.seam;
+const inMill = wx => wx >= FAC.x0 && wx < FAC.seam;
+function millRoofY(wx) {
+  if (wx <= FAC.bays[0].x0) return FAC.bays[0].y;
+  for (const b of FAC.bays) if (wx < b.x1) return b.y;
+  return FAC.bays[FAC.bays.length - 1].y;
+}
+// a span straddling the seam is drawn in two halves, one per world
+function splitSeam(wx0, wx1, fn) {
+  const s = FAC.seam;
+  if (wx1 <= s) fn(wx0, wx1, true);
+  else if (wx0 >= s) fn(wx0, wx1, false);
+  else { fn(wx0, s, true); fn(s, wx1, false); }
+}
+// hillside taking over where the brick stops, measured from the seam
+const HILL = [[0, -168], [70, -228], [180, -320], [330, -454], [520, -632], [740, -848], [980, -1082], [1240, -1290], [1480, -1372]];
+// the old mountain flank, measured back from the exit, with midpoints for roughness
+const ROCK = (() => {
+  const base = [[-48, CFG.riverY], [-48, 330], [-30, 250], [80, 150], [220, 20], [400, -160], [600, -380], [800, -650], [1000, -950], [1250, -1300]];
+  const out = [];
+  for (let i = 0; i < base.length; i++) {
+    out.push(base[i]);
+    if (i < base.length - 1) { const [ax, ay] = base[i], [bx, by] = base[i + 1]; out.push([(ax + bx) / 2 + (hash(i * 3) - 0.5) * 30, (ay + by) / 2 + (hash(i * 5) - 0.5) * 36]); }
+  }
+  return out;
+})();
+
+// --- brick, tiled once and locked to world space so courses do not swim with the camera
+let brickCv = null;
+// Six courses rather than two: a 52x22 tile marched across a 500px wall in
+// visible lockstep. The pattern is built once, not per call.
+const BRICK_W = 156, BRICK_H = 66;
+function brickTile() {
+  if (brickCv) return brickCv;
+  const c = document.createElement('canvas'); c.width = BRICK_W; c.height = BRICK_H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#1d1a21'; g.fillRect(0, 0, BRICK_W, BRICK_H);
+  const brick = (bx, by) => {
+    const v = hash(bx * 3.7 + by * 11.3);
+    g.fillStyle = `rgb(${50 + v * 28 | 0},${38 + v * 19 | 0},${40 + v * 19 | 0})`;
+    g.fillRect(bx, by, 12, 4.5);
+    g.fillStyle = 'rgba(255,255,255,0.06)'; g.fillRect(bx, by, 12, 0.8);
+    g.fillStyle = 'rgba(0,0,0,0.24)'; g.fillRect(bx, by + 3.9, 12, 0.8);
+  };
+  // half-size brick: at 24x9 a course was 0.46m on a 1.7m figure, so the wall
+  // read as rubble stone and the dressed quoins had nothing to contrast with
+  for (let row = 0; row < 12; row++) {
+    const off = (row % 2) * 6.5 + (row === 5 ? 3 : row === 8 ? -2.5 : 0);
+    for (let i = -1; i <= 13; i++) brick(i * 13 + off, row * 5.5);
+  }
+  return brickCv = c;
+}
+let brickPat = null;
+function brickFill(x, y, w, h, alpha = 1) {
+  if (w <= 0 || h <= 0) return;
+  const p = brickPat || (brickPat = ctx.createPattern(brickTile(), 'repeat'));
+  if (!p) return;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  const ox = -(((V.left % BRICK_W) + BRICK_W) % BRICK_W);
+  ctx.translate(ox, 0); ctx.fillStyle = p; ctx.fillRect(x - ox, y, w, h);
+  ctx.restore();
+  // a coarse soot-and-weather wash on a different beat from the tile, so the
+  // repeat never reads as a grid. Only worth its cost on the big walls: on a
+  // chimney or a gate pier the tile never repeats far enough to show.
+  if (w * h < 24000) return;
+  ctx.save(); ctx.globalAlpha *= alpha * 0.55;
+  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  // feathered blobs, not axis-aligned rectangles: hard-edged panels at a fixed
+  // pitch read as a coarse repeat replacing the fine one
+  for (let wx = Math.floor((V.left + x) / 174) * 174; wx < V.left + x + w + 174; wx += 174) {
+    for (let yy = Math.floor(y / 138) * 138; yy < y + h + 138; yy += 138) {
+      const hv = hash(wx * 0.021 + yy * 0.013), hv2 = hash(wx * 0.037 + yy * 0.029);
+      const bx2 = wx - V.left + hv2 * 120, by2 = yy + hv * 100, rr = 78 + hv2 * 90;
+      const bl = ctx.createRadialGradient(bx2, by2, 2, bx2, by2, rr);
+      bl.addColorStop(0, hv > 0.5 ? `rgba(206,198,210,${0.03 + hv * 0.05})` : `rgba(9,7,13,${0.05 + hv * 0.13})`);
+      bl.addColorStop(1, hv > 0.5 ? 'rgba(206,198,210,0)' : 'rgba(9,7,13,0)');
+      ctx.fillStyle = bl; ctx.fillRect(bx2 - rr, by2 - rr, rr * 2, rr * 2);
+    }
+  }
+  ctx.restore();
+}
+// a line of rivets: the detail that says this was bolted together by hand
+function rivets(x0, x1, y, step = 9, r = 1.15, col = 'rgba(255,255,255,0.20)') {
+  ctx.fillStyle = col;
+  for (let x = x0; x <= x1; x += step) { ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill(); }
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  for (let x = x0; x <= x1; x += step) { ctx.beginPath(); ctx.arc(x, y + 0.9, r * 0.8, 0, 6.28); ctx.fill(); }
+}
+
+// --- the masonry mass: everything solid between the floors and up to the roofline
+// windows on the masonry itself, wherever a bay's wall stands clear of the floors
+function millFaceWindows() {
+  for (let wx = Math.floor((V.left - 260) / 120) * 120; wx < V.left + V.vw + 260; wx += 120) {
+    const gx = wx + 104;
+    if (!inMill(gx) || gx < FAC.x0 + 120 || gx > FAC.seam - 40) continue;
+    // the wall must stand clear of the roofline above and the topmost floor below
+    if (millRoofY(gx - 34) !== millRoofY(gx + 34)) continue;
+    const roof = millRoofY(gx) + 36;
+    let ceil = CFG.worldBottom;
+    for (let k = CFG.laneCount - 1; k >= 0; k--) if (laneAt(k, gx)) ceil = Math.min(ceil, laneY(k) - CFG.tunnelH);
+    const band = ceil - 16 - roof;
+    if (band < 86) continue;
+    const h = Math.min(band, 142), top = roof + (band - h) * 0.4;
+    // one bay in five is a taking-in door instead, with a hoist beam over it
+    if (hash(gx * 0.013) > 0.82 && band > 120) millHoistDoor(gx - V.left, top, h);
+    else millWindow(gx - V.left, top - 22, h + 46, 1, gx + 7, true);
+  }
+}
+// the door they winched bales up to, and the beam and pulley over it
+function millHoistDoor(sx, top, h) {
+  const w = 44, dh = Math.min(h, 62), dy = top + h - dh;
+  ctx.fillStyle = '#16131b'; ctx.fillRect(sx - w / 2 - 5, dy - 5, w + 10, dh + 5);
+  ctx.fillStyle = '#3a2f22'; ctx.fillRect(sx - w / 2, dy, w, dh);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  for (let i = 1; i < 5; i++) ctx.fillRect(sx - w / 2 + i * w / 5, dy, 2, dh);
+  ctx.fillStyle = '#4d4034'; ctx.fillRect(sx - w / 2, dy + dh * 0.45, w, 5);
+  ctx.fillStyle = 'rgba(255,236,200,0.1)'; ctx.fillRect(sx - w / 2, dy, w, 2);
+  // stone lintel
+  ctx.fillStyle = '#4c4350'; ctx.fillRect(sx - w / 2 - 7, dy - 9, w + 14, 7);
+  ctx.fillStyle = 'rgba(255,244,220,0.15)'; ctx.fillRect(sx - w / 2 - 7, dy - 9, w + 14, 1.6);
+  // hoist beam projecting from the wall, chain and hook hanging off it
+  const by = dy - 30;
+  ctx.fillStyle = '#1a1620'; ctx.fillRect(sx - 8, by - 4, 46, 10);
+  ctx.fillStyle = '#5a4430'; ctx.fillRect(sx - 7, by - 3, 44, 8);
+  ctx.fillStyle = 'rgba(255,236,200,0.14)'; ctx.fillRect(sx - 7, by - 3, 44, 1.8);
+  ctx.fillStyle = '#3e3a44'; ctx.fillRect(sx + 26, by - 6, 4, 14);
+  ctx.strokeStyle = '#1a1620'; ctx.lineWidth = 2.6;
+  ctx.beginPath(); ctx.moveTo(sx + 28, by + 8); ctx.lineTo(sx + 28, by + 34); ctx.stroke();
+  ctx.strokeStyle = '#6f7480'; ctx.lineWidth = 1.3; ctx.setLineDash([3, 2.5]);
+  ctx.beginPath(); ctx.moveTo(sx + 28, by + 8); ctx.lineTo(sx + 28, by + 34); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.strokeStyle = '#6f7480'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(sx + 28, by + 38, 4.4, 2.2, 0.9); ctx.stroke();
+}
+function drawMillMass() {
+  const x0 = Math.max(-40, FAC.x0 - V.left), x1 = Math.min(V.vw + 40, FAC.seam - V.left);
+  if (x1 <= x0) return;
+  const top = -300, bot = CFG.worldBottom + 400;
+  ctx.fillStyle = '#2a2329'; ctx.fillRect(x0, top, x1 - x0, bot - top);
+  brickFill(x0, top, x1 - x0, bot - top);
+  // soot pooling under every floor, damp rising off the race
+  const g = ctx.createLinearGradient(0, -260, 0, CFG.worldBottom);
+  g.addColorStop(0, 'rgba(10,9,13,0.52)'); g.addColorStop(0.45, 'rgba(10,9,13,0.14)');
+  g.addColorStop(0.8, 'rgba(24,38,40,0.3)'); g.addColorStop(1, 'rgba(24,38,40,0.55)');
+  ctx.fillStyle = g; ctx.fillRect(x0, top, x1 - x0, bot - top);
+  // cast-iron tie plates where the floor beams are anchored through the wall
+  for (let wx = Math.floor((V.left - 240) / 240) * 240; wx < V.left + V.vw + 240; wx += 240) {
+    if (!inMill(wx)) continue;
+    const sx = wx - V.left;
+    for (let k = 0; k < CFG.laneCount; k++) {
+      const ty = laneY(k) - CFG.tunnelH - 15;
+      if (ty < millRoofY(wx) + 12) continue;
+      ctx.fillStyle = '#231e24';
+      ctx.beginPath();
+      for (let a = 0; a < 8; a++) { const rr = a % 2 ? 3.4 : 7.6, an = a * Math.PI / 4 - Math.PI / 8; ctx.lineTo(sx + Math.cos(an) * rr, ty + Math.sin(an) * rr); }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#4a4049';
+      ctx.beginPath();
+      for (let a = 0; a < 8; a++) { const rr = a % 2 ? 2.6 : 6.4, an = a * Math.PI / 4 - Math.PI / 8; ctx.lineTo(sx + Math.cos(an) * rr, ty - 0.6 + Math.sin(an) * rr); }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#6b5f68'; ctx.beginPath(); ctx.arc(sx, ty - 0.8, 1.8, 0, 6.28); ctx.fill();
+    }
+  }
+  // a stone band and corbelled cornice under each bay's roofline
+  for (const b of FAC.bays) {
+    const bx0 = Math.max(x0, b.x0 - V.left), bx1 = Math.min(x1, b.x1 - V.left);
+    if (bx1 <= bx0) continue;
+    ctx.fillStyle = '#463c42'; ctx.fillRect(bx0, b.y + 16, bx1 - bx0, 9);
+    ctx.fillStyle = 'rgba(255,255,255,0.09)'; ctx.fillRect(bx0, b.y + 16, bx1 - bx0, 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(bx0, b.y + 25, bx1 - bx0, 3);
+    ctx.fillStyle = '#3d343b';
+    for (let sx = Math.floor((bx0 + V.left) / 16) * 16 - V.left; sx < bx1; sx += 16) {
+      const w = Math.min(bx1, sx + 10) - Math.max(bx0, sx);
+      if (w > 0) ctx.fillRect(Math.max(bx0, sx), b.y + 6, w, 10);
+    }
+  }
+  millFaceWindows();
+  drawMillGable();
+  // cast-iron downpipes running the full height of the wall
+  for (let wx = Math.floor((V.left - 460) / 460) * 460; wx < V.left + V.vw + 460; wx += 460) {
+    if (!inMill(wx) || !inMill(wx + 8)) continue;
+    const sx = wx - V.left + 70, ry = millRoofY(wx + 70);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(sx + 2, ry + 20, 7, CFG.worldBottom - ry);
+    ctx.fillStyle = '#332b31'; ctx.fillRect(sx, ry + 20, 6, CFG.worldBottom - ry);
+    ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(sx, ry + 20, 1.6, CFG.worldBottom - ry);
+    ctx.fillStyle = '#3d343b';
+    for (let y = ry + 46; y < CFG.worldBottom; y += 74) ctx.fillRect(sx - 1.6, y, 9.2, 5);
+    // rust bleeding from the joints
+    ctx.fillStyle = 'rgba(122,70,36,0.22)';
+    for (let y = ry + 51; y < CFG.worldBottom; y += 74) ctx.fillRect(sx - 3, y, 12, 26);
+    // a hopper head where it leaves the gutter and a shoe where it reaches the ground
+    ctx.fillStyle = '#463c44';
+    ctx.beginPath(); ctx.moveTo(sx - 7, ry + 8); ctx.lineTo(sx + 13, ry + 8); ctx.lineTo(sx + 8, ry + 22); ctx.lineTo(sx - 2, ry + 22); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,244,220,0.14)'; ctx.fillRect(sx - 7, ry + 8, 20, 1.8);
+    // the shoe belongs at the waterline: at worldBottom it was 66 units under
+    // the river and never appeared at all
+    const shoeY = CFG.riverY - 10;
+    ctx.fillStyle = '#332b31'; ctx.fillRect(sx, ry + 20, 6, shoeY - ry - 20);
+    ctx.fillStyle = '#3d343b';
+    ctx.beginPath(); ctx.moveTo(sx, shoeY); ctx.lineTo(sx + 6, shoeY); ctx.lineTo(sx + 13, shoeY + 12); ctx.lineTo(sx + 5, shoeY + 12); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(sx, shoeY, 1.6, 11);
+  }
+}
+
+// --- roof furniture, standing in the sky above the roofline all through act one
+function millPlume(bx, by, sc, tint) {
+  for (let i = 0; i < 15; i++) {
+    const t = ((S.t * 0.055 + i / 15 + hash(bx + i) * 0.03) % 1);
+    const rr = (7 + t * 54) * sc;
+    if (!(rr > 0)) continue;
+    const px = bx + t * 210 * sc + Math.sin(t * 4.4 + i) * 13 * sc;
+    const py = by - t * 230 * sc - Math.sin(t * 2.2) * 8;
+    ctx.fillStyle = `rgba(${tint},${0.3 * (1 - t) * (1 - t * 0.3)})`;
+    ctx.beginPath(); ctx.arc(px, py, rr, 0, 6.28); ctx.fill();
+  }
+}
+// the mill's end wall, where the yard stops and the brick starts
+function drawMillGable() {
+  if (!inView(FAC.x0, 200)) return;
+  const sx = FAC.x0 - V.left, top = millRoofY(FAC.x0 + 10), bot = CFG.worldBottom + 200;
+  const plinth = CFG.riverY - 52;
+  // stone plinth carrying the wall down into the race, battered at the base
+  ctx.fillStyle = '#3b333e'; ctx.fillRect(sx, plinth, 46, bot - plinth);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  for (let y = plinth + 13; y < bot; y += 13) ctx.fillRect(sx, y, 42, 1.8);
+  ctx.fillStyle = '#524657'; ctx.fillRect(sx, plinth - 7, 40, 9);
+  ctx.fillStyle = 'rgba(255,240,214,0.18)'; ctx.fillRect(sx, plinth - 7, 40, 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.42)'; ctx.fillRect(sx, plinth + 2, 40, 3.4);
+  // a slimy green tide line where the race has been at it for decades
+  ctx.fillStyle = 'rgba(70,96,62,0.34)'; ctx.fillRect(sx, CFG.riverY - 16, 44, 30);
+  // quoins, alternating long and short up the corner
+  for (let y = Math.floor(top / 21) * 21; y < plinth - 8; y += 21) {
+    if (y < top) continue;
+    const wide = Math.floor(y / 21) % 2 === 0, qw = wide ? 26 : 16;
+    ctx.fillStyle = wide ? '#4e4450' : '#433945';
+    ctx.fillRect(sx, y, qw, 19);
+    ctx.fillStyle = 'rgba(255,242,216,0.13)'; ctx.fillRect(sx, y, qw, 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(sx, y + 17, qw, 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(sx + qw - 2, y, 2, 19);
+  }
+  // a date stone set into the gable
+  const dy = top + 16, dx2 = sx + 128;
+  ctx.fillStyle = '#2b2530'; ctx.fillRect(dx2, dy, 46, 26);
+  ctx.fillStyle = '#585060'; ctx.fillRect(dx2 + 2, dy + 2, 42, 22);
+  ctx.fillStyle = 'rgba(255,244,220,0.16)'; ctx.fillRect(dx2 + 2, dy + 2, 42, 2);
+  // an incised panel, not two black bars: the bars read as redaction
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(dx2 + 6, dy + 6, 34, 14);
+  ctx.fillStyle = '#635a6c'; ctx.fillRect(dx2 + 7, dy + 7, 32, 12);
+  ctx.fillStyle = 'rgba(0,0,0,0.26)'; ctx.fillRect(dx2 + 7, dy + 7, 32, 1.4);
+  ctx.fillStyle = 'rgba(255,244,220,0.12)'; ctx.fillRect(dx2 + 7, dy + 17.6, 32, 1.4);
+  // the sunlit outer corner, and the shadow it throws back along the wall
+  ctx.fillStyle = 'rgba(255,238,206,0.16)'; ctx.fillRect(sx, top, 5, bot - top);
+  const shad = ctx.createLinearGradient(sx + 5, 0, sx + 46, 0);
+  shad.addColorStop(0, 'rgba(0,0,0,0.42)'); shad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = shad; ctx.fillRect(sx + 5, top, 41, bot - top);
+}
+function drawMillRoof() {
+  if (FAC.seam < V.left - 200 || FAC.x0 > V.left + V.vw + 200) return;
+  // smoke goes down first so the stacks read in front of their own plume
+  for (const sxw of FAC.stacks) {
+    if (!inView(sxw, 420)) continue;
+    millPlume(sxw - V.left, -520, 1, '104,96,96');
+  }
+  for (const b of FAC.bays) {
+    const bx0 = Math.max(-40, b.x0 - V.left), bx1 = Math.min(V.vw + 40, b.x1 - V.left);
+    if (bx1 <= bx0) continue;
+    // north-light monitors on the tall hall, glazing turned to the sun
+    if (b.y < -100) {
+      for (let wx = Math.floor((b.x0) / 132) * 132; wx < b.x1; wx += 132) {
+        const sx = wx - V.left;
+        if (sx < bx0 - 140 || sx > bx1 + 140) continue;
+        const l = Math.max(bx0, sx), r = Math.min(bx1, sx + 132);
+        if (r <= l) continue;
+        ctx.save(); ctx.beginPath(); ctx.rect(l, b.y - 74, r - l, 80); ctx.clip();
+        ctx.fillStyle = '#2b2530'; ctx.beginPath();
+        ctx.moveTo(sx, b.y + 2); ctx.lineTo(sx, b.y - 52); ctx.lineTo(sx + 132, b.y + 2); ctx.closePath(); ctx.fill();
+        const gg = ctx.createLinearGradient(sx, b.y - 52, sx + 46, b.y + 2);
+        gg.addColorStop(0, '#9fc2dc'); gg.addColorStop(1, '#5d7b96');
+        ctx.fillStyle = gg; ctx.fillRect(sx + 3, b.y - 50, 13, 52);
+        ctx.fillStyle = '#39333d';
+        for (let j = 0; j < 5; j++) ctx.fillRect(sx + 3, b.y - 50 + j * 10.4, 13, 1.6);
+        ctx.fillRect(sx + 9, b.y - 50, 1.6, 52);
+        ctx.fillStyle = '#463d47'; ctx.fillRect(sx - 1, b.y - 54, 20, 4);
+        ctx.restore();
+      }
+    }
+    // parapet and coping
+    ctx.fillStyle = '#332c33'; ctx.fillRect(bx0, b.y - 9, bx1 - bx0, 11);
+    ctx.fillStyle = '#5a4f57'; ctx.fillRect(bx0, b.y - 12, bx1 - bx0, 4.5);
+    ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(bx0, b.y - 12, bx1 - bx0, 1.4);
+    // gutter brackets
+    ctx.fillStyle = '#2a242a';
+    for (let sx = Math.floor((bx0 + V.left) / 46) * 46 - V.left; sx < bx1; sx += 46) if (sx > bx0) ctx.fillRect(sx, b.y - 7, 3, 7);
+    // ridge cowls on the low intake shed
+    if (b.y > 100) {
+      for (let wx = Math.floor(b.x0 / 210) * 210; wx < b.x1; wx += 210) {
+        const sx = wx - V.left;
+        if (sx < bx0 + 20 || sx > bx1 - 20) continue;
+        const spin = S.t * 1.2 + hash(wx) * 6;
+        ctx.fillStyle = '#39323a'; ctx.fillRect(sx - 3, b.y - 24, 6, 13);
+        ctx.fillStyle = '#4c4350'; ctx.beginPath(); ctx.ellipse(sx, b.y - 26, 11, 5.4, 0, 0, 6.28); ctx.fill();
+        ctx.fillStyle = '#665a6c';
+        for (let v = 0; v < 4; v++) { const a = spin + v * Math.PI / 4; ctx.fillRect(sx + Math.cos(a) * 3 - 0.9, b.y - 33, 1.8, 7); }
+        ctx.fillStyle = '#5b5162'; ctx.beginPath(); ctx.ellipse(sx, b.y - 34, 9, 4, 0, 0, 6.28); ctx.fill();
+      }
+    }
+  }
+  // water tower on lattice legs
+  if (inView(FAC.tower, 200)) {
+    const sx = FAC.tower - V.left, base = millRoofY(FAC.tower) + 2, tw = 88, th = 64, ty = base - 104;
+    ctx.strokeStyle = '#2f2931'; ctx.lineWidth = 4;
+    // four legs, the inner pair read as the far side of the trestle
+    ctx.globalAlpha = 0.55;
+    for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sx + d * 23, base); ctx.lineTo(sx + d * 15, ty + th); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+    for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sx + d * 38, base); ctx.lineTo(sx + d * 26, ty + th); ctx.stroke(); }
+    ctx.lineWidth = 2;
+    for (let j = 0; j < 3; j++) {
+      const t0 = j / 3, t1 = (j + 1) / 3;
+      ctx.beginPath();
+      ctx.moveTo(sx - 38 + 12 * t0, base + (ty + th - base) * t0); ctx.lineTo(sx + 38 - 12 * t1, base + (ty + th - base) * t1); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(sx + 38 - 12 * t0, base + (ty + th - base) * t0); ctx.lineTo(sx - 38 + 12 * t1, base + (ty + th - base) * t1); ctx.stroke();
+    }
+    ctx.fillStyle = '#211d24'; ctx.fillRect(sx - tw / 2 - 2, ty - 2, tw + 4, th + 4);
+    ctx.fillStyle = '#3a3a45'; ctx.fillRect(sx - tw / 2, ty, tw, th);
+    // riveted staves, soot down the lee side, and rust off every seam
+    ctx.fillStyle = 'rgba(0,0,0,0.26)';
+    for (let i = 1; i < 6; i++) ctx.fillRect(sx - tw / 2 + i * tw / 6, ty, 1.6, th);
+    ctx.fillStyle = 'rgba(255,255,255,0.09)'; ctx.fillRect(sx - tw / 2, ty, 4, th);
+    const tg = ctx.createLinearGradient(sx - tw / 2, 0, sx + tw / 2, 0);
+    tg.addColorStop(0, 'rgba(255,240,214,0.08)'); tg.addColorStop(0.5, 'rgba(0,0,0,0)'); tg.addColorStop(1, 'rgba(0,0,0,0.45)');
+    ctx.fillStyle = tg; ctx.fillRect(sx - tw / 2, ty, tw, th);
+    ctx.fillStyle = 'rgba(124,72,36,0.34)'; ctx.fillRect(sx - 6, ty + 12, 9, th - 12); ctx.fillRect(sx + 9, ty + 20, 5, th - 20);
+    rivets(sx - tw / 2 + 3, sx + tw / 2 - 3, ty + 4, 7, 1, 'rgba(255,255,255,0.16)');
+    rivets(sx - tw / 2 + 3, sx + tw / 2 - 3, ty + th - 5, 7, 1, 'rgba(255,255,255,0.12)');
+    ctx.fillStyle = '#3a3a45'; ctx.fillRect(sx - tw / 2 - 4, ty - 7, tw + 8, 6);
+    ctx.fillStyle = '#585866'; ctx.fillRect(sx - tw / 2 - 4, ty - 7, tw + 8, 1.6);
+  }
+  // the chimneys: tapered brick with iron bands and a corbelled cap
+  for (const sxw of FAC.stacks) {
+    if (!inView(sxw, 200)) continue;
+    const sx = sxw - V.left, base = millRoofY(sxw) + 8, topY = -540;
+    const wB = 25, wT = 15;
+    ctx.beginPath();
+    ctx.moveTo(sx - wB / 2, base); ctx.lineTo(sx - wT / 2, topY); ctx.lineTo(sx + wT / 2, topY); ctx.lineTo(sx + wB / 2, base); ctx.closePath();
+    ctx.fillStyle = '#332b31'; ctx.fill();
+    ctx.save(); ctx.clip();
+    brickFill(sx - wB, topY, wB * 2, base - topY, 0.85);
+    const sg = ctx.createLinearGradient(sx - wB / 2, 0, sx + wB / 2, 0);
+    sg.addColorStop(0, 'rgba(255,240,220,0.13)'); sg.addColorStop(0.45, 'rgba(0,0,0,0)'); sg.addColorStop(1, 'rgba(0,0,0,0.42)');
+    ctx.fillStyle = sg; ctx.fillRect(sx - wB, topY, wB * 2, base - topY);
+    const soot = ctx.createLinearGradient(0, topY, 0, topY + 260);
+    soot.addColorStop(0, 'rgba(16,14,16,0.6)'); soot.addColorStop(1, 'rgba(16,14,16,0)');
+    ctx.fillStyle = soot; ctx.fillRect(sx - wB, topY, wB * 2, 260);
+    ctx.restore();
+    ctx.fillStyle = '#4c4048';
+    for (let y = topY + 70; y < base - 30; y += 118) { const w = wT + (wB - wT) * ((y - topY) / (base - topY)); ctx.fillRect(sx - w / 2 - 1.5, y, w + 3, 4); }
+    // corbelled cap
+    ctx.fillStyle = '#463b44'; ctx.fillRect(sx - wT / 2 - 3, topY - 5, wT + 6, 8);
+    ctx.fillStyle = '#564956'; ctx.fillRect(sx - wT / 2 - 5, topY - 9, wT + 10, 5);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(sx - wT / 2 - 5, topY - 9, wT + 10, 1.4);
+    ctx.fillStyle = '#17141a'; ctx.fillRect(sx - wT / 2 + 2, topY - 8, wT - 4, 5);
+  }
+}
+
+// --- tall steel-framed windows in the far wall of each hall
+function millWindow(sx, cy, th, lift, salt, face) {
+  const w = 58, h = th - 46, ty = cy + 22;
+  ctx.fillStyle = '#16131b'; ctx.fillRect(sx - w / 2 - 6, ty - 6, w + 12, h + 12);
+  ctx.fillStyle = '#3a3138'; ctx.fillRect(sx - w / 2 - 6, ty - 10, w + 12, 5);
+  ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(sx - w / 2 - 6, ty - 10, w + 12, 1.4);
+  // A window in the FAR wall of a hall shows sky. A window in the outside FACE
+  // shows the inside of the building, which is dark with the odd lamp in it.
+  const k = 0.42 + lift * 0.28;
+  const sky = (r, gn, b) => `rgb(${r * k | 0},${gn * k | 0},${b * k | 0})`;
+  const g = ctx.createLinearGradient(0, ty, 0, ty + h);
+  if (face) {
+    g.addColorStop(0, '#1b1a24'); g.addColorStop(0.5, '#23212c'); g.addColorStop(1, '#191821');
+  } else {
+    g.addColorStop(0, sky(190, 218, 246)); g.addColorStop(0.45, sky(150, 186, 220)); g.addColorStop(1, sky(96, 130, 164));
+  }
+  ctx.fillStyle = '#1a2028'; ctx.fillRect(sx - w / 2, ty, w, h);
+  ctx.fillStyle = g; ctx.fillRect(sx - w / 2, ty, w, h);
+  // a lamp burning somewhere back in the room
+  if (face && hash(salt * 0.29) > 0.45) {
+    const lg2 = ctx.createRadialGradient(sx + (hash(salt) - 0.5) * w * 0.4, ty + h * (0.3 + hash(salt * 3) * 0.4), 2,
+                                         sx, ty + h * 0.5, w * 0.8);
+    lg2.addColorStop(0, 'rgba(255,206,140,0.5)'); lg2.addColorStop(1, 'rgba(255,196,120,0)');
+    ctx.fillStyle = lg2; ctx.fillRect(sx - w / 2, ty, w, h);
+  }
+  // the glare the glass throws onto the brick around it
+  if (!face) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const bloom = ctx.createRadialGradient(sx, ty + h * 0.45, 2, sx, ty + h * 0.45, w * 0.78);
+    bloom.addColorStop(0, `rgba(176,206,234,${0.13 * lift})`); bloom.addColorStop(1, 'rgba(176,206,234,0)');
+    ctx.fillStyle = bloom; ctx.fillRect(sx - w * 0.8, ty - w * 0.4, w * 1.6, h + w * 0.8);
+    ctx.restore();
+  }
+  // grime creeping in from the edges, thicker downstairs
+  const gr = ctx.createRadialGradient(sx, ty + h * 0.4, 6, sx, ty + h * 0.4, w);
+  gr.addColorStop(0, 'rgba(40,44,40,0)'); gr.addColorStop(1, `rgba(36,40,34,${0.3 - lift * 0.12})`);
+  ctx.fillStyle = gr; ctx.fillRect(sx - w / 2, ty, w, h);
+  // a few panes dead, boarded or cracked — fixed per window
+  if (!face) for (let i = 0; i < 4; i++) for (let j = 0; j < 6; j++) {
+    const hv = hash(salt * 0.7 + i * 13.3 + j * 5.1);
+    const px = sx - w / 2 + i * w / 4, py = ty + j * h / 6;
+    if (hv > 0.93) { ctx.fillStyle = '#463b30'; ctx.fillRect(px + 1, py + 1, w / 4 - 2, h / 6 - 2); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(px + 1, py + h / 12, w / 4 - 2, 1.6); }
+    else if (hv > 0.87) { ctx.fillStyle = 'rgba(26,30,38,0.5)'; ctx.fillRect(px + 1, py + 1, w / 4 - 2, h / 6 - 2); }
+    else if (hv < 0.07) { ctx.fillStyle = `rgba(250,253,255,${0.42 * lift + 0.2})`; ctx.fillRect(px + 1, py + 1, w / 4 - 2, h / 6 - 2); }
+  }
+  // the leading
+  ctx.fillStyle = '#4e4f5b';
+  for (let i = 1; i < 4; i++) ctx.fillRect(sx - w / 2 + i * w / 4 - 1, ty, 2, h);
+  for (let j = 1; j < 6; j++) ctx.fillRect(sx - w / 2, ty + j * h / 6 - 1, w, 2);
+  ctx.fillStyle = '#5e6070'; ctx.fillRect(sx - w / 2, ty + h / 2 - 2.5, w, 5);
+  ctx.strokeStyle = '#575866'; ctx.lineWidth = 3; ctx.strokeRect(sx - w / 2, ty, w, h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 1; ctx.strokeRect(sx - w / 2 - 1.6, ty - 1.6, w + 3.2, h + 3.2);
+  // segmental brick arch
+  ctx.fillStyle = '#463b42';
+  ctx.beginPath(); ctx.moveTo(sx - w / 2 - 6, ty - 5);
+  ctx.quadraticCurveTo(sx, ty - 19, sx + w / 2 + 6, ty - 5);
+  ctx.quadraticCurveTo(sx, ty - 13, sx - w / 2 - 6, ty - 5); ctx.fill();
+  // sill
+  ctx.fillStyle = '#3f363d'; ctx.fillRect(sx - w / 2 - 7, ty + h, w + 14, 5);
+  ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(sx - w / 2 - 7, ty + h, w + 14, 1.4);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(sx - w / 2 - 7, ty + h + 5, w + 14, 3);
+}
+// daylight leaning in and landing on the deck
+function millShaft(sx, cy, y, lift) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  // floored: at lane 0 lift is 0.4, which put the shaft at 0.08 alpha through
+  // 'lighter' and the windows read as painted panels
+  const sl = Math.max(0.72, lift);
+  const g = ctx.createLinearGradient(sx, cy, sx + 78, y + 14);
+  g.addColorStop(0, `rgba(198,224,248,${0.3 * sl})`);
+  g.addColorStop(0.5, `rgba(184,212,240,${0.1 * sl})`);
+  g.addColorStop(1, 'rgba(184,212,240,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(sx - 29, cy + 22); ctx.lineTo(sx + 29, cy + 22);
+  ctx.lineTo(sx + 96, y + 14); ctx.lineTo(sx + 22, y + 14);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// --- plant: the machines at the back of the hall, seen as silhouettes past the crowd
+function millPlant(wx, y, lane) {
+  const sx = wx - V.left;
+  const kind = Math.floor(hash(wx * 0.017 + lane * 7.7) * 4);
+  const DARK = '#121018', BODY = '#232c2b', LIT = '#374240', RIM = 'rgba(186,212,236,0.3)';
+  if (kind === 0) {
+    // a lathe: cast bed on splayed legs, headstock, chuck turning
+    ctx.fillStyle = DARK; ctx.fillRect(sx - 40, y - 22, 80, 10);
+    ctx.fillStyle = BODY; ctx.fillRect(sx - 39, y - 21, 78, 8);
+    ctx.fillStyle = RIM; ctx.fillRect(sx - 39, y - 21, 78, 1.6);
+    ctx.fillStyle = DARK;
+    for (const d of [-30, 26]) { ctx.beginPath(); ctx.moveTo(sx + d - 5, y - 12); ctx.lineTo(sx + d + 5, y - 12); ctx.lineTo(sx + d + 9, y); ctx.lineTo(sx + d - 9, y); ctx.closePath(); ctx.fill(); }
+    ctx.fillStyle = BODY; ctx.fillRect(sx - 40, y - 42, 24, 21);
+    ctx.fillStyle = LIT; ctx.fillRect(sx - 40, y - 42, 24, 3);
+    const a = S.t * 5 + hash(wx);
+    ctx.fillStyle = DARK; ctx.beginPath(); ctx.arc(sx - 13, y - 31, 8.4, 0, 6.28); ctx.fill();
+    ctx.fillStyle = LIT; ctx.beginPath(); ctx.arc(sx - 13, y - 31, 7, 0, 6.28); ctx.fill();
+    ctx.fillStyle = DARK; ctx.beginPath(); ctx.arc(sx - 13, y - 31, 4.4, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = '#3f4a46'; ctx.lineWidth = 1.6;
+    for (let i = 0; i < 3; i++) { const an = a + i * Math.PI / 3; ctx.beginPath(); ctx.moveTo(sx - 13 - Math.cos(an) * 6.6, y - 31 - Math.sin(an) * 6.6); ctx.lineTo(sx - 13 + Math.cos(an) * 6.6, y - 31 + Math.sin(an) * 6.6); ctx.stroke(); }
+    ctx.strokeStyle = 'rgba(200,222,240,0.18)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(sx - 13, y - 31, 8, 3.5, 5.6); ctx.stroke();
+    ctx.fillStyle = DARK; ctx.fillRect(sx + 4, y - 34, 13, 13);
+    ctx.fillStyle = LIT; ctx.fillRect(sx + 5, y - 33, 11, 3);
+  } else if (kind === 1) {
+    // a press: C-frame with a flywheel, belt-driven from the shaft above
+    ctx.fillStyle = DARK; ctx.fillRect(sx - 20, y - 60, 34, 60);
+    ctx.fillStyle = BODY; ctx.fillRect(sx - 19, y - 59, 32, 59);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(sx - 13, y - 46, 20, 30);
+    ctx.fillStyle = RIM; ctx.fillRect(sx - 19, y - 59, 32, 1.6); ctx.fillRect(sx - 19, y - 59, 1.6, 59);
+    const ram = Math.max(0, Math.sin(S.t * 2.3 + hash(wx) * 6)) * 9;
+    ctx.fillStyle = '#5b6b66'; ctx.fillRect(sx - 10, y - 46 + ram, 14, 9);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(sx - 10, y - 46 + ram, 14, 1.4);
+    const a = S.t * 3.1 + hash(wx) * 6;
+    ctx.fillStyle = DARK; ctx.beginPath(); ctx.arc(sx + 16, y - 48, 14.4, 0, 6.28); ctx.fill();
+    ctx.fillStyle = LIT; ctx.beginPath(); ctx.arc(sx + 16, y - 48, 12.6, 0, 6.28); ctx.fill();
+    ctx.fillStyle = DARK; ctx.beginPath(); ctx.arc(sx + 16, y - 48, 9, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = '#6d7b77'; ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) { const an = a + i * Math.PI / 3; ctx.beginPath(); ctx.moveTo(sx + 16 - Math.cos(an) * 12, y - 48 - Math.sin(an) * 12); ctx.lineTo(sx + 16 + Math.cos(an) * 12, y - 48 + Math.sin(an) * 12); ctx.stroke(); }
+    ctx.fillStyle = '#8b9793'; ctx.beginPath(); ctx.arc(sx + 16, y - 48, 3, 0, 6.28); ctx.fill();
+  } else if (kind === 2) {
+    // a boiler on a brick plinth, firebox lit
+    ctx.fillStyle = '#2b2429'; ctx.fillRect(sx - 34, y - 17, 68, 17);
+    ctx.fillStyle = DARK; roundRect(sx - 33, y - 48, 66, 32, 13); ctx.fill();
+    ctx.fillStyle = '#39423f'; roundRect(sx - 31, y - 46, 62, 28, 12); ctx.fill();
+    ctx.fillStyle = 'rgba(184,208,226,0.2)'; roundRect(sx - 31, y - 46, 62, 5, 2.4); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    for (const bx of [-14, 8]) ctx.fillRect(sx + bx, y - 46, 4, 28);
+    rivets(sx - 26, sx + 26, y - 43, 8, 1, 'rgba(255,255,255,0.14)');
+    // firebox glow
+    const fl = 0.7 + 0.3 * Math.sin(S.t * 7 + wx);
+    ctx.fillStyle = '#17141a'; ctx.beginPath(); ctx.arc(sx - 2, y - 9, 7.4, 0, 6.28); ctx.fill();
+    const fg = ctx.createRadialGradient(sx - 2, y - 9, 1, sx - 2, y - 9, 22);
+    fg.addColorStop(0, `rgba(255,150,54,${0.55 * fl})`); fg.addColorStop(1, 'rgba(255,150,54,0)');
+    ctx.fillStyle = fg; ctx.fillRect(sx - 24, y - 31, 44, 40);
+    ctx.fillStyle = `rgba(255,190,110,${0.85 * fl})`; ctx.beginPath(); ctx.arc(sx - 2, y - 9, 5, 0, 6.28); ctx.fill();
+    // stack and gauge
+    ctx.fillStyle = '#2c262c'; ctx.fillRect(sx + 20, y - 96, 9, 50);
+    ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(sx + 20, y - 96, 2.2, 50);
+    ctx.fillStyle = '#3b444a'; ctx.beginPath(); ctx.arc(sx - 24, y - 40, 5.4, 0, 6.28); ctx.fill();
+    ctx.fillStyle = '#c8d4d8'; ctx.beginPath(); ctx.arc(sx - 24, y - 40, 4, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = '#8a2b22'; ctx.lineWidth = 1.2;
+    const na = -2 + Math.sin(S.t * 0.8 + hash(wx) * 6) * 0.5;
+    ctx.beginPath(); ctx.moveTo(sx - 24, y - 40); ctx.lineTo(sx - 24 + Math.cos(na) * 3.2, y - 40 + Math.sin(na) * 3.2); ctx.stroke();
+  } else {
+    // stores: crates, a barrel, sacks
+    const n = 2 + Math.floor(hash(wx * 0.3) * 2);
+    for (let i = 0; i < n; i++) {
+      const cw = 20 + hash(wx + i * 3) * 9, cx = sx - 30 + i * 26, cy2 = y - cw * 0.85;
+      ctx.fillStyle = DARK; ctx.fillRect(cx - 1, cy2 - 1, cw + 2, cw * 0.85 + 2);
+      ctx.fillStyle = '#4a3b2c'; ctx.fillRect(cx, cy2, cw, cw * 0.85);
+      ctx.fillStyle = 'rgba(255,236,200,0.09)'; ctx.fillRect(cx, cy2, cw, 2);
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(cx, cy2); ctx.lineTo(cx + cw, cy2 + cw * 0.85); ctx.moveTo(cx + cw, cy2); ctx.lineTo(cx, cy2 + cw * 0.85); ctx.stroke();
+    }
+    ctx.fillStyle = DARK; roundRect(sx + 24, y - 27, 17, 27, 4); ctx.fill();
+    ctx.fillStyle = '#4e3c2a'; roundRect(sx + 25, y - 26, 15, 25, 3.4); ctx.fill();
+    ctx.fillStyle = '#6a5136'; ctx.fillRect(sx + 25, y - 21, 15, 2.4); ctx.fillRect(sx + 25, y - 9, 15, 2.4);
+    ctx.fillStyle = 'rgba(255,236,200,0.08)'; ctx.fillRect(sx + 25, y - 26, 3, 25);
+  }
+}
+
+// --- the hall: back wall, windows, plant, line shafting, then the roof truss
+// notice boards, clocks and fire buckets: the small human traces on a mill wall
+function millWallStuff(wx, cy, th) {
+  const sx = wx - V.left, kind = Math.floor(hash(wx * 0.023) * 4), my = cy + 48 + hash(wx * 0.047) * 34;
+  // everything in here hangs on a wall under overhead lamps, so it drops a shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  if (kind === 0) ctx.fillRect(sx - 17, my - 11, 40, 30);
+  else if (kind === 1) { ctx.beginPath(); ctx.arc(sx + 3, my + 4, 13.4, 0, 6.28); ctx.fill(); }
+  else if (kind === 2) ctx.fillRect(sx - 23, my - 2, 52, 16);
+  else ctx.fillRect(sx - 19, my - 6, 44, 26);
+  if (kind === 0) {
+    // notice board, papers curling off it
+    ctx.fillStyle = '#17141c'; ctx.fillRect(sx - 20, my - 15, 40, 30);
+    ctx.fillStyle = '#3c3228'; ctx.fillRect(sx - 18.6, my - 13.6, 37.2, 27.2);
+    for (let i = 0; i < 4; i++) {
+      const hv = hash(wx + i * 7.3);
+      ctx.fillStyle = `rgba(216,208,184,${0.5 + hv * 0.3})`;
+      ctx.fillRect(sx - 16 + (i % 2) * 17, my - 11 + Math.floor(i / 2) * 12, 13, 9.4);
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.fillRect(sx - 16 + (i % 2) * 17, my - 2 + Math.floor(i / 2) * 12, 13, 1.4);
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(sx - 18.6, my - 13.6, 37.2, 1.4);
+  } else if (kind === 1) {
+    // works clock
+    ctx.fillStyle = '#15121a'; ctx.beginPath(); ctx.arc(sx, my, 13.4, 0, 6.28); ctx.fill();
+    ctx.fillStyle = '#2e2a34'; ctx.beginPath(); ctx.arc(sx, my, 12, 0, 6.28); ctx.fill();
+    ctx.fillStyle = '#cfc9bc'; ctx.beginPath(); ctx.arc(sx, my, 9.4, 0, 6.28); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.beginPath(); ctx.arc(sx, my + 2, 9.4, 3.14, 0); ctx.fill();
+    ctx.strokeStyle = '#1b1519'; ctx.lineWidth = 1.5;
+    const hh = hash(wx) * 6.28, mm = hash(wx * 3.1) * 6.28;
+    ctx.beginPath(); ctx.moveTo(sx, my); ctx.lineTo(sx + Math.cos(hh) * 4.6, my + Math.sin(hh) * 4.6); ctx.stroke();
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(sx, my); ctx.lineTo(sx + Math.cos(mm) * 7.4, my + Math.sin(mm) * 7.4); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.beginPath(); ctx.arc(sx - 3, my - 4, 3.4, 0, 6.28); ctx.fill();
+  } else if (kind === 2) {
+    // fire buckets on a rail
+    ctx.fillStyle = '#2f333c'; ctx.fillRect(sx - 26, my - 6, 52, 3.4);
+    ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(sx - 26, my - 6, 52, 1);
+    for (let i = 0; i < 3; i++) {
+      const bx = sx - 18 + i * 18;
+      ctx.fillStyle = '#17141c';
+      ctx.beginPath(); ctx.moveTo(bx - 7, my - 2.6); ctx.lineTo(bx + 7, my - 2.6); ctx.lineTo(bx + 4, my + 12); ctx.lineTo(bx - 4, my + 12); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#8e3026';
+      ctx.beginPath(); ctx.moveTo(bx - 6, my - 2); ctx.lineTo(bx + 6, my - 2); ctx.lineTo(bx + 3.4, my + 11); ctx.lineTo(bx - 3.4, my + 11); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,200,180,0.16)';
+      ctx.beginPath(); ctx.moveTo(bx - 6, my - 2); ctx.lineTo(bx - 3, my - 2); ctx.lineTo(bx - 1.6, my + 11); ctx.lineTo(bx - 3.4, my + 11); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#2a262e'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(bx, my - 3.4, 5.4, 3.34, 6.08); ctx.stroke();
+    }
+  } else {
+    // coats and a lamp hook on pegs
+    ctx.fillStyle = '#2d2732'; ctx.fillRect(sx - 22, my - 10, 44, 4);
+    ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(sx - 22, my - 10, 44, 1.2);
+    for (let i = 0; i < 3; i++) {
+      const bx = sx - 14 + i * 14, hv = hash(wx + i * 11.7);
+      ctx.fillStyle = '#4a4550'; ctx.fillRect(bx - 1.4, my - 6, 2.8, 4);
+      if (hv < 0.3) continue;
+      const col = ['#3d4a55', '#4a3f34', '#40473a'][i % 3];
+      ctx.fillStyle = '#16131a';
+      ctx.beginPath(); ctx.moveTo(bx - 7, my - 3); ctx.lineTo(bx + 7, my - 3); ctx.lineTo(bx + 5, my + 20); ctx.lineTo(bx - 5, my + 20); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.moveTo(bx - 6, my - 2.4); ctx.lineTo(bx + 6, my - 2.4); ctx.lineTo(bx + 4.2, my + 19); ctx.lineTo(bx - 4.2, my + 19); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(bx - 6, my - 2.4, 2.4, 21);
+    }
+  }
+}
+function millCorridor(wx0, wx1, y, laneIn) {
+  const x0 = Math.max(-14, wx0 - V.left), x1 = Math.min(V.vw + 14, wx1 - V.left);
+  if (x1 <= x0) return;
+  const th = CFG.tunnelH, cy = y - th, lane = laneIn !== undefined ? laneIn : Math.round((CFG.baseY - y) / CFG.laneGap);
+  const lift = Math.min(1, 0.4 + lane * 0.22);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x0, cy - 10, x1 - x0, th + 28); ctx.clip();
+  // far wall
+  const bg = ctx.createLinearGradient(0, cy, 0, y + 16);
+  bg.addColorStop(0, '#121019'); bg.addColorStop(0.42, '#1e1b27'); bg.addColorStop(1, '#151320');
+  ctx.fillStyle = bg; ctx.fillRect(x0, cy, x1 - x0, th + 16);
+  brickFill(x0, cy, x1 - x0, th + 16, 0.24);
+  ctx.fillStyle = 'rgba(13,11,19,0.56)'; ctx.fillRect(x0, cy, x1 - x0, th + 16);
+  // whitewash left on the wall in patches, long gone grey
+  ctx.fillStyle = `rgba(190,194,184,${0.026 + lane * 0.008})`;
+  for (let sx = Math.floor((x0 + V.left) / 22) * 22 - V.left; sx < x1; sx += 22) {
+    const hv = hash(sx + V.left + y * 3.1);
+    if (hv < 0.55) continue;
+    ctx.fillRect(sx, cy + 62 + hv * 14, 22 * (0.5 + hv * 0.5), th - 66 - hv * 12);
+  }
+  // windows and the daylight they throw, off a jittered pitch so the window and
+  // lamp grids do not beat against each other
+  for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
+    const gx = wx + 104 + (hash(wx * 0.0037) - 0.5) * 46;
+    if (gx < wx0 - 40 || gx > wx1 + 40) continue;
+    millWindow(gx - V.left, cy, th, lift, gx);
+  }
+  for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
+    const gx = wx + 104 + (hash(wx * 0.0037) - 0.5) * 46;
+    if (gx < wx0 - 40 || gx > wx1 + 40) continue;
+    millShaft(gx - V.left, cy, y, lift);
+  }
+  // wall furniture, on a different beat from the windows so nothing lines up
+  for (let wx = Math.floor((wx0 - 320) / 320) * 320; wx < wx1 + 320; wx += 320) {
+    const gx = wx + 212 + (hash(wx * 0.0071) - 0.5) * 70;
+    if (gx < wx0 + 30 || gx > wx1 - 30) continue;
+    millWallStuff(gx, cy, th);
+  }
+  // plant along the back of the hall, set between the windows
+  for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
+    const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
+    if (gx < wx0 - 60 || gx > wx1 + 60) continue;
+    if (hash(gx * 0.011 + lane * 3.3) < 0.28) continue;
+    millPlant(gx, y - 2, lane);
+  }
+  // cast-iron stanchions on the hall's front line: nothing was carrying the floors
+  for (let wx = Math.floor((wx0 - 200) / 200) * 200; wx < wx1 + 200; wx += 200) {
+    const hj = hash(wx * 0.0091);
+    const gx = wx + 172 + (hj - 0.5) * 50, sx = gx - V.left;
+    if (gx < wx0 + 16 || gx > wx1 - 16) continue;
+    ctx.fillStyle = '#131119'; ctx.fillRect(sx - 7, cy + 16, 14, y - cy - 14);
+    ctx.fillStyle = '#2b2933'; ctx.fillRect(sx - 5.6, cy + 16, 11.2, y - cy - 14);
+    ctx.fillStyle = 'rgba(214,230,248,0.13)'; ctx.fillRect(sx - 5.6, cy + 16, 3, y - cy - 14);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(sx + 2.4, cy + 16, 3.2, y - cy - 14);
+    // capital and base
+    ctx.fillStyle = '#131119'; ctx.fillRect(sx - 11, cy + 15, 22, 7); ctx.fillRect(sx - 11, y - 9, 22, 9);
+    ctx.fillStyle = '#373541'; ctx.fillRect(sx - 10, cy + 16, 20, 5); ctx.fillRect(sx - 10, y - 8, 20, 7);
+    ctx.fillStyle = 'rgba(214,230,248,0.16)'; ctx.fillRect(sx - 10, cy + 16, 20, 1.3); ctx.fillRect(sx - 10, y - 8, 20, 1.3);
+    ctx.fillStyle = 'rgba(122,70,34,0.22)'; ctx.fillRect(sx - 5, y - 40, 10, 32);
+  }
+  // pipe run under the truss, with flanges, brackets and the odd valve
+  const py = cy + 26;
+  for (const [off, col, r] of [[0, '#3c3f47', 4], [9, '#4a4038', 3.2], [16.4, '#33414a', 2.6]]) {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x0, py + off + r * 0.6, x1 - x0, r * 1.2);
+    ctx.fillStyle = col; ctx.fillRect(x0, py + off - r * 0.6, x1 - x0, r * 1.5);
+    ctx.fillStyle = 'rgba(255,255,255,0.11)'; ctx.fillRect(x0, py + off - r * 0.6, x1 - x0, 1.2);
+  }
+  ctx.fillStyle = '#4b4a55';
+  for (let wx = Math.floor((wx0 - 90) / 90) * 90; wx < wx1 + 90; wx += 90) {
+    const sx = wx - V.left;
+    ctx.fillRect(sx, py - 4, 4.6, 26);
+    ctx.fillRect(sx - 2, py - 7, 8.6, 3.4);
+  }
+  for (let wx = Math.floor((wx0 - 720) / 720) * 720; wx < wx1 + 720; wx += 720) {
+    const sx = wx - V.left + 300;
+    // a gate valve: body, bonnet, then a handwheel seen edge-on
+    ctx.fillStyle = '#181620'; ctx.fillRect(sx - 6, py - 3, 12, 15);
+    ctx.fillStyle = '#3c4444'; ctx.fillRect(sx - 5, py - 2, 10, 13);
+    ctx.fillStyle = 'rgba(210,230,240,0.13)'; ctx.fillRect(sx - 5, py - 2, 10, 1.4);
+    ctx.fillStyle = '#2c3434'; ctx.fillRect(sx - 1.4, py - 10, 2.8, 8);
+    ctx.strokeStyle = '#151820'; ctx.lineWidth = 3.4;
+    ctx.beginPath(); ctx.ellipse(sx, py - 11, 6.4, 2.2, 0, 0, 6.28); ctx.stroke();
+    ctx.strokeStyle = '#59635e'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.ellipse(sx, py - 11, 6.4, 2.2, 0, 0, 6.28); ctx.stroke();
+    ctx.fillStyle = '#6d7a72'; ctx.fillRect(sx - 6.4, py - 11.6, 12.8, 1.2);
+  }
+  // line shafting: one shaft the length of the hall, pulleys, belts dropping to the plant
+  const shy = cy + 52;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(x0, shy - 1.4, x1 - x0, 6);
+  ctx.fillStyle = '#585a63'; ctx.fillRect(x0, shy - 2.6, x1 - x0, 4.4);
+  ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(x0, shy - 2.6, x1 - x0, 1.2);
+  for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
+    const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50, sx = gx - V.left;
+    if (gx < wx0 - 60 || gx > wx1 + 60) continue;
+    const has = hash(gx * 0.011 + lane * 3.3) >= 0.28;
+    const kind = Math.floor(hash(gx * 0.017 + lane * 7.7) * 4);
+    // hanger
+    ctx.fillStyle = '#3f414a'; ctx.fillRect(sx - 12, cy + 24, 3.4, shy - cy - 24); ctx.fillRect(sx + 9, cy + 24, 3.4, shy - cy - 24);
+    // pulley
+    // a flat-faced drum, not a spoked wheel: at this size spokes read as a star
+    const spin = S.t * 4 + hash(gx) * 6;
+    ctx.fillStyle = '#131118'; ctx.beginPath(); ctx.arc(sx, shy, 9.4, 0, 6.28); ctx.fill();
+    ctx.fillStyle = '#343742'; ctx.beginPath(); ctx.arc(sx, shy, 8, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = 'rgba(206,224,244,0.22)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(sx, shy, 8, 3.4, 5.5); ctx.stroke();
+    ctx.fillStyle = '#23252e'; ctx.beginPath(); ctx.arc(sx, shy, 3.2, 0, 6.28); ctx.fill();
+    // one grease mark on the rim, so it reads as turning
+    ctx.fillStyle = 'rgba(224,206,160,0.3)';
+    ctx.beginPath(); ctx.arc(sx + Math.cos(spin) * 5.6, shy + Math.sin(spin) * 5.6, 1.3, 0, 6.28); ctx.fill();
+    // leather belt down to whatever this bay runs; an undriven pulley gets a
+    // loose drum beside it so it reads as idling rather than forgotten
+    if (!has || kind === 3) {
+      ctx.fillStyle = '#131118'; ctx.beginPath(); ctx.arc(sx + 15, shy, 7.6, 0, 6.28); ctx.fill();
+      ctx.fillStyle = '#2c2f38'; ctx.beginPath(); ctx.arc(sx + 15, shy, 6.4, 0, 6.28); ctx.fill();
+      ctx.strokeStyle = 'rgba(206,224,244,0.16)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(sx + 15, shy, 6.4, 3.4, 5.5); ctx.stroke();
+    } else {
+      const tx = kind === 0 ? sx - 13 : kind === 1 ? sx + 16 : sx + 22;
+      const tyv = kind === 0 ? y - 33 : kind === 1 ? y - 50 : y - 74;
+      const wob = Math.sin(S.t * 6 + gx) * 1.2;
+      // two narrow strands of dark leather, close together, with one lit edge
+      ctx.lineCap = 'butt';
+      for (const [d, col] of [[-1, '#2a2018'], [1, '#382a1e']]) {
+        ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 3.6;
+        ctx.beginPath(); ctx.moveTo(sx + d * 6, shy + 3); ctx.quadraticCurveTo((sx + tx) / 2 + d * 4 + wob * d, (shy + tyv) / 2, tx + d * 4, tyv); ctx.stroke();
+        ctx.strokeStyle = col; ctx.lineWidth = 2.2;
+        ctx.beginPath(); ctx.moveTo(sx + d * 6, shy + 3); ctx.quadraticCurveTo((sx + tx) / 2 + d * 4 + wob * d, (shy + tyv) / 2, tx + d * 4, tyv); ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(206,188,158,0.18)'; ctx.lineWidth = 0.9;
+      ctx.beginPath(); ctx.moveTo(sx - 7, shy + 3); ctx.quadraticCurveTo((sx + tx) / 2 - 5 - wob, (shy + tyv) / 2, tx - 5, tyv); ctx.stroke();
+      ctx.lineCap = 'round';
+    }
+  }
+  // the roof truss
+  millTruss(x0, x1, cy, wx0, wx1);
+  // shadow under it, and warm bounce off the deck
+  const g2 = ctx.createLinearGradient(0, cy + 18, 0, cy + 66); g2.addColorStop(0, 'rgba(0,0,0,0.5)'); g2.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g2; ctx.fillRect(x0, cy + 18, x1 - x0, 48);
+  const f = ctx.createLinearGradient(0, y - 34, 0, y); f.addColorStop(0, 'rgba(255,196,120,0)'); f.addColorStop(1, 'rgba(255,196,120,0.05)');
+  ctx.fillStyle = f; ctx.fillRect(x0, y - 34, x1 - x0, 34);
+  ctx.restore();
+}
+// a riveted lattice girder carrying the floor above
+function millTruss(x0, x1, cy, wx0, wx1) {
+  ctx.fillStyle = '#1a1721'; ctx.fillRect(x0, cy - 8, x1 - x0, 28);
+  const d = 20;
+  ctx.fillStyle = '#26242e'; ctx.fillRect(x0, cy - 2, x1 - x0, d + 4);
+  // the chords are built out of plates, not ruled: no continuous bar underneath
+  for (let wx = Math.floor(wx0 / 26) * 26; wx < wx1 + 26; wx += 26) {
+    const hv = hash(wx * 1.3 + cy), sx = wx - V.left;
+    const v = 0.55 + hv * 0.45;
+    if (hv < 0.9) {
+      ctx.fillStyle = `rgb(${65 * v | 0},${67 * v | 0},${81 * v | 0})`; ctx.fillRect(sx, cy, 26, 5.4);
+      ctx.fillStyle = `rgba(255,255,255,${0.04 + hv * 0.15})`; ctx.fillRect(sx, cy, 26, 1.4);
+    }
+    const hv2 = hash(wx * 2.1 + cy);
+    if (hv2 < 0.92) {
+      const v2 = 0.5 + hv2 * 0.45;
+      ctx.fillStyle = `rgb(${58 * v2 | 0},${60 * v2 | 0},${72 * v2 | 0})`; ctx.fillRect(sx, cy + d - 4, 26, 5.4);
+      ctx.fillStyle = `rgba(255,255,255,${0.03 + hv2 * 0.11})`; ctx.fillRect(sx, cy + d - 4, 26, 1.2);
+    }
+    ctx.fillStyle = 'rgba(14,12,18,0.45)'; ctx.fillRect(sx + 24.8, cy, 1.2, 5.4); ctx.fillRect(sx + 24.8, cy + d - 4, 1.2, 5.4);
+  }
+  ctx.strokeStyle = '#383a46'; ctx.lineWidth = 3.4;
+  ctx.beginPath();
+  for (let wx = Math.floor(wx0 / 26) * 26; wx < wx1 + 26; wx += 52) {
+    const sx = wx - V.left;
+    ctx.moveTo(sx, cy + 5); ctx.lineTo(sx + 26, cy + d - 4); ctx.lineTo(sx + 52, cy + 5);
+  }
+  ctx.stroke();
+  for (let wx = Math.floor(wx0 / 52) * 52; wx < wx1 + 52; wx += 52) {
+    const sx = wx - V.left;
+    ctx.fillStyle = '#4a4c59';
+    ctx.beginPath(); ctx.moveTo(sx - 6, cy + 5); ctx.lineTo(sx + 6, cy + 5); ctx.lineTo(sx, cy + 13); ctx.closePath(); ctx.fill();
+    // gusset plate riveted over the panel point
+    ctx.fillStyle = '#3e404d';
+    ctx.beginPath(); ctx.moveTo(sx - 9, cy + 4); ctx.lineTo(sx + 9, cy + 4); ctx.lineTo(sx + 6, cy + 12); ctx.lineTo(sx - 6, cy + 12); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    for (const [rx, ry] of [[-4.4, 6.6], [0, 6.6], [4.4, 6.6], [-2.2, 10], [2.2, 10]]) { ctx.beginPath(); ctx.arc(sx + rx, cy + ry, 1, 0, 6.28); ctx.fill(); }
+    ctx.fillStyle = '#444653';
+    ctx.beginPath(); ctx.moveTo(sx - 7, cy + d - 6); ctx.lineTo(sx + 7, cy + d - 6); ctx.lineTo(sx + 4, cy + d - 1); ctx.lineTo(sx - 4, cy + d - 1); ctx.closePath(); ctx.fill();
+  }
+  rivets(x0, x1, cy + 2.4, 11, 1.1, 'rgba(255,255,255,0.22)');
+  rivets(x0, x1, cy + d - 1.6, 11, 1, 'rgba(255,255,255,0.14)');
+}
+
+// --- the deck: steel plate on a plate girder, worn through to bare metal on the walking line
+function millDeck(wx0, wx1, y) {
+  const x0 = wx0 - V.left, x1 = wx1 - V.left;
+  // the girder carrying it, with lightening holes
+  ctx.fillStyle = '#1d1b24'; ctx.fillRect(x0, y + 12, x1 - x0, 32);
+  ctx.fillStyle = '#2f2d39'; ctx.fillRect(x0, y + 15, x1 - x0, 24);
+  ctx.fillStyle = '#211f29';
+  for (let wx = Math.floor(wx0 / 44) * 44; wx < wx1; wx += 44) {
+    const sx = wx - V.left + 22;
+    if (sx < x0 - 8 || sx > x1 + 8) continue;
+    ctx.beginPath(); ctx.arc(sx, y + 27, 6.6, 0, 6.28); ctx.fill();
+  }
+  ctx.fillStyle = '#3d3b49'; ctx.fillRect(x0, y + 13, x1 - x0, 3.4); ctx.fillRect(x0, y + 37, x1 - x0, 3.4);
+  ctx.save(); ctx.beginPath(); ctx.rect(x0, y + 12, x1 - x0, 32); ctx.clip();
+  rivets(Math.floor(wx0 / 10) * 10 - V.left, x1 + 10, y + 15, 10, 1, 'rgba(255,255,255,0.13)');
+  rivets(Math.floor(wx0 / 10) * 10 - V.left, x1 + 10, y + 38.6, 10, 1, 'rgba(255,255,255,0.1)');
+  ctx.restore();
+  // the plate itself
+  ctx.fillStyle = '#3e424c'; ctx.fillRect(x0, y, x1 - x0, 13);
+  const dg = ctx.createLinearGradient(0, y, 0, y + 13);
+  dg.addColorStop(0, 'rgba(146,160,178,0.3)'); dg.addColorStop(1, 'rgba(0,0,0,0.35)');
+  ctx.fillStyle = dg; ctx.fillRect(x0, y, x1 - x0, 13);
+  ctx.save(); ctx.beginPath(); ctx.rect(x0, y - 2, x1 - x0, 15); ctx.clip();
+  // tread pattern
+  ctx.strokeStyle = 'rgba(190,206,224,0.13)'; ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (let wx = Math.floor(wx0 / 9) * 9; wx < wx1 + 9; wx += 9) {
+    const sx = wx - V.left, up = Math.floor(wx / 9) % 2 === 0;
+    ctx.moveTo(sx, y + (up ? 9 : 3)); ctx.lineTo(sx + 5, y + (up ? 3 : 9));
+  }
+  ctx.stroke();
+  // panel joints, scuffed paint and grime — the deck is not one ruled sheet
+  for (let wx = Math.floor(wx0 / 118) * 118; wx < wx1 + 118; wx += 118) {
+    const sx = wx - V.left;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(sx, y, 2, 13);
+    ctx.fillStyle = 'rgba(210,226,244,0.16)'; ctx.fillRect(sx + 2, y, 1.4, 13);
+  }
+  ctx.fillStyle = 'rgba(14,16,20,0.3)';
+  for (let wx = Math.floor(wx0 / 17) * 17; wx < wx1 + 17; wx += 17) {
+    const hv = hash(wx * 1.3 + y);
+    if (hv < 0.55) continue;
+    ctx.fillRect(wx - V.left, y + 3 + hv * 6, 9 + hv * 12, 2 + hv * 3);
+  }
+  ctx.restore();
+  // the lit nose of the plate: broken into plate lengths with splices and soot,
+  // rather than one ruled highlight across the whole view
+  for (let wx = Math.floor(wx0 / 26) * 26; wx < wx1 + 26; wx += 26) {
+    const hv = hash(wx * 0.9 + y);
+    if (hv > 0.87) continue;                       // a plate worn back into shadow
+    const v = 0.5 + hv * 0.5;
+    ctx.fillStyle = `rgb(${123 * v | 0},${132 * v | 0},${150 * v | 0})`;
+    ctx.fillRect(wx - V.left, y - 1.7, 26, 3.6);
+    ctx.fillStyle = `rgba(255,255,255,${0.05 + hv * 0.2})`;
+    ctx.fillRect(wx - V.left, y - 1.7, 26, 1.2);
+    ctx.fillStyle = 'rgba(16,14,20,0.5)'; ctx.fillRect(wx - V.left + 24.6, y - 1.7, 1.4, 3.6);
+  }
+  for (let wx = Math.floor(wx0 / 118) * 118; wx < wx1 + 118; wx += 118) {
+    ctx.fillStyle = '#9aa4b6'; ctx.fillRect(wx - V.left - 3, y - 2.6, 7, 5);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(wx - V.left - 3, y + 1.4, 7, 1.4);
+  }
+  for (let wx = Math.floor(wx0 / 13) * 13; wx < wx1; wx += 13) {
+    const hv = hash(wx * 2.7 + y * 1.1);
+    if (hv < 0.35) continue;
+    ctx.fillStyle = hv > 0.78 ? 'rgba(206,160,44,0.55)' : 'rgba(176,138,40,0.34)';
+    ctx.fillRect(wx - V.left, y + 2.6, 13 * (0.55 + hv * 0.45), 2.2);
+  }
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x0, y + 11, x1 - x0, 2.4);
+}
+
+// --- an open steel stair between floors
+function millStair(wx0, y0, wx1, y1) {
+  if (!inView(wx0, 280)) return;
+  // 26 risers, so a 33-unit runner climbs about a fifth of their own height a step
+  // 14, not 26: at the zoom a fork is actually seen at, 26 treads are 4.6 screen
+  // pixels apart and alias into the smooth ramp they were meant to break up
+  const x0 = wx0 - V.left, x1 = wx1 - V.left, n = 14;
+  const dx = (x1 - x0) / n, dy = (y1 - y0) / n;
+  // the shadow the flight throws back onto the brick
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath(); ctx.moveTo(x0 + 9, y0 + 8); ctx.lineTo(x1 + 9, y1 + 8); ctx.lineTo(x1 + 9, y1 + 26); ctx.lineTo(x0 + 9, y0 + 26); ctx.closePath(); ctx.fill();
+  // a shallow stringer, so the flight reads open rather than as a ramp with stripes
+  ctx.fillStyle = '#17151d';
+  ctx.beginPath(); ctx.moveTo(x0, y0 + 2); ctx.lineTo(x1, y1 + 2); ctx.lineTo(x1, y1 + 15); ctx.lineTo(x0, y0 + 15); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#2d2b37';
+  ctx.beginPath(); ctx.moveTo(x0, y0 + 3.4); ctx.lineTo(x1, y1 + 3.4); ctx.lineTo(x1, y1 + 13); ctx.lineTo(x0, y0 + 13); ctx.closePath(); ctx.fill();
+  ctx.save(); ctx.beginPath(); ctx.moveTo(x0, y0 + 3.4); ctx.lineTo(x1, y1 + 3.4); ctx.lineTo(x1, y1 + 13); ctx.lineTo(x0, y0 + 13); ctx.closePath(); ctx.clip();
+  rivets(x0, x1, y0 + 8, 16, 1, 'rgba(255,255,255,0.1)');
+  ctx.restore();
+  // treads, with the open riser showing between them
+  for (let i = 0; i < n; i++) {
+    const tx = x0 + dx * i, ty = y0 + dy * i;
+    const tw2 = dx * 0.6;                        // the other 40% is open riser
+    ctx.fillStyle = '#1b1922'; ctx.fillRect(tx - 0.8, ty - 4.4, tw2 + 1.6, 6.2);
+    ctx.fillStyle = '#464a56'; ctx.fillRect(tx, ty - 3.6, tw2, 4.6);
+    ctx.fillStyle = 'rgba(214,228,244,0.28)'; ctx.fillRect(tx, ty - 3.6, tw2, 1.3);
+    ctx.fillStyle = 'rgba(206,160,44,0.42)'; ctx.fillRect(tx + tw2 - 3, ty - 3.6, 2.6, 1.3);
+  }
+  // a landing plate where the flight meets the deck above
+  ctx.fillStyle = '#1b1922'; ctx.fillRect(x1 - 3, y1 - 4.4, 22, 7);
+  ctx.fillStyle = '#4c5060'; ctx.fillRect(x1 - 2, y1 - 3.4, 20, 5);
+  ctx.fillStyle = 'rgba(214,228,244,0.3)'; ctx.fillRect(x1 - 2, y1 - 3.4, 20, 1.3);
+  // handrail at hand height on a 33-unit figure, with a mid rail under it
+  ctx.strokeStyle = '#14121a'; ctx.lineWidth = 4.4;
+  ctx.beginPath(); ctx.moveTo(x0, y0 - 18); ctx.lineTo(x1 + 18, y1 - 18); ctx.stroke();
+  ctx.strokeStyle = '#5b5f6c'; ctx.lineWidth = 2.6;
+  ctx.beginPath(); ctx.moveTo(x0, y0 - 18); ctx.lineTo(x1 + 18, y1 - 18); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth = 0.9;
+  ctx.beginPath(); ctx.moveTo(x0, y0 - 19); ctx.lineTo(x1 + 18, y1 - 19); ctx.stroke();
+  ctx.strokeStyle = '#454955'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(x0, y0 - 9.4); ctx.lineTo(x1 + 18, y1 - 9.4); ctx.stroke();
+  for (let i = 0; i <= n; i += 3) {
+    const tx = x0 + dx * i, ty = y0 + dy * i;
+    ctx.fillStyle = '#16141c'; ctx.fillRect(tx - 2, ty - 18.6, 4, 19);
+    ctx.fillStyle = '#4e525f'; ctx.fillRect(tx - 1.3, ty - 18.6, 2.6, 19);
+  }
+  // the underside: a few hangers down to the floor below
+  const floor = Math.max(y0, y1);
+  for (let t = 0.24; t < 1; t += 0.32) {
+    const px = x0 + (x1 - x0) * t, py = y0 + (y1 - y0) * t + 30, h = floor + 14 - py;
+    if (h <= 4) continue;
+    ctx.fillStyle = '#16141c'; ctx.fillRect(px - 5.4, py - 1, 10.8, h + 1);
+    ctx.fillStyle = '#343240'; ctx.fillRect(px - 4.4, py, 8.8, h);
+    ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(px - 4.4, py, 2, h);
+  }
+}
+
+// --- the stairwell shaft cut through a floor
+function millShaftWell(wx0, y0, wx1, y1) {
+  if (!inView(wx0, 280)) return;
+  const x0 = wx0 - V.left, x1 = wx1 - V.left, th = CFG.tunnelH;
+  ctx.fillStyle = '#211e27';
+  ctx.beginPath(); ctx.moveTo(x0, y0 + 1); ctx.lineTo(x1, y1 + 1); ctx.lineTo(x1, y1 - th); ctx.lineTo(x0, y0 - th); ctx.closePath(); ctx.fill();
+  ctx.save(); ctx.beginPath(); ctx.moveTo(x0, y0 + 1); ctx.lineTo(x1, y1 + 1); ctx.lineTo(x1, y1 - th); ctx.lineTo(x0, y0 - th); ctx.closePath(); ctx.clip();
+  brickFill(Math.min(x0, x1) - 20, Math.min(y0, y1) - th - 20, Math.abs(x1 - x0) + 40, Math.abs(y1 - y0) + th + 60, 0.55);
+  // enough light down the well that the flight inside it is not a silhouette on black
+  const wl = ctx.createLinearGradient(x0, 0, x1, 0);
+  wl.addColorStop(0, 'rgba(18,16,24,0.44)'); wl.addColorStop(0.55, 'rgba(18,16,24,0.1)'); wl.addColorStop(1, 'rgba(18,16,24,0.4)');
+  ctx.fillStyle = wl; ctx.fillRect(Math.min(x0, x1) - 20, Math.min(y0, y1) - th - 20, Math.abs(x1 - x0) + 40, Math.abs(y1 - y0) + th + 60);
+  ctx.restore();
+  // light falling down the well from the floor above, so it is an opening and
+  // not a hole punched in the artwork
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const dl = ctx.createLinearGradient(0, Math.min(y0, y1) - th, 0, Math.max(y0, y1));
+  dl.addColorStop(0, 'rgba(226,214,186,0.2)'); dl.addColorStop(0.5, 'rgba(226,210,178,0.07)'); dl.addColorStop(1, 'rgba(226,210,178,0)');
+  ctx.fillStyle = dl;
+  ctx.beginPath(); ctx.moveTo(x0, y0 - th); ctx.lineTo(x1, y1 - th); ctx.lineTo(x1, y1 + 1); ctx.lineTo(x0, y0 + 1); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.restore();
+  // steel soffit following the slope, riveted
+  ctx.fillStyle = '#1a1821';
+  ctx.beginPath(); ctx.moveTo(x0, y0 - th - 4); ctx.lineTo(x1, y1 - th - 4); ctx.lineTo(x1, y1 - th + 12); ctx.lineTo(x0, y0 - th + 12); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#3a3c48';
+  ctx.beginPath(); ctx.moveTo(x0, y0 - th - 2); ctx.lineTo(x1, y1 - th - 2); ctx.lineTo(x1, y1 - th + 8); ctx.lineTo(x0, y0 - th + 8); ctx.closePath(); ctx.fill();
+  ctx.save(); ctx.beginPath(); ctx.moveTo(x0, y0 - th - 2); ctx.lineTo(x1, y1 - th - 2); ctx.lineTo(x1, y1 - th + 9); ctx.lineTo(x0, y0 - th + 9); ctx.closePath(); ctx.clip();
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath(); ctx.moveTo(x0, y0 - th - 2); ctx.lineTo(x1, y1 - th - 2); ctx.lineTo(x1, y1 - th - 0.6); ctx.lineTo(x0, y0 - th - 0.6); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  for (let i = 0; i <= 10; i++) {
+    const t = i / 10, px = x0 + (x1 - x0) * t, py = y0 + (y1 - y0) * t - th + 3;
+    ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.beginPath(); ctx.arc(px, py, 1.1, 0, 6.28); ctx.fill();
+  }
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = `rgba(0,0,0,${0.4 - i * 0.075})`;
+    const a = y0 - th + 8 + i * 9, b = y1 - th + 8 + i * 9;
+    ctx.beginPath(); ctx.moveTo(x0, a); ctx.lineTo(x1, b); ctx.lineTo(x1, b + 9); ctx.lineTo(x0, a + 9); ctx.closePath(); ctx.fill();
+  }
+}
+
+// --- a conical enamel lamp hung off the truss
+function millLamp(wx, y) {
+  if (!inView(wx, 170)) return;
+  const sx = wx - V.left;
+  const fl = 0.93 + 0.045 * Math.sin(S.t * 4.7 + wx * 0.013) + 0.02 * Math.sin(S.t * 29 + wx);
+  const sway = Math.sin(S.t * 1.05 + wx * 0.02) * 1.5;
+  const cxg = sx + sway, bulbY = y + 26;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(sx - 230, y - 2, 460, CFG.tunnelH + 6); ctx.clip();
+  // the cone the shade throws, widening to the deck. Three nested widths rather
+  // than one, so the sides have a penumbra instead of a ruled edge.
+  for (const [spread, amt] of [[1.5, 0.1], [1.05, 0.11], [0.62, 0.13]]) {
+    const cone = ctx.createLinearGradient(0, bulbY, 0, y + CFG.tunnelH);
+    cone.addColorStop(0, `rgba(255,214,150,${amt * fl})`);
+    cone.addColorStop(0.45, `rgba(255,200,130,${amt * 0.36 * fl})`);
+    cone.addColorStop(1, 'rgba(255,196,120,0)');
+    ctx.fillStyle = cone;
+    ctx.beginPath();
+    ctx.moveTo(cxg - 11 * spread, bulbY - 2); ctx.lineTo(cxg + 11 * spread, bulbY - 2);
+    ctx.lineTo(cxg + 116 * spread, y + CFG.tunnelH); ctx.lineTo(cxg - 116 * spread, y + CFG.tunnelH);
+    ctx.closePath(); ctx.fill();
+  }
+  // and a small bloom on the bulb itself, small enough that the ceiling clip
+  // lands where the gradient has already gone
+  const R = 54 * fl;
+  const gl = ctx.createRadialGradient(cxg, bulbY, 2, cxg, bulbY, R);
+  gl.addColorStop(0, `rgba(255,222,166,${0.34 * fl})`);
+  gl.addColorStop(0.45, `rgba(255,204,136,${0.05 * fl})`);
+  gl.addColorStop(1, 'rgba(255,198,126,0)');
+  ctx.fillStyle = gl; ctx.fillRect(cxg - R, bulbY - R, R * 2, R * 2);
+  ctx.restore();
+  const cx = sx + sway;
+  // flex and stem
+  ctx.strokeStyle = '#14121a'; ctx.lineWidth = 2.6;
+  ctx.beginPath(); ctx.moveTo(sx, y + 1); ctx.quadraticCurveTo(sx + sway * 0.4, y + 8, cx, y + 14); ctx.stroke();
+  ctx.strokeStyle = '#4b4652'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(sx, y + 1); ctx.quadraticCurveTo(sx + sway * 0.4, y + 8, cx, y + 14); ctx.stroke();
+  // shade: dark enamel outside, hot white inside
+  ctx.fillStyle = INK;
+  ctx.beginPath(); ctx.moveTo(cx - 4.4, y + 13); ctx.lineTo(cx + 4.4, y + 13); ctx.lineTo(cx + 13.4, y + 24.4); ctx.lineTo(cx - 13.4, y + 24.4); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#31463f';
+  ctx.beginPath(); ctx.moveTo(cx - 3.4, y + 14); ctx.lineTo(cx + 3.4, y + 14); ctx.lineTo(cx + 12.2, y + 23.6); ctx.lineTo(cx - 12.2, y + 23.6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.13)';
+  ctx.beginPath(); ctx.moveTo(cx - 3.4, y + 14); ctx.lineTo(cx - 1, y + 14); ctx.lineTo(cx - 8, y + 23.6); ctx.lineTo(cx - 12.2, y + 23.6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = `rgba(255,236,196,${0.72 * fl})`; ctx.fillRect(cx - 11.6, y + 22.4, 23.2, 2);
+  // bulb and cage
+  ctx.fillStyle = `rgba(255,230,176,${0.95 * fl})`;
+  ctx.beginPath(); ctx.ellipse(cx, y + 26.4, 3.4, 4.2, 0, 0, 6.28); ctx.fill();
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = `rgba(255,246,214,${0.75 * fl})`;
+  ctx.beginPath(); ctx.ellipse(cx, y + 26, 2, 2.6, 0, 0, 6.28); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(28,24,32,0.85)'; ctx.lineWidth = 1;
+  for (const d of [-1, 0, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(cx + d * 5.4, y + 23.6);
+    ctx.quadraticCurveTo(cx + d * 6.6, y + 29.4, cx + d * 1.6, y + 31.6);
+    ctx.stroke();
+  }
+  ctx.beginPath(); ctx.moveTo(cx - 5.6, y + 29); ctx.quadraticCurveTo(cx, y + 31.4, cx + 5.6, y + 29); ctx.stroke();
+}
+
+// --- the loading bay the crowd walks in through
+function millDoorway(wx, y) {
+  if (!inView(wx, 260)) return;
+  // set in from the corner so the lintel and corbels are not cut off by it
+  const sx = wx - V.left + 34, th = CFG.tunnelH, half = 46;
+  ctx.save(); ctx.beginPath(); ctx.rect(FAC.x0 - V.left, -3000, 30000, 14000); ctx.clip();
+  // jambs
+  ctx.fillStyle = INK; ctx.fillRect(sx - half - 2, y - th - 6, 16, th + 6); ctx.fillRect(sx + half - 14, y - th - 6, 16, th + 6);
+  ctx.fillStyle = '#463b42'; ctx.fillRect(sx - half, y - th - 6, 13, th + 6); ctx.fillRect(sx + half - 13, y - th - 6, 13, th + 6);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(sx - half, y - th - 6, 13, th + 6); ctx.rect(sx + half - 13, y - th - 6, 13, th + 6); ctx.clip();
+  brickFill(sx - half - 4, y - th - 10, half * 2 + 8, th + 14, 0.8);
+  ctx.restore();
+  ctx.fillStyle = 'rgba(255,240,214,0.1)'; ctx.fillRect(sx - half, y - th - 6, 3.4, th + 6);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(sx + half - 4, y - th - 6, 4, th + 6);
+  // riveted steel lintel on corbels
+  ctx.fillStyle = INK; ctx.fillRect(sx - half - 8, y - th - 22, half * 2 + 16, 18);
+  ctx.fillStyle = '#41434f'; ctx.fillRect(sx - half - 6, y - th - 20, half * 2 + 12, 14);
+  ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(sx - half - 6, y - th - 20, half * 2 + 12, 1.6);
+  rivets(sx - half - 1, sx + half + 1, y - th - 16, 11, 1.2, 'rgba(255,255,255,0.24)');
+  rivets(sx - half - 1, sx + half + 1, y - th - 9, 11, 1.1, 'rgba(255,255,255,0.14)');
+  ctx.fillStyle = '#4e4350';
+  for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sx + d * (half + 8), y - th - 4); ctx.lineTo(sx + d * (half + 8), y - th - 22); ctx.lineTo(sx + d * (half - 4), y - th - 4); ctx.closePath(); ctx.fill(); }
+  // the shutter, rolled up under the lintel
+  ctx.fillStyle = '#2a2833'; ctx.fillRect(sx - half + 4, y - th - 4, half * 2 - 8, 15);
+  ctx.fillStyle = '#3d4049';
+  for (let i = 0; i < 4; i++) ctx.fillRect(sx - half + 4, y - th - 3 + i * 3.6, half * 2 - 8, 2.4);
+  ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(sx - half + 4, y - th - 3, half * 2 - 8, 1);
+  ctx.fillStyle = '#1e1c26'; ctx.fillRect(sx - half + 4, y - th + 10, half * 2 - 8, 3.4);
+  // gooseneck lamp over the door
+  ctx.strokeStyle = INK; ctx.lineWidth = 3.4;
+  ctx.beginPath(); ctx.moveTo(sx + half + 2, y - th - 26); ctx.quadraticCurveTo(sx + half + 2, y - th - 40, sx + half - 14, y - th - 40); ctx.stroke();
+  ctx.strokeStyle = '#4b4652'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(sx + half + 2, y - th - 26); ctx.quadraticCurveTo(sx + half + 2, y - th - 40, sx + half - 14, y - th - 40); ctx.stroke();
+  ctx.fillStyle = INK; ctx.beginPath(); ctx.moveTo(sx + half - 22, y - th - 44); ctx.lineTo(sx + half - 6, y - th - 44); ctx.lineTo(sx + half - 10, y - th - 35); ctx.lineTo(sx + half - 18, y - th - 35); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#31463f'; ctx.beginPath(); ctx.moveTo(sx + half - 21, y - th - 43.4); ctx.lineTo(sx + half - 7, y - th - 43.4); ctx.lineTo(sx + half - 10.6, y - th - 35.6); ctx.lineTo(sx + half - 17.4, y - th - 35.6); ctx.closePath(); ctx.fill();
+  const fl = 0.9 + 0.08 * Math.sin(S.t * 5.1);
+  ctx.fillStyle = `rgba(255,232,186,${0.8 * fl})`; ctx.fillRect(sx + half - 17.4, y - th - 36.4, 7, 1.8);
+  // it is a lamp, so it has to throw something, or it reads as a stray green fill
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const lg = ctx.createRadialGradient(sx + half - 14, y - th - 34, 1, sx + half - 14, y - th - 34, 56);
+  lg.addColorStop(0, `rgba(255,224,168,${0.26 * fl})`); lg.addColorStop(1, 'rgba(255,224,168,0)');
+  ctx.fillStyle = lg; ctx.fillRect(sx + half - 70, y - th - 90, 112, 112);
+  ctx.restore();
+  ctx.restore();
+}
+
+// --- where the brick stops: a hole cut through the mill's gable into the workings
+function drawSeamPortal(y) {
+  if (!inView(FAC.seam, 300)) return;
+  const sx = FAC.seam - V.left, th = CFG.tunnelH;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(sx - 150, y - th - 10, 300, th + 60); ctx.clip();
+  // the last of the brick: a narrow return, faded in so the hall runs up to the jamb
+  const rw = 62;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(sx - rw, y - th, rw, th + 16); ctx.clip();
+  ctx.fillStyle = '#231e28'; ctx.fillRect(sx - rw, y - th, rw, th + 16);
+  brickFill(sx - rw, y - th, rw, th + 16, 0.5);
+  ctx.fillStyle = 'rgba(19,17,25,0.4)'; ctx.fillRect(sx - rw, y - th, rw, th + 16);
+  const rf = ctx.createLinearGradient(sx - rw, 0, sx - rw + 34, 0);
+  rf.addColorStop(0, 'rgba(18,16,23,0.85)'); rf.addColorStop(1, 'rgba(18,16,23,0)');
+  ctx.fillStyle = rf; ctx.fillRect(sx - rw, y - th, 34, th + 16);
+  ctx.restore();
+  // dust hanging in the mouth
+  const hz = ctx.createLinearGradient(sx - 40, 0, sx + 90, 0);
+  hz.addColorStop(0, 'rgba(60,50,46,0)'); hz.addColorStop(0.5, 'rgba(60,50,46,0.28)'); hz.addColorStop(1, 'rgba(60,50,46,0)');
+  ctx.fillStyle = hz; ctx.fillRect(sx - 40, y - th, 130, th + 16);
+  ctx.restore();
+  // rubble spilling out of the hole onto the deck
+  ctx.fillStyle = '#2a2431';
+  ctx.beginPath(); ctx.moveTo(sx - 46, y + 1);
+  for (let i = 0; i <= 12; i++) { const t = i / 12, px = sx - 46 + t * 104; ctx.lineTo(px, y + 1 - Math.sin(t * Math.PI) * (5 + hash(i * 3.3) * 5)); }
+  ctx.lineTo(sx + 58, y + 14); ctx.lineTo(sx - 46, y + 14); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#3b3341';
+  for (let i = 0; i < 9; i++) {
+    const hv = hash(i * 7.7 + 3), px = sx - 40 + hv * 92, rr = 1.8 + hash(i * 2.1) * 3;
+    ctx.beginPath(); ctx.ellipse(px, y - 1 - hash(i * 5.5) * 5, rr, rr * 0.72, hv * 3, 0, 6.28); ctx.fill();
+  }
+  // timber portal frame: two posts, a head tree and corner braces
+  const post = (px) => {
+    ctx.fillStyle = INK; ctx.fillRect(px - 8.4, y - th - 4, 16.8, th + 6);
+    ctx.fillStyle = '#5c4228'; ctx.fillRect(px - 7, y - th - 3, 14, th + 4);
+    ctx.fillStyle = 'rgba(255,224,176,0.12)'; ctx.fillRect(px - 7, y - th - 3, 3.4, th + 4);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(px + 3.4, y - th - 3, 3.6, th + 4);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    for (let k = 0; k < 7; k++) ctx.fillRect(px - 6, y - th + 8 + k * 18 + hash(k + px) * 5, 12, 1.4);
+    // iron strap
+    ctx.fillStyle = '#3e3a44'; ctx.fillRect(px - 8.6, y - 40, 17.2, 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(px - 8.6, y - 40, 17.2, 1.2);
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.beginPath(); ctx.arc(px - 4, y - 37, 1.2, 0, 6.28); ctx.fill(); ctx.beginPath(); ctx.arc(px + 4, y - 37, 1.2, 0, 6.28); ctx.fill();
+  };
+  post(sx - 42); post(sx + 42);
+  // head tree
+  ctx.fillStyle = INK; ctx.fillRect(sx - 58, y - th - 18, 116, 18);
+  ctx.fillStyle = '#654a2e'; ctx.fillRect(sx - 56, y - th - 16, 112, 15);
+  ctx.fillStyle = 'rgba(255,224,176,0.14)'; ctx.fillRect(sx - 56, y - th - 16, 112, 2.6);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  for (let k = 0; k < 9; k++) ctx.fillRect(sx - 52 + k * 12, y - th - 13, 2, 11);
+  // braces
+  for (const d of [-1, 1]) {
+    ctx.fillStyle = '#5c4228';
+    ctx.save(); ctx.translate(sx + d * 42, y - th + 4); ctx.rotate(d * 0.78);
+    ctx.fillRect(-4.4, -30, 8.8, 30); ctx.restore();
+  }
+  // steel plate riveted over the head tree, where the brick was cut
+  ctx.fillStyle = '#3b3d48'; ctx.fillRect(sx - 62, y - th - 24, 124, 8);
+  ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(sx - 62, y - th - 24, 124, 1.4);
+  rivets(sx - 56, sx + 56, y - th - 20, 12, 1.2, 'rgba(255,255,255,0.22)');
+  // hazard plate hung on the head tree
+  ctx.fillStyle = INK; ctx.fillRect(sx - 27, y - th + 3, 54, 17);
+  ctx.fillStyle = '#c9a72e'; ctx.fillRect(sx - 25.6, y - th + 4.4, 51.2, 14.2);
+  ctx.fillStyle = '#1b1519';
+  for (let i = -4; i < 7; i++) {
+    ctx.beginPath(); ctx.moveTo(sx - 26 + i * 10, y - th + 18.6); ctx.lineTo(sx - 20 + i * 10, y - th + 4.4);
+    ctx.lineTo(sx - 15 + i * 10, y - th + 4.4); ctx.lineTo(sx - 21 + i * 10, y - th + 18.6); ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(sx - 25.6, y - th + 4.4, 51.2, 2);
+  // a red lamp on the frame
+  const bl = 0.5 + 0.5 * Math.sin(S.t * 2.6);
+  ctx.fillStyle = INK; ctx.fillRect(sx - 3, y - th + 20, 6, 7);
+  ctx.fillStyle = `rgba(255,70,52,${0.5 + 0.5 * bl})`; ctx.beginPath(); ctx.arc(sx, y - th + 29, 4.2, 0, 6.28); ctx.fill();
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const rg = ctx.createRadialGradient(sx, y - th + 29, 1, sx, y - th + 29, 40);
+  rg.addColorStop(0, `rgba(255,64,42,${0.3 * bl})`); rg.addColorStop(1, 'rgba(255,64,42,0)');
+  ctx.fillStyle = rg; ctx.fillRect(sx - 40, y - th - 11, 80, 80);
+  ctx.restore();
+}
+
+// --- an arrow plate on a pipe standard, pointing up the stair
+function millSign(wx, y) {
+  if (!inView(wx, 120)) return;
+  // the post has to clear a 33-unit crowd or the plate is never seen
+  // same height, angle and yellow as the rock-side signpost: at the seam both
+  // are on screen at once and two conventions read as a mistake
+  const sx = wx - V.left - 70;
+  ctx.fillStyle = INK; ctx.fillRect(sx - 3.4, y - 68, 7.8, 68);
+  ctx.fillStyle = '#4a4e58'; ctx.fillRect(sx - 2.2, y - 67, 5.4, 67);
+  ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(sx - 2.2, y - 67, 1.6, 67);
+  ctx.fillStyle = '#3e3a44'; ctx.fillRect(sx - 6, y - 4, 13, 4);
+  const plate = (yy, rot, col) => {
+    ctx.save(); ctx.translate(sx, yy); ctx.rotate(rot);
+    ctx.fillStyle = INK;
+    ctx.beginPath(); ctx.moveTo(-18, -8.4); ctx.lineTo(12, -8.4); ctx.lineTo(21, 0); ctx.lineTo(12, 8.4); ctx.lineTo(-18, 8.4); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.moveTo(-16.6, -7); ctx.lineTo(11.4, -7); ctx.lineTo(19, 0); ctx.lineTo(11.4, 7); ctx.lineTo(-16.6, 7); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.beginPath(); ctx.moveTo(-16.6, -7); ctx.lineTo(11.4, -7); ctx.lineTo(13.4, -5); ctx.lineTo(-14.6, -5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#12151a'; ctx.fillRect(-11, -1.4, 17, 3);
+    ctx.beginPath(); ctx.moveTo(6, -5.4); ctx.lineTo(13, 0.1); ctx.lineTo(6, 5.6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.beginPath(); ctx.arc(-14, 0, 1.3, 0, 6.28); ctx.fill();
+    ctx.restore();
+  };
+  // one plate, not two disagreeing ones
+  plate(y - 58, -0.55, '#d9c27a');
+}
+
+// --- a plated steel stanchion, the mill's answer to the stone tower
+function drawSteelTower(x, y, w, h) {
+  ctx.fillStyle = INK; ctx.fillRect(x - 2, y - 6, w + 4, h + 6);
+  ctx.fillStyle = '#383b46'; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(206,224,244,0.16)'; ctx.fillRect(x, y, 4, h);
+  ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(x + w - 6, y, 6, h);
+  // lattice bracing between the flanges
+  ctx.strokeStyle = '#4c5060'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  for (let k = 0; k < h - 12; k += 26) {
+    ctx.moveTo(x + 4, y + k + 6); ctx.lineTo(x + w - 4, y + k + 19);
+    ctx.moveTo(x + w - 4, y + k + 6); ctx.lineTo(x + 4, y + k + 19);
+  }
+  ctx.stroke();
+  ctx.fillStyle = '#424653';
+  for (let k = 0; k < h; k += 26) ctx.fillRect(x, y + k, w, 4.4);
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  for (let k = 0; k < h; k += 26) ctx.fillRect(x, y + k, w, 1.2);
+  ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  rivets(x + 3.5, x + w - 3.5, y + 2.2, 7, 1, 'rgba(255,255,255,0.22)');
+  for (let k = 26; k < h; k += 26) rivets(x + 3.5, x + w - 3.5, y + k + 2.2, 7, 1, 'rgba(255,255,255,0.14)');
+  ctx.restore();
+  // rust weeping out of the base plate
+  ctx.fillStyle = 'rgba(124,70,34,0.26)'; ctx.fillRect(x + 2, y + h - 34, w - 4, 34);
+  ctx.fillStyle = '#4a4e5c'; ctx.fillRect(x - 4, y - 5, w + 8, 6);
+  ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.fillRect(x - 4, y - 5, w + 8, 1.4);
+}
+
+// --- a slatted steel shutter in place of the portcullis
+// Split the way the gate's masonry and bars are: the housing and guides sit
+// behind the crowd, the curtain itself is drawn after the runners, or every body
+// that reaches a closed shutter paints over it and the way looks open.
+function millShutterBack(g, sx, y, th, holding) {
+  // the drum housing bolted under the truss
+  ctx.fillStyle = INK; ctx.fillRect(sx - 40, y - th - 13, 80, 21);
+  ctx.fillStyle = '#3c3f4a'; ctx.fillRect(sx - 38, y - th - 11, 76, 17);
+  ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(sx - 38, y - th - 11, 76, 1.6);
+  rivets(sx - 32, sx + 32, y - th - 6, 10, 1.1, 'rgba(255,255,255,0.2)');
+  // guide channels down both sides of the opening
+  for (const d of [-1, 1]) {
+    ctx.fillStyle = INK; ctx.fillRect(sx + d * 34 - 4, y - th + 4, 8, th - 2);
+    ctx.fillStyle = '#464a56'; ctx.fillRect(sx + d * 34 - 3, y - th + 4, 6, th - 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(sx + d * 34 - 3, y - th + 4, 1.6, th - 2);
+  }
+}
+function millShutterBars(g, sx, y, th, holding) {
+  const jud = g.judder > 0 ? Math.sin(S.t * 64) * g.judder * 2.4 : 0;
+  const drop = Math.max(17, g.drop * (th - 4) + jud), down = g.drop > 0.95;
+  // streaks off the curtain while it is really moving
+  if (g.dropV > 1.4) {
+    ctx.fillStyle = 'rgba(200,214,236,0.2)';
+    const tail = Math.min(40, g.dropV * 16);
+    ctx.fillRect(sx - 33, y - th + 5 + drop - tail, 66, tail);
+  }
+  ctx.fillStyle = INK; ctx.fillRect(sx - 34, y - th + 4, 68, drop + 2);
+  // slats, tighter where the curtain is still coiled on the drum
+  for (let k = 0; k < drop; k += 6) {
+    // one slat profile all the way down: the coiled striping read as awning fabric
+    ctx.fillStyle = down ? '#5c6270' : '#4c515e';
+    ctx.fillRect(sx - 33, y - th + 5 + k, 66, 4.6);
+    ctx.fillStyle = 'rgba(224,236,250,0.16)'; ctx.fillRect(sx - 33, y - th + 5 + k, 66, 1.2);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(sx - 33, y - th + 8.6 + k, 66, 1.2);
+  }
+  if (down) {
+    // bottom rail on the deck, with a hazard stripe
+    ctx.fillStyle = INK; ctx.fillRect(sx - 36, y - 6, 72, 9);
+    ctx.fillStyle = '#c9a72e'; ctx.fillRect(sx - 35, y - 5, 70, 7);
+    ctx.fillStyle = '#1b1519';
+    for (let i = -4; i < 7; i++) {
+      ctx.beginPath(); ctx.moveTo(sx - 35 + i * 11, y + 2); ctx.lineTo(sx - 30 + i * 11, y - 5);
+      ctx.lineTo(sx - 25 + i * 11, y - 5); ctx.lineTo(sx - 30 + i * 11, y + 2); ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(sx - 35, y + 2, 70, 2.4);
+  } else {
+    // the weighted bottom rail, wherever the curtain has got to
+    ctx.fillStyle = INK; ctx.fillRect(sx - 35, y - th + 3 + drop, 70, 6.4);
+    ctx.fillStyle = '#5c6270'; ctx.fillRect(sx - 34, y - th + 4 + drop, 68, 4.4);
+    ctx.fillStyle = 'rgba(224,236,250,0.2)'; ctx.fillRect(sx - 34, y - th + 4 + drop, 68, 1.2);
+  }
+  // the white-hot line where it struck the deck
+  if (g.flash > 0) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = g.flash;
+    const fw = 34 + (1 - g.flash) * 38;
+    const fg = ctx.createLinearGradient(sx - fw, 0, sx + fw, 0);
+    fg.addColorStop(0, 'rgba(255,220,150,0)'); fg.addColorStop(0.5, 'rgba(255,235,190,0.9)'); fg.addColorStop(1, 'rgba(255,220,150,0)');
+    ctx.fillStyle = fg; ctx.fillRect(sx - fw, y - 3, fw * 2, 4);
+    ctx.restore();
+  }
+}
+
+// --- the rest of the works, seen over the hills on the approach
+// the mill yard: cinder underfoot, a boundary wall and the stuff that piles up
+// against it, so the approach reads as a works and not a meadow
+function millYard() {
+  const x0 = FAC.x0 - 300, x1 = FAC.x0;
+  if (!inView(x0, 200) && !inView(x1, 200)) return;
+  const base = laneY(0);
+  const sx0 = Math.max(-40, x0 - V.left), sx1 = Math.min(V.vw + 40, x1 - V.left);
+  if (sx1 <= sx0) return;
+  // cinder apron replacing the grass as you come up to the gate
+  const cg = ctx.createLinearGradient(sx0, 0, sx0 + 120, 0);
+  cg.addColorStop(0, 'rgba(48,44,42,0)'); cg.addColorStop(1, 'rgba(48,44,42,0.9)');
+  ctx.fillStyle = cg; ctx.fillRect(sx0, base - 1, Math.min(120, sx1 - sx0), 22);
+  if (sx1 - sx0 > 120) { ctx.fillStyle = 'rgba(48,44,42,0.9)'; ctx.fillRect(sx0 + 120, base - 1, sx1 - sx0 - 120, 22); }
+  ctx.fillStyle = 'rgba(22,20,20,0.5)';
+  for (let wx = Math.floor(x0 / 11) * 11; wx < x1; wx += 11) {
+    const hv = hash(wx * 1.9);
+    if (hv < 0.45) continue;
+    ctx.fillRect(wx - V.left, base + 2 + hv * 12, 3 + hv * 4, 1.8);
+  }
+  // a low soot-stained boundary wall running back from the gable
+  const wy = base - 44;
+  ctx.fillStyle = '#332b31'; ctx.fillRect(sx0, wy, sx1 - sx0, 44);
+  ctx.save(); ctx.beginPath(); ctx.rect(sx0, wy, sx1 - sx0, 44); ctx.clip();
+  brickFill(sx0, wy, sx1 - sx0, 44, 0.75);
+  ctx.fillStyle = 'rgba(30,26,32,0.3)'; ctx.fillRect(sx0, wy, sx1 - sx0, 44);
+  ctx.restore();
+  ctx.fillStyle = '#4c4350'; ctx.fillRect(sx0, wy - 5, sx1 - sx0, 6);
+  ctx.fillStyle = 'rgba(255,244,220,0.18)'; ctx.fillRect(sx0, wy - 5, sx1 - sx0, 1.6);
+  // a gate pier rather than a square butt end in open grass
+  const px = x0 - V.left;
+  if (px > sx0 - 20 && px < sx1) {
+    ctx.fillStyle = '#2b242a'; ctx.fillRect(px - 9, wy - 18, 20, 62);
+    ctx.save(); ctx.beginPath(); ctx.rect(px - 9, wy - 18, 20, 62); ctx.clip();
+    brickFill(px - 12, wy - 22, 26, 70, 0.8);
+    ctx.fillStyle = 'rgba(28,24,30,0.3)'; ctx.fillRect(px - 9, wy - 18, 20, 62);
+    ctx.restore();
+    ctx.fillStyle = '#524657'; ctx.fillRect(px - 12, wy - 24, 26, 8);
+    ctx.fillStyle = 'rgba(255,244,220,0.2)'; ctx.fillRect(px - 12, wy - 24, 26, 1.8);
+    ctx.fillStyle = 'rgba(255,238,206,0.12)'; ctx.fillRect(px - 9, wy - 18, 3.4, 62);
+  }
+  // crates and a barrel stacked against it
+  for (const [off, kind] of [[46, 0], [104, 1], [150, 0], [214, 2]]) {
+    const cx = x0 + off - V.left;
+    if (cx < sx0 - 40 || cx > sx1 + 10) continue;
+    if (kind === 0) {
+      const cw = 22 + hash(off) * 8;
+      ctx.fillStyle = '#17141a'; ctx.fillRect(cx - 1, base - cw * 0.9 - 1, cw + 2, cw * 0.9 + 2);
+      ctx.fillStyle = '#4a3b2c'; ctx.fillRect(cx, base - cw * 0.9, cw, cw * 0.9);
+      ctx.fillStyle = 'rgba(255,236,200,0.14)'; ctx.fillRect(cx, base - cw * 0.9, cw, 2.2);
+      ctx.strokeStyle = 'rgba(0,0,0,0.42)'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(cx, base - cw * 0.9); ctx.lineTo(cx + cw, base); ctx.stroke();
+    } else if (kind === 1) {
+      ctx.fillStyle = '#17141a'; roundRect(cx - 1, base - 27, 19, 28, 5); ctx.fill();
+      ctx.fillStyle = '#4e3c2a'; roundRect(cx, base - 26, 17, 26, 4); ctx.fill();
+      ctx.fillStyle = '#6a5136'; ctx.fillRect(cx, base - 21, 17, 2.6); ctx.fillRect(cx, base - 9, 17, 2.6);
+      ctx.fillStyle = 'rgba(255,236,200,0.12)'; ctx.fillRect(cx, base - 26, 3.4, 26);
+    } else {
+      // a handcart tipped up on its handles
+      ctx.strokeStyle = '#17141a'; ctx.lineWidth = 4.4;
+      ctx.beginPath(); ctx.moveTo(cx, base); ctx.lineTo(cx + 26, base - 34); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + 9, base); ctx.lineTo(cx + 34, base - 30); ctx.stroke();
+      ctx.strokeStyle = '#5a4430'; ctx.lineWidth = 2.8;
+      ctx.beginPath(); ctx.moveTo(cx, base); ctx.lineTo(cx + 26, base - 34); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + 9, base); ctx.lineTo(cx + 34, base - 30); ctx.stroke();
+      ctx.fillStyle = '#17141a'; ctx.beginPath(); ctx.arc(cx + 20, base - 9, 9.4, 0, 6.28); ctx.fill();
+      ctx.fillStyle = '#3d3440'; ctx.beginPath(); ctx.arc(cx + 20, base - 9, 8, 0, 6.28); ctx.fill();
+      ctx.fillStyle = '#17141a'; ctx.beginPath(); ctx.arc(cx + 20, base - 9, 2.6, 0, 6.28); ctx.fill();
+      ctx.strokeStyle = 'rgba(210,222,238,0.2)'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(cx + 20, base - 9, 8, 3.4, 5.6); ctx.stroke();
+    }
+  }
+}
+function millSkyline() {
+  const smog = clamp01((FAC.seam + 420 - (V.left + V.vw * 0.5)) / 900);
+  if (smog < 0.02) return;
+  const base = laneY(0) - 26;
+  // further layers sit higher: they were all standing on one ground line
+  ctx.save(); ctx.globalAlpha = 0.5 * smog;
+  parallaxRange(0.14, 520, (seg, sx) => {
+    const h = hash(seg * 5.1);
+    if (h < 0.25) return;
+    // a shed with a pitched roof
+    const bw = 150 + h * 150, bh = 130 + hash(seg * 2.3) * 110, bx = sx + hash(seg * 3.7) * 180;
+    ctx.fillStyle = '#4c4b58'; ctx.fillRect(bx, base - bh, bw, bh);
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(bx, base - bh + bh * 0.55, bw, bh * 0.45);
+    ctx.fillStyle = '#5a5866';
+    ctx.beginPath(); ctx.moveTo(bx - 5, base - bh); ctx.lineTo(bx + bw / 2, base - bh - 17); ctx.lineTo(bx + bw + 5, base - bh); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(244,238,220,0.3)';
+    for (let i = 0; i < 4; i++) ctx.fillRect(bx + 10 + i * (bw - 22) / 4, base - bh + 14, 11, 15);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(bx, base - bh, bw, 3);
+    // a chimney, and the smoke coming off it
+    if (hash(seg * 9.3) > 0.4) {
+      const cx2 = bx + bw * (0.25 + hash(seg * 4.4) * 0.5), ch = 190 + hash(seg * 7.7) * 190;
+      ctx.fillStyle = '#474654';
+      ctx.beginPath(); ctx.moveTo(cx2 - 9, base - bh); ctx.lineTo(cx2 - 5.5, base - bh - ch); ctx.lineTo(cx2 + 5.5, base - bh - ch); ctx.lineTo(cx2 + 9, base - bh); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#585665'; ctx.fillRect(cx2 - 7.5, base - bh - ch - 5, 15, 6);
+      millPlume(cx2, base - bh - ch - 8, 0.62, '112,108,112');
+    }
+  });
+  ctx.restore();
+}
+
+// The mill was built against a rock face, so brick and rock interlock along a
+// ragged edge that leans out over the works — not a ruled vertical cut.
+function seamXAt(y) {
+  // the lean used to run to 250 against a jitter of about 10, a 10:1 ratio that
+  // made the whole edge one ruled diagonal. Less lean, more tooth.
+  const lean = Math.max(0, Math.min(88, (CFG.baseY - CFG.tunnelH - 30 - y) * 0.13));
+  // a correlated walk snapped to brick-course height: two taps is enough to
+  // correlate, four averaged the amplitude away
+  const i = Math.floor(y / 22);
+  const w = (hash(i * 3.7) - 0.5) * 34 + (hash((i - 1) * 3.7) - 0.5) * 22;
+  return FAC.seam - lean + w;
+}
+function seamEdgePath() {
+  ctx.beginPath();
+  for (let y = -2600; y <= CFG.worldBottom + 500; y += 22) ctx.lineTo(seamXAt(y) - V.left, y);
+}
+function seamClip(side) {
+  const top = -2600, bot = CFG.worldBottom + 500, far = side < 0 ? -9000 : 40000;
+  const e = FAC.seam - V.left;
+  ctx.beginPath();
+  // with the seam off screen the toothing is invisible, so a rect does the same job
+  if (!inView(FAC.seam, 640)) { ctx.rect(side < 0 ? far : e, top, side < 0 ? e - far : far - e, bot - top); return; }
+  ctx.moveTo(far, top);
+  for (let y = top; y <= bot; y += 22) ctx.lineTo(seamXAt(y) - V.left, y);
+  ctx.lineTo(far, bot); ctx.closePath();
+}
+// the crease where the two materials meet, and spoil piled in the corner of it
+// The rock the mill was cut into: quarried facets and pick marks hugging the
+// seam, so the cut face does not read as a blank slab beside all that brick.
+function drawSeamRock() {
+  if (!inView(FAC.seam, 560)) return;
+  for (let y = -1000; y < CFG.worldBottom + 40; y += 54) {
+    const hv = hash(y * 0.17), hv2 = hash(y * 0.31 + 5);
+    const x0 = seamXAt(y) - V.left, x1 = seamXAt(y + 54) - V.left;
+    const d = 40 + hv * 200;
+    ctx.fillStyle = hv2 > 0.52 ? 'rgba(236,228,244,0.04)' : 'rgba(0,0,0,0.17)';
+    ctx.beginPath();
+    ctx.moveTo(x0, y); ctx.lineTo(x0 + d, y + 7 + hv2 * 16);
+    ctx.lineTo(x1 + d * 0.68, y + 54); ctx.lineTo(x1, y + 54);
+    ctx.closePath(); ctx.fill();
+  }
+  // the lip where the rock was broken back, catching what light there is
+  ctx.strokeStyle = 'rgba(224,214,236,0.09)'; ctx.lineWidth = 2.4;
+  for (let y = -1000; y < CFG.worldBottom + 40; y += 54) {
+    if (hash(y * 0.53) < 0.4) continue;
+    const hv = hash(y * 0.17), d = 40 + hv * 200;
+    ctx.beginPath(); ctx.moveTo(seamXAt(y) - V.left, y); ctx.lineTo(seamXAt(y) - V.left + d, y + 7 + hash(y * 0.31 + 5) * 16); ctx.stroke();
+  }
+  // the rock reads mauve and flat next to the brick, so sink it where they meet
+  for (let y = -1000; y < CFG.worldBottom + 40; y += 54) {
+    const sx = seamXAt(y) - V.left;
+    const dk = ctx.createLinearGradient(sx, 0, sx + 300, 0);
+    dk.addColorStop(0, 'rgba(14,10,18,0.5)'); dk.addColorStop(1, 'rgba(14,10,18,0)');
+    ctx.fillStyle = dk; ctx.fillRect(sx, y, 300, 56);
+  }
+  // pick marks
+  ctx.strokeStyle = 'rgba(0,0,0,0.32)'; ctx.lineWidth = 1.3;
+  for (let y = -1000; y < CFG.worldBottom + 40; y += 17) {
+    if (hash(y * 0.71) < 0.55) continue;
+    const px = seamXAt(y) - V.left + 8 + hash(y * 1.7) * 34;
+    ctx.beginPath(); ctx.moveTo(px, y); ctx.lineTo(px + 7 + hash(y) * 9, y + 5); ctx.stroke();
+  }
+}
+function drawSeamFace() {
+  if (!inView(FAC.seam, 520)) return;
+  // a soft crease, built up from wide and faint rather than one heavy outline
+  seamEdgePath(); ctx.strokeStyle = 'rgba(9,7,12,0.2)'; ctx.lineWidth = 17; ctx.stroke();
+  seamEdgePath(); ctx.strokeStyle = 'rgba(9,7,12,0.2)'; ctx.lineWidth = 8; ctx.stroke();
+  // a broken lip of light down the cut brick, not a ruled line
+  ctx.strokeStyle = 'rgba(204,190,214,0.1)'; ctx.lineWidth = 1.4;
+  for (let y = -2600; y <= CFG.worldBottom + 500; y += 22) {
+    if (hash(y * 0.31) < 0.55) continue;
+    ctx.beginPath(); ctx.moveTo(seamXAt(y) - V.left, y); ctx.lineTo(seamXAt(y + 22) - V.left, y + 22); ctx.stroke();
+  }
+  // spoil where the rock spills onto each floor
+  for (let k = 0; k < CFG.laneCount; k++) {
+    const y = laneY(k);
+    if (!laneAt(k, FAC.seam - 60)) continue;
+    const sx = seamXAt(y - 6) - V.left;
+    ctx.fillStyle = '#2b2431';
+    ctx.beginPath(); ctx.moveTo(sx - 54, y + 2);
+    for (let i = 0; i <= 10; i++) { const t = i / 10; ctx.lineTo(sx - 54 + t * 60, y + 2 - Math.sin(t * 3.14) * (4 + hash(i * 3.1 + k) * 5)); }
+    ctx.lineTo(sx + 8, y + 14); ctx.lineTo(sx - 54, y + 14); ctx.closePath(); ctx.fill();
+  }
 }
 function parallaxRange(p, size, fn) {
   const off = V.left * p;
@@ -1540,7 +3100,7 @@ function drawLane(lane) {
     signpost(f.x, laneY(f.from));
   }
   lampPools(lane);
-  if (lane === 0) { archway(CFG.entrance, y); archway(CFG.exit, y, true); }
+  if (lane === 0) { millYard(); archway(CFG.entrance, y); archway(CFG.exit, y, true); drawSeamPortal(y); }
   for (const g of S.gates) drawGate(g, lane, false);
   for (const room of S.rooms) if (room.lane === lane) drawRoom(room, y);
 }
@@ -1552,14 +3112,17 @@ function lampPools(lane) {
     const sx = lx - V.left;
     ctx.save();
     ctx.beginPath(); ctx.rect(sx - 160, y - CFG.tunnelH, 320, CFG.tunnelH + 18); ctx.clip();
-    const g = ctx.createRadialGradient(sx, y + 3, 4, sx, y + 3, 140);
-    g.addColorStop(0, 'rgba(255,200,110,0.30)'); g.addColorStop(0.5, 'rgba(255,200,110,0.1)'); g.addColorStop(1, 'rgba(255,200,110,0)');
+    const mill = inMill(lx), c = mill ? '255,214,152' : '255,200,110';
+    const g = ctx.createRadialGradient(sx, y + 3, 4, sx, y + 3, 126);
+    g.addColorStop(0, `rgba(${c},${mill ? 0.44 : 0.3})`); g.addColorStop(0.45, `rgba(${c},${mill ? 0.12 : 0.1})`); g.addColorStop(1, `rgba(${c},0)`);
     ctx.fillStyle = g; ctx.fillRect(sx - 140, y - 137, 280, 280);
     ctx.restore();
   }
 }
 // The doorstep. `dir` is +1 when the inside lies to the right of wx, -1 when it lies to the left.
 function threshold(wx, y, dir) {
+  if (inMill(wx)) return;      // the mill's gable stands here; millYard lays the cinder
+
   if (!inView(wx, 140)) return;
   const sx = wx - V.left, span = 74;
   // stone dragged out onto the earth
@@ -1582,12 +3145,17 @@ function threshold(wx, y, dir) {
 }
 function groundRect(wx0, wx1, y, style = 'in') {
   if (wx1 <= wx0) return;
+  if (style === 'in') { splitSeam(wx0, wx1, (a, b, mill) => mill ? millDeck(a, b, y) : rockGround(a, b, y, 'in')); return; }
+  rockGround(wx0, wx1, y, style);
+}
+function rockGround(wx0, wx1, y, style = 'in') {
+  if (wx1 <= wx0) return;
   const x0 = wx0 - V.left, x1 = wx1 - V.left, inside = style === 'in';
   // outside, the bank runs all the way down to the water rather than ending in a 20px
   // crust with a gap under it, now that the lake sits at the same level as the river
   // lane 0 runs down to the water on both sides of the mouth, so the bank does not step
   // where the material changes; upper lanes keep their shallow band
-  const bandH = inside && y !== laneY(0) ? 30 : Math.max(20, CFG.riverY - (y + 14));
+  const bandH = !inside ? 20 : (y !== laneY(0) ? 30 : Math.max(20, CFG.riverY - (y + 14)));
   ctx.fillStyle = inside ? '#3a3038' : '#4a3b2a'; ctx.fillRect(x0, y + 14, x1 - x0, bandH);
   if (!inside) { ctx.fillStyle = '#3f5a2e'; ctx.fillRect(x0, y + 31, x1 - x0, 3); }
   ctx.fillStyle = inside ? '#2a2229' : '#3a2d20';
@@ -1617,6 +3185,7 @@ function groundRect(wx0, wx1, y, style = 'in') {
   }
 }
 function ramp(wx0, y0, wx1, y1) {
+  if (inMill(wx0)) return millStair(wx0, y0, wx1, y1);
   if (!inView(wx0, 260)) return;
   const x0 = wx0 - V.left, x1 = wx1 - V.left;
   ctx.fillStyle = '#3a3038';
@@ -1643,6 +3212,7 @@ function ramp(wx0, y0, wx1, y1) {
   ctx.fillStyle = INK; ctx.fillRect(x0, y0 + 43, 0, 0);
 }
 function archway(wx, y, exit = false) {
+  if (inMill(wx)) return millDoorway(wx, y);
   if (!inView(wx, 240)) return;
   // The mountain's base is a vertical cut at the mouth, and an arch whose outer edge lands
   // exactly on that cut reads as a pipe stub glued to the slope. Set it in, so there is
@@ -1666,6 +3236,7 @@ function archway(wx, y, exit = false) {
   ctx.restore();
 }
 function signpost(wx, y) {
+  if (inMill(wx)) return millSign(wx, y);
   if (!inView(wx, 100)) return;
   const sx = wx - V.left - 70;
   // a 5px post against a dark wall disappears at any zoom below 1 and the boards
@@ -1693,6 +3264,20 @@ function drawGate(g, lane, front) {
   const sx = g.x - V.left, y = laneY(lane), th = CFG.tunnelH;
   const holding = g.state === 'holding';
   const cy = y - th;
+  // The mill's shutter splits the same way the portcullis does, and for the same
+  // reason: drawn before the crowd, every body that reaches a closed gate paints
+  // over it and the way looks open.
+  if (inMill(g.x)) {
+    if (front) {
+      millShutterBars(g, sx, y, th, holding);
+      if (lane === 0 && (g.state === 'armed' || holding)) {
+        ctx.fillStyle = holding ? 'rgba(92,225,255,0.10)' : 'rgba(92,225,255,0.06)';
+        ctx.fillRect(sx - 42, cy - 16, 84, th + 18);
+        ctx.strokeStyle = '#5ce1ff'; ctx.lineWidth = holding ? 3 : 2; ctx.strokeRect(sx - 42, cy - 16, 84, th + 18);
+      }
+    } else millShutterBack(g, sx, y, th, holding);
+    return;
+  }
   if (front) { gateBars(g, sx, y, th, cy, holding, lane); return; }
 
   // One gate blocks every lane, so its masonry has to appear on every lane. Drawn
@@ -1796,7 +3381,8 @@ function gateBars(g, sx, y, th, cy, holding, lane) {
 // Masonry in the same stone as the gate jambs. This used to be cold blue-grey brick with
 // a hard outline and a visible brick grid, standing in warm brown tunnels that carry no
 // brick at all: it was the last object in the picture that looked imported from elsewhere.
-function drawTower(x, y, w, h) {
+function drawTower(x, y, w, h, mill) {
+  if (mill) return drawSteelTower(x, y, w, h);
   ctx.fillStyle = INK; ctx.fillRect(x - 1.4, y - 5.4, w + 2.8, h + 5.4);
   const g = ctx.createLinearGradient(x, 0, x + w, 0);
   g.addColorStop(0, '#564d63'); g.addColorStop(0.45, '#4a4353'); g.addColorStop(1, '#383243');
@@ -1816,17 +3402,26 @@ function drawRoomProps(lane) {
     const spin = prog * 6 + room.bridge * 6;
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.beginPath(); ctx.ellipse(sx - 17, y + 2, 20, 4.4, 0, 0, 6.28); ctx.fill();
-    drawTower(sx - 30, y - 70, 26, 70);
+    const mill = inMill(room.x);
+    const hub = mill ? '#3a3f49' : '#3a2d20', line = mill ? '#9aa3b2' : '#c9b27a';
+    drawTower(sx - 30, y - 70, 26, 70, mill);
     ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(sx - 17, y - 52, 11.4, 0, 6.28); ctx.fill();
-    ctx.fillStyle = '#3a2d20'; ctx.beginPath(); ctx.arc(sx - 17, y - 52, 10, 0, 6.28); ctx.fill();
-    ctx.strokeStyle = '#c9b27a'; ctx.lineWidth = 2;
+    ctx.fillStyle = hub; ctx.beginPath(); ctx.arc(sx - 17, y - 52, 10, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = line; ctx.lineWidth = 2;
     for (let i = 0; i < 3; i++) { const a = spin + i * Math.PI / 3; ctx.beginPath(); ctx.moveTo(sx - 17 - Math.cos(a) * 9, y - 52 - Math.sin(a) * 9); ctx.lineTo(sx - 17 + Math.cos(a) * 9, y - 52 + Math.sin(a) * 9); ctx.stroke(); }
+    // a hub over the crossing, so three spokes do not read as a six-pointed star
+    ctx.fillStyle = hub; ctx.beginPath(); ctx.arc(sx - 17, y - 52, 4.2, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = line; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(sx - 17, y - 52, 9.4, 0, 6.28); ctx.stroke();
   }
 }
 function drawRoom(room, y) {
   if (!inView(room.x, 240)) return;
   const sx = room.x - V.left, gw = CFG.gapWidth;
   const b = room.bridge, prog = room.mg && room.state === 'armed' ? VERBS[room.verb].progress(room.mg) : 0;
+  // in the mill the crossings are steel plate and wire rope; in the rock, timber and hemp
+  const M = inMill(room.x)
+    ? { mill: 1, deck: '#6c7483', deckLo: '#373c46', slat: '#272c35', post: '#4a4e58', line: '#9aa3b2', hub: '#3a3f49' }
+    : { mill: 0, deck: '#8b5a2b', deckLo: '#4a2f14', slat: '#5c3a1a', post: '#6e4b2a', line: '#c9b27a', hub: '#3a2d20' };
   if (room.hazard !== 'burst') {
     const depth = room.lane === 0 ? CFG.riverY - y : 60;
     const pit = ctx.createLinearGradient(0, y, 0, y + depth);
@@ -1840,13 +3435,13 @@ function drawRoom(room, y) {
     ctx.fillStyle = INK; ctx.fillRect(sx - 6, y - 1, 1.5, depth); ctx.fillRect(sx + gw + 4.5, y - 1, 1.5, depth);
   }
   if (room.type === 'bridge') {
-    drawTower(sx + gw + 4, y - 122, 26, 122);
+    drawTower(sx + gw + 4, y - 122, 26, 122, M.mill);
     const ang = Math.PI * 0.45 * (1 - b);
     ctx.save(); ctx.translate(sx + gw, y); ctx.rotate(ang);
     ctx.fillStyle = INK; ctx.fillRect(-gw - 1, -7.2, gw + 2, 22.4);
-    ctx.fillStyle = '#4a2f14'; ctx.fillRect(-gw, 2, gw, 12);
-    ctx.fillStyle = '#8b5a2b'; ctx.fillRect(-gw, -6, gw, 8);
-    ctx.fillStyle = '#5c3a1a'; for (let i = 0; i < gw; i += 16) ctx.fillRect(-gw + i, -6, 2, 20);
+    ctx.fillStyle = M.deckLo; ctx.fillRect(-gw, 2, gw, 12);
+    ctx.fillStyle = M.deck; ctx.fillRect(-gw, -6, gw, 8);
+    ctx.fillStyle = M.slat; for (let i = 0; i < gw; i += 16) ctx.fillRect(-gw + i, -6, 2, 20);
     ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(-gw, -6, gw, 2);
     ctx.restore();
     // axle on the tower face, chain as links down to the plank tip
@@ -1855,8 +3450,9 @@ function drawRoom(room, y) {
     ctx.strokeStyle = INK; ctx.lineWidth = 3.6; ctx.setLineDash([]); ctx.stroke();
     ctx.strokeStyle = '#b0b0c4'; ctx.lineWidth = 2; ctx.setLineDash([3, 2.5]); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(axX, axY, 6.4, 0, 6.28); ctx.fill();
-    ctx.fillStyle = '#3a2d20'; ctx.beginPath(); ctx.arc(axX, axY, 5, 0, 6.28); ctx.fill();
-    ctx.strokeStyle = '#c9b27a'; ctx.lineWidth = 1.5; for (let i = 0; i < 3; i++) { const a = b * 6 + i * Math.PI / 3; ctx.beginPath(); ctx.moveTo(axX - Math.cos(a) * 4.5, axY - Math.sin(a) * 4.5); ctx.lineTo(axX + Math.cos(a) * 4.5, axY + Math.sin(a) * 4.5); ctx.stroke(); }
+    ctx.fillStyle = M.hub; ctx.beginPath(); ctx.arc(axX, axY, 5, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = M.line; ctx.lineWidth = 1.5; for (let i = 0; i < 3; i++) { const a = b * 6 + i * Math.PI / 3; ctx.beginPath(); ctx.moveTo(axX - Math.cos(a) * 4.5, axY - Math.sin(a) * 4.5); ctx.lineTo(axX + Math.cos(a) * 4.5, axY + Math.sin(a) * 4.5); ctx.stroke(); }
+    ctx.fillStyle = M.hub; ctx.beginPath(); ctx.arc(axX, axY, 2.4, 0, 6.28); ctx.fill();
   } else if (room.type === 'winch') {
     // The tower itself is drawn in the front pass, after the crowd: it stands between the
     // camera and the walkway, so people go behind it instead of through it.
@@ -1865,21 +3461,21 @@ function drawRoom(room, y) {
       const a = -Math.PI / 2 * (1 - b), tipX = sx + Math.cos(a) * gw, tipY = y + Math.sin(a) * gw;
       ctx.save(); ctx.translate(sx, y); ctx.rotate(a);
       ctx.fillStyle = INK; ctx.fillRect(-1, -7.2, gw + 2, 22.4);
-      ctx.fillStyle = '#4a2f14'; ctx.fillRect(0, 2, gw, 12);
-      ctx.fillStyle = '#8b5a2b'; ctx.fillRect(0, -6, gw, 8);
-      ctx.fillStyle = '#5c3a1a'; for (let i = 0; i < gw; i += 16) ctx.fillRect(i, -6, 2, 20);
+      ctx.fillStyle = M.deckLo; ctx.fillRect(0, 2, gw, 12);
+      ctx.fillStyle = M.deck; ctx.fillRect(0, -6, gw, 8);
+      ctx.fillStyle = M.slat; for (let i = 0; i < gw; i += 16) ctx.fillRect(i, -6, 2, 20);
       ctx.restore();
       ctx.beginPath(); ctx.moveTo(sx - 12, y - 46); ctx.quadraticCurveTo((sx - 12 + tipX) / 2, (y - 46 + tipY) / 2 + 8 * (1 - prog), tipX + Math.sin(a) * 6, tipY - Math.cos(a) * 6);
       ctx.strokeStyle = INK; ctx.lineWidth = 3.4; ctx.stroke();
-      ctx.strokeStyle = '#c9b27a'; ctx.lineWidth = 1.8; ctx.stroke();
+      ctx.strokeStyle = M.line; ctx.lineWidth = 1.8; ctx.stroke();
     }
   } else if (room.type === 'rope' || room.type === 'rickety') {
     ctx.fillStyle = INK; ctx.fillRect(sx - 6.2, y - 45.2, 7.4, 45.2); ctx.fillRect(sx + gw - 1.2, y - 45.2, 7.4, 45.2);
-    ctx.fillStyle = '#6e4b2a'; ctx.fillRect(sx - 5, y - 44, 5, 44); ctx.fillRect(sx + gw, y - 44, 5, 44);
+    ctx.fillStyle = M.post; ctx.fillRect(sx - 5, y - 44, 5, 44); ctx.fillRect(sx + gw, y - 44, 5, 44);
     const rickety = room.type === 'rickety';
     if (b === 0 && !rickety) {
       ctx.strokeStyle = INK; ctx.lineWidth = 3.4; ctx.beginPath(); ctx.arc(sx - 3, y - 22, 7, 0, 6.28); ctx.stroke();
-      ctx.strokeStyle = '#c9b27a'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.strokeStyle = M.line; ctx.lineWidth = 2; ctx.stroke();
     }
     {
       const fixed = rickety ? b : 1;
@@ -1890,7 +3486,7 @@ function drawRoom(room, y) {
       ctx.globalAlpha = rickety ? 1 : 0.3 + 0.7 * b;
       ctx.strokeStyle = INK; ctx.lineWidth = 3.4;
       ctx.beginPath(); ctx.moveTo(sx - 3, y - 40); ctx.quadraticCurveTo(sx + gw / 2, y - 40 + sag + drop + wob, sx + gw + 3, y - 40); ctx.stroke();
-      ctx.strokeStyle = '#c9b27a'; ctx.lineWidth = 1.8; ctx.stroke();
+      ctx.strokeStyle = M.line; ctx.lineWidth = 1.8; ctx.stroke();
       // the two carrying ropes the planks are lashed to
       const belly = y + 1 + sag + drop + wob;
       const at = t => [
@@ -1899,7 +3495,7 @@ function drawRoom(room, y) {
       ];
       ctx.strokeStyle = INK; ctx.lineWidth = 3.6;
       ctx.beginPath(); ctx.moveTo(sx, y + 1); ctx.quadraticCurveTo(sx + gw / 2, belly, sx + gw, y + 1); ctx.stroke();
-      ctx.strokeStyle = '#4a2f14'; ctx.lineWidth = 2.2; ctx.stroke();
+      ctx.strokeStyle = M.deckLo; ctx.lineWidth = 2.2; ctx.stroke();
       // planks, each one laid flat along the curve with a gap either side
       const step = 0.055;
       for (let t = 0.03; t < 1; t += step) {
@@ -1909,7 +3505,7 @@ function drawRoom(room, y) {
         const ang = Math.atan2(by2 - ay, bx2 - ax);
         ctx.save(); ctx.translate(px, py); ctx.rotate(ang);
         ctx.fillStyle = INK; ctx.fillRect(-6.4, -4.6, 12.8, 9.2);
-        ctx.fillStyle = '#8b5a2b'; ctx.fillRect(-5.4, -3.6, 10.8, 7.2);
+        ctx.fillStyle = M.deck; ctx.fillRect(-5.4, -3.6, 10.8, 7.2);
         ctx.fillStyle = 'rgba(255,226,176,0.16)'; ctx.fillRect(-5.4, -3.6, 10.8, 1.8);
         ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-5.4, 2.2, 10.8, 1.8);
         ctx.restore();
@@ -1934,7 +3530,7 @@ function drawRoom(room, y) {
     ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(sx + 60 - bw / 2 + 3, top + 3, bw - 6, 5);
     ctx.fillStyle = '#3f3f52'; ctx.fillRect(sx + 60 - bw / 2, top + bh - 9, bw, 9);
     for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(sx + 60 - bw / 2 + 3 + i * 10, top + bh - 2); ctx.lineTo(sx + 60 - bw / 2 + 8 + i * 10, top + bh + 6); ctx.lineTo(sx + 60 - bw / 2 + 13 + i * 10, top + bh - 2); ctx.closePath(); ctx.fillStyle = '#b0b0c4'; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1.2; ctx.stroke(); }
-    if (room.state === 'solved') { ctx.fillStyle = INK; ctx.fillRect(sx + 60 - bw / 2 - 7, y - th + 1, bw + 14, 8); ctx.fillStyle = '#c9b27a'; ctx.fillRect(sx + 60 - bw / 2 - 6, y - th + 2, bw + 12, 6); }
+    if (room.state === 'solved') { ctx.fillStyle = INK; ctx.fillRect(sx + 60 - bw / 2 - 7, y - th + 1, bw + 14, 8); ctx.fillStyle = M.line; ctx.fillRect(sx + 60 - bw / 2 - 6, y - th + 2, bw + 12, 6); }
   }
   if (room.state === 'armed') {
     const pulse = 0.6 + 0.4 * Math.sin(S.t * 10);
@@ -2494,7 +4090,7 @@ function drawTitle() {
   ctx.fillStyle = '#f1c40f'; ctx.fillText('HUNDRED RUNNERS', W / 2, 110);
   ctx.fillStyle = '#eee'; ctx.font = '15px monospace';
   const lines = [
-    '100 people are running into the mountain. You cannot stop them.',
+    '100 people are running into the works. You cannot stop them.',
     'Broken crossings swallow whoever reaches them before you fix them.',
     'Red rooms take everyone. Orange take half. Yellow crushers take some.',
     'The tunnels branch, and branch again. The view pulls back to show them all.',

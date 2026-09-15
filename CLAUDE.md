@@ -168,6 +168,14 @@ frame. Do not ship an art change without a pass.
   Check `document.visibilityState` before diagnosing a freeze.
 - **A scaled canvas transform after a long scripted run.** Usually a harness
   killed between `ctx.save()` and `ctx.restore()`, not the game. Reload.
+- **A frame time that suddenly looks terrible.** Two causes, both artefacts,
+  and both cost real time to chase. The first `draw()` after a camera jump is
+  uncached, so time ten frames and throw them away before you start measuring.
+  And every session verifying at once runs its own sixty-game harness: two of us
+  once had eighteen and eleven `freeze-check` processes on the box between us,
+  and the same scene read 74ms under that load and 3.9ms on a quiet machine.
+  Run `ps aux | grep freeze-check` before you believe a bad number, and never
+  benchmark while your own harness is running.
 
 ## Dev shortcuts
 
