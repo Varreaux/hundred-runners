@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '38 the gate is a hole in a wall';
+const BUILD = '39 rooms open the moment you can see them';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -800,9 +800,17 @@ function solveRoom(room) {
   if (room.deaths === 0) cleanRoom(room);
   else S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 100, txt: 'CLEAR', life: 1, color: '#2ecc71' });
 }
-function armRoom(room) {
+// The lowest digit nobody is using, or null when all nine are taken. It used to stop at 9
+// and hand out 9 regardless, which gave two rooms the same key; that never bit while rooms
+// armed one at a time, and would immediately with rooms arming on sight.
+function freeHotkey() {
   const used = new Set(S.rooms.filter(r => r.state === 'armed').map(r => r.hot));
-  let n = 1; while (used.has(n) && n < 9) n++;
+  for (let n = 1; n <= 9; n++) if (!used.has(n)) return n;
+  return null;
+}
+function armRoom(room) {
+  const n = freeHotkey();
+  if (n === null) return;
   room.hot = n; room.mg = VERBS[room.verb].start(room.diff); room.state = 'armed';
   AU.arm();
   // the room wakes: a shockwave and dust shaken off the ceiling
@@ -1010,8 +1018,20 @@ function update(dt) {
 
   for (const room of S.rooms) {
     if (room.state === 'dormant') {
-      const near = S.runners.some(r => r.state === 'run' && r.lane === room.lane && r.x >= room.x - (room.warn || CFG.armDist));
-      if (near) armRoom(room);
+      // A room is yours to open the moment you can see it. Morgan asked for this directly.
+      // Two conditions beyond being on screen: somebody still in that lane has yet to reach
+      // it, so rooms the crowd has already passed do not sit there armed, and a hotkey is
+      // free, because far more rooms are now open at once than the nine digits allow.
+      // Upstream in ANY lane, not just this one. A room 200px past a merge can never get
+      // more road from its warn, because nobody is in its lane until they arrive: wiring
+      // sits at 5800 with lane 1 merging at 5600, so its warn of 840 was inert and it armed
+      // 199px out however large the number was. Routing is decided per runner at the fork,
+      // so anyone still behind the room may yet come down this lane.
+      const coming = S.runners.some(r => r.state === 'run' && r.x < room.x + CFG.gapWidth);
+      const visible = inView(room.x, 40) || inView(room.x + CFG.gapWidth, 40);
+      // the old rule stays as a floor, so nothing arms later than it used to
+      const close = S.runners.some(r => r.state === 'run' && r.lane === room.lane && r.x >= room.x - (room.warn || CFG.armDist));
+      if ((close || (coming && visible)) && freeHotkey() !== null) armRoom(room);
     }
     // A verb that banks its win outside key() finishes here. The sweeper does it
     // so the final key stays lit for its 0.28s; pendingClear is what stops
