@@ -175,6 +175,11 @@ frame. Do not ship an art change without a pass.
 
 ## Things that look like bugs and are not
 
+- **A process killed with exit 144 now has two possible causes**, and one of
+  them has already been misdiagnosed once: a low-memory kill by the system, or
+  another session's `pkill -f` taking your identically-named process with theirs.
+  Do not name either without checking which it was.
+
 - **A background tab stops animating.** Chrome suspends
   `requestAnimationFrame` in hidden tabs, so fps and game time read as zero.
   Check `document.visibilityState` before diagnosing a freeze.
@@ -220,6 +225,25 @@ like this.
   gradient stops gave a value more than twice the real one: grime, leading and
   backing are all real paint drawn afterwards and the stops know nothing about
   them.
+
+Timings have two more traps on top of those.
+
+- **Check free memory, not just load.** Four or five sessions on one laptop can
+  leave zero free memory and 3.4 GB of swap in use while load looks a comfortable
+  4.9, so a box that passes a process check can still be paging. But the effect is
+  narrower than it sounds: paging corrupts measurements that touch memory the OS
+  has evicted, and a tight render loop over a warm heap is close to the safest
+  case — interleaved frame times repeated to within 0.16ms on exactly such a box.
+  A harness run, which allocates continuously, is not safe that way. Say which
+  kind you are taking.
+- **Interleave, do not do before-and-after.** Toggle the thing off and on and
+  repeat the whole set, so drift across the measurement window shows up instead of
+  hiding inside the comparison.
+- **Attribute against the right baseline.** A texture was reported as costing
+  4.2ms to 7.3ms; the 4.2 came from a build that did not yet contain the mill, so
+  the comparison silently bundled a whole second act into the texture's cost.
+  Interleaved, the texture alone was 1.6ms. Same arithmetic, wrong story, and the
+  wrong story is what sends someone optimising the wrong function.
 
 ## Dev shortcuts
 
