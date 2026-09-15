@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '43 they stand on the belt now';
+const BUILD = '44 hair that knows which way it is going';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -218,6 +218,13 @@ const INK = '#1b1519';
 function shade(hex, f = 0.72) {
   const n = parseInt(hex.slice(1), 16);
   return `rgb(${((n >> 16) & 255) * f | 0},${((n >> 8) & 255) * f | 0},${(n & 255) * f | 0})`;
+}
+// shade() with f > 1 overflows: #e3c271 times 3.2 asks for rgb(727,...), which is not a
+// colour and is dropped silently, so a blonde would simply stop being drawn. Use this for
+// anything that has to come out LIGHTER than it went in.
+function lift(hex, f) {
+  const n = parseInt(hex.slice(1), 16), c = v => Math.min(255, v * f) | 0;
+  return `rgb(${c((n >> 16) & 255)},${c((n >> 8) & 255)},${c(n & 255)})`;
 }
 let grainCanvas = null;
 function grain() {
@@ -4567,38 +4574,90 @@ function drawFinish() {
   }
 }
 // Hair long enough to fall behind the body is drawn before it; the rest goes on after the head.
-function backHair(r, hx, hy) {
+function backHair(r, hx, hy, drift) {
   const s = r.style;
+  // Hair hanging from the nape, drawn before the body so the head and torso occlude it.
+  // Tapered rather than a rounded rectangle, and the tip pulled backward by `drift` so it
+  // trails while running. Hair hanging dead straight on a sprinting figure is the single
+  // clearest tell that a figure is cheaply drawn.
+  // A rim a fixed DISTANCE lighter than the hair rather than a fixed multiple. A multiple
+  // cannot serve both ends of the roster: 3.2x lifts Skodo's near-black by a usable 37 points
+  // but takes mid-brown to 230, a grey streak, and asks for rgb(262,..) on blonde, which is
+  // not a colour and is dropped without an error.
+  const rim = (hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    const l = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+    return lift(hex, 1 + 34 / Math.max(6, l));
+  };
+  const fall = (len) => {
+    // Trail scales with length. As a flat offset the 27-unit fall leaned about 5 degrees and
+    // the 11-unit one about 12, which is backwards: long hair streams further, not less.
+    const pull = drift * len / 14;
+    // The back edge has to clear the torso's ink edge or the whole fall is occluded and the
+    // hair shows as a stripe down the seam of the shirt. It used to sit inside it.
+    ctx.beginPath();
+    ctx.moveTo(hx + 2.6, hy - 3.2);
+    ctx.quadraticCurveTo(hx + 3.2, hy + len * 0.36, hx + 1.2 - pull * 0.35, hy + len * 0.82);
+    ctx.quadraticCurveTo(hx + 0.4 - pull * 0.7, hy + len, hx - 1.5 - pull, hy + len);
+    ctx.quadraticCurveTo(hx - 5.4 - pull * 0.55, hy + len * 0.95, hx - 7.8 - pull * 0.12, hy + len * 0.45);
+    ctx.quadraticCurveTo(hx - 8.1, hy - 1.4, hx - 5.2, hy - 4);
+    ctx.closePath();
+    ctx.fillStyle = r.hair; ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.stroke();
+  };
   if (s === 'long' || s === 'verylong') {
-    // The fall hangs BEHIND the head, not centred on it. Centred, it hung a slab of hair
-    // down the front of the face as well as the back, which is what made the head read as
-    // a box with a notch in it.
-    const len = s === 'verylong' ? 25 : 15;
-    ctx.fillStyle = INK; roundRect(hx - 7, hy - 5.5, 10, len + 6.5, 4.4); ctx.fill();
-    ctx.fillStyle = r.hair; roundRect(hx - 6.2, hy - 4.7, 8.4, len + 5, 3.9); ctx.fill();
+    // 27 put the tip at the ankle, where it swallowed the rear shoe and read as a coat hem
+    fall(s === 'verylong' ? 20 : 15);
   } else if (s === 'dreads') {
-    for (let i = -2; i <= 2; i++) {
-      const x0 = hx + i * 2.1, len = 10 + Math.abs(i) * 1.6, sway = Math.sin(S.t * 3 + i + r.jit) * 0.8;
-      for (const [col, w] of [[INK, 3.2], [r.hair, 2]]) {
-        ctx.strokeStyle = col; ctx.lineWidth = w;
-        ctx.beginPath(); ctx.moveTo(x0, hy - 1);
-        ctx.quadraticCurveTo(x0 + i * 1.1, hy + len * 0.6, x0 + i * 1.9 + sway, hy + len); ctx.stroke();
+    // Locks rooted across the crown but biased back, each falling and then trailing behind.
+    // They used to splay symmetrically and hang forward of the face, which read as two long
+    // floppy ears rather than dreads. Kept as five separate locks: this is Skodo, and it has
+    // to still be recognisably dreads, not a generic mass.
+    // Separation has to come from GAPS, not from the ink outline. Skodo's hair is #14100c
+    // at luminance 17 and INK is #1b1519 at 23, so his hair is DARKER than the line meant to
+    // separate it: outlining can never part his locks. Four locks with a gap wider than the
+    // stroke, and tips fanned wider than the roots so the silhouette has teeth.
+    for (let i = -1; i <= 2; i++) {
+      const x0 = hx - 3.2 + i * 3.4;
+      const len = 11 + Math.abs(i) * 2;
+      const sway = Math.sin(S.t * 3 + i + r.jit) * 0.8;
+      const tipX = x0 - 4.5 - drift * 0.4 + i * 0.8 + sway;
+      // shade(hair, 1.35) on #14100c lands at luminance 22.8 — the same value as INK, so the
+      // "lightened" lock matched its own outline. Near-black hair has no headroom below, so
+      // the rim has to be genuinely light, and clamped, or a blonde multiplies past 255.
+      for (const [col, w] of [[INK, 2.4], [i % 2 ? rim(r.hair) : r.hair, 1.4]]) {
+        ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(x0, hy - 1.5);
+        ctx.quadraticCurveTo(x0 - 1.4, hy + len * 0.58, tipX, hy + len); ctx.stroke();
       }
     }
   } else if (s === 'twin') {
-    for (const dx of [-6.3, 6.3]) {
-      ctx.fillStyle = INK; roundRect(hx + dx - 2.7, hy + 0.5, 5.4, 10, 2.6); ctx.fill();
-      ctx.beginPath(); ctx.arc(hx + dx, hy + 1.2, 4.3, 0, 6.28); ctx.fill();
-      ctx.fillStyle = r.hair; roundRect(hx + dx - 2, hy + 1, 4, 8.8, 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(hx + dx, hy + 1.2, 3.5, 0, 6.28); ctx.fill();
+    // Both tails BEHIND the head. One of them used to sit in front of the face, which is
+    // not merely a profile error: this is Valeria, and it stopped her looking like herself.
+    // In profile the far tail sits higher and darker so it reads as the one behind.
+    // Separated in Y rather than X, with the bunches small and the TAILS long: pushed apart
+    // sideways they simply touched and read as one afro, and both tails ended inside the
+    // torso, which draws after this, so nothing hung below the shoulder at all.
+    for (const [bx, by, rad, len, far] of [[hx - 6.6, hy - 4.2, 2.2, 10, true],
+                                           [hx - 5.4, hy + 3.6, 2.8, 13, false]]) {
+      // The two tips used to land 0.05 apart, so the far tail had no visible end: it stopped
+      // inside its twin. The far one now points steeply down and back, the near one hangs.
+      const tipX = bx - (far ? 6.4 : 2.2) - drift * (far ? 0.55 : 0.3);
+      ctx.beginPath();
+      ctx.moveTo(bx + rad * 0.75, by);
+      ctx.quadraticCurveTo(bx + rad * 0.3 - drift * 0.4, by + len * 0.7, tipX + rad * 0.3, by + len);
+      ctx.quadraticCurveTo(tipX - rad * 0.9, by + len * 0.72, bx - rad * 1.05, by);
+      ctx.closePath();
+      ctx.fillStyle = far ? shade(r.hair) : r.hair; ctx.fill();
+      ctx.strokeStyle = INK; ctx.lineWidth = 1.4; ctx.lineJoin = 'round'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(bx, by, rad, 0, 6.28);
+      ctx.fillStyle = far ? shade(r.hair) : r.hair; ctx.fill(); ctx.stroke();
     }
   } else if (s === 'hijab') {
     ctx.fillStyle = INK; roundRect(hx - 7.6, hy - 2, 15.2, 17, 5.2); ctx.fill();
     ctx.fillStyle = r.hair; roundRect(hx - 6.8, hy - 1.4, 13.6, 15.8, 4.6); ctx.fill();
   } else if (s === 'medium') {
-    // same correction as the long fall: sits behind the head rather than centred on it
-    ctx.fillStyle = INK; roundRect(hx - 7, hy - 4, 10, 11.5, 4.2); ctx.fill();
-    ctx.fillStyle = r.hair; roundRect(hx - 6.2, hy - 3.4, 8.4, 10.3, 3.7); ctx.fill();
+    fall(11);
   }
 }
 function frontHair(r, hx, hy) {
@@ -4656,7 +4715,10 @@ function drawFigure(r, sx, sy, phase, scale, alpha) {
     ctx.strokeStyle = INK; ctx.lineWidth = w + 1.6; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(cx, cy, x1, y1); ctx.stroke();
     ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(cx, cy, x1, y1); ctx.stroke();
   };
-  const shoe = (x, y) => { ctx.fillStyle = INK; ctx.beginPath(); ctx.ellipse(x + 1.2, y + 0.6, 2.8, 1.5, 0, 0, 6.28); ctx.fill(); };
+  // The far shoe was INK, the same as the near one, so depth broke at the ankle. It now
+  // darkens like every other far part and stays in the trousers' hue family rather than
+  // going magenta, so the figure has ONE rule for depth instead of three.
+  const shoe = (x, y, col) => { ctx.fillStyle = col || INK; ctx.beginPath(); ctx.ellipse(x + 1.2, y + 0.6, 2.8, 1.5, 0, 0, 6.28); ctx.fill(); };
   // An arm bows AWAY from the direction of travel: the elbow trails behind while the hand
   // swings forward. Both arms used to put their control point ahead of the shoulder-to-hand
   // line, which bulges the elbow forward and reads as a broken joint. Bowing is measured
@@ -4682,12 +4744,24 @@ function drawFigure(r, sx, sy, phase, scale, alpha) {
   const back = moving ? LEAN * 6.67 : 0;
   const legA = (moving ? sn * 6 : stance) - back, legB = (moving ? -sn * 6 : -stance) - back;
   const liftA = moving ? Math.max(0, cs) * 3.5 : 0, liftB = moving ? Math.max(0, -cs) * 3.5 : 0;
+  // Left at the shipped amplitude on purpose. Widening it to 7.6 without also moving the arm
+  // roots off the torso centreline made things worse, not better: a bigger swing does not
+  // carry the hand PAST the body, it sweeps it ACROSS it, and the far hand ended 2.7 units
+  // clear of the shirt with its forearm hidden behind the torso — a floating disc. Fixing the
+  // hands properly means rooting each arm at its own edge of the torso and swinging the hand
+  // on a fixed radius, which is more than a tuning change and is not done here.
   const armB = moving ? sn * 5 : idle * 1.2, armA = -armB;
-  backHair(r, hx, hy);
+  const handY = a => shY + 8.5;
+  // how far the hair trails behind: none when standing, pulsing slightly with the stride
+  const drift = moving ? 3 + Math.abs(sn) * 1.6 : 0;
   // back leg, back arm
   leg(legB, liftB, shade(r.pants));
-  shoe(legB, 2 - liftB);
-  arm(shX - 1, shY, shX + armB - 1, shY + 8.5, shade(r.skin));
+  shoe(legB, 2 - liftB, shade(r.pants, 0.45));
+  arm(shX - 1, shY, shX + armB - 1, handY(armB), shade(r.skin));
+  // Hair down the back sits at mid-body depth: behind the torso and head, but IN FRONT of
+  // the far leg and arm. Drawn before them, the rear trouser leg cut across the hair column
+  // at thigh height and the whole lower body fused into one dark mass.
+  backHair(r, hx, hy, drift);
   // torso
   ctx.save(); ctx.translate(0, hipY); ctx.rotate(lean);
   ctx.fillStyle = INK; roundRect(-4.9, -11.9, 9.8, 13.8, 4.6); ctx.fill();
@@ -4705,9 +4779,12 @@ function drawFigure(r, sx, sy, phase, scale, alpha) {
   ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(hx, hy, 5.9, 0, 6.28); ctx.fill();
   ctx.fillStyle = r.skin; ctx.beginPath(); ctx.arc(hx, hy, 5, 0, 6.28); ctx.fill();
   frontHair(r, hx, hy);
-  ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(hx + 2.5, hy - 0.3, 1.3, 0, 6.28); ctx.fill();
+  // The default cap is a flat hairline at hy - 0.4 and the eye used to straddle it, so on
+  // short, bun, spiky and curly it was half-swallowed. At 0.39x the eye is the only thing
+  // saying which way the head faces, so losing it costs more than it looks.
+  ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(hx + 2.5, hy + 1, 1.3, 0, 6.28); ctx.fill();
   // front arm
-  arm(shX + 1, shY, shX + armA + 1.5, shY + 8.5, r.skin);
+  arm(shX + 1, shY, shX + armA + 1.5, handY(armA), r.skin);
   ctx.restore();
 }
 function deckDrop(r) {
@@ -4909,8 +4986,18 @@ function drawOverlays() {
   }
   const tagZoom = V.zoom > 0.52;
   ctx.font = tagZoom ? 'bold 9px monospace' : 'bold 8px monospace';
+  // When the doors open the whole hundred are still clumped at the gate, so twenty-odd tags
+  // stack five rows deep over the one thing the opening has spent five seconds building to,
+  // and the gateway cannot be seen at all. They earn nothing there — nobody has died yet and
+  // no room is armed — so they fade in once the pack has spread. S.t is still 0 at the
+  // handover because updateIntro returns before the clock starts, so this is measured from
+  // the doors opening. Suppressed rather than merely transparent: a claimed rect from a tag
+  // nobody can see would still push the speech bubbles around.
+  const tagFade = clamp01((S.t - 0.9) / 0.7);
   const tags = [];
+  ctx.save(); ctx.globalAlpha *= tagFade;
   for (const r of S.runners) {
+    if (tagFade <= 0) break;
     if (!r.name || r.state !== 'run' || !inView(r.x, 20)) continue;
     if (!tagZoom && !S.rooms.some(m => m.state === 'armed' && m.lane === r.lane && r.x > m.x - 420 && r.x < m.x + CFG.gapWidth)) continue;
     const [nx, ny0] = toScreen(r.x, footY(r));
@@ -4933,6 +5020,7 @@ function drawOverlays() {
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillText(r.name, nx + 1, ny + 1);
     ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillText(r.name, nx, ny);
   }
+  ctx.restore();
   for (const f of S.floaters) {
     const [fx, fy] = f.wx !== undefined ? toScreen(f.wx, f.wy) : [f.sx, f.sy];
     ctx.globalAlpha = Math.min(1, f.life);
@@ -4957,6 +5045,8 @@ function drawOverlays() {
 }
 function drawBubbles() {
   if (S.spike) return;
+  // same reason as the name tags: at the handover the bubbles pile over the gateway
+  if (S.t < 0.9) return;
   const small = V.zoom < 0.6;
   ctx.font = small ? 'bold 9px monospace' : 'bold 10px monospace'; ctx.textAlign = 'center';
   const placed = placedUI;
