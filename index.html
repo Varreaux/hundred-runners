@@ -385,6 +385,12 @@ function update(dt) {
       const near = S.runners.some(r => r.state === 'run' && r.lane === room.lane && r.x >= room.x - CFG.armDist);
       if (near) armRoom(room);
     }
+    // nobody left who can reach it: close it, whether it was fixed or not
+    if (room.state === 'armed' && !S.runners.some(r => (r.state === 'run' || r.state === 'fall') && canReach(r, room))) {
+      room.state = 'passed';
+      if (S.active === room) S.active = null;
+      S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 100, txt: room.deaths ? 'TOO LATE' : 'ALL THROUGH', life: 1.2, color: room.deaths ? '#ff8a8a' : '#8fd3ff' });
+    }
     if (room.state === 'solved') room.bridge = Math.min(1, room.bridge + dt * 3.5);
     if (room.hazard === 'burst' && room.state !== 'solved') {
       const before = room.slamT; room.slamT += dt;
@@ -478,6 +484,17 @@ function splash(wx, y) {
 }
 function dust(wx, y, c = '#a08c70') {
   for (let i = 0; i < 6; i++) S.particles.push({ x: wx + rand(-6, 6), y: y - rand(0, 6), vx: rand(-40, 40), vy: rand(-60, -10), life: rand(0.3, 0.6), c });
+}
+// can this runner still arrive at the room? Same tunnel, or a tunnel that forks into it before the room.
+function canReach(r, room) {
+  if (r.x >= room.x + 8) return false;
+  const lanes = new Set([room.lane]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const f of CFG.forks) if (lanes.has(f.to) && f.x > r.x && f.x < room.x && !lanes.has(f.from)) { lanes.add(f.from); grew = true; }
+  }
+  return lanes.has(r.lane);
 }
 function approaching(room) {
   let n = 0, maxX = -1e9;
