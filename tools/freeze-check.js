@@ -82,9 +82,14 @@ eval(src + `
     } catch (e) {
       froze++;
       const top = (e.stack||'').split('\\n')[1].trim().replace(/ \\(eval.*/,'');
-      const key = e.message + ' | ' + top;
-      errs[key] = errs[key] || { count: 0, style, firstAt: S.t.toFixed(1), zoom: V.zoom.toFixed(2), mode: S.mode };
+      // Group on the SHAPE of the fault, not its value: one defect whose offending
+      // number varies would otherwise fragment into an entry per value and bury a
+      // rarer second error underneath. Keep a sample so the real value is not lost.
+      const shape = e.message.replace(/-?\\d+(\\.\\d+)?(e[+-]?\\d+)?/gi, 'N');
+      const key = shape + ' | ' + top;
+      if (!errs[key]) errs[key] = { count: 0, sample: e.message, styles: [], firstAt: S.t.toFixed(1), zoom: V.zoom.toFixed(2), mode: S.mode };
       errs[key].count++;
+      if (!errs[key].styles.includes(style)) errs[key].styles.push(style);
     }
   }
   console.log(JSON.stringify({ frozenRuns: froze + '/' + RUNS, reachedEnd, errors: errs,
