@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '89 one card each, all the way up';
+const BUILD = '90 both edges, then subtract';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3436,8 +3436,13 @@ function bufferStop(wx, y, dir) {
   if (sx < -30 || sx > V.vw + 30) return;
   ctx.fillStyle = '#4a3a2a'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
   ctx.fillRect(sx - 2.5, y - 13, 5, 13); ctx.strokeRect(sx - 2.5, y - 13, 5, 13);
-  ctx.fillRect(sx - 8 * dir, y - 13, 8 * dir, 4.5);          // the head timber, over the rail
-  ctx.strokeRect(sx - 8 * dir, y - 13, 8 * dir, 4.5);
+  // Written as `8 * dir` this width is NEGATIVE half the time, and a negative width grows
+  // leftward out of the x you gave it. It happened to land correctly here, which is worse
+  // than failing: the source says nothing about it and the next edit inherits the trap.
+  // Both edges written out, and the width is the distance between them.
+  const ha = sx, hb = sx - 8 * dir;
+  ctx.fillRect(Math.min(ha, hb), y - 13, Math.abs(hb - ha), 4.5);          // head timber, over the rail
+  ctx.strokeRect(Math.min(ha, hb), y - 13, Math.abs(hb - ha), 4.5);
   ctx.fillStyle = 'rgba(255,214,150,0.16)'; ctx.fillRect(sx - 2.5, y - 13, 5, 1.6);
 }
 // The stack from the floor up, as one set of numbers: sleeper y-3.4..y, rail head y-6.6, and
