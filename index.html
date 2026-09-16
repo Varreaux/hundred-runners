@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '66 his mouth turns on one number';
+const BUILD = '67 the second art pass';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -217,7 +217,14 @@ const laneY = k => CFG.baseY - CFG.laneGap * k;
 // How far past its own gap a ditch's spoil bank reaches. Declared here rather than written
 // into the drawing, because tools/enc-check.js parses it out of this file to work out
 // whether two rooms overlap on their DRAWN extents. Move the bank and the check follows.
-const DITCH_SPOIL = 62;
+//
+// 140 IS A CEILING, NOT A PREFERENCE. The art pass asked for about 160, correctly: at 62
+// the bank had been made three and a half times taller at the same width, which is a 58
+// degree cone rather than a bank of spoil. But the room layout will not carry 160 -- the
+// ditch at 14060 and the mantrap at 14320 are 260 apart, so anything over 140 makes them
+// overlap, and enc-check reports it at 145. Widening further means MOVING A ROOM, which
+// changes the run and is Morgan's call, not an art decision. Refused with the number.
+const DITCH_SPOIL = 140;
 const ENC = {
   x0: CFG.exit + 48,      // where the rock ends and the grass starts
   free: 13500,            // up to here it is open country and nothing is fenced
@@ -2083,6 +2090,8 @@ function draw() {
   drawFinish();
   if (S.mode === 'play' || S.mode === 'finale') drawFx();
   ctx.restore();
+  // after the world, before the vignette and the HUD: it is weather, not a screen effect
+  encGrade();
   drawForeground();
   drawVignette();
   ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.16; ctx.fillStyle = ctx.createPattern(grain(), 'repeat'); ctx.fillRect(0, 0, W, H); ctx.restore();
@@ -2160,7 +2169,7 @@ function drawSky() {
   // notice. encAmbient and encFlora already thin their contents on this scalar; until now
   // nothing graded the LIGHT with it, so the sky at the wall was identical to the sky
   // coming out of the mountain.
-  const encT = clamp01((V.left + V.vw * 0.5 - ENC.free) / Math.max(1, ENC.wall - ENC.free));
+  const encT = encGradeT();
   // Parallax 0.02 put the sun off the left edge at V.left 9500 -- 2800 units BEFORE the
   // mountain's mouth -- so the one act that is about open air never showed the sun, and
   // everything in it was lit from a source the player could not see. 0.004 keeps the disc
@@ -2179,7 +2188,13 @@ function drawSky() {
     // sc also tracks the zoom. Clouds are drawn in screen space, so at act three's 0.453
     // the same cloud is 2.2x larger against the land than it is in the mill, which is why
     // they read as low and enormous out there.
-    const cx = ((hash(i) * 1400 - V.left * 0.06 - S.t * 6) % 1400 + 1400) % 1400 - 200;
+    // Drifting WITH the wind, and further off than the birds. Two faults met here: the
+    // clouds ran leftward while windAt and the birds both travel in +x, so the sky blew one
+    // way and the grass the other in the same frame; and the clouds parallaxed at 0.06
+    // against the birds' 0.04, putting the birds BEHIND them in depth while being drawn on
+    // top of them. A bird in front of a cloud it is receding faster than destroys the one
+    // thing a bird is there for, which is telling you how far away the sky is.
+    const cx = ((hash(i) * 1400 - V.left * 0.03 + S.t * 6) % 1400 + 1400) % 1400 - 200;
     const cy = 74 + hash(i + 50) * 130, sc = (0.7 + hash(i + 90) * 0.8) * (0.55 + V.zoom * 0.62);
     // Lobes of unequal size on an uneven line, and the shaded underside offset AWAY from the
     // sun. Five equal ellipses in a row with the shadow dropped straight down gave every
@@ -2225,16 +2240,11 @@ function drawSky() {
     ctx.fill();
   }
   drawBirds();
-  // The land closing in, said in the light. The sky cools and greys, and a cold haze band
-  // rises off the horizon, so the last 1600 units go from a bright summer hillside to a
-  // flat overcast one. Same machinery as the mill's smog below, pointed the other way.
-  if (encT > 0.01) {
-    const cold = ctx.createLinearGradient(0, 0, 0, H);
-    cold.addColorStop(0, `rgba(96,110,130,${0.34 * encT})`);
-    cold.addColorStop(0.5, `rgba(126,140,156,${0.30 * encT})`);
-    cold.addColorStop(1, `rgba(150,156,160,${0.40 * encT})`);
-    ctx.fillStyle = cold; ctx.fillRect(0, 0, W, H);
-  }
+  // The cold grade is NOT applied here. drawSky runs before the world transform, so a wash
+  // laid in it covers only the sky -- which produced a grey overcast sky over a landscape
+  // still at full summer chroma, a lighting contradiction that got worse the nearer the
+  // player came to the payoff. It is applied in draw() after the world is restored, where
+  // it can reach the land and the crowd as well. See encGrade().
   // the mill makes its own weather: the sky browns over for the whole of act one
   const smog = clamp01((FAC.seam + 420 - (V.left + V.vw * 0.5)) / 900);
   if (smog > 0.01) {
@@ -2255,13 +2265,30 @@ function drawSky() {
 //
 // They fade in as the mouth approaches and are gone inside the mountain, so they belong to
 // the act rather than floating over all three.
+// How far into the fencing the view is: 0 in free country, 1 at the wall. One expression,
+// read by drawSky (which sinks the sun) and by encGrade (which cools everything else), so
+// the sky and the land cannot end up telling different stories about the weather.
+const encGradeT = () => clamp01((V.left + V.vw * 0.5 - ENC.free) / Math.max(1, ENC.wall - ENC.free));
+// The land closing in, said in the light: the last 1600 units go from a bright summer
+// hillside to a flat overcast one. Called AFTER the world transform is restored, so it
+// grades the hill, the fences, the wall and the crowd and not just the sky above them.
+function encGrade() {
+  const t = encGradeT();
+  if (t <= 0.01) return;
+  const cold = ctx.createLinearGradient(0, 0, 0, H);
+  cold.addColorStop(0, `rgba(96,110,130,${(0.30 * t).toFixed(3)})`);
+  cold.addColorStop(0.5, `rgba(126,140,156,${(0.26 * t).toFixed(3)})`);
+  cold.addColorStop(1, `rgba(150,156,160,${(0.34 * t).toFixed(3)})`);
+  ctx.fillStyle = cold; ctx.fillRect(0, 0, W, H);
+}
 function drawBirds() {
   const out = clamp01(((S.cam + CFG.packFront) - (CFG.exit - 1100)) / 800);
   if (out <= 0.01) return;
   for (let i = 0; i < 9; i++) {
     const h1 = hash(i * 3.7 + 1), h2 = hash(i * 8.1 + 2), h3 = hash(i * 5.3 + 3);
     // a slow parallax of their own, much slower than the clouds, so they sit further off
-    const x = ((h2 * 1500 + S.t * (12 + h1 * 13) - V.left * 0.04) % 1480 + 1480) % 1480 - 140;
+    // 0.06 against the clouds' 0.03: nearer than them, which is the order they are drawn in
+    const x = ((h2 * 1500 + S.t * (12 + h1 * 13) - V.left * 0.06) % 1480 + 1480) % 1480 - 140;
     const y = 44 + h3 * 128 + Math.sin(S.t * 0.42 + i * 1.3) * 8;
     const sc = 0.5 + h1 * 0.75;
     // Wings as one stroke with two curves, not two strokes: at this size a pair of
@@ -5568,10 +5595,22 @@ function encSurfaceY(wx) {
   // of its own and the terraces read as cut INTO it rather than as being it. Capped at
   // 190: the camera's top edge is world y -550, and a crest much above that swallows the
   // sky and the birds and the clouds with it.
-  const relief = Math.min(190,
+  // The cap is 120, not 190, and the difference is the whole point of the trees on the
+  // crest. The visible art starts at canvas y 43 under the HUD, which at zoom 0.453 is
+  // world y -557; the crest floor is laneY(4) - 20 - cap. At 190 that is -570, ABOVE the
+  // top of the frame, so wherever relief neared its cap the hill ran off the top with no
+  // silhouette at all and every crest tree was drawn outside the picture. 190 was chosen
+  // to stop exactly that and was the value that caused it.
+  //
+  // The fourth term is short-wavelength on purpose: past the last merge encTopLane is 0
+  // everywhere, so `base` is constant and relief is the only variation left -- and with
+  // only long wavelengths the final stretch, which is the last thing the player sees, came
+  // out as a ruled horizontal line.
+  const relief = Math.min(120,
       104 * (0.5 + 0.5 * Math.sin(wx * 0.00052 + 1.1))
     +  72 * (0.5 + 0.5 * Math.sin(wx * 0.00023 + 4.3))
-    +  38 * (0.5 + 0.5 * Math.sin(wx * 0.00147 + 2.6)));
+    +  38 * (0.5 + 0.5 * Math.sin(wx * 0.00147 + 2.6))
+    +  30 * (0.5 + 0.5 * Math.sin(wx * 0.0035 + 0.8)));
   // The clamp stays, and it is a FLOOR in height terms: min() on y keeps the surface at or
   // above the highest track, which is what stopped terraces floating over open sky. Relief
   // is subtracted OUTSIDE it so it can only ever raise the hill, never breach that.
@@ -5818,14 +5857,22 @@ function encTree(px, baseY, h, hv, sway, bare) {
   ctx.quadraticCurveTo(px + lean * 0.3, baseY - h * 0.5, px + lean, baseY - h * 0.72);
   ctx.stroke();
   if (bare) {
-    // a grubbed-out stump or a dead thorn: three bare limbs, no canopy
+    // A grubbed-out stump or a dead thorn. The limb count, their angles and the fork
+    // height all come off the hash: a fixed triple at a fixed fork made every dead tree in
+    // the act geometrically congruent, so eight copies of one glyph stood in a single
+    // frame and read as broken umbrellas rather than as trees somebody cut down.
     ctx.lineWidth = Math.max(0.8, h * 0.045);
-    for (const d of [-1, 0.4, 1]) {
+    const n = 2 + Math.floor(hash(px * 1.7) * 3);
+    const fork = 0.4 + hash(px * 2.9) * 0.3;
+    for (let i = 0; i < n; i++) {
+      const hv = hash(px * 0.7 + i * 4.3);
+      const d = -1 + (i + hv * 0.7) * (2 / Math.max(1, n - 0.3));
       ctx.beginPath();
-      ctx.moveTo(px + lean * 0.7, baseY - h * 0.55);
-      ctx.lineTo(px + lean + d * h * 0.26, baseY - h * 0.9);
+      ctx.moveTo(px + lean * 0.7, baseY - h * fork);
+      ctx.lineTo(px + lean + d * h * (0.18 + hv * 0.16), baseY - h * (fork + 0.22 + hv * 0.2));
       ctx.stroke();
     }
+    sunShade(px, baseY + 2, h * 0.1, h * 0.42, 0.16);
     return;
   }
   // canopy: overlapping blobs, darker underneath, a warm rim on the sunward (left) top
@@ -5837,6 +5884,11 @@ function encTree(px, baseY, h, hv, sway, bare) {
   for (const [dx, dy, s] of blobs.slice(0, 3)) {
     ctx.beginPath(); ctx.ellipse(cx + dx - r * 0.18, cy + dy - r * 0.2, r * s * 0.62, r * s * 0.48, 0, 0, 6.28); ctx.fill();
   }
+  // A 230-unit tree standing on lit grass with nothing under it is a sticker, and every
+  // 34-unit fence stake beside it already casts one -- so the lighting model visibly
+  // existed and the trees had been left out of it. Same directional sunShade the posts,
+  // gates and notice boards use, sized off the canopy.
+  sunShade(px, baseY + 2, r * 0.9, h * 0.5, 0.18);
 }
 function encFlora() {
   const x0 = Math.max(ENC.x0 - 200, V.left - 240), x1 = V.left + V.vw + 240;
@@ -6199,11 +6251,21 @@ function rockGround(wx0, wx1, y, style = 'in') {
 function encDeck(wx0, wx1, y) {
   const x0 = wx0 - V.left, x1 = wx1 - V.left;
   if (x1 < -60 || x0 > V.vw + 60) return;
-  const RISE = 96;
+  // The drop to the deck below, not a number. At 96 against a laneGap of 190 the shading
+  // reached halfway down and the other 94 units were the hill's flat fill, so every
+  // terrace was a half-shaded shelf floating in front of a blank green panel -- which is
+  // most of why the act read as a stepped diagram rather than a cut hillside.
+  //
+  // This is the SAME fault as the hill gradient one level up, and CLAUDE.md now carries it
+  // as an instruction: a shading extent and the thing being shaded are two numbers that
+  // drift apart. Reading CFG.laneGap means changing the terrace spacing cannot silently
+  // leave half of every face unlit again.
+  const RISE = CFG.laneGap;
   // the face under the deck: darkest right below the lip, opening out into the hillside
   const g = ctx.createLinearGradient(0, y + 2, 0, y + RISE);
   g.addColorStop(0, 'rgba(18,30,20,0.62)');
-  g.addColorStop(0.35, 'rgba(30,48,30,0.34)');
+  g.addColorStop(0.18, 'rgba(30,48,30,0.34)');
+  g.addColorStop(0.55, 'rgba(48,74,48,0.14)');
   g.addColorStop(1, 'rgba(60,90,58,0)');
   ctx.fillStyle = g; ctx.fillRect(x0, y + 2, x1 - x0, RISE);
   // the cut itself: bare earth for the first few units under the lip, where the turf ends
@@ -6215,30 +6277,38 @@ function encDeck(wx0, wx1, y) {
   // brown under a green lip, so a hundred people appeared to be running along an edge
   // rather than on anything. A path cut into a hillside and run down by a crowd has width,
   // a worn pale centre where the feet go, darker edges where they do not, and stones.
+  // The track must STRADDLE y, because y is where the soles are. Laid from y-1 downward it
+  // was then overpainted to y+4.5 by the two lip fills below, so the only brown left
+  // visible ran from y+4.5 to y+12 -- entirely beneath the crowd, and the 13 units of path
+  // landed underneath the people it was drawn for. Feet on a green line with a tan strip
+  // under it is exactly what it was meant to stop.
   const TREAD = 13;
-  ctx.fillStyle = '#6f5c40'; ctx.fillRect(x0, y - 1, x1 - x0, TREAD);
-  // the worn centre line, lighter and dustier than the edges
-  ctx.fillStyle = 'rgba(176,158,126,0.5)'; ctx.fillRect(x0, y + 3.2, x1 - x0, 5);
-  ctx.fillStyle = 'rgba(38,30,20,0.3)'; ctx.fillRect(x0, y + TREAD - 3, x1 - x0, 3);
+  ctx.fillStyle = '#6f5c40'; ctx.fillRect(x0, y - 7, x1 - x0, TREAD);
+  // the worn centre line, lighter and dustier than the edges, centred on the soles
+  ctx.fillStyle = 'rgba(176,158,126,0.5)'; ctx.fillRect(x0, y - 3.5, x1 - x0, 5);
+  ctx.fillStyle = 'rgba(38,30,20,0.3)'; ctx.fillRect(x0, y + 3, x1 - x0, 3);
   // ruts and stones trodden into it, on their own pitch so they do not line up with the
   // lip tufts or the stones in the cut below
   for (let wx = Math.floor(wx0 / 19) * 19; wx < wx1; wx += 19) {
     const hv = hash(wx * 3.7 + y * 1.3);
     if (hv < 0.5) continue;
     ctx.fillStyle = hv > 0.82 ? 'rgba(140,132,116,0.55)' : 'rgba(58,46,32,0.32)';
-    ctx.fillRect(wx - V.left, y + 1.5 + hv * 7, 3 + hv * 9, 1.4 + hv * 1.6);
+    ctx.fillRect(wx - V.left, y - 5 + hv * 7, 3 + hv * 9, 1.4 + hv * 1.6);
   }
+  // The lip's wandering edge starts at y-7 now, the top of the track, so the turf hangs
+  // over the path instead of being laid across it. Its two fills reach y-4 and y-6.2:
+  // below that is trodden ground, which is the whole point.
   const lip = (h, col) => {
     ctx.fillStyle = col; ctx.beginPath();
     let first = true;
     for (let wx = Math.floor(wx0 / 13) * 13; wx <= wx1 + 13; wx += 13) {
-      const px = wx - V.left, py = y + (hash(wx * 1.7 + y) - 0.5) * 2.4;
+      const px = wx - V.left, py = y - 7 + (hash(wx * 1.7 + y) - 0.5) * 2.4;
       if (first) { ctx.moveTo(px, py); first = false; } else ctx.lineTo(px, py);
     }
-    ctx.lineTo(x1 + 13, y + h); ctx.lineTo(x0 - 13, y + h); ctx.closePath(); ctx.fill();
+    ctx.lineTo(x1 + 13, y - 7 + h); ctx.lineTo(x0 - 13, y - 7 + h); ctx.closePath(); ctx.fill();
   };
-  lip(4.5, '#547a44');
-  lip(1.8, '#84b063');
+  lip(3, '#547a44');
+  lip(1.2, '#84b063');
   // tufts hanging over the edge into the shadow under it
   ctx.fillStyle = '#4b6d3c';
   for (let wx = Math.floor(wx0 / 15) * 15; wx < wx1; wx += 15) {
@@ -6744,8 +6814,20 @@ function armedMark(room, y, sx, gw, outdoors) {
     wash.addColorStop(1, isActive ? `rgba(92,225,255,${0.16 + 0.05 * pulse})` : `rgba(255,70,70,${0.13 + 0.07 * pulse})`);
   }
   ctx.fillStyle = wash; ctx.fillRect(sx - 12, y - ch, gw + 24, ch + 20);
-  // hazard chevrons crawling along both lips of the gap
-  ctx.save(); ctx.beginPath(); ctx.rect(sx - 12, y - 10, gw + 24, 22); ctx.clip();
+  // Hazard chevrons crawling along both LIPS of the gap -- and outdoors that must be two
+  // strips, not one band across the whole span. Clipped to the full width they painted an
+  // opaque light bar over the middle of the very thing they warn about: the mantrap's
+  // plate, chain and stake all live inside that 22-unit band and vanished under it, and a
+  // ditch came out looking planked over. In the tunnels the gap is a hole with nothing in
+  // the middle to hide, which is why it was never wrong there.
+  ctx.save(); ctx.beginPath();
+  if (outdoors) {
+    ctx.rect(sx - 12, y - 10, 24, 22);
+    ctx.rect(sx + gw - 12, y - 10, 24, 22);
+  } else {
+    ctx.rect(sx - 12, y - 10, gw + 24, 22);
+  }
+  ctx.clip();
   ctx.globalAlpha = isActive ? 0.9 : 0.55 + 0.3 * pulse;
   ctx.fillStyle = outdoors && !isActive ? '#f2ede0' : col;
   const off = (S.t * 34) % 24;
@@ -6953,15 +7035,15 @@ function drawEncRoom(room, y) {
     ctx.fillStyle = '#54432f';
     ctx.beginPath();
     ctx.moveTo(sx + gw, y + 2);
-    ctx.quadraticCurveTo(sx + gw + 26, y - 102, sx + gw + DITCH_SPOIL, y + 2);
+    ctx.quadraticCurveTo(sx + gw + 44, y - 72, sx + gw + DITCH_SPOIL, y + 2);
     ctx.closePath(); ctx.fill();
     // turf taking on the top of it, thinner on the steep side
     ctx.fillStyle = '#5c8b52';
     ctx.beginPath();
     ctx.moveTo(sx + gw + 2, y + 1);
-    ctx.quadraticCurveTo(sx + gw + 26, y - 104, sx + gw + 62, y + 1);
-    ctx.lineTo(sx + gw + 56, y + 1);
-    ctx.quadraticCurveTo(sx + gw + 26, y - 92, sx + gw + 10, y + 1);
+    ctx.quadraticCurveTo(sx + gw + 44, y - 74, sx + gw + DITCH_SPOIL, y + 1);
+    ctx.lineTo(sx + gw + DITCH_SPOIL - 6, y + 1);
+    ctx.quadraticCurveTo(sx + gw + 44, y - 64, sx + gw + 10, y + 1);
     ctx.closePath(); ctx.fill();
     // fresh spoil showing through where the turf has not closed over
     ctx.fillStyle = 'rgba(86,68,46,0.7)';
