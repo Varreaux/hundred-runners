@@ -480,6 +480,18 @@ like this.
   so a one-pixel `getImageData` samples that field: steady within a load, up to
   sixteen points different after a reload. A 25x11 patch reproduces to a tenth.
   Freeze `S.t` as well, or lamp flicker moves it.
+- **When two measurements disagree, divide one by the other BEFORE investigating
+  anything else.** If the ratio is a small whole number -- or very close to one --
+  stop looking at the instruments and look at what each one is COUNTING. They are
+  not noisy, they are measuring different extents: rounds, passes, one lane
+  against all lanes, half of a round trip. Two of us timed the sweeper's forced
+  watch and got 2.82 / 3.52 / 4.22 against 5.62 / 7.02 / 8.42 -- exactly half, to
+  the hundredth, across all three statistics. Noise does not do that. One of us
+  had measured to the first accepted key, which is one round of a two-round
+  puzzle. A ratio of 1.9 or 2.1 would have read as a measurement problem and cost
+  an hour; a ratio of precisely 2 pointed straight at the scope and was found in
+  one step. This is what to do when "take it twice" gives you two different
+  answers.
 - **Take it twice. A number with no error bar is not a measurement.** Measure,
   change nothing, measure again. None of the six survived that.
 - **Compare a surface to the light at the same height in the same frame.** "The

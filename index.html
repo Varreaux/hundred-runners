@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '47 the keypad tells you the order';
+const BUILD = '48 out of the machine';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -127,12 +127,22 @@ const CFG = {
     // machines belong. Interleaved with the existing crossings on lane 0.
     { x: 1750,  lane: 0, type: 'gears',    diff: 1 },
     { x: 2500,  lane: 0, type: 'conveyor', diff: 1 },
-    // The sweeper makes you WATCH two demos before it accepts a key: 5.6s at the
-    // shortest, 7.3s typical. With the standard 240px of warning that is 3.0s of road
-    // against 5.6s of puzzle, so it was unwinnable by arithmetic rather than by skill
-    // and cost 54 of the hundred even played perfectly. It gets the road it needs
-    // instead; nothing about Linh's puzzle changes. Undo by deleting warn.
-    { x: 4000,  lane: 0, type: 'sweeper',  diff: 2, warn: 900 },
+    // The sweeper makes you WATCH before it accepts a key, twice, and then type what you
+    // saw. 900 was sized against the WATCH ALONE and so covered barely half the room.
+    //
+    // Driven through the verb's own update, 400 runs, pressing at a human 2.2 keys a
+    // second: forced watching totals 5.60s / 7.00s / 8.40s (min / median / max) across
+    // BOTH rounds, then 8 to 10 keys on top. Total time to finish is 7.52s median 9.85s
+    // worst 12.18s, against 8.18s of road at 900 -- so the MEDIAN play could not be
+    // finished, and the worst case spent longer watching than it had road.
+    //
+    // 1350 is 12.27s, which covers the worst case measured. Nothing about Linh's puzzle
+    // changes; it gets the road its own clock demands. Undo by deleting warn.
+    //
+    // The sizing error is worth remembering: the first number came from timing the demo,
+    // and the demo is not the room. Time the whole thing, including the input, including
+    // every round.
+    { x: 4000,  lane: 0, type: 'sweeper',  diff: 2, warn: 1350 },
     { x: 5300,  lane: 0, type: 'presses',  diff: 2 },
     // Same arithmetic fault as the sweeper, in my own room. Splicing a wire costs a pull,
     // a walk along the sockets and a connect, and over 4000 layouts an optimal player needs
@@ -924,9 +934,8 @@ const VERBS = {
           const hx = fx1 - (fx1 - fx0) * m.fuse;
           ctx.fillStyle = '#ffd23c';
           ctx.beginPath(); ctx.arc(hx, py + 96, 4.4, 0, 6.28); ctx.fill();
-          ctx.textAlign = 'center'; ctx.font = 'bold 12px monospace';
-          ctx.fillStyle = '#5ce1ff';
-          ctx.fillText('SPACE \u00d7 ' + (m.need - m.pays), cx, py + 112);
+          // no caption here: the panel's own status line already says how many are left,
+          // and a second copy at py + 112 sits 13px off the row panelGauges owns
         }
       }
       // the plunger, live once the fuse is run out and the arm delay has passed
@@ -6767,6 +6776,46 @@ function drawOverlays() {
       // The badge is fixed screen size over a world that shrinks, so at full zoom-out it
       // grew taller than the corridor it points at and buried the winch, the gap and the
       // crowd. It scales with the view, with a floor so it stays readable.
+      // An armed room that is still off the right of the screen gets a tab at the edge.
+      //
+      // This is what makes `warn` mean anything. A room ARMS at warn, but the player
+      // cannot read a puzzle for something they cannot see, and the view only reaches
+      // 0.36 * V.vw past the front runner -- 345px at zoom 1, 3.13s at CFG.scroll,
+      // whatever the warn says. Measured across a run, every mill room had 3.1s to 4.5s
+      // of usable road while its warn claimed 2.2s to 12.3s. The sweeper needs 9.9s and
+      // had 4.3s: impossible, and raising its warn to 1350 changed nothing a player
+      // could use, because it armed the room while it was still off screen.
+      //
+      // With the tab, the hotkey, the count and the countdown are readable the moment the
+      // room arms, so the warn distance becomes real time instead of a number in a config
+      // file -- for every room, not just this one.
+      const edge = W - 46;
+      if (cx > edge) {
+        const ap0 = approaching(room);
+        claim(edge - 30, by - 20, 76, 58);
+        ctx.save();
+        ctx.globalAlpha = 0.92;
+        ctx.fillStyle = 'rgba(12,14,22,0.82)';
+        roundRect(edge - 26, by - 19, 64, 54, 8); ctx.fill();
+        ctx.strokeStyle = col; ctx.lineWidth = 1.6;
+        roundRect(edge - 26, by - 19, 64, 54, 8); ctx.stroke();
+        ctx.fillStyle = col; ctx.beginPath(); ctx.arc(edge - 4, by, 13, 0, 6.28); ctx.fill();
+        ctx.fillStyle = '#111'; ctx.font = 'bold 15px monospace'; ctx.textAlign = 'center';
+        ctx.fillText(room.hot, edge - 4, by + 5);
+        // an arrow saying it is out there to the right
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.moveTo(edge + 16, by - 6); ctx.lineTo(edge + 26, by); ctx.lineTo(edge + 16, by + 6);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 10px monospace';
+        ctx.fillText(ap0.n ? `${ap0.n} coming` : 'clear', edge + 4, by + 22);
+        const f0 = clamp01(ap0.eta / 6), bw0 = 52;
+        ctx.fillStyle = '#233'; ctx.fillRect(edge - 22, by + 27, bw0, 4);
+        ctx.fillStyle = f0 < 0.3 ? '#ff4646' : '#fff'; ctx.fillRect(edge - 22, by + 27, bw0 * f0, 4);
+        ctx.restore();
+        ctx.textAlign = 'left';
+        continue;
+      }
       const z = Math.max(0.6, Math.min(1, V.zoom + 0.14));
       const rad = 16 * z;
       // the reservation has to cover the widest thing inside it, which is the "N coming"
@@ -7075,17 +7124,26 @@ function panelFrame(pw, title, color, ph = 150) {
 // room and nearly useless on the fourth, when what you want is which of those three you
 // are on. It is also at the far bottom of the screen while the puzzle is at the top, so
 // reading it means looking away from the thing you are playing.
-function panelStep(room, px, py, pw) {
+function panelStep(room, px, py, pw, ph) {
   const v = VERBS[room.verb];
   if (!v.now) return;
   let txt;
   try { txt = v.now(room.mg); } catch (e) { return; }   // never let a label kill the frame
   if (!txt) return;
-  ctx.font = 'bold 11px monospace'; ctx.textAlign = 'right';
+  // On the BOTTOM row, left-aligned, opposite the time-to-arrival readout.
+  //
+  // It used to be right-aligned on the header line, which the room title is CENTRED on --
+  // so a long status ran straight through a long title. Measured across every verb, nine
+  // of the fourteen rooms collided, by up to 94px. The header cannot hold both, and the
+  // title is the thing that must stay whole.
+  //
+  // Down here it also pairs correctly: what to do now, and how long you have to do it,
+  // read as one line. Longest status (28 chars) plus longest readout (21) is 324px inside
+  // a 376px row, so they cannot meet.
+  ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
   const urgent = /LET GO|FIRE|WATCH/.test(txt);
   ctx.fillStyle = urgent ? (Math.sin(S.t * 12) > 0 ? '#ffd23c' : '#fff3bd') : 'rgba(180,196,220,0.85)';
-  ctx.fillText(txt, px + pw - 14, py + 20);
-  ctx.textAlign = 'left';
+  ctx.fillText(txt, px + 22, py + ph - 25);
 }
 // How long the player has, and how far through the puzzle they are. Neither was shown
 // anywhere: you could see a puzzle and the crowd, but nothing told you whether you had
@@ -7127,7 +7185,7 @@ function drawPanel(room) {
   // frame cyan, so cyan is what "the room you are in" looks like out in the world. Colouring
   // the panel by hazard instead would break the one association the player has to follow.
   v.draw(room.mg, px, py, pw);
-  panelStep(room, px, py, pw);
+  panelStep(room, px, py, pw, ph);
   panelGauges(room, px, py, pw, ph);
   ctx.restore();
 }
