@@ -3356,9 +3356,12 @@ function sparks(x, y, t) {
   ctx.restore();
 }
 // --- plant: the machines at the back of the hall, seen as silhouettes past the crowd
-function millPlant(wx, y, lane) {
+function millPlant(wx, y, lane, kind) {
+  // a bay 200 units past the frame cannot be seen through millCorridor's clip, and the
+  // loop that calls this walks the whole lane span rather than the visible part of it
+  if (!inView(wx, 130)) return;
   const sx = wx - V.left;
-  const kind = Math.floor(hash(wx * 0.017 + lane * 7.7) * 4);
+  if (kind === undefined) kind = millBay(wx, lane).kind;
   const DARK = '#121018', BODY = '#232c2b', LIT = '#374240', RIM = 'rgba(186,212,236,0.3)';
   if (kind === 0) {
     // a lathe: cast bed on splayed legs, headstock, chuck turning
@@ -3435,6 +3438,638 @@ function millPlant(wx, y, lane) {
     ctx.fillStyle = '#6a5136'; ctx.fillRect(sx + 25, y - 21, 15, 2.4); ctx.fillRect(sx + 25, y - 9, 15, 2.4);
     ctx.fillStyle = 'rgba(255,236,200,0.08)'; ctx.fillRect(sx + 25, y - 26, 3, 25);
   }
+}
+
+// --- smoke ---------------------------------------------------------------------------
+// One soft puff, rendered once per tint and then stamped with drawImage. Both
+// alternatives were worse: a flat `arc` reads as a disc with an edge on it, and a
+// createRadialGradient per puff builds a gradient object every frame for every puff on
+// screen. The gradient's last stop is fully transparent, so the square fill's corners
+// stay empty -- the smear the note about gradients warns about only bites when the last
+// stop still has colour in it.
+const puffCache = new Map();
+function puffSprite(tint) {
+  let cv = puffCache.get(tint);
+  if (cv) return cv;
+  const R = 40;
+  cv = document.createElement('canvas'); cv.width = cv.height = R * 2;
+  const g = cv.getContext('2d');
+  const rg = g.createRadialGradient(R, R, 0, R, R, R);
+  rg.addColorStop(0, `rgba(${tint},0.70)`);
+  rg.addColorStop(0.3, `rgba(${tint},0.46)`);
+  rg.addColorStop(0.62, `rgba(${tint},0.18)`);
+  rg.addColorStop(0.85, `rgba(${tint},0.05)`);
+  rg.addColorStop(1, `rgba(${tint},0)`);
+  g.fillStyle = rg; g.fillRect(0, 0, R * 2, R * 2);
+  puffCache.set(tint, cv);
+  return cv;
+}
+// Smoke that knows it is indoors. It rises, cools and spreads, and when it reaches
+// `ceil` it stops climbing and runs sideways along the underside instead. That is the
+// whole difference between a mill and a field: the roof is what makes the air in here,
+// and smoke that keeps climbing off the top of the frame reads as outdoor weather.
+//
+// Deterministic from S.t, like millPlume -- no pool, so there is nothing to leak, nothing
+// for update() to carry, and a machine off screen costs nothing because its caller
+// never runs.
+function millSmoke(sx, y, o) {
+  const n = o.n || 9, rise = o.rise || 80, rate = o.rate || 0.2;
+  const r0 = o.r0 || 6, r1 = o.r1 || 24, drift = o.drift || 0;
+  const tint = o.tint || '208,214,224', a0 = o.a === undefined ? 0.26 : o.a;
+  const salt = o.salt || 0, ceil = o.ceil, roll = o.roll || 0;
+  if (a0 <= 0) return;
+  const img = puffSprite(tint);
+  ctx.save();
+  for (let i = 0; i < n; i++) {
+    const hv = hash(salt + i * 3.7), hw = hash(salt * 1.7 + i * 5.3);
+    const t = (S.t * rate + i / n + hv / n) % 1;
+    // climb, then run along the ceiling: the height it did NOT gain becomes sideways travel
+    let climb = t * rise, over = 0;
+    if (ceil !== undefined && y - climb < ceil) { over = climb - (y - ceil); climb = y - ceil; }
+    const r = r0 + t * (r1 - r0) + hv * 3;
+    if (!(r > 0)) continue;
+    const px = sx + drift * t + over * roll + Math.sin(t * 3.4 + hw * 6.28) * 7 * t + (hw - 0.5) * 8;
+    // Fades IN as well as out, or every puff pops into being at the nozzle at full
+    // strength and the column reads as a string of beads. Keep the fade-in SHORT: the
+    // length of it is dead column, and `rise` has to stay close to the distance to the
+    // ceiling for the same reason -- at rise 190 against a 62-unit climb, two thirds of
+    // every puff's life was spent rolling and the column itself never appeared.
+    ctx.globalAlpha = a0 * (1 - t) * Math.min(1, t * 9) * (0.7 + hv * 0.5);
+    ctx.drawImage(img, px - r, y - climb - r, r * 2, r * 2);
+  }
+  ctx.restore();
+}
+
+// --- the big engines -----------------------------------------------------------------
+// What stands in one bay of the hall. The plant loop and the line-shafting loop both need
+// this and used to work it out separately from the same two hashes, so a machine and the
+// belt driving it could disagree the moment either expression moved. Those two hashes are
+// unchanged here on purpose: every ordinary bay stands exactly where it already stood.
+//
+// The big engines are picked on a hash of their own and TAKE A BAY OVER rather than being
+// squeezed between two, which is also what keeps them clear of their neighbours: the next
+// machine either way is a full 200 units off.
+function millBay(gx, lane) {
+  const has = hash(gx * 0.011 + lane * 3.3) >= 0.28;
+  const kind = Math.floor(hash(gx * 0.017 + lane * 7.7) * 4);
+  // The multipliers are picked, not arbitrary: over the mill's own bay positions they give
+  // 42 engines across the six lanes, fourteen of each kind, six to ten per lane. The
+  // obvious first pair put eight cupolas and one hammer on the whole course, which is what
+  // a hash does when you ask it for three-way balance over forty samples and do not look.
+  const feat = has && hash(gx * 0.043 + lane * 5.1) < 0.34
+    ? Math.floor(hash(gx * 0.029 + lane * 2.9) * 3) : -1;
+  return { has, kind, feat };
+}
+// Where the line shaft's belt lands on this bay, in screen coordinates, or null for a bay
+// that is not belt-driven. 'self' is the mill engine, which is the one machine in the hall
+// on the other end of the shafting rather than hanging off it, and draws its own drive.
+const SELF_DRIVEN = 'self';
+function bayDrive(bay, sx, y) {
+  if (bay.feat === 0) return SELF_DRIVEN;
+  if (bay.feat === 1) return null;                 // the steam hammer takes steam, not a belt
+  if (bay.feat === 2) return [sx + 72, y - 62];    // the blower's pulley, proud of its casing
+  if (!bay.has || bay.kind === 3) return null;
+  return [sx + (bay.kind === 0 ? -13 : bay.kind === 1 ? 16 : 22),
+          y - (bay.kind === 0 ? 33 : bay.kind === 1 ? 50 : 74)];
+}
+// Drawn AFTER the line shafting, unlike the bench plant: these are the tall objects in the
+// hall and they stand forward of the back wall, so the shaft and its belts pass behind
+// them. Drawn before the truss, so the truss still closes the room over the top.
+function millFeature(wx, y, lane, feat, shy) {
+  if (!inView(wx, 170)) return;
+  const sx = wx - V.left;
+  if (feat === 0) millEngine(sx, y, wx, shy);
+  else if (feat === 1) millHammer(sx, y, wx);
+  else millCupola(sx, y, wx, shy);
+}
+// The smoke goes down in a pass of its own, AFTER the truss and the shadow the roof casts
+// under it. That shadow is 50% black across the top 48 units of the hall, which is exactly
+// the band smoke gathers in, and drawn over the plumes it erased them: the cupola read as
+// a furnace with no smoke at all in the frame that was supposed to prove the smoke.
+// Physically it also stands up -- smoke under a mill roof is lit from below by the lamps,
+// not shadowed by the girders it is lying against.
+function millFeatureSmoke(wx, y, lane, feat) {
+  if (!inView(wx, 190)) return;
+  const sx = wx - V.left;
+  if (feat === 0) millEngineSmoke(sx, y, wx);
+  else if (feat === 1) millHammerSmoke(sx, y, wx);
+  else millCupolaSmoke(sx, y, wx);
+}
+// The hammer's stroke as one number that both passes read. The body draws the tup from
+// it and the smoke pass draws the blast from it; computed twice, they would drift.
+function hammerStroke(gx) {
+  const ph = (S.t * 0.58 + hash(gx)) % 1;
+  let lift;
+  if (ph < 0.56) lift = Math.sin(ph / 0.56 * Math.PI / 2);
+  else if (ph < 0.72) lift = 1;
+  else if (ph < 0.82) { const q = (ph - 0.72) / 0.1; lift = 1 - q * q; }
+  else lift = 0;
+  return { ph, lift, since: ph < 0.82 ? 1 : (ph - 0.82) / 0.18 };
+}
+// how hard the cupola is burning this instant; the shell, the door and the smoke share it
+const cupolaFlame = gx => 0.74 + 0.26 * Math.sin(S.t * 6.2 + gx);
+
+// everything in the hall stands on a lit deck, so it drops something where it touches
+function contactShadow(sx, y, rx) {
+  ctx.fillStyle = 'rgba(0,0,0,0.34)';
+  ctx.beginPath(); ctx.ellipse(sx, y + 1, rx, 7, 0, 0, 6.28); ctx.fill();
+}
+// The engine that turns the hall. Everything else in here hangs off the line shaft; this
+// is the thing on the other end of it, so it runs on shaftPhase rather than on a clock of
+// its own -- shut the drive train down at a gears room and the engine coasts to a stop
+// with it, instead of hammering away beside a shaft that has already stopped.
+//
+// Horizontal, not a beam engine, and that was decided by the room rather than by taste:
+// the corridor is CFG.tunnelH tall with the shafting 52 down from the ceiling, which
+// leaves 78 units of headroom. A beam engine wants half again that and comes out squat;
+// a horizontal engine is the machine that shape of building actually got.
+function millEngine(sx, y, gx, shy) {
+  const DARK = '#100e16', BODY = '#28322f', LIT = '#3c4845', RIM = 'rgba(198,222,244,0.3)';
+  const BRASS = '#6e5a2e', SHEEN = 'rgba(228,200,130,0.3)';
+  const a = shaftPhase(gx) + hash(gx) * 6.28;
+  const CL = y - 48;                              // centre line: piston, crosshead, crank
+  const cr = 12, rod = 62, cx = sx + 56;
+  const px = cx + Math.cos(a) * cr, py = CL + Math.sin(a) * cr;
+  // The crosshead is wherever the rod's other end HAS to be, given that it slides on the
+  // centre line: one square root, and the motion comes out as the engine's own rather
+  // than a second sine wave that happens to look a bit like it.
+  const C = px - Math.sqrt(Math.max(1, rod * rod - (py - CL) * (py - CL)));
+
+  // ---- bedplate, and the crank pedestal it deliberately does not reach: the wheel wants
+  // clear floor under it, and a bed running the whole length would have it ploughing
+  contactShadow(sx - 43, y, 64); contactShadow(sx + 57, y, 24);
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 104, y - 19, 122, 19);
+  const bg = ctx.createLinearGradient(0, y - 19, 0, y);
+  bg.addColorStop(0, '#39443f'); bg.addColorStop(0.35, '#28322f'); bg.addColorStop(1, '#1a211f');
+  ctx.fillStyle = bg; ctx.fillRect(sx - 103, y - 18, 120, 18);
+  ctx.fillStyle = RIM; ctx.fillRect(sx - 103, y - 18, 120, 1.5);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  for (let i = -96; i < 14; i += 23) ctx.fillRect(sx + i, y - 13, 10, 2.6);
+  ctx.fillStyle = 'rgba(206,228,250,0.07)';
+  for (let i = -96; i < 14; i += 23) ctx.fillRect(sx + i, y - 13, 10, 0.9);
+  ctx.fillStyle = DARK; ctx.fillRect(sx + 38, y - 44, 38, 44);
+  ctx.fillStyle = bg; ctx.fillRect(sx + 39, y - 43, 36, 43);
+  ctx.fillStyle = RIM; ctx.fillRect(sx + 39, y - 43, 3.4, 43);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(sx + 68, y - 43, 6, 43);
+  ctx.fillStyle = DARK; ctx.fillRect(sx + 42, y - 60, 30, 17);
+  ctx.fillStyle = LIT; ctx.fillRect(sx + 43, y - 59, 28, 15);
+  ctx.fillStyle = RIM; ctx.fillRect(sx + 43, y - 59, 28, 1.5);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(sx + 43, y - 52, 28, 2.2);
+
+  // ---- cylinder. Two to one, long and low: a barrel as tall as it is long reads as a
+  // crate with bands painted on, which is what the first pass at this was.
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 96, y - 32, 54, 14);
+  ctx.fillStyle = BODY; ctx.fillRect(sx - 95, y - 31, 52, 13);
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 101, y - 66, 68, 35);
+  const cg = ctx.createLinearGradient(0, y - 65, 0, y - 32);
+  cg.addColorStop(0, '#4a3f30'); cg.addColorStop(0.34, '#352d24'); cg.addColorStop(1, '#1d1915');
+  ctx.fillStyle = cg; ctx.fillRect(sx - 100, y - 65, 66, 33);
+  // the lagging is timber over the iron, and it is why this one object in the hall is warm
+  for (let i = 1; i < 6; i++) {
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(sx - 100, y - 65 + i * 5.6, 66, 1.1);
+    ctx.fillStyle = 'rgba(255,226,180,0.045)'; ctx.fillRect(sx - 100, y - 64 + i * 5.6, 66, 0.8);
+  }
+  for (const bx of [-92, -62]) {
+    ctx.fillStyle = '#231c12'; ctx.fillRect(sx + bx - 1, y - 66, 6.6, 35);
+    ctx.fillStyle = BRASS; ctx.fillRect(sx + bx, y - 66, 5, 35);
+    ctx.fillStyle = SHEEN; ctx.fillRect(sx + bx, y - 66, 1.4, 35);
+  }
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 108, y - 69, 8, 41);
+  ctx.fillStyle = LIT; ctx.fillRect(sx - 107, y - 68, 6, 39);
+  ctx.fillStyle = RIM; ctx.fillRect(sx - 107, y - 68, 6, 1.3);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  for (let i = 0; i < 4; i++) ctx.fillRect(sx - 106, y - 63 + i * 10, 4, 1.8);
+  ctx.fillStyle = BODY; ctx.beginPath(); ctx.arc(sx - 104, y - 48, 6, 0, 6.28); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.arc(sx - 104, y - 48, 2.6, 0, 6.28); ctx.fill();
+  // valve chest on the top, and its steam pipe up into the overhead main
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 88, y - 79, 34, 14);
+  ctx.fillStyle = LIT; ctx.fillRect(sx - 87, y - 78, 32, 12);
+  ctx.fillStyle = RIM; ctx.fillRect(sx - 87, y - 78, 32, 1.6);
+  ctx.fillStyle = 'rgba(0,0,0,0.42)';
+  for (let i = 0; i < 6; i++) ctx.fillRect(sx - 84 + i * 5.6, y - 76, 1.8, 1.8);
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 77, y - 99, 11, 21);
+  ctx.fillStyle = '#39424a'; ctx.fillRect(sx - 76, y - 99, 9, 21);
+  ctx.fillStyle = 'rgba(210,230,240,0.13)'; ctx.fillRect(sx - 76, y - 99, 2.4, 21);
+  ctx.fillStyle = LIT; ctx.fillRect(sx - 79, y - 84, 15, 5);
+  ctx.fillStyle = RIM; ctx.fillRect(sx - 79, y - 84, 15, 1.2);
+
+  // ---- slide bars, crosshead, piston rod
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 32, y - 62, 54, 6); ctx.fillRect(sx - 32, y - 40, 54, 6);
+  ctx.fillStyle = LIT; ctx.fillRect(sx - 32, y - 61, 54, 4); ctx.fillRect(sx - 32, y - 39, 54, 4);
+  ctx.fillStyle = RIM; ctx.fillRect(sx - 32, y - 61, 54, 1.1); ctx.fillRect(sx - 32, y - 39, 54, 1.1);
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 38, y - 55, 8, 14);
+  ctx.fillStyle = '#5c4d26'; ctx.fillRect(sx - 37, y - 54, 6, 12);
+  ctx.fillStyle = SHEEN; ctx.fillRect(sx - 37, y - 54, 6, 1.3);
+  ctx.fillStyle = '#5f6d6a'; ctx.fillRect(sx - 32, y - 50.4, C - 9 - (sx - 32), 4.8);
+  ctx.fillStyle = 'rgba(226,240,255,0.24)'; ctx.fillRect(sx - 32, y - 50.4, C - 9 - (sx - 32), 1.4);
+  ctx.fillStyle = DARK; ctx.fillRect(C - 9, y - 62, 18, 28);
+  ctx.fillStyle = LIT; ctx.fillRect(C - 8, y - 61, 16, 26);
+  ctx.fillStyle = RIM; ctx.fillRect(C - 8, y - 61, 16, 1.5);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(C - 8, y - 50, 16, 2.2);
+  // the slippers riding the bars, so the block reads as held rather than floating
+  ctx.fillStyle = 'rgba(220,238,255,0.2)';
+  ctx.fillRect(C - 8, y - 58.4, 16, 1.3); ctx.fillRect(C - 8, y - 38.4, 16, 1.3);
+
+  // ---- the drive: two strands off the shaft pulley this bay already carries, ending on
+  // the rim's tangent so the belt meets the wheel instead of stopping short of it. Drawn
+  // here and not by the shafting loop -- bayDrive returns SELF_DRIVEN to keep the loop out
+  // of it -- because the wheel has to be down before a belt can wrap it.
+  const dvx = cx - sx, dvy = CL - shy, dl = Math.hypot(dvx, dvy) || 1;
+  const nx = -dvy / dl, ny = dvx / dl, sag = Math.sin(S.t * 5 + gx) * 1.1;
+  ctx.save(); ctx.lineCap = 'butt';
+  for (const d of [-1, 1]) {
+    const ax = sx + nx * d * 8, ay = shy + ny * d * 8;
+    const bx2 = cx + nx * d * 26.5, by2 = CL + ny * d * 26.5;
+    const mx = (ax + bx2) / 2 + nx * d * 2.4 + sag * d, my = (ay + by2) / 2 + ny * d * 2.4;
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 4.4;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(mx, my, bx2, by2); ctx.stroke();
+    ctx.strokeStyle = d < 0 ? '#332718' : '#40311f'; ctx.lineWidth = 2.8;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(mx, my, bx2, by2); ctx.stroke();
+    if (d > 0) {
+      ctx.strokeStyle = 'rgba(206,188,158,0.16)'; ctx.lineWidth = 0.9;
+      ctx.beginPath(); ctx.moveTo(ax, ay - 1.2); ctx.quadraticCurveTo(mx, my - 1.2, bx2, by2 - 1.2); ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  // ---- flywheel: an open wheel, so the crank bearing behind it stays visible
+  ctx.save(); ctx.lineCap = 'butt';
+  ctx.strokeStyle = DARK; ctx.lineWidth = 10;
+  ctx.beginPath(); ctx.arc(cx, CL, 26, 0, 6.28); ctx.stroke();
+  ctx.strokeStyle = '#313c39'; ctx.lineWidth = 7;
+  ctx.beginPath(); ctx.arc(cx, CL, 26, 0, 6.28); ctx.stroke();
+  ctx.strokeStyle = 'rgba(206,228,250,0.22)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, CL, 28.8, Math.PI * 1.04, Math.PI * 1.84); ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, CL, 24.2, 0, 6.28); ctx.stroke();
+  ctx.strokeStyle = '#2b3532'; ctx.lineWidth = 4.4;
+  for (let i = 0; i < 6; i++) {
+    const th = a + i * Math.PI / 3;
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(th) * 6, CL + Math.sin(th) * 6);
+    ctx.lineTo(cx + Math.cos(th) * 23.4, CL + Math.sin(th) * 23.4); ctx.stroke();
+  }
+  // the belt wrapping the far side of the rim, laid over it after the strands
+  ctx.strokeStyle = '#332718'; ctx.lineWidth = 6;
+  const wrap = Math.atan2(ny, nx);
+  ctx.beginPath(); ctx.arc(cx, CL, 26.5, wrap, wrap + Math.PI); ctx.stroke();
+  ctx.strokeStyle = 'rgba(206,188,158,0.1)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, CL, 29, wrap, wrap + Math.PI); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = DARK; ctx.beginPath(); ctx.arc(cx, CL, 8.4, 0, 6.28); ctx.fill();
+  ctx.fillStyle = LIT; ctx.beginPath(); ctx.arc(cx, CL, 5.8, 0, 6.28); ctx.fill();
+  // one bright bolt on the rim: a wheel with no mark on it does not read as turning
+  ctx.fillStyle = 'rgba(226,212,168,0.5)';
+  ctx.beginPath(); ctx.arc(cx + Math.cos(a) * 26, CL + Math.sin(a) * 26, 2, 0, 6.28); ctx.fill();
+
+  // ---- connecting rod, drawn last so its big end sits ON the crank pin, not under it
+  ctx.save(); ctx.lineCap = 'round';
+  ctx.strokeStyle = DARK; ctx.lineWidth = 8.6;
+  ctx.beginPath(); ctx.moveTo(C, CL); ctx.lineTo(px, py); ctx.stroke();
+  ctx.strokeStyle = '#414e4b'; ctx.lineWidth = 5.6;
+  ctx.beginPath(); ctx.moveTo(C, CL); ctx.lineTo(px, py); ctx.stroke();
+  ctx.strokeStyle = 'rgba(220,240,255,0.18)'; ctx.lineWidth = 1.3;
+  ctx.beginPath(); ctx.moveTo(C, CL - 1.7); ctx.lineTo(px, py - 1.7); ctx.stroke();
+  ctx.restore();
+  for (const [bx, by, br] of [[C, CL, 4.4], [px, py, 5.8]]) {
+    ctx.fillStyle = DARK; ctx.beginPath(); ctx.arc(bx, by, br, 0, 6.28); ctx.fill();
+    ctx.fillStyle = BRASS; ctx.beginPath(); ctx.arc(bx, by, br - 1.8, 0, 6.28); ctx.fill();
+    ctx.fillStyle = SHEEN; ctx.beginPath(); ctx.arc(bx - 0.8, by - 0.8, (br - 1.8) * 0.5, 0, 6.28); ctx.fill();
+  }
+
+  // the warmth off a working cylinder, thrown down onto the deck in front of it
+  const wg = ctx.createLinearGradient(0, y - 24, 0, y);
+  wg.addColorStop(0, 'rgba(255,196,120,0)'); wg.addColorStop(1, 'rgba(255,196,120,0.07)');
+  ctx.fillStyle = wg; ctx.fillRect(sx - 104, y - 24, 122, 24);
+}
+// The cocks are open on the down stroke, which is when a cylinder full of condensate has
+// somewhere to go, so the blast comes once a revolution rather than as a steady leak: a
+// machine that exhales on a beat reads as working.
+function millEngineSmoke(sx, y, gx) {
+  const a = shaftPhase(gx) + hash(gx) * 6.28;
+  const blow = Math.max(0, Math.sin(a));
+  for (const dx of [-94, -44]) {
+    millSmoke(sx + dx, y - 28, { n: 7, rise: 22, rate: 1.0, r0: 7, r1: 32, drift: dx < -65 ? -44 : 38,
+      a: 0.24 * blow, salt: gx + dx, tint: '222,230,240' });
+  }
+  millSmoke(sx - 34, y - 56, { n: 5, rise: 34, rate: 0.7, r0: 4.4, r1: 17, drift: -11,
+    a: 0.15, salt: gx * 1.3, tint: '220,228,240' });
+}
+
+// A steam hammer: the loudest thing in the hall, and the one machine in here whose motion
+// is a blow rather than a rotation. It takes steam from the same overhead main the engine
+// does, so it keeps its own time -- stopping the line shaft does not stop this.
+function millHammer(sx, y, gx) {
+  const DARK = '#100e16', BODY = '#262e30', LIT = '#384345', RIM = 'rgba(198,222,244,0.28)';
+  const { lift, since } = hammerStroke(gx);              // since: 0 at the blow, 1 by the lift
+  const glow = Math.max(0.46, 1 - since * 0.7);
+  const bh = 7.6 - (1 - since) * 2.4;                    // the work, thinner for the blow
+  const tupB = y - 38 - bh - lift * 20, tupT = tupB - 22;
+
+  // ---- foundation: a timber block under a cast anvil, banded with iron
+  contactShadow(sx, y, 54);
+  ctx.fillStyle = '#1d1613'; ctx.fillRect(sx - 48, y - 23, 96, 23);
+  const fgd = ctx.createLinearGradient(0, y - 23, 0, y);
+  fgd.addColorStop(0, '#332821'); fgd.addColorStop(1, '#1e1714');
+  ctx.fillStyle = fgd; ctx.fillRect(sx - 47, y - 22, 94, 21);
+  ctx.fillStyle = 'rgba(255,224,182,0.05)'; ctx.fillRect(sx - 47, y - 22, 94, 1.3);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  for (const bx of [-30, 2, 28]) ctx.fillRect(sx + bx, y - 22, 2.4, 21);
+  for (const by of [-19, -6]) {
+    ctx.fillStyle = '#171319'; ctx.fillRect(sx - 48, y + by, 96, 4.4);
+    ctx.fillStyle = '#343c41'; ctx.fillRect(sx - 48, y + by, 96, 3);
+    ctx.fillStyle = 'rgba(214,232,248,0.14)'; ctx.fillRect(sx - 48, y + by, 96, 1);
+  }
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 30, y - 39, 60, 17);
+  const ag = ctx.createLinearGradient(sx - 30, 0, sx + 30, 0);
+  ag.addColorStop(0, '#39454a'); ag.addColorStop(0.5, '#283134'); ag.addColorStop(1, '#1d2427');
+  ctx.fillStyle = ag; ctx.fillRect(sx - 29, y - 38, 58, 15);
+  ctx.fillStyle = RIM; ctx.fillRect(sx - 29, y - 38, 58, 1.8);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(sx - 29, y - 26, 58, 2.4);
+
+  // ---- the standards, splayed, with the tup running between them
+  for (const d of [-1, 1]) {
+    ctx.fillStyle = DARK;
+    ctx.beginPath();
+    ctx.moveTo(sx + d * 47, y - 22); ctx.lineTo(sx + d * 30, y - 22);
+    ctx.lineTo(sx + d * 15, y - 77); ctx.lineTo(sx + d * 27, y - 77); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = d < 0 ? '#2c3538' : '#222a2c';
+    ctx.beginPath();
+    ctx.moveTo(sx + d * 45, y - 23); ctx.lineTo(sx + d * 32.4, y - 23);
+    ctx.lineTo(sx + d * 17.4, y - 76); ctx.lineTo(sx + d * 25.4, y - 76); ctx.closePath(); ctx.fill();
+    if (d < 0) {
+      ctx.fillStyle = 'rgba(206,228,248,0.16)';
+      ctx.beginPath();
+      ctx.moveTo(sx - 45, y - 23); ctx.lineTo(sx - 42, y - 23);
+      ctx.lineTo(sx - 22.4, y - 76); ctx.lineTo(sx - 25.4, y - 76); ctx.closePath(); ctx.fill();
+    }
+    // lightening holes: what makes a casting read as a casting rather than a plank
+    for (let i = 0; i < 3; i++) {
+      const f = 0.26 + i * 0.25;
+      const hx = sx + d * (38.5 - f * 15.5), hy = y - 23 - f * 53;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.ellipse(hx, hy, 3.6, 4.6, 0, 0, 6.28); ctx.fill();
+      ctx.fillStyle = 'rgba(190,214,238,0.1)'; ctx.beginPath(); ctx.ellipse(hx, hy - 1.4, 3.6, 1.6, 0, 0, 6.28); ctx.fill();
+    }
+  }
+  // ---- crown, and the cylinder standing on it
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 34, y - 95, 68, 20);
+  const cgd = ctx.createLinearGradient(0, y - 95, 0, y - 75);
+  cgd.addColorStop(0, '#3b464a'); cgd.addColorStop(0.4, '#283134'); cgd.addColorStop(1, '#1b2224');
+  ctx.fillStyle = cgd; ctx.fillRect(sx - 33, y - 94, 66, 18);
+  ctx.fillStyle = RIM; ctx.fillRect(sx - 33, y - 94, 66, 1.8);
+  rivets(sx - 27, sx + 27, y - 79, 9, 1.1, 'rgba(255,255,255,0.13)');
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 20, y - 106, 40, 14);
+  const vg = ctx.createLinearGradient(sx - 19, 0, sx + 19, 0);
+  vg.addColorStop(0, '#4a565c'); vg.addColorStop(0.4, '#303a3f'); vg.addColorStop(1, '#1f272b');
+  ctx.fillStyle = vg; ctx.fillRect(sx - 19, y - 106, 38, 13);
+  ctx.fillStyle = 'rgba(0,0,0,0.42)'; ctx.fillRect(sx - 19, y - 95, 38, 2);
+  // the bottom cover, so the barrel has an end on it rather than stopping at a line
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 24, y - 96, 48, 6);
+  ctx.fillStyle = LIT; ctx.fillRect(sx - 23, y - 95.4, 46, 4.4);
+  ctx.fillStyle = RIM; ctx.fillRect(sx - 23, y - 95.4, 46, 1.3);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  for (let i = 0; i < 7; i++) ctx.fillRect(sx - 20 + i * 6.4, y - 93.6, 2, 2);
+  // exhaust: out of the cylinder side, elbowed down the standard, blowing at head height
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 42, y - 104, 24, 9); ctx.fillRect(sx - 42, y - 104, 9, 22);
+  ctx.fillStyle = '#39424a'; ctx.fillRect(sx - 41, y - 103, 23, 7); ctx.fillRect(sx - 41, y - 103, 7, 21);
+  ctx.fillStyle = 'rgba(210,230,240,0.13)'; ctx.fillRect(sx - 41, y - 103, 23, 1.3);
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 44, y - 84, 13, 5);
+  ctx.fillStyle = LIT; ctx.fillRect(sx - 43, y - 83.4, 11, 3.4);
+
+  // ---- piston rod and tup
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 5.4, y - 96, 10.8, tupT + 96 - y + 3);
+  ctx.fillStyle = '#5f6d6a'; ctx.fillRect(sx - 4.4, y - 96, 8.8, tupT + 96 - y + 3);
+  ctx.fillStyle = 'rgba(230,242,255,0.22)'; ctx.fillRect(sx - 4.4, y - 96, 2.6, tupT + 96 - y + 3);
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 18, tupT, 36, tupB - tupT);
+  const tg = ctx.createLinearGradient(sx - 17, 0, sx + 17, 0);
+  tg.addColorStop(0, '#465456'); tg.addColorStop(0.42, '#2e393b'); tg.addColorStop(1, '#1f2729');
+  ctx.fillStyle = tg; ctx.fillRect(sx - 17, tupT + 1, 34, tupB - tupT - 2);
+  ctx.fillStyle = RIM; ctx.fillRect(sx - 17, tupT + 1, 34, 1.6);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(sx - 17, tupB - 5, 34, 3.4);
+  ctx.fillStyle = '#7c8a8c'; ctx.fillRect(sx - 18, tupB - 3, 36, 2.4);   // the dressed face
+
+  // ---- the work on the anvil: beaten thinner by the blow and glowing back up after it
+  ctx.fillStyle = `rgba(${(126 + 70 * glow) | 0},${(34 + 40 * glow) | 0},20,0.92)`;
+  ctx.fillRect(sx - 22, y - 38 - bh, 44, bh);
+  ctx.fillStyle = `rgba(255,${(142 + 80 * glow) | 0},${(52 + 78 * glow) | 0},${0.42 + 0.5 * glow})`;
+  ctx.fillRect(sx - 22, y - 37.4 - bh, 44, bh * 0.44);
+  // scale: the skin goes black first, in patches, and the heat shows between them
+  ctx.fillStyle = 'rgba(28,20,20,0.5)';
+  for (let i = 0; i < 6; i++) {
+    const hv = hash(gx * 1.9 + i * 6.7);
+    ctx.fillRect(sx - 21 + i * 7.2, y - 38 - bh + hv * bh * 0.4, 3 + hv * 3.4, bh * 0.4);
+  }
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const hg = ctx.createRadialGradient(sx, y - 40, 2, sx, y - 40, 60);
+  hg.addColorStop(0, `rgba(255,150,58,${0.5 * glow})`);
+  hg.addColorStop(0.45, `rgba(255,132,46,${0.16 * glow})`);
+  hg.addColorStop(1, 'rgba(255,132,46,0)');
+  ctx.fillStyle = hg; ctx.fillRect(sx - 60, y - 100, 120, 100);
+  ctx.restore();
+
+  // ---- the blow: scale and sparks off the face, thrown flat along the anvil
+  if (since < 0.5) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const f = 1 - since / 0.5;
+    for (let i = 0; i < 12; i++) {
+      const hv = hash(gx + i * 7.1), d = (1 - f) * (16 + hv * 52), sgn = i % 2 ? 1 : -1;
+      ctx.globalAlpha = f * 0.9;
+      ctx.fillStyle = i % 3 ? '#ffdcaa' : '#ff9a4a';
+      ctx.fillRect(sx + sgn * (9 + d), y - 40 - d * 0.28 * hv - hv * 3, 2.4, 2.4);
+    }
+    ctx.globalAlpha = f * 0.55; ctx.fillStyle = '#ffe6bc';
+    ctx.fillRect(sx - 26, y - 39.4, 52, 2.4);
+    ctx.restore();
+  }
+}
+// The exhaust blows at the top of the stroke; the work smokes all the time; and the blow
+// itself throws one cloud whose whole life is the beat after the hammer lands -- which a
+// free-running plume cannot do, because its puffs are spread evenly round the clock.
+function millHammerSmoke(sx, y, gx) {
+  const { ph, since } = hammerStroke(gx);
+  millSmoke(sx - 38, y - 80, { n: 8, rise: 34, rate: 0.95, r0: 5, r1: 27, drift: -40,
+    a: 0.46 * Math.max(0, 1 - Math.abs(ph - 0.62) * 4.5), salt: gx * 1.7, tint: '230,235,243' });
+  millSmoke(sx + 2, y - 44, { n: 13, rise: 78, rate: 0.22, r0: 8, r1: 34, drift: 18,
+    a: 0.44, salt: gx * 2.3, tint: '176,169,166', ceil: y - 98, roll: 1 });
+  if (since < 1) {
+    const img = puffSprite('208,200,196');
+    ctx.save();
+    for (let i = 0; i < 8; i++) {
+      const hv = hash(gx * 3.7 + i * 5.1), sgn = i % 2 ? 1 : -1;
+      const r = 7 + since * (26 + hv * 14);
+      ctx.globalAlpha = 0.4 * (1 - since) * Math.min(1, since * 8) * (0.6 + hv * 0.6);
+      ctx.drawImage(img, sx + sgn * (12 + since * (34 + hv * 26)) - r,
+                    y - 40 - since * (14 + hv * 20) - r, r * 2, r * 2);
+    }
+    ctx.restore();
+  }
+}
+
+// A cupola furnace and the blower that keeps it alight. This is the one in the hall that
+// is here for the smoke: the hood over the throat catches most of it and the rest rolls
+// out round the lip, which is what a cupola under a roof actually does to the air in it.
+//
+// The order matters twice here. The wall glow goes down BEFORE the shell, or the shell
+// turns terracotta and stops reading as iron. The smoke goes down AFTER the hood, or the
+// hood -- which is 86 units wide and sits directly over the throat -- hides every puff the
+// furnace makes, which is exactly what the first version of this did.
+function millCupola(sx, y, gx, shy) {
+  const DARK = '#100e16', BODY = '#2b2f36', LIT = '#3d444c', RIM = 'rgba(198,222,244,0.3)';
+  const spin = shaftPhase(gx) * 2.6 + hash(gx) * 6.28;
+  const tap = (S.t * 0.09 + hash(gx * 1.1)) % 1;         // tapped now and then, not always
+  const tapping = tap > 0.62 && tap < 0.8;
+  const fl = cupolaFlame(gx);                            // the fire, never quite steady
+
+  // ---- the light this thing throws on the wall behind it, before anything is drawn on top
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const wg = ctx.createRadialGradient(sx - 1, y - 42, 4, sx - 1, y - 42, 92);
+  wg.addColorStop(0, `rgba(255,146,52,${0.3 * fl})`);
+  wg.addColorStop(0.42, `rgba(255,132,46,${0.1 * fl})`);
+  wg.addColorStop(1, 'rgba(255,132,46,0)');
+  ctx.fillStyle = wg; ctx.fillRect(sx - 94, y - 134, 188, 134);
+  ctx.restore();
+
+  // ---- bed plate
+  contactShadow(sx, y, 52); contactShadow(sx + 72, y, 20);
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 46, y - 10, 92, 10);
+  ctx.fillStyle = BODY; ctx.fillRect(sx - 45, y - 9, 90, 9);
+  ctx.fillStyle = RIM; ctx.fillRect(sx - 45, y - 9, 90, 1.4);
+  // ---- the shell: plate, riveted, held round by three bands
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 31, y - 68, 62, 59);
+  const sg = ctx.createLinearGradient(sx - 30, 0, sx + 30, 0);
+  sg.addColorStop(0, '#39414a'); sg.addColorStop(0.42, '#282d34'); sg.addColorStop(1, '#1b1f25');
+  ctx.fillStyle = sg; ctx.fillRect(sx - 30, y - 67, 60, 58);
+  rivets(sx - 26, sx + 26, y - 56, 9, 1.1, 'rgba(255,255,255,0.12)');
+  rivets(sx - 26, sx + 26, y - 22, 9, 1.1, 'rgba(255,255,255,0.09)');
+  for (const by of [-61, -31, -13]) {
+    ctx.fillStyle = '#15181e'; ctx.fillRect(sx - 32, y + by, 64, 5.4);
+    ctx.fillStyle = '#39404a'; ctx.fillRect(sx - 32, y + by, 64, 3.6);
+    ctx.fillStyle = 'rgba(210,230,248,0.15)'; ctx.fillRect(sx - 32, y + by, 64, 1.1);
+  }
+  // charging door, hanging open on its hinge, the fire behind it
+  ctx.fillStyle = '#09070c'; ctx.fillRect(sx - 14, y - 53, 25, 21);
+  const dg = ctx.createLinearGradient(sx - 14, 0, sx + 11, 0);
+  dg.addColorStop(0, `rgba(196,76,22,${0.7 * fl})`);
+  dg.addColorStop(0.5, `rgba(255,178,84,${0.92 * fl})`);
+  dg.addColorStop(1, `rgba(255,120,36,${0.5 * fl})`);
+  ctx.fillStyle = dg; ctx.fillRect(sx - 13, y - 52, 23, 19);
+  ctx.fillStyle = `rgba(255,228,170,${0.5 * fl})`; ctx.fillRect(sx - 13, y - 40, 23, 3);
+
+  ctx.fillStyle = DARK; ctx.fillRect(sx + 11, y - 55, 4, 25);
+  ctx.fillStyle = LIT; ctx.fillRect(sx + 14, y - 54, 8, 23);
+  ctx.fillStyle = RIM; ctx.fillRect(sx + 14, y - 54, 8, 1.4);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const fg = ctx.createRadialGradient(sx - 1, y - 43, 2, sx - 1, y - 43, 30);
+  fg.addColorStop(0, `rgba(255,164,70,${0.34 * fl})`); fg.addColorStop(1, 'rgba(255,164,70,0)');
+  ctx.fillStyle = fg; ctx.fillRect(sx - 32, y - 74, 64, 64);
+  ctx.restore();
+  // coke in the mouth, AFTER the bloom: drawn before it, the glow lit the lumps back up
+  // and a bed of fuel came out as a row of bread rolls
+  ctx.fillStyle = 'rgba(20,11,9,0.82)';
+  for (let i = 0; i < 5; i++) {
+    const hv = hash(gx + i * 4.3);
+    ctx.beginPath(); ctx.arc(sx - 10 + i * 5.4, y - 35 + hv * 2.6, 2.4 + hv * 2, 0, 6.28); ctx.fill();
+  }
+  // tap hole and spout, running into a sand bed
+  ctx.fillStyle = DARK; ctx.fillRect(sx + 29, y - 27, 27, 10);
+  ctx.fillStyle = BODY; ctx.fillRect(sx + 29, y - 26, 26, 8);
+  ctx.fillStyle = RIM; ctx.fillRect(sx + 29, y - 26, 26, 1.2);
+  ctx.fillStyle = '#231e1a'; ctx.fillRect(sx + 40, y - 4, 32, 4);
+  if (tapping) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = 'rgba(255,200,116,0.85)'; ctx.fillRect(sx + 51, y - 20, 3.6, 20);
+    ctx.fillStyle = 'rgba(255,152,62,0.55)'; ctx.fillRect(sx + 44, y - 5, 24, 5);
+    const tg2 = ctx.createRadialGradient(sx + 53, y - 9, 2, sx + 53, y - 9, 46);
+    tg2.addColorStop(0, 'rgba(255,174,74,0.42)'); tg2.addColorStop(1, 'rgba(255,174,74,0)');
+    ctx.fillStyle = tg2; ctx.fillRect(sx + 7, y - 55, 92, 55);
+    ctx.restore();
+    millSmoke(sx + 53, y - 12, { n: 5, rise: 40, rate: 0.5, r0: 4, r1: 17, drift: 14,
+      a: 0.2, salt: gx * 3.1, tint: '186,156,128' });
+  }
+  // ---- throat, hood, flue
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 25, y - 74, 50, 7);
+  ctx.fillStyle = LIT; ctx.fillRect(sx - 24, y - 73, 48, 5);
+  ctx.fillStyle = `rgba(255,150,60,${0.4 * fl})`; ctx.fillRect(sx - 22, y - 75, 44, 2.6);
+  ctx.fillStyle = DARK;
+  ctx.beginPath();
+  ctx.moveTo(sx - 44, y - 77); ctx.lineTo(sx + 44, y - 77);
+  ctx.lineTo(sx + 15, y - 94); ctx.lineTo(sx - 15, y - 94); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#272c33';
+  ctx.beginPath();
+  ctx.moveTo(sx - 42, y - 78.4); ctx.lineTo(sx + 42, y - 78.4);
+  ctx.lineTo(sx + 14, y - 93); ctx.lineTo(sx - 14, y - 93); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = RIM;
+  ctx.beginPath();
+  ctx.moveTo(sx - 42, y - 78.4); ctx.lineTo(sx - 34, y - 78.4);
+  ctx.lineTo(sx - 13, y - 93); ctx.lineTo(sx - 14, y - 93); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 16, y - 116, 32, 23);
+  ctx.fillStyle = '#31363d'; ctx.fillRect(sx - 15, y - 116, 30, 23);
+  ctx.fillStyle = 'rgba(210,230,248,0.11)'; ctx.fillRect(sx - 15, y - 116, 4, 23);
+
+
+  // ---- the blower: a volute with the fan turning behind its port, and the blast pipe
+  const bx = sx + 72, by = y - 34;
+  ctx.fillStyle = DARK; ctx.fillRect(sx + 56, y - 15, 32, 15);
+  ctx.fillStyle = BODY; ctx.fillRect(sx + 57, y - 14, 30, 14);
+  ctx.fillStyle = RIM; ctx.fillRect(sx + 57, y - 14, 30, 1.3);
+  ctx.fillStyle = DARK; ctx.beginPath(); ctx.arc(bx, by, 24, 0, 6.28); ctx.fill();
+  const vg = ctx.createLinearGradient(bx - 24, 0, bx + 24, 0);
+  vg.addColorStop(0, '#3b434c'); vg.addColorStop(0.5, '#292f37'); vg.addColorStop(1, '#1d2229');
+  ctx.fillStyle = vg; ctx.beginPath(); ctx.arc(bx, by, 22.4, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = 'rgba(206,228,250,0.2)'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.arc(bx, by, 22.4, Math.PI * 1.02, Math.PI * 1.9); ctx.stroke();
+  // blast pipe across to the tuyere in the shell
+  ctx.fillStyle = DARK; ctx.fillRect(sx + 30, y - 41, 26, 12);
+  ctx.fillStyle = '#333b43'; ctx.fillRect(sx + 30, y - 40, 26, 10);
+  ctx.fillStyle = 'rgba(210,230,248,0.13)'; ctx.fillRect(sx + 30, y - 40, 26, 1.4);
+  ctx.fillStyle = DARK; ctx.fillRect(sx + 27, y - 43, 6, 16);
+  ctx.fillStyle = LIT; ctx.fillRect(sx + 28, y - 42, 4, 14);
+  // the fan, through its inspection port, with the smear a fast wheel leaves
+  ctx.fillStyle = '#0b090f'; ctx.beginPath(); ctx.arc(bx, by, 14.6, 0, 6.28); ctx.fill();
+  ctx.save();
+  ctx.beginPath(); ctx.arc(bx, by, 14.2, 0, 6.28); ctx.clip();
+  for (const [w, col] of [[3.4, '#49535c'], [1.1, 'rgba(214,234,252,0.16)']]) {
+    ctx.strokeStyle = col; ctx.lineWidth = w;
+    for (let i = 0; i < 8; i++) {
+      const th = spin + i * Math.PI / 4;
+      ctx.beginPath();
+      ctx.moveTo(bx + Math.cos(th) * 4.6, by + Math.sin(th) * 4.6);
+      ctx.lineTo(bx + Math.cos(th + 0.5) * 14, by + Math.sin(th + 0.5) * 14);
+      ctx.stroke();
+    }
+  }
+  ctx.strokeStyle = 'rgba(150,168,182,0.07)'; ctx.lineWidth = 7;
+  ctx.beginPath(); ctx.arc(bx, by, 9.6, 0, 6.28); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = DARK; ctx.beginPath(); ctx.arc(bx, by, 5, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = '#545d66'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(bx, by, 14.4, 0, 6.28); ctx.stroke();
+  // the driven pulley, on a bracket clear of the casing so the belt has somewhere to land
+  ctx.fillStyle = DARK; ctx.fillRect(bx - 4.4, y - 62, 8.8, 22);
+  ctx.fillStyle = BODY; ctx.fillRect(bx - 3.4, y - 61, 6.8, 21);
+  ctx.fillStyle = '#131118'; ctx.beginPath(); ctx.arc(bx, y - 62, 10.4, 0, 6.28); ctx.fill();
+  ctx.fillStyle = '#343742'; ctx.beginPath(); ctx.arc(bx, y - 62, 9, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = 'rgba(206,224,244,0.22)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(bx, y - 62, 9, 3.4, 5.5); ctx.stroke();
+  ctx.fillStyle = 'rgba(224,206,160,0.3)';
+  ctx.beginPath(); ctx.arc(bx + Math.cos(spin) * 6.2, y - 62 + Math.sin(spin) * 6.2, 1.4, 0, 6.28); ctx.fill();
+  void shy;
+}
+// What the hood misses rolls out round both lips, climbs the outside of the flue and then
+// spreads along the underside of the roof. Drawn over the hood, not under it: the hood is
+// 86 units wide and sits directly over the throat, so every puff made underneath it was
+// hidden by it, which is what the first pass at this did.
+function millCupolaSmoke(sx, y, gx) {
+  const fl = cupolaFlame(gx);
+  for (const d of [-1, 1]) {
+    millSmoke(sx + d * 34, y - 79, { n: 15, rise: 54, rate: 0.22, r0: 9, r1: 38, drift: d * 14,
+      a: 0.52, salt: gx * (2.1 + d), tint: '154,148,148', ceil: y - 98, roll: d * 1.6 });
+    // the same smoke lit from underneath by the door it just came off: a warm pass at a
+    // third the height, which is what stops the column reading as fog with a fire behind it
+    millSmoke(sx + d * 30, y - 77, { n: 6, rise: 24, rate: 0.42, r0: 7, r1: 20, drift: d * 9,
+      a: 0.32 * fl, salt: gx * (5.3 + d), tint: '198,148,104' });
+  }
+  millSmoke(sx - 2, y - 73, { n: 8, rise: 26, rate: 0.5, r0: 6, r1: 17, drift: 3,
+    a: 0.32, salt: gx, tint: '178,148,124' });
 }
 
 // --- the hall: back wall, windows, plant, line shafting, then the roof truss
@@ -3545,8 +4180,9 @@ function millCorridor(wx0, wx1, y, laneIn) {
   for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
-    if (hash(gx * 0.011 + lane * 3.3) < 0.28) continue;
-    millPlant(gx, y - 2, lane);
+    const bay = millBay(gx, lane);
+    if (!bay.has || bay.feat >= 0) continue;     // a big engine has this bay; it is drawn later
+    millPlant(gx, y - 2, lane, bay.kind);
   }
   // cast-iron stanchions on the hall's front line: nothing was carrying the floors
   for (let wx = Math.floor((wx0 - 200) / 200) * 200; wx < wx1 + 200; wx += 200) {
@@ -3597,8 +4233,7 @@ function millCorridor(wx0, wx1, y, laneIn) {
   for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50, sx = gx - V.left;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
-    const has = hash(gx * 0.011 + lane * 3.3) >= 0.28;
-    const kind = Math.floor(hash(gx * 0.017 + lane * 7.7) * 4);
+    const bay = millBay(gx, lane);
     // hanger
     ctx.fillStyle = '#3f414a'; ctx.fillRect(sx - 12, cy + 24, 3.4, shy - cy - 24); ctx.fillRect(sx + 9, cy + 24, 3.4, shy - cy - 24);
     // pulley
@@ -3614,13 +4249,15 @@ function millCorridor(wx0, wx1, y, laneIn) {
     ctx.beginPath(); ctx.arc(sx + Math.cos(spin) * 5.6, shy + Math.sin(spin) * 5.6, 1.3, 0, 6.28); ctx.fill();
     // leather belt down to whatever this bay runs; an undriven pulley gets a
     // loose drum beside it so it reads as idling rather than forgotten
-    if (!has || kind === 3) {
+    const drive = bayDrive(bay, sx, y);
+    if (drive === SELF_DRIVEN) {
+      // the mill engine wraps this pulley itself, once its flywheel is down
+    } else if (!drive) {
       ctx.fillStyle = '#131118'; ctx.beginPath(); ctx.arc(sx + 15, shy, 7.6, 0, 6.28); ctx.fill();
       ctx.fillStyle = '#2c2f38'; ctx.beginPath(); ctx.arc(sx + 15, shy, 6.4, 0, 6.28); ctx.fill();
       ctx.strokeStyle = 'rgba(206,224,244,0.16)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(sx + 15, shy, 6.4, 3.4, 5.5); ctx.stroke();
     } else {
-      const tx = kind === 0 ? sx - 13 : kind === 1 ? sx + 16 : sx + 22;
-      const tyv = kind === 0 ? y - 33 : kind === 1 ? y - 50 : y - 74;
+      const tx = drive[0], tyv = drive[1];
       const wob = Math.sin(S.t * 6 + gx) * 1.2;
       // two narrow strands of dark leather, close together, with one lit edge
       ctx.lineCap = 'butt';
@@ -3635,11 +4272,28 @@ function millCorridor(wx0, wx1, y, laneIn) {
       ctx.lineCap = 'round';
     }
   }
+  // the big engines, on the same grid as the plant and AFTER the shafting: they are the
+  // tall objects in here and they stand forward of the back wall, so the shaft and its
+  // belts pass behind them. Still before the truss, which closes the room over the top.
+  for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
+    const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
+    if (gx < wx0 - 60 || gx > wx1 + 60) continue;
+    const feat = millBay(gx, lane).feat;
+    if (feat >= 0) millFeature(gx, y - 2, lane, feat, shy);
+  }
   // the roof truss
   millTruss(x0, x1, cy, wx0, wx1);
   // shadow under it, and warm bounce off the deck
   const g2 = ctx.createLinearGradient(0, cy + 18, 0, cy + 66); g2.addColorStop(0, 'rgba(0,0,0,0.5)'); g2.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g2; ctx.fillRect(x0, cy + 18, x1 - x0, 48);
+  // the engines' smoke, last of all, because that shadow is drawn straight across the
+  // band the smoke gathers in and rubbed every plume out of the frame
+  for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
+    const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
+    if (gx < wx0 - 60 || gx > wx1 + 60) continue;
+    const feat = millBay(gx, lane).feat;
+    if (feat >= 0) millFeatureSmoke(gx, y - 2, lane, feat);
+  }
   const f = ctx.createLinearGradient(0, y - 34, 0, y); f.addColorStop(0, 'rgba(255,196,120,0)'); f.addColorStop(1, 'rgba(255,196,120,0.05)');
   ctx.fillStyle = f; ctx.fillRect(x0, y - 34, x1 - x0, 34);
   ctx.restore();

@@ -1,0 +1,58 @@
+<!doctype html>
+<!-- A bench for the hall's big engines. It pulls index.html's script out, appends its own
+     few lines to it and evals the two together, then paints ONE machine on a clean canvas
+     at whatever scale and instant the query asks for:
+       tools/bench.html?m=engine|hammer|cupola&t=seconds&z=zoom&shot
+     Appending rather than evaluating separately is load-bearing: everything in the game is
+     declared with const, and a const declared inside an eval is not visible outside it, so
+     a bench that called millFeature from the enclosing script got a title screen and no
+     error worth reading.
+     Nothing in the game reads this file. It exists so a machine can be looked at without a
+     hundred people standing in front of it. -->
+<html><head><meta charset="utf-8"><title>bench</title>
+<style>html,body{margin:0;background:#0d0f16}canvas{display:block}</style></head>
+<body><canvas id="c" width="960" height="540"></canvas>
+<script>
+const req = new XMLHttpRequest();
+req.open('GET', '../index.html', false);      // synchronous on purpose: the screenshot
+req.send();                                    // budget must not expire mid-fetch
+const open = '<' + 'script>', close = '<' + '/script>';
+const game = req.responseText.split(open)[1].split(close)[0].replace("'use strict';", '');
+const bench = `
+  const BQ = new URLSearchParams(location.search);
+  const bt = +(BQ.get('t') || 3), bz = +(BQ.get('z') || 2.6);
+  const bfeat = { engine: 0, hammer: 1, cupola: 2 }[BQ.get('m') || 'engine'];
+  S.t = bt; S.rooms = []; V.zoom = 1;
+  const by = 420, bgx = 1000, bvw = 960 / bz;
+  V.left = bgx - bvw / 2; V.vw = bvw;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#16141c'; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.scale(bz, bz); ctx.translate(0, H / bz - by - 30);
+  // the hall's own wall and floor, so values are judged against what surrounds them
+  const bcy = by - CFG.tunnelH;
+  ctx.fillStyle = '#1e1b27'; ctx.fillRect(-20, bcy, bvw + 40, CFG.tunnelH + 16);
+  brickFill(-20, bcy, bvw + 40, CFG.tunnelH + 16, 0.24);
+  ctx.fillStyle = 'rgba(13,11,19,0.56)'; ctx.fillRect(-20, bcy, bvw + 40, CFG.tunnelH + 16);
+  ctx.fillStyle = '#2b2933'; ctx.fillRect(-20, by, bvw + 40, 18);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(-20, bcy + 50, bvw + 40, 5);
+  ctx.fillStyle = '#585a63'; ctx.fillRect(-20, bcy + 49, bvw + 40, 4.4);
+  // the bay's own shaft pulley, so a self-driven machine's belt is judged landing on
+  // something rather than ending in mid-air
+  const bsx = bgx - V.left;
+  ctx.fillStyle = '#131118'; ctx.beginPath(); ctx.arc(bsx, bcy + 52, 9.4, 0, 6.28); ctx.fill();
+  ctx.fillStyle = '#343742'; ctx.beginPath(); ctx.arc(bsx, bcy + 52, 8, 0, 6.28); ctx.fill();
+  millFeature(bgx, by, 0, bfeat, bcy + 52);
+  // and the roof truss, which hides everything above the floor less 106 and is the reason
+  // a machine drawn taller than that is drawing into solid girder
+  ctx.fillStyle = '#1a1721'; ctx.fillRect(-20, bcy - 8, bvw + 40, 28);
+  ctx.fillStyle = '#26242e'; ctx.fillRect(-20, bcy - 2, bvw + 40, 24);
+  // the shadow the roof casts, then the smoke over it -- the same order millCorridor uses,
+  // and the reason the smoke has to come last
+  const g2 = ctx.createLinearGradient(0, bcy + 18, 0, bcy + 66);
+  g2.addColorStop(0, 'rgba(0,0,0,0.5)'); g2.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g2; ctx.fillRect(-20, bcy + 18, bvw + 40, 48);
+  millFeatureSmoke(bgx, by, 0, bfeat);
+  ctx.restore();
+`;
+(0, eval)(game + bench);
+</script></body></html>
