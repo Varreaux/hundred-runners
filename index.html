@@ -3422,8 +3422,12 @@ function millPlant(wx, y, lane, kind) {
     ctx.fillStyle = fg; ctx.fillRect(sx - 24, y - 31, 44, 40);
     ctx.fillStyle = `rgba(255,190,110,${0.85 * fl})`; ctx.beginPath(); ctx.arc(sx - 2, y - 9, 5, 0, 6.28); ctx.fill();
     // stack and gauge
-    ctx.fillStyle = '#2c262c'; ctx.fillRect(sx + 20, y - 96, 9, 50);
-    ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(sx + 20, y - 96, 2.2, 50);
+    ctx.fillStyle = '#2c262c'; ctx.fillRect(sx + 20, y - 104, 9, 58);
+    ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(sx + 20, y - 104, 2.2, 58);
+    // the joint it leaks from; millBoilerSmoke draws the leak, in the pass after the truss
+    ctx.fillStyle = '#1a161c'; ctx.fillRect(sx + 18, y - 72, 13, 5);
+    ctx.fillStyle = '#3b3540'; ctx.fillRect(sx + 18, y - 72, 13, 3.4);
+    ctx.fillStyle = 'rgba(214,230,248,0.13)'; ctx.fillRect(sx + 18, y - 72, 13, 1.1);
     ctx.fillStyle = '#3b444a'; ctx.beginPath(); ctx.arc(sx - 24, y - 40, 5.4, 0, 6.28); ctx.fill();
     ctx.fillStyle = '#c8d4d8'; ctx.beginPath(); ctx.arc(sx - 24, y - 40, 4, 0, 6.28); ctx.fill();
     ctx.strokeStyle = '#8a2b22'; ctx.lineWidth = 1.2;
@@ -3575,11 +3579,25 @@ function hammerStroke(gx) {
 }
 // how hard the cupola is burning this instant; the shell, the door and the smoke share it
 const cupolaFlame = gx => 0.74 + 0.26 * Math.sin(S.t * 6.2 + gx);
+// The bench boiler's flue now reaches the roof, so nothing comes out of the top of it in
+// here -- what shows is the leak at its joint, which is what a mill actually smelled of.
+// Cheap, and it is the thing that puts smoke in bays that hold no big engine at all.
+function millBoilerSmoke(sx, y, gx) {
+  millSmoke(sx + 24.5, y - 70, { n: 6, rise: 32, rate: 0.3, r0: 4, r1: 19, drift: 7,
+    a: 0.24, salt: gx * 4.1, tint: '166,160,158', ceil: y - 98, roll: 1.2 });
+}
 
 // everything in the hall stands on a lit deck, so it drops something where it touches
 function contactShadow(sx, y, rx) {
-  ctx.fillStyle = 'rgba(0,0,0,0.34)';
-  ctx.beginPath(); ctx.ellipse(sx, y + 1, rx, 7, 0, 0, 6.28); ctx.fill();
+  // a falloff, not a lozenge: at a flat alpha this was the one shadow in the hall with a
+  // ruled edge on it, and it read as a painted oval rather than as shade
+  const g = ctx.createRadialGradient(sx, y + 1, 0, sx, y + 1, rx);
+  g.addColorStop(0, 'rgba(0,0,0,0.38)');
+  g.addColorStop(0.55, 'rgba(0,0,0,0.26)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.save(); ctx.translate(sx, y + 1); ctx.scale(1, 7 / rx); ctx.translate(-sx, -(y + 1));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, y + 1, rx, 0, 6.28); ctx.fill();
+  ctx.restore();
 }
 // The engine that turns the hall. Everything else in here hangs off the line shaft; this
 // is the thing on the other end of it, so it runs on shaftPhase rather than on a clock of
@@ -3605,11 +3623,11 @@ function millEngine(sx, y, gx, shy) {
   // ---- bedplate, and the crank pedestal it deliberately does not reach: the wheel wants
   // clear floor under it, and a bed running the whole length would have it ploughing
   contactShadow(sx - 43, y, 64); contactShadow(sx + 57, y, 24);
-  ctx.fillStyle = DARK; ctx.fillRect(sx - 104, y - 19, 122, 19);
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 104, y - 19, 130, 19);
   const bg = ctx.createLinearGradient(0, y - 19, 0, y);
   bg.addColorStop(0, '#39443f'); bg.addColorStop(0.35, '#28322f'); bg.addColorStop(1, '#1a211f');
-  ctx.fillStyle = bg; ctx.fillRect(sx - 103, y - 18, 120, 18);
-  ctx.fillStyle = RIM; ctx.fillRect(sx - 103, y - 18, 120, 1.5);
+  ctx.fillStyle = bg; ctx.fillRect(sx - 103, y - 18, 128, 18);
+  ctx.fillStyle = RIM; ctx.fillRect(sx - 103, y - 18, 128, 1.5);
   ctx.fillStyle = 'rgba(0,0,0,0.4)';
   for (let i = -96; i < 14; i += 23) ctx.fillRect(sx + i, y - 13, 10, 2.6);
   ctx.fillStyle = 'rgba(206,228,250,0.07)';
@@ -3627,6 +3645,11 @@ function millEngine(sx, y, gx, shy) {
   // crate with bands painted on, which is what the first pass at this was.
   ctx.fillStyle = DARK; ctx.fillRect(sx - 96, y - 32, 54, 14);
   ctx.fillStyle = BODY; ctx.fillRect(sx - 95, y - 31, 52, 13);
+  for (const cxo of [-99, -38]) {                 // drain cocks, clear of the saddle
+    ctx.fillStyle = DARK; ctx.fillRect(sx + cxo - 2.6, y - 32, 5.2, 7);
+    ctx.fillStyle = '#5c4d26'; ctx.fillRect(sx + cxo - 1.8, y - 31, 3.6, 6);
+    ctx.fillStyle = DARK; ctx.fillRect(sx + cxo - 4.4, y - 27, 8.8, 2.4);
+  }
   ctx.fillStyle = DARK; ctx.fillRect(sx - 101, y - 66, 68, 35);
   const cg = ctx.createLinearGradient(0, y - 65, 0, y - 32);
   cg.addColorStop(0, '#4a3f30'); cg.addColorStop(0.34, '#352d24'); cg.addColorStop(1, '#1d1915');
@@ -3659,8 +3682,21 @@ function millEngine(sx, y, gx, shy) {
   ctx.fillStyle = 'rgba(210,230,240,0.13)'; ctx.fillRect(sx - 76, y - 99, 2.4, 21);
   ctx.fillStyle = LIT; ctx.fillRect(sx - 79, y - 84, 15, 5);
   ctx.fillStyle = RIM; ctx.fillRect(sx - 79, y - 84, 15, 1.2);
+  // exhaust standpipe, off the cylinder and up to the flue. It is the leak at this bend
+  // that millEngineSmoke draws: an engine that never shows is an engine nobody believes.
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 52, y - 90, 14, 28);
+  ctx.fillStyle = '#39424a'; ctx.fillRect(sx - 51, y - 90, 12, 28);
+  ctx.fillStyle = 'rgba(210,230,240,0.13)'; ctx.fillRect(sx - 51, y - 90, 3, 28);
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 56, y - 92, 22, 7);
+  ctx.fillStyle = LIT; ctx.fillRect(sx - 55, y - 91.4, 20, 5);
+  ctx.fillStyle = RIM; ctx.fillRect(sx - 55, y - 91.4, 20, 1.2);
 
   // ---- slide bars, crosshead, piston rod
+  // the motion plate: the standard that carries the far end of the bars down to the bed
+  ctx.fillStyle = DARK; ctx.fillRect(sx + 14, y - 63, 12, 45);
+  ctx.fillStyle = BODY; ctx.fillRect(sx + 15, y - 62, 10, 44);
+  ctx.fillStyle = RIM; ctx.fillRect(sx + 15, y - 62, 3, 44);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.beginPath(); ctx.arc(sx + 20, y - 40, 3, 0, 6.28); ctx.fill();
   ctx.fillStyle = DARK; ctx.fillRect(sx - 32, y - 62, 54, 6); ctx.fillRect(sx - 32, y - 40, 54, 6);
   ctx.fillStyle = LIT; ctx.fillRect(sx - 32, y - 61, 54, 4); ctx.fillRect(sx - 32, y - 39, 54, 4);
   ctx.fillStyle = RIM; ctx.fillRect(sx - 32, y - 61, 54, 1.1); ctx.fillRect(sx - 32, y - 39, 54, 1.1);
@@ -3717,7 +3753,7 @@ function millEngine(sx, y, gx, shy) {
   }
   // the belt wrapping the far side of the rim, laid over it after the strands
   ctx.strokeStyle = '#332718'; ctx.lineWidth = 6;
-  const wrap = Math.atan2(ny, nx);
+  const wrap = Math.atan2(ny, nx) + Math.PI;
   ctx.beginPath(); ctx.arc(cx, CL, 26.5, wrap, wrap + Math.PI); ctx.stroke();
   ctx.strokeStyle = 'rgba(206,188,158,0.1)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.arc(cx, CL, 29, wrap, wrap + Math.PI); ctx.stroke();
@@ -3754,9 +3790,13 @@ function millEngine(sx, y, gx, shy) {
 function millEngineSmoke(sx, y, gx) {
   const a = shaftPhase(gx) + hash(gx) * 6.28;
   const blow = Math.max(0, Math.sin(a));
-  for (const dx of [-94, -44]) {
-    millSmoke(sx + dx, y - 28, { n: 7, rise: 22, rate: 1.0, r0: 7, r1: 32, drift: dx < -65 ? -44 : 38,
-      a: 0.24 * blow, salt: gx + dx, tint: '222,230,240' });
+  // the exhaust bend, which is where a mill engine actually shows: the pipe goes up to the
+  // flue and the bend leaks, all day, whatever the crank is doing
+  millSmoke(sx - 44, y - 70, { n: 12, rise: 40, rate: 0.32, r0: 7, r1: 28, drift: 12,
+    a: 0.4, salt: gx * 5.9, tint: '206,214,226', ceil: y - 98, roll: 1.2 });
+  for (const dx of [-99, -38]) {
+    millSmoke(sx + dx, y - 30, { n: 7, rise: 20, rate: 1.0, r0: 7, r1: 30, drift: dx < -65 ? -44 : 38,
+      a: 0.3 * blow, salt: gx + dx, tint: '222,230,240' });
   }
   millSmoke(sx - 34, y - 56, { n: 5, rise: 34, rate: 0.7, r0: 4.4, r1: 17, drift: -11,
     a: 0.15, salt: gx * 1.3, tint: '220,228,240' });
@@ -3769,7 +3809,10 @@ function millHammer(sx, y, gx) {
   const DARK = '#100e16', BODY = '#262e30', LIT = '#384345', RIM = 'rgba(198,222,244,0.28)';
   const { lift, since } = hammerStroke(gx);              // since: 0 at the blow, 1 by the lift
   const glow = Math.max(0.46, 1 - since * 0.7);
-  const bh = 7.6 - (1 - since) * 2.4;                    // the work, thinner for the blow
+  // 0.56 is where lift reaches 1 and the tup is at the top of its stroke: the one instant
+  // in the cycle when a fresh heat can appear on the anvil without anything being inside it
+  const { ph: bph } = hammerStroke(gx);
+  const bh = (bph >= 0.56 && bph < 0.82) ? 7.6 : 5.2;    // struck thin, and it stays thin
   const tupB = y - 38 - bh - lift * 20, tupT = tupB - 22;
 
   // ---- foundation: a timber block under a cast anvil, banded with iron
@@ -3814,7 +3857,7 @@ function millHammer(sx, y, gx) {
       const f = 0.26 + i * 0.25;
       const hx = sx + d * (38.5 - f * 15.5), hy = y - 23 - f * 53;
       ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.ellipse(hx, hy, 3.6, 4.6, 0, 0, 6.28); ctx.fill();
-      ctx.fillStyle = 'rgba(190,214,238,0.1)'; ctx.beginPath(); ctx.ellipse(hx, hy - 1.4, 3.6, 1.6, 0, 0, 6.28); ctx.fill();
+      ctx.fillStyle = 'rgba(190,214,238,0.1)'; ctx.beginPath(); ctx.ellipse(hx, hy + 1.4, 3.6, 1.6, 0, 0, 6.28); ctx.fill();
     }
   }
   // ---- crown, and the cylinder standing on it
@@ -3843,9 +3886,11 @@ function millHammer(sx, y, gx) {
   ctx.fillStyle = LIT; ctx.fillRect(sx - 43, y - 83.4, 11, 3.4);
 
   // ---- piston rod and tup
-  ctx.fillStyle = DARK; ctx.fillRect(sx - 5.4, y - 96, 10.8, tupT + 96 - y + 3);
-  ctx.fillStyle = '#5f6d6a'; ctx.fillRect(sx - 4.4, y - 96, 8.8, tupT + 96 - y + 3);
-  ctx.fillStyle = 'rgba(230,242,255,0.22)'; ctx.fillRect(sx - 4.4, y - 96, 2.6, tupT + 96 - y + 3);
+  // from the crown's underside, not from the cylinder: the rod passes through 20 units of
+  // casting that is drawn before it, and the length above y-75 was painted over solid iron
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 5.4, y - 76, 10.8, tupT + 76 - y + 3);
+  ctx.fillStyle = '#5f6d6a'; ctx.fillRect(sx - 4.4, y - 76, 8.8, tupT + 76 - y + 3);
+  ctx.fillStyle = 'rgba(230,242,255,0.22)'; ctx.fillRect(sx - 4.4, y - 76, 2.6, tupT + 76 - y + 3);
   ctx.fillStyle = DARK; ctx.fillRect(sx - 18, tupT, 36, tupB - tupT);
   const tg = ctx.createLinearGradient(sx - 17, 0, sx + 17, 0);
   tg.addColorStop(0, '#465456'); tg.addColorStop(0.42, '#2e393b'); tg.addColorStop(1, '#1f2729');
@@ -3895,8 +3940,14 @@ function millHammerSmoke(sx, y, gx) {
   const { ph, since } = hammerStroke(gx);
   millSmoke(sx - 38, y - 80, { n: 8, rise: 34, rate: 0.95, r0: 5, r1: 27, drift: -40,
     a: 0.46 * Math.max(0, 1 - Math.abs(ph - 0.62) * 4.5), salt: gx * 1.7, tint: '230,235,243' });
-  millSmoke(sx + 2, y - 44, { n: 13, rise: 78, rate: 0.22, r0: 8, r1: 34, drift: 18,
-    a: 0.44, salt: gx * 2.3, tint: '176,169,166', ceil: y - 98, roll: 1 });
+  millSmoke(sx + 2, y - 44, { n: 10, rise: 40, rate: 0.28, r0: 8, r1: 30, drift: 12,
+    a: 0.42, salt: gx * 2.3, tint: '176,169,166', ceil: y - 76, roll: 1.2 });
+  // and out past the standards to the roof, which is the only way up that is not through
+  // the crown casting at y-95..y-75
+  for (const d of [-1, 1]) {
+    millSmoke(sx + d * 38, y - 74, { n: 9, rise: 30, rate: 0.26, r0: 9, r1: 33, drift: d * 12,
+      a: 0.36, salt: gx * (9.1 + d), tint: '170,164,162', ceil: y - 98, roll: d * 1.2 });
+  }
   if (since < 1) {
     const img = puffSprite('208,200,196');
     ctx.save();
@@ -3974,23 +4025,30 @@ function millCupola(sx, y, gx, shy) {
   ctx.fillStyle = 'rgba(20,11,9,0.82)';
   for (let i = 0; i < 5; i++) {
     const hv = hash(gx + i * 4.3);
-    ctx.beginPath(); ctx.arc(sx - 10 + i * 5.4, y - 35 + hv * 2.6, 2.4 + hv * 2, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx - 10 + i * 5.4, y - 34 + hv * 2.6, 1.2 + hv * 1, 0, 6.28); ctx.fill();
   }
-  // tap hole and spout, running into a sand bed
-  ctx.fillStyle = DARK; ctx.fillRect(sx + 29, y - 27, 27, 10);
-  ctx.fillStyle = BODY; ctx.fillRect(sx + 29, y - 26, 26, 8);
-  ctx.fillStyle = RIM; ctx.fillRect(sx + 29, y - 26, 26, 1.2);
-  ctx.fillStyle = '#231e1a'; ctx.fillRect(sx + 40, y - 4, 32, 4);
+  // Tap hole and spout, into a sand bed, on the side AWAY from the blower: the blower's
+  // foundation is at sx+56 and is drawn after this, so a runner on the right was pouring
+  // iron into a block of masonry. Tuyere one side, tap the other.
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 56, y - 27, 27, 10);
+  ctx.fillStyle = BODY; ctx.fillRect(sx - 55, y - 26, 26, 8);
+  ctx.fillStyle = RIM; ctx.fillRect(sx - 55, y - 26, 26, 1.2);
+  ctx.fillStyle = '#231e1a'; ctx.fillRect(sx - 74, y - 4, 34, 4);
   if (tapping) {
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = 'rgba(255,200,116,0.85)'; ctx.fillRect(sx + 51, y - 20, 3.6, 20);
-    ctx.fillStyle = 'rgba(255,152,62,0.55)'; ctx.fillRect(sx + 44, y - 5, 24, 5);
-    const tg2 = ctx.createRadialGradient(sx + 53, y - 9, 2, sx + 53, y - 9, 46);
+    // an arc, not a plumb line: it leaves the lip with the speed it had in the spout
+    for (let i = 0; i < 9; i++) {
+      const q = i / 8, px2 = sx - 54 - q * 9, py2 = y - 19 + q * q * 19;
+      ctx.fillStyle = 'rgba(255,200,116,0.85)';
+      ctx.fillRect(px2 - 1.8, py2, 3.6 + q * 1.4, 3.4);
+    }
+    ctx.fillStyle = 'rgba(255,152,62,0.55)'; ctx.fillRect(sx - 72, y - 5, 26, 5);
+    const tg2 = ctx.createRadialGradient(sx - 60, y - 9, 2, sx - 60, y - 9, 46);
     tg2.addColorStop(0, 'rgba(255,174,74,0.42)'); tg2.addColorStop(1, 'rgba(255,174,74,0)');
-    ctx.fillStyle = tg2; ctx.fillRect(sx + 7, y - 55, 92, 55);
+    ctx.fillStyle = tg2; ctx.fillRect(sx - 106, y - 55, 92, 55);
     ctx.restore();
-    millSmoke(sx + 53, y - 12, { n: 5, rise: 40, rate: 0.5, r0: 4, r1: 17, drift: 14,
-      a: 0.2, salt: gx * 3.1, tint: '186,156,128' });
+    millSmoke(sx - 60, y - 12, { n: 5, rise: 40, rate: 0.5, r0: 4, r1: 17, drift: -14,
+      a: 0.22, salt: gx * 3.1, tint: '186,156,128' });
   }
   // ---- throat, hood, flue
   ctx.fillStyle = DARK; ctx.fillRect(sx - 25, y - 74, 50, 7);
@@ -4081,15 +4139,29 @@ function millCupola(sx, y, gx, shy) {
 function millCupolaSmoke(sx, y, gx) {
   const fl = cupolaFlame(gx);
   for (const d of [-1, 1]) {
-    millSmoke(sx + d * 34, y - 79, { n: 15, rise: 54, rate: 0.22, r0: 9, r1: 38, drift: d * 14,
-      a: 0.52, salt: gx * (2.1 + d), tint: '154,148,148', ceil: y - 98, roll: d * 1.6 });
+    // The COLUMN. rise sits just past the 19 units it has to climb, so most of a puff's
+    // life is spent going up. It is the only smoke silhouette that survives play zoom.
+    millSmoke(sx + d * 34, y - 79, { n: 12, rise: 29, rate: 0.34, r0: 8, r1: 30, drift: d * 10,
+      a: 0.46, salt: gx * (2.1 + d), tint: '150,144,145', ceil: y - 98, roll: d * 1.1 });
+    // and a thinner, slower layer that does nothing but lie along the roof, so the hall
+    // still reads as lidded without the column being emptied to pay for it
+    millSmoke(sx + d * 34, y - 79, { n: 9, rise: 92, rate: 0.1, r0: 11, r1: 42, drift: d * 12,
+      a: 0.2, salt: gx * (7.7 + d), tint: '140,136,138', ceil: y - 98, roll: d * 1.5 });
     // the same smoke lit from underneath by the door it just came off: a warm pass at a
     // third the height, which is what stops the column reading as fog with a fire behind it
     millSmoke(sx + d * 30, y - 77, { n: 6, rise: 24, rate: 0.42, r0: 7, r1: 20, drift: d * 9,
       a: 0.32 * fl, salt: gx * (5.3 + d), tint: '198,148,104' });
   }
-  millSmoke(sx - 2, y - 73, { n: 8, rise: 26, rate: 0.5, r0: 6, r1: 17, drift: 3,
-    a: 0.32, salt: gx, tint: '178,148,124' });
+  // what leaks from under the hood's front lip. Its ceiling is the hood, not the roof:
+  // this puff cannot climb through 17 units of sheet iron, and it was being drawn over it.
+  millSmoke(sx - 2, y - 73, { n: 8, rise: 12, rate: 0.5, r0: 6, r1: 17, drift: 3,
+    a: 0.3, salt: gx, tint: '178,148,124', ceil: y - 78, roll: -1.2 });
+  // and the column, off the open door: 46 units of climb against the lit shell, which is
+  // three times what the hood lip has to work with and the only run tall enough to read
+  millSmoke(sx + 6, y - 50, { n: 13, rise: 58, rate: 0.26, r0: 6, r1: 27, drift: 11,
+    a: 0.36, salt: gx * 11.3, tint: '158,150,148', ceil: y - 98, roll: 1.1 });
+  millSmoke(sx + 5, y - 48, { n: 6, rise: 22, rate: 0.4, r0: 5, r1: 15, drift: 8,
+    a: 0.3 * fl, salt: gx * 13.7, tint: '212,152,92' });
 }
 
 // --- the hall: back wall, windows, plant, line shafting, then the roof truss
@@ -4269,7 +4341,7 @@ function millCorridor(wx0, wx1, y, laneIn) {
     ctx.beginPath(); ctx.arc(sx + Math.cos(spin) * 5.6, shy + Math.sin(spin) * 5.6, 1.3, 0, 6.28); ctx.fill();
     // leather belt down to whatever this bay runs; an undriven pulley gets a
     // loose drum beside it so it reads as idling rather than forgotten
-    const drive = bayDrive(bay, sx, y);
+    const drive = bayDrive(bay, sx, y - 2);      // the SAME floor millFeature is handed
     if (drive === SELF_DRIVEN) {
       // the mill engine wraps this pulley itself, once its flywheel is down
     } else if (!drive) {
@@ -4298,6 +4370,7 @@ function millCorridor(wx0, wx1, y, laneIn) {
   for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
+    if (gx < wx0 + 112 || gx > wx1 - 112) continue;   // it has to FIT, not merely be near
     const feat = millBay(gx, lane).feat;
     if (feat >= 0) millFeature(gx, y - 2, lane, feat, shy);
   }
@@ -4311,8 +4384,12 @@ function millCorridor(wx0, wx1, y, laneIn) {
   for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
-    const feat = millBay(gx, lane).feat;
-    if (feat >= 0) millFeatureSmoke(gx, y - 2, lane, feat);
+    const bay = millBay(gx, lane);
+    if (bay.feat >= 0) {
+      if (gx > wx0 + 112 && gx < wx1 - 112) millFeatureSmoke(gx, y - 2, lane, bay.feat);
+    } else if (bay.has && bay.kind === 2 && inView(gx, 130)) {
+      millBoilerSmoke(gx - V.left, y - 2, gx);
+    }
   }
   const f = ctx.createLinearGradient(0, y - 34, 0, y); f.addColorStop(0, 'rgba(255,196,120,0)'); f.addColorStop(1, 'rgba(255,196,120,0.05)');
   ctx.fillStyle = f; ctx.fillRect(x0, y - 34, x1 - x0, 34);

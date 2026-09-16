@@ -24,7 +24,20 @@ const fs = require('fs'), path = require('path');
 const target = process.argv[2] || path.join(__dirname, '..', 'index.html');
 const src = fs.readFileSync(target, 'utf8').split('<script>')[1].split('</script>')[0].replace("'use strict';", '');
 
-// ---- a context that measures instead of painting
+// ---- a context that measures instead of painting.
+//
+// It carries a TRANSFORM STACK, and that is not optional: without one it reported a
+// contact shadow as 65 units deep into the floor, because the shadow is an arc of radius
+// 64 drawn under ctx.scale(1, 7/64). A measuring context that ignores save/scale/translate
+// does not under-report, it invents -- and it accuses the game while doing it.
+let M = [1, 0, 0, 1, 0, 0];
+const mstack = [];
+const mul = (m, n) => [
+  m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1],
+  m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3],
+  m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]];
+const xf = (x, y) => [M[0] * x + M[2] * y + M[4], M[1] * x + M[3] * y + M[5]];
+const mscale = () => (Math.hypot(M[0], M[1]) + Math.hypot(M[2], M[3])) / 2;
 const box = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
 let path0 = null, recording = false;
 const resetBox = () => { box.x0 = box.y0 = Infinity; box.x1 = box.y1 = -Infinity; };
@@ -34,8 +47,9 @@ function hit(x0, y0, x1, y1) {
   box.x0 = Math.min(box.x0, x0); box.y0 = Math.min(box.y0, y0);
   box.x1 = Math.max(box.x1, x1); box.y1 = Math.max(box.y1, y1);
 }
-function pt(x, y) {
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+function pt(rx, ry) {
+  if (!Number.isFinite(rx) || !Number.isFinite(ry)) return;
+  const [x, y] = xf(rx, ry);
   if (!path0) path0 = { x0: x, y0: y, x1: x, y1: y };
   else { path0.x0 = Math.min(path0.x0, x); path0.y0 = Math.min(path0.y0, y);
          path0.x1 = Math.max(path0.x1, x); path0.y1 = Math.max(path0.y1, y); }
@@ -44,7 +58,12 @@ function makeCtx() {
   const grad = { addColorStop() {} };
   const c = {
     canvas: { width: 960, height: 540 },
-    save() {}, restore() {}, translate() {}, scale() {}, rotate() {},
+    save() { mstack.push(M.slice()); },
+    restore() { M = mstack.pop() || [1, 0, 0, 1, 0, 0]; },
+    translate(x, y) { M = mul(M, [1, 0, 0, 1, x, y]); },
+    scale(x, y) { M = mul(M, [x, 0, 0, y, 0, 0]); },
+    rotate(a) { const c = Math.cos(a), n = Math.sin(a); M = mul(M, [c, n, -n, c, 0, 0]); },
+    setTransform(a, b, c2, d, e, f) { M = [a, b, c2, d, e, f]; },
     // a clip is a promise not to paint outside it, so it cannot ENLARGE an extent
     clip() { path0 = null; },
     beginPath() { path0 = null; }, closePath() {},
@@ -56,11 +75,16 @@ function makeCtx() {
     ellipse(x, y, rx, ry) { pt(x - rx, y - ry); pt(x + rx, y + ry); },
     arcTo() {}, setLineDash() {},
     fill() { if (path0) hit(path0.x0, path0.y0, path0.x1, path0.y1); },
-    stroke() { const w = (c.lineWidth || 1) / 2; if (path0) hit(path0.x0 - w, path0.y0 - w, path0.x1 + w, path0.y1 + w); },
-    fillRect(x, y, w, h) { hit(Math.min(x, x + w), Math.min(y, y + h), Math.max(x, x + w), Math.max(y, y + h)); },
+    stroke() { const w = (c.lineWidth || 1) / 2 * mscale(); if (path0) hit(path0.x0 - w, path0.y0 - w, path0.x1 + w, path0.y1 + w); },
+    // the four corners, each through the transform: under a scale the rect is not a rect
+    fillRect(x, y, w, h) { const p = path0; path0 = null;
+      pt(x, y); pt(x + w, y); pt(x, y + h); pt(x + w, y + h);
+      if (path0) hit(path0.x0, path0.y0, path0.x1, path0.y1); path0 = p; },
     strokeRect(x, y, w, h) { c.fillRect(x, y, w, h); },
     clearRect() {},
-    drawImage(img, x, y, w, h) { hit(x, y, x + w, y + h); },
+    drawImage(img, x, y, w, h) { const p = path0; path0 = null;
+      pt(x, y); pt(x + w, y); pt(x, y + h); pt(x + w, y + h);
+      if (path0) hit(path0.x0, path0.y0, path0.x1, path0.y1); path0 = p; },
     fillText() {}, strokeText() {}, measureText: t => ({ width: String(t).length * 6 }),
     createLinearGradient: () => grad, createRadialGradient: () => grad, createPattern: () => grad,
     getImageData: () => ({ data: new Uint8ClampedArray(256) }),
@@ -95,7 +119,7 @@ const { CFG, FAC, V, S, hash, millBay, bayDrive, millFeature } = api;
 const NAMES = ['engine', 'hammer', 'cupola'];
 function measure(gx, lane, feat, y, shy) {
   V.left = gx - 480; V.vw = 960; V.zoom = 1; S.t = 3.37;
-  resetBox(); path0 = null; recording = true;
+  resetBox(); path0 = null; M = [1, 0, 0, 1, 0, 0]; mstack.length = 0; recording = true;
   millFeature(gx, y, lane, feat, shy);
   recording = false;
   const sx = gx - V.left;
