@@ -44,8 +44,13 @@ const FAULTS = [
    'raise the near bank 50px so it buries the crowd\'s legs',
    s => s.replace('const LIFT = 0;', 'const LIFT = 140;')],
   ['no lamp pools out in the open',
-   'delete lampPools\' guard so it lights the open hillside in daylight',
-   s => s.replace('    if (lx >= CFG.exit) continue;\n', '')],
+   'delete the act-three guard in lampsIn so lamps light the hillside in daylight',
+   // Re-anchored: the lamp system was rewritten and the guard moved from lampPools into
+   // lampsIn, so this fault stopped being injectable and the tool reported the invariant
+   // UNPROVEN rather than quietly claiming it. That is the tool doing its job -- a fault
+   // that no longer applies is not evidence that the check works.
+   s => s.replace('if (lx >= CFG.exit || !laneAt(lane, lx)) continue;',
+                  'if (!laneAt(lane, lx)) continue;')],
 ];
 
 let broken = 0, unfalsifiable = 0;
