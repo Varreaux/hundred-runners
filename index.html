@@ -1515,6 +1515,9 @@ function update(dt) {
     return;
   }
   if (S.mode === 'win' || S.mode === 'lose') { S.endT += dt; endEmbers(dt); }
+  // he does not blink out of existence when the run ends under him: 128 units of band
+  // disappearing between two frames reads as a crash, so he is sent away properly
+  if (S.mode !== 'play' && S.mode !== 'intro' && S.boss && !S.boss.gone) { S.boss.leaving = true; updateBoss(dt); }
   if (S.mode === 'intro') { updateIntro(dt); updateView(dt); return; }
   if (S.mode !== 'play') { updateView(dt); return; }
 
@@ -1544,7 +1547,7 @@ function update(dt) {
   if (!S.bossCave) {
     let lead = -Infinity;
     for (const r of S.runners) if (r.state === 'run') lead = Math.max(lead, r.x);
-    if (lead >= FAC.seam && !S.rooms.some(m => m.state === 'armed' || m.state === 'open')) {
+    if (lead >= FAC.seam && !S.active) {
       S.bossCave = true;
       startBoss(BOSS_CAVE, true, null);
     }
@@ -1554,7 +1557,7 @@ function update(dt) {
   if (S.bossCave && !S.bossOpen) {
     let lead = -Infinity;
     for (const r of S.runners) if (r.state === 'run') lead = Math.max(lead, r.x);
-    if (lead >= CFG.exit + 260 && !S.rooms.some(m => m.state === 'armed' || m.state === 'open')) {
+    if (lead >= CFG.exit + 260 && !S.active && (!S.boss || S.boss.gone)) {
       S.bossOpen = true;
       startBoss(BOSS_OPEN, true, null);
     }
@@ -2178,7 +2181,7 @@ function draw() {
   }
   drawHud();
   if (S.mode === 'play' && S.active) drawPanel(S.active);
-  if ((S.mode === 'intro' || S.mode === 'play') && S.boss) drawBoss();
+  if (S.boss && S.mode !== 'title') drawBoss();
   if (S.mode === 'intro' && S.drill && !S.drill.done) drawDrill();
   if (S.mode === 'finale') drawFinalePanel();
   if (S.mode === 'title') drawTitle();
@@ -9885,8 +9888,7 @@ function updateBoss(dt) {
   // that takes; nothing here is on a timer the player cannot see.
   // A room is the game; he is a joke over the top of it. If one arms while he is talking
   // he goes, mid-sentence, rather than covering the panel that says which room it is.
-  if (b.auto && !b.leaving &&
-      (S.rooms.some(m => m.state === 'armed' || m.state === 'open') || V.zoom < 0.82)) b.leaving = true;
+  if (b.auto && !b.leaving && S.active) b.leaving = true;
   const line = b.script[b.line];
   if (line) {
     if (b.ch < line.t.length) {
@@ -9986,10 +9988,10 @@ function drawBoss() {
   // The hat carries the mood too. It comes off his head when the shift walks out and
   // lands back on it; in temper it stays jammed on and the steam comes out from under it,
   // which is the same joke the mill's own machines make one act earlier.
-  const m = (b.script[b.line] || {}).mood;
+  const m = (b.script[b.line] || b.script[b.script.length - 1] || {}).mood;
   const startled = m === 'alarm', furious = m === 'rage';
   const hop = startled ? R * 0.05 * (0.5 + 0.5 * Math.abs(Math.sin(b.t * 4.1))) : 0;
-  const sideways = startled ? R * 0.30 * Math.sin(b.t * 3.7) : 0;
+  const sideways = startled ? R * 0.12 * Math.sin(b.t * 3.7) : 0;
   // the globe's own shading, re-laid over the face so his features sit ON the sphere
   // rather than on a sticker stuck to it
   ctx.save();
@@ -10109,7 +10111,7 @@ function drawBossGlobe(cx, cy, R, b) {
   g.addColorStop(0, '#59aed9'); g.addColorStop(1, '#215b86');
   ctx.fillStyle = g; ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
   // the seas, and only the seas, when he loses his temper
-  const boiling = (b.script[b.line] || {}).mood === 'rage';
+  const boiling = (b.script[b.line] || b.script[b.script.length - 1] || {}).mood === 'rage';
   if (boiling) {
     ctx.fillStyle = 'rgba(208,26,18,' + (0.74 + 0.14 * Math.abs(Math.sin(b.t * 9))).toFixed(3) + ')';
     ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
@@ -10157,7 +10159,7 @@ function drawBossFace(cx, cy, R, b) {
   const laughing = b.laugh > 0;
   // The mood is carried by the LINE, not by the appearance, so a script can turn on him
   // part way through without a second set of state to keep in step.
-  const mood = (b.script[b.line] || {}).mood;
+  const mood = (b.script[b.line] || b.script[b.script.length - 1] || {}).mood;
   const alarm = mood === 'alarm', rage = mood === 'rage';
   const shout = alarm || rage;
   const open = laughing ? 0.62 + Math.sin(b.laugh * 30) * 0.22
@@ -10252,12 +10254,14 @@ function drawBossFace(cx, cy, R, b) {
     ctx.strokeStyle = INK; ctx.lineWidth = 1.3; ctx.stroke();
     ctx.save(); ctx.clip();
     ctx.fillStyle = 'rgba(244,238,224,0.94)';
-    ctx.fillRect(cx - mw, ay2 - ah - drop, mw * 2, ah * 0.46);
+    ctx.fillRect(cx - mw, ay2 - ah * 0.5 - drop * 0.7, mw * 2, Math.max(1, ah * 0.42));
     // lower teeth as well when it is a snarl: bared, not merely open
-    if (rage) ctx.fillRect(cx - mw, ay2 + ah * 0.52, mw * 2, ah * 0.5);
-    ctx.restore();
+    if (rage) ctx.fillRect(cx - mw, ay2 + ah * 0.22 - drop * 0.25, mw * 2, Math.max(1, ah * 0.26));
+    // the tongue is INSIDE the mouth, so it is drawn before the clip is given back: outside
+    // it, up to 4.7 units of tongue was painted on the sphere below his lip
     ctx.fillStyle = 'rgba(150,62,66,0.85)';
-    ctx.beginPath(); ctx.ellipse(cx, ay2 + ah * 0.36, mw * 0.46, ah * 0.32, 0, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx, ay2 + ah * 0.30, mw * 0.46, ah * 0.26, 0, 0, 6.28); ctx.fill();
+    ctx.restore();
   } else {
   ctx.beginPath();
   ctx.moveTo(cx - mw, my - curlL);
@@ -10304,9 +10308,9 @@ function drawBossFace(cx, cy, R, b) {
 }
 function drawBossHat(cx, cy, R, lift, tip, shift) {
   ctx.save();
-  ctx.translate(cx + (shift || 0), cy - R * 0.75 - (lift || 0));
+  ctx.translate(cx + (shift || 0), cy - R * 0.92 - (lift || 0));
   ctx.rotate(-0.09 - (tip || 0));                       // worn at a slight angle
-  const brimW = R * 1.62, crownW = R * 1.04, crownH = R * 1.05, brimH = R * 0.13;
+  const brimW = R * 1.62, crownW = R * 1.04, crownH = R * 0.90, brimH = R * 0.13;
   // crown
   ctx.fillStyle = '#17131a';
   roundRect(-crownW / 2, -crownH, crownW, crownH + 6, 4); ctx.fill();
