@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = 'lastroom pass6 - static art + relative wheel';
+const BUILD = 'lastroom pass7 - fullscreen art + smooth cursor';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 50,
@@ -60,11 +60,12 @@ const CFG = {
           'Nikita', 'Paula', 'Hoda', 'Sithe', 'Valeria', 'Violeta\u{1F49C}', 'Wilson', 'BOOM\u{1F4A3}'],
   rooms: [],              // no mid-run puzzles - start, then Final only
   // Document.xlsx / LastRoom: sealed capitalism chamber, spot-the-difference finale
-  finale: { x: 2100, findCount: 10, searchTime: 90, hitRadius: 24, cursorSpeed: 320 },
+  finale: { x: 2100, findCount: 10, searchTime: 90, hitRadius: 30, cursorSpeed: 260, cursorAccel: 1400, cursorFriction: 10 },
 };
 // Generator charge time from Document LastRoom sheet: workers 1..100 -> 10.9s .. 1.0s
 CFG.finale.genTime = n => Math.max(1, 11 - 0.1 * Math.max(1, n));
 CFG.exit = CFG.finale.x - 10;
+const FINALE_ART = { w: 330, h: 214 }; // authoring space; scaled up when drawn
 const laneY = k => CFG.baseY - CFG.laneGap * k;
 // where each tunnel exists: tunnel 0 runs the whole mountain, others exist between their fork and merge
 const LANE_SPANS = [];
@@ -248,7 +249,8 @@ function startFinale() {
     found: new Set(),
     scene,
     diffs: makeFinaleDiffs(scene),
-    cursor: { x: 470, y: 220 },
+    cursor: { x: W / 2, y: H * 0.42 },
+    cursorVel: { x: 0, y: 0 },
     line,
     deck: line.slice(0, 12).map((r, i) => ({ r, i, enter: -i * 0.06, x: 0, arrived: false, track: 0, speed: 95 + (i % 4) * 18 })),
     falling: [],
@@ -305,36 +307,42 @@ function finaleConfirm() {
   const f = S.finale;
   if (f.phase !== 'search') return;
   const layout = finaleLayout();
+  const sx = layout.left.w / FINALE_ART.w, sy = layout.left.h / FINALE_ART.h;
+  const hitR = CFG.finale.hitRadius * Math.min(sx, sy);
   const targets = [];
   for (const side of [layout.left, layout.right]) {
     for (const d of f.diffs) {
       if (f.found.has(d.id)) continue;
-      targets.push({ d, x: side.x + d.x, y: side.y + d.y });
+      targets.push({ d, x: side.x + d.x * sx, y: side.y + d.y * sy });
     }
   }
-  let hit = null, best = CFG.finale.hitRadius;
+  let hit = null, best = hitR;
   for (const t of targets) {
     const dist = Math.hypot(f.cursor.x - t.x, f.cursor.y - t.y);
     if (dist < best) { best = dist; hit = t.d; }
   }
   if (hit) {
     f.found.add(hit.id); AU.tick(f.found.size / CFG.finale.findCount);
-    S.floaters.push({ sx: f.cursor.x, sy: f.cursor.y - 18, txt: 'FOUND', life: 0.7, color: '#2ecc71' });
+    S.floaters.push({ sx: f.cursor.x, sy: f.cursor.y - 18, txt: 'MARKED', life: 0.65, color: '#d4a84b' });
     if (f.found.size >= CFG.finale.findCount) { S.mode = 'win'; saveBest(f.line.length); }
   } else {
     finaleWrong();
   }
 }
 function finaleLayout() {
-  const pw = 940, ph = 510;
-  const px = (W - pw) / 2, py = (H - ph) / 2 + 2;
-  const paintW = 330, paintH = 214;
-  const gap = 24;
-  const left = { x: px + 58, y: py + 68, w: paintW, h: paintH };
-  const right = { x: left.x + paintW + gap, y: left.y, w: paintW, h: paintH };
-  const deck = { x: px + 46, y: py + ph - 112, w: pw - 92, h: 40 };
-  const water = { x: px + 36, y: py + ph - 58, w: pw - 72, h: 42 };
-  const gen = { x: px + pw - 148, y: py + ph - 130, w: 92, h: 54 };
+  const pw = W - 8, ph = H - 8;
+  const px = 4, py = 4;
+  const gap = 16;
+  const sidePad = 20;
+  const paintW = Math.floor((pw - sidePad * 2 - gap) / 2); // ~448 on 960 (~+36%)
+  const deckTop = py + ph - 96;
+  const paintTop = py + 50;
+  const paintH = Math.min(318, deckTop - paintTop - 22); // ~+48% height vs 214
+  const left = { x: px + sidePad, y: paintTop, w: paintW, h: paintH };
+  const right = { x: left.x + paintW + gap, y: paintTop, w: paintW, h: paintH };
+  const deck = { x: px + 32, y: deckTop, w: pw - 64, h: 36 };
+  const water = { x: px + 24, y: py + ph - 50, w: pw - 48, h: 38 };
+  const gen = { x: px + pw - 130, y: deckTop - 18, w: 86, h: 48 };
   return { pw, ph, px, py, left, right, deck, water, gen };
 }
 function inkFill(c, x, y, w, h, r = 0) {
@@ -465,10 +473,16 @@ function drawDiffMark(d, x, y, on) {
   ctx.restore();
 }
 function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
+  // Scale authoring space (FINALE_ART) into the on-screen frame so larger panels get bigger art.
+  const RW = FINALE_ART.w, RH = FINALE_ART.h;
+  const ox = x, oy = y, ow = w, oh = h;
   // Paintings are STATIC oil tableaux. `t` is ignored for motion; frozen seed only.
   const ft = 1.7;
   ctx.save();
-  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.beginPath(); ctx.rect(ox, oy, ow, oh); ctx.clip();
+  ctx.translate(ox, oy);
+  ctx.scale(ow / RW, oh / RH);
+  x = 0; y = 0; w = RW; h = RH;
   const id = scene.id;
   const floorY = y + h - 26;
 
@@ -699,18 +713,21 @@ function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
   if (altered) for (const d of diffs) if (!found.has(d.id)) drawDiffMark(d, x, y, true);
   for (const d of diffs) {
     if (!found.has(d.id)) continue;
-    // soft discovery ring only -- not an icon badge
-    ctx.strokeStyle = 'rgba(46,204,113,0.75)'; ctx.lineWidth = 1.8;
-    ctx.beginPath(); ctx.arc(x + d.x, y + d.y, 11, 0, 6.28); ctx.stroke();
+    // Diegetic brass tack in the canvas -- never a green UI ring
+    inkFill('#6a5020', d.x - 3, d.y - 3, 6, 6, 3);
+    inkFill('#d4a84b', d.x - 2, d.y - 2, 4, 4, 2);
+    ctx.fillStyle = 'rgba(255,240,200,0.45)';
+    ctx.beginPath(); ctx.arc(d.x - 0.5, d.y - 0.5, 1.2, 0, 6.28); ctx.fill();
   }
   paintVignette(x, y, w, h, 0.72);
   ctx.fillStyle = 'rgba(255,240,200,0.045)';
   ctx.beginPath(); ctx.ellipse(x + w * 0.35, y + h * 0.2, w * 0.3, h * 0.12, -0.3, 0, 6.28); ctx.fill();
   ctx.restore();
-  ctx.strokeStyle = '#120e10'; ctx.lineWidth = 8; ctx.strokeRect(x - 5, y - 5, w + 10, h + 10);
-  ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.8; ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
-  ctx.strokeStyle = 'rgba(212,175,55,0.2)'; ctx.lineWidth = 1; ctx.strokeRect(x + 5, y + 5, w - 10, h - 10);
-  for (const [cx, cy] of [[x - 2, y - 2], [x + w + 2, y - 2], [x - 2, y + h + 2], [x + w + 2, y + h + 2]]) {
+  // ornate frame in screen space
+  ctx.strokeStyle = '#120e10'; ctx.lineWidth = 7; ctx.strokeRect(ox - 4, oy - 4, ow + 8, oh + 8);
+  ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 2; ctx.strokeRect(ox - 1, oy - 1, ow + 2, oh + 2);
+  ctx.strokeStyle = 'rgba(212,175,55,0.22)'; ctx.lineWidth = 1; ctx.strokeRect(ox + 5, oy + 5, ow - 10, oh - 10);
+  for (const [cx, cy] of [[ox - 1, oy - 1], [ox + ow + 1, oy - 1], [ox - 1, oy + oh + 1], [ox + ow + 1, oy + oh + 1]]) {
     inkFill('#d4a84b', cx - 4, cy - 4, 8, 8, 2);
   }
 }
@@ -783,19 +800,36 @@ function updateFinale(dt) {
     }
   }
 
-  // cursor
+  // Smooth cursor: accelerate into held keys, friction when released (no digital stutter)
+  if (!f.cursorVel) f.cursorVel = { x: 0, y: 0 };
   let mx = 0, my = 0;
   if (HELD.ARROWLEFT || HELD.A) mx -= 1;
   if (HELD.ARROWRIGHT || HELD.D) mx += 1;
   if (HELD.ARROWUP || HELD.W) my -= 1;
   if (HELD.ARROWDOWN || HELD.S) my += 1;
+  const accel = CFG.finale.cursorAccel || 1400;
+  const maxSpd = CFG.finale.cursorSpeed || 260;
+  const fric = CFG.finale.cursorFriction || 10;
   if (mx || my) {
     const len = Math.hypot(mx, my) || 1;
-    f.cursor.x += (mx / len) * CFG.finale.cursorSpeed * dt;
-    f.cursor.y += (my / len) * CFG.finale.cursorSpeed * dt;
-    f.cursor.x = Math.max(L.px + 20, Math.min(L.px + L.pw - 20, f.cursor.x));
-    f.cursor.y = Math.max(L.py + 50, Math.min(L.left.y + L.left.h + 8, f.cursor.y));
+    f.cursorVel.x += (mx / len) * accel * dt;
+    f.cursorVel.y += (my / len) * accel * dt;
+  } else {
+    const damp = Math.exp(-fric * dt);
+    f.cursorVel.x *= damp;
+    f.cursorVel.y *= damp;
   }
+  let spd = Math.hypot(f.cursorVel.x, f.cursorVel.y);
+  if (spd > maxSpd) {
+    f.cursorVel.x *= maxSpd / spd;
+    f.cursorVel.y *= maxSpd / spd;
+    spd = maxSpd;
+  }
+  if (spd < 2 && !mx && !my) { f.cursorVel.x = 0; f.cursorVel.y = 0; }
+  f.cursor.x += f.cursorVel.x * dt;
+  f.cursor.y += f.cursorVel.y * dt;
+  f.cursor.x = Math.max(L.left.x - 4, Math.min(L.right.x + L.right.w + 4, f.cursor.x));
+  f.cursor.y = Math.max(L.left.y - 4, Math.min(L.left.y + L.left.h + 20, f.cursor.y));
 
   if (f.phase === 'blackout') {
     f.blackoutT += dt;
@@ -4844,30 +4878,65 @@ function drawFinalePanel() {
   const L = finaleLayout();
   const light = finaleLightLevel(f);
   const t = S.t;
+  const danger = f.phase === 'search' ? clamp01(1 - f.searchT / CFG.finale.searchTime) : (f.phase === 'blackout' ? 1 : 0.25);
 
-  // sealed chamber
-  ctx.fillStyle = `rgba(6,3,10,${0.78 + (1 - light) * 0.15})`; ctx.fillRect(0, 0, W, H);
+  // sealed chamber - near full bleed
+  ctx.fillStyle = `rgba(4,1,6,${0.88 + (1 - light) * 0.1})`; ctx.fillRect(0, 0, W, H);
   const panelG = ctx.createLinearGradient(L.px, L.py, L.px, L.py + L.ph);
-  panelG.addColorStop(0, '#161018'); panelG.addColorStop(1, '#0c0a10');
+  panelG.addColorStop(0, '#1a1218'); panelG.addColorStop(0.55, '#120e14'); panelG.addColorStop(1, '#0a080c');
   ctx.fillStyle = panelG; ctx.fillRect(L.px, L.py, L.pw, L.ph);
-  ctx.strokeStyle = '#1b1519'; ctx.lineWidth = 4; ctx.strokeRect(L.px + 2, L.py + 2, L.pw - 4, L.ph - 4);
-  ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.4; ctx.strokeRect(L.px + 5, L.py + 5, L.pw - 10, L.ph - 10);
+  ctx.strokeStyle = '#1b1519'; ctx.lineWidth = 3; ctx.strokeRect(L.px + 1, L.py + 1, L.pw - 2, L.ph - 2);
+  ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.6; ctx.strokeRect(L.px + 4, L.py + 4, L.pw - 8, L.ph - 8);
 
-  // HUD
+  // Capitalism danger vignette (stronger as clock dies / after wrong mark)
+  const pulse = 0.22 + danger * 0.45 + (f.flashWrong > 0 ? f.flashWrong * 0.5 : 0) + Math.sin(t * 3) * 0.03;
+  const vig = ctx.createRadialGradient(W / 2, H * 0.4, H * 0.15, W / 2, H * 0.5, H * 0.78);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(0.55, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, `rgba(90,8,12,${pulse})`);
+  ctx.fillStyle = vig; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+  // red edge bleed
+  ctx.save(); ctx.globalCompositeOperation = 'screen';
+  const edgeA = 0.08 + danger * 0.22 + f.flashWrong * 0.35;
+  ctx.fillStyle = `rgba(180,20,30,${edgeA})`;
+  ctx.fillRect(L.px, L.py, L.pw, 6);
+  ctx.fillRect(L.px, L.py + L.ph - 6, L.pw, 6);
+  ctx.fillRect(L.px, L.py, 6, L.ph);
+  ctx.fillRect(L.px + L.pw - 6, L.py, 6, L.ph);
+  ctx.restore();
+
+  // —— HUD: fewer, larger, readable ——
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 16px monospace';
-  ctx.fillText(`FINAL CHAMBER  -  ${f.scene.title}`, W / 2, L.py + 26);
-  ctx.fillStyle = '#a9a09a'; ctx.font = '12px monospace';
+  ctx.fillStyle = '#e8c96a'; ctx.font = 'bold 18px monospace';
+  ctx.fillText(f.scene.title, W / 2, L.py + 26);
+  // status chips
   const mm = Math.floor(Math.max(0, f.searchT) / 60), ss = Math.floor(Math.max(0, f.searchT) % 60);
-  const phaseLabel = f.phase === 'blackout' ? 'LIGHTS DYING' : f.phase === 'charge' ? 'CHARGING' : 'SEARCH';
-  ctx.fillText(`${phaseLabel}   found ${f.found.size}/${CFG.finale.findCount}   ${mm}:${String(ss).padStart(2, '0')}   crew ${f.line.length}`, W / 2, L.py + 46);
+  const phaseLabel = f.phase === 'blackout' ? 'BLACKOUT' : f.phase === 'charge' ? 'CHARGE' : 'SEARCH';
+  const chipY = L.py + 38;
+  const drawChip = (cx, label, val, col) => {
+    const text = label ? `${label} ${val}` : String(val);
+    const tw = Math.max(72, 18 + text.length * 8);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; roundRect(cx - tw / 2, chipY, tw, 24, 4); ctx.fill();
+    ctx.strokeStyle = col; ctx.lineWidth = 1.3; roundRect(cx - tw / 2, chipY, tw, 24, 4); ctx.stroke();
+    ctx.fillStyle = col; ctx.font = 'bold 13px monospace';
+    ctx.fillText(text, cx, chipY + 16);
+  };
+  const timerCol = f.searchT < 20 ? '#ff6b6b' : '#f1c40f';
+  drawChip(W / 2 - 150, '', phaseLabel, '#d4a84b');
+  drawChip(W / 2 - 40, 'FOUND', `${f.found.size}/${CFG.finale.findCount}`, '#2ecc71');
+  drawChip(W / 2 + 70, 'TIME', `${mm}:${String(ss).padStart(2, '0')}`, timerCol);
+  drawChip(W / 2 + 175, 'CREW', f.line.length, '#ff8a80');
+  // found progress bar under chips
+  ctx.fillStyle = '#1b1519'; roundRect(W / 2 - 120, chipY + 26, 240, 5, 2); ctx.fill();
+  ctx.fillStyle = '#c9a227';
+  roundRect(W / 2 - 120, chipY + 26, 240 * (f.found.size / CFG.finale.findCount), 5, 2); ctx.fill();
 
   // paintings
   drawFinaleScene(f.scene, L.left.x, L.left.y, L.left.w, L.left.h, false, f.diffs, f.found, t);
   drawFinaleScene(f.scene, L.right.x, L.right.y, L.right.w, L.right.h, true, f.diffs, f.found, t);
-  ctx.fillStyle = '#7a726c'; ctx.font = '10px monospace';
-  ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 14);
-  ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 14);
+  ctx.fillStyle = '#c4b89a'; ctx.font = 'bold 11px monospace';
+  ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 16);
+  ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 16);
 
   // light veil over paintings (dim / flicker / blackout)
   if (light < 0.98) {
@@ -5011,7 +5080,7 @@ function drawFinalePanel() {
     ? `${f.line.length} on the wheel - machine runs, crew holds  -  ${f.chargeNeed.toFixed(1)}s`
     : f.phase === 'blackout'
       ? 'lights failing - hold on'
-      : 'arrows move cursor  -  SPACE marks a difference', L.deck.x, L.deck.y - 10);
+      : 'ARROWS aim  -  SPACE mark', L.deck.x, L.deck.y - 10);
 
   // crew: FIXED world positions; run-in-place gait sells treadmill relative motion
   const pack = f.deck.slice().sort((a, b) => a.x - b.x);
@@ -5061,17 +5130,20 @@ function drawFinalePanel() {
   }
   ctx.globalAlpha = 1;
 
-  // cursor (only useful in search, but show dim otherwise)
+  // cursor - tighter crosshair for precise marks
   const cx = f.cursor.x, cy = f.cursor.y;
-  ctx.globalAlpha = f.phase === 'search' ? 1 : 0.35;
-  ctx.strokeStyle = f.flashWrong > 0 ? '#ff4646' : '#5ce1ff'; ctx.lineWidth = 2;
-  ctx.shadowColor = f.flashWrong > 0 ? 'rgba(255,70,70,0.5)' : 'rgba(92,225,255,0.45)'; ctx.shadowBlur = 6;
-  ctx.beginPath(); ctx.moveTo(cx - 12, cy); ctx.lineTo(cx + 12, cy); ctx.moveTo(cx, cy - 12); ctx.lineTo(cx, cy + 12); ctx.stroke();
-  ctx.beginPath(); ctx.arc(cx, cy, 8, 0, 6.28); ctx.stroke();
+  ctx.globalAlpha = f.phase === 'search' ? 1 : 0.3;
+  ctx.strokeStyle = f.flashWrong > 0 ? '#ff4646' : '#7aeeff'; ctx.lineWidth = 1.6;
+  ctx.shadowColor = f.flashWrong > 0 ? 'rgba(255,70,70,0.45)' : 'rgba(122,238,255,0.4)'; ctx.shadowBlur = 5;
+  ctx.beginPath(); ctx.moveTo(cx - 10, cy); ctx.lineTo(cx - 3, cy); ctx.moveTo(cx + 3, cy); ctx.lineTo(cx + 10, cy);
+  ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy - 3); ctx.moveTo(cx, cy + 3); ctx.lineTo(cx, cy + 10); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, 6, 0, 6.28); ctx.stroke();
+  ctx.fillStyle = f.flashWrong > 0 ? 'rgba(255,70,70,0.5)' : 'rgba(122,238,255,0.55)';
+  ctx.beginPath(); ctx.arc(cx, cy, 1.6, 0, 6.28); ctx.fill();
   ctx.shadowBlur = 0; ctx.globalAlpha = 1;
 
   if (f.flashWrong > 0) {
-    ctx.fillStyle = `rgba(255,40,40,${f.flashWrong * 0.28})`; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+    ctx.fillStyle = `rgba(255,30,30,${f.flashWrong * 0.32})`; ctx.fillRect(L.px, L.py, L.pw, L.ph);
   }
   ctx.textAlign = 'left';
 }
