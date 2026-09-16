@@ -28,7 +28,7 @@ wrong by up to 32%, and a clearance judgement made against the wrong one is sile
 **Compute, do not eyeball.** Your evidence is arithmetic, not impressions. Read the drawing
 code, resolve the actual world coordinates of each thing, and compare them. "The riders look
 low" is worth nothing. "The band's top surface is at world 274 and the riders are placed at
-318, so their feet are 44 below a surface they are standing on, and a figure is 29 tall" is
+318, so their feet are 44 below a surface they are standing on, and a figure is 45 tall" is
 a finding. Show the numbers so the reader can check them.
 
 **Screenshots tell you where to look; the code tells you what is true.** Use the images to

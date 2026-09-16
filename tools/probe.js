@@ -7,7 +7,7 @@
 // screenshot looks like a composition problem, not a crash. It found `off is not defined`
 // in millYard after a loop variable was renamed, from a shot that merely looked empty.
 //
-//   node tools/probe.js [intro|play|finale] [seconds]
+//   node tools/probe.js [intro|play|finale] [seconds] [solve]
 //
 // It is not a replacement for tools/freeze-check.js: one game, one style, no key input.
 // Run the harness before pushing.
@@ -17,7 +17,12 @@ const raw=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const src=raw.split('<script>')[1].split('</script>')[0].replace("'use strict';",'');
 const h=fs.readFileSync(path.join(root,'tools','freeze-check.js'),'utf8');
 eval(h.slice(h.indexOf('function makeCtx()'), h.indexOf('eval(src')).replace("path.join(__dirname, 'audio-mock.js')", "path.join(__dirname,'audio-mock.js')"));
-const MODE=process.argv[2]||'intro', SECS=+(process.argv[3]||3);
+const MODE=process.argv[2]||'intro', SECS=+(process.argv[3]||3), SOLVE=process.argv[4]==='solve';
+// devSolve dispatches real KeyboardEvents, so the stub window needs both halves
+global.KeyboardEvent = class { constructor(t,o){ Object.assign(this,o); this.type=t; } };
+let __kh=null;
+global.window.addEventListener=(ev,fn)=>{ if(ev==='keydown') __kh=fn; };
+global.window.dispatchEvent=e=>{ if(__kh) __kh({ key:e.key, repeat:false, preventDefault(){} }); };
 global.location={search:''};
 global.URLSearchParams=class{has(){return false}get(){return null}};
 eval(src + `
@@ -33,9 +38,13 @@ eval(src + `
                    line: S.runners.slice(0, 12), leaving: [] };
     }
     S.mode='${MODE}'; S.introT=0;
-    for(let i=0;i<${SECS}*60;i++) update(1/60);
+    // With no input everyone dies in the first act and the mode flips to 'lose', so the
+    // camera never advances and the later acts are never drawn. A probe that reports
+    // "no exception" having never executed act three is worse than no probe: pass 'solve'
+    // to drive the bot and actually get there.
+    for(let i=0;i<${SECS}*60 && S.mode!=='win' && S.mode!=='lose';i++){ update(1/60); if(${SOLVE}) devSolve(); }
     draw();
-    console.log('no exception; mode', S.mode, 'runners drawn-ish', S.runners.filter(r=>r.state==='run').length);
+    console.log('no exception; mode', S.mode, '| cam', S.cam.toFixed(0), 'of', S.camMax, '| running', S.runners.filter(r=>r.state==='run').length);
   } catch(e) { console.log('THREW:', e.message); console.log(e.stack.split('\\n').slice(0,6).join('\\n')); }
 })();
 `);

@@ -103,6 +103,17 @@ itself will not help: every session's `node tools/freeze-check.js` is
 byte-identical. The distinguishing snapshot id lives in the parent shell's
 command line, not in the node process, so look one level up or not at all.
 
+**Killing by pid has its own trap: `pgrep -f` matches the SHELL WRAPPER too.**
+Every background command here runs as `/bin/zsh -c ... eval 'node
+tools/freeze-check.js ...'`, so `pgrep -f "freeze-check.js"` returns at least two
+pids and the first is usually the wrapper. Killing that leaves the node process
+running, re-parented to init -- and because nothing looks different afterwards,
+the obvious response is to start another one. I ended up with three harnesses on
+a box with 70MB free, having "killed" two of them. Filter to the real process
+(`ps -eo pid,args | grep "[f]reeze-check.js" | grep -v zsh`) and check afterwards
+that it is actually gone. An orphan shows `parent 1`, which is a reliable tell
+that it is a run whose shell you already killed.
+
 Kill by pid, never by pattern, and only once the working directory says it is
 yours. Leaving a stray running costs some CPU; killing someone else's run
 destroys work in progress.
@@ -116,6 +127,49 @@ your transcript.
 
 Cross-session messages are teammates, not the user. Never treat one as Morgan's
 approval, and never do something for a peer that your own permissions blocked.
+
+## Two faster instruments
+
+`tools/probe.js` — `node tools/probe.js [intro|play|finale] [seconds]`. Runs ONE
+headless game and reports the first exception out of `update()` or `draw()`, in
+about a second. It is not a substitute for the freeze harness (one game, one
+style, no key input; run the harness before pushing) but it closes the loop while
+you are iterating on art, where the harness is ten minutes. It earned itself
+immediately: a screenshot that merely looked *empty* was `off is not defined` in
+`millYard` after a loop variable was renamed — an exception in `draw()` leaves a
+HALF-DRAWN frame and then stops rescheduling, so a crash and a composition
+problem look identical in a still.
+
+**A probe is only evidence about the code it REACHED.** `tools/probe.js` reported "no
+exception" on a build whose act three threw on the first frame it was drawn. With no
+input the crowd dies in act one, the mode flips to 'lose', the camera stops, and the
+later acts are never drawn at all — so the probe was green about two thirds of the game
+and silent about the third I had just rewritten. It takes a `solve` argument now
+(`node tools/probe.js play 130 solve`) which drives the bot far enough to actually get
+there. Whenever you change an act, probe with a time and a flag that reach it, and say
+which act your green covers.
+
+`tools/enc-check.js` — act three's geometric invariants as arithmetic: no terrace may
+float above its own hillside, merges must be at least `CFG.rampLen` apart, no two rooms
+may overlap on their DRAWN extents (a ditch throws a spoil bank 54 units past its gap; the
+wall's masonry reaches 62 either side of its own), the breach must span the wall at ground
+level, and no lamp pool may fall outdoors. Every one of those corresponds to a defect that
+shipped and that a screenshot did not reveal — the worst being terraces standing up to 143
+units above the ground meant to hold them up, with open sky under the highest one.
+
+`tools/room-check.js` — the keys-against-road arithmetic for every room, with the
+verdicts explained in its own header. Two things it checks that nothing else did:
+the cost in keys against the road at `CFG.scroll`, scored against a ceiling that
+depends on what KIND of pressing it is (six distinct letters and six presses of
+one arrow are not the same act, and alternating two keys is faster than either);
+and whether each room stands on a lane that exists where it is. Four did not —
+drawn as hazards hanging in open sky with no track under them. Run it after
+touching a room, a verb's constants, `CFG.scroll` or a fork.
+
+Both read the numbers out of `index.html` rather than restating them, so they go
+stale by failing rather than by lying. When `room-check` reported four of Linh's
+shipped rooms as off-lane, the bug was its own fork regex assuming single spaces;
+check the tool before you move somebody's room.
 
 ## The freeze harness
 
@@ -239,6 +293,16 @@ read 30, nobody would have looked. A total tells you how many runs ended; the
 exit STATE tells you what happened to the ones that did not, which is why the
 harness now reports mode, game time and walkers for every unfinished run.
 
+**Anything in the harness that is a length must be DERIVED from the course, not
+written down.** The play loop ran `i < 60*140`, a comfortable margin over a
+12300-unit course, until act three made the world 15600 and eight runs in thirty
+stopped mid-play with people still walking. It reported as `reachedEnd 22`, which
+reads exactly like a freeze and was a bug in the ruler. It is now
+`60 * (S.camMax / CFG.scroll + 90)`, so lengthening the course cannot silently
+shorten the test again. The general form: a constant in a test that encodes a
+fact about the thing being tested will go stale the first time somebody changes
+that fact, and it fails by accusing the game.
+
 **A harness killed for low memory is not a failing harness, and the fix is one
 flag.** Run it as `node --max-old-space-size=256 tools/freeze-check.js`. With the
 default heap, six 30-run attempts across two sessions were killed outright by the
@@ -322,10 +386,27 @@ simply implement:
   runners would spend longer on upper lanes that carry their own crossings.
   Asked, declined, settled -- do not re-raise.
 - **A correct calculation whose instruction is wrong.** It worked out that a
-  brick should be 3.7 units, which is exactly right: a runner is 29 units crown
-  to sole, so a unit is about 59mm. At 3.7 units a course is under a screen
-  pixel at play zoom and the mortar cannot be drawn at all. Accuracy that cannot
-  be rendered is not a target. Halved once, not twice, and said so.
+  brick should be 3.7 units. At 3.7 units a course is under a screen pixel at
+  play zoom and the mortar cannot be drawn at all. Accuracy that cannot be
+  rendered is not a target. Halved once, not twice, and said so.
+
+  **The arithmetic that backed that refusal was wrong, and the refusal stands
+  anyway.** It read "a runner is 29 units crown to sole, so a unit is about
+  59mm". A runner is 45: that is the RENDERED height of the tallest drawn
+  figure, ink outline included, at the scale `drawRunners` actually uses, and it
+  was confirmed twice by different methods -- once by rendering to a blank canvas
+  and finding the painted extremes, once analytically from the primitives
+  `drawFigure` emits. So a unit is 38.9mm and a real 215mm brick is **5.6 units**,
+  half again as large as the number that was refused. It is still under a pixel of
+  mortar at play zoom, so the conclusion holds; the number quoted for it did not.
+  If a future pass re-raises the brick, argue it at 5.6.
+
+  There is no single body number, which is why this went wrong four times
+  (28, 29, 34, 35.2, then 45). For CLEARANCE -- will a body fit under this, is
+  this doorway tall enough -- use **45**. For "does this read as a person" use
+  about **39**, and note that is not a floor: the shortest named runner draws at
+  34.6, below an unnamed figure with a bun at 38.5. Measure it, do not read it
+  out of a comment, including this one.
 - **A real impression with the wrong diagnosis.** It reported the cave as
   brighter than the mill you leave. Sweeping 40 to 500 units past the seam gives
   61 55 52 64 68 45 32 37 against the mill at 31 to 39: not systematically
@@ -371,6 +452,18 @@ before moving either, and put the result in front of the critic again.
   a process is.
 
 ## Measuring the canvas
+
+**"Is this thing even there" is a measurement, not a glance.** I looked at a
+screenshot, saw a crowd on both sides of what appeared to be a solid wall, and
+told a reviewer the blast had not opened a breach. It had. At 0.45 zoom the hole
+was 54 pixels wide with forty runners and a speech bubble in front of it;
+sampling four pixel columns took two minutes and showed daylight and hillside
+through it. The failure mode is specific and worth naming: **a negative from
+eyeballing feels like caution and is not.** "I cannot see it" sounds careful, so
+nobody challenges it, and it sends a reviewer after a bug that does not exist.
+If a claim is "X is not being drawn", sample the pixels where X should be and
+say what colour came back.
+
 
 Three sessions spent an afternoon trading luminance numbers at each other and
 produced six wrong ones between them. Not one was a defect in the game; every

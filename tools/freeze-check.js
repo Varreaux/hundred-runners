@@ -74,7 +74,14 @@ eval(src + `
       // silently ended roughly a quarter of every run set for several builds. Any key
       // skips the opening, and the fuzzer presses one on the next frame, so including it
       // restores the old restart-and-keep-hammering behaviour.
-      for (let i = 0; i < 60*140 && (S.mode === 'play' || S.mode === 'finale' || S.mode === 'intro'); i++) {
+      // The cap is DERIVED from the course, not written down. At 140s hardcoded it was
+      // comfortably longer than the course until act three made the world 15600 units
+      // instead of 12300, and then eight runs in thirty stopped mid-play with people still
+      // walking -- reported as "reachedEnd 22", which reads exactly like a bug in the game
+      // and was a bug in the ruler. camMax/scroll is the drive to the last gate; the rest
+      // is the opening, the finale and a wide margin for held gates.
+      const LIMIT = Math.ceil(60 * (S.camMax / CFG.scroll + 90));
+      for (let i = 0; i < LIMIT && (S.mode === 'play' || S.mode === 'finale' || S.mode === 'intro'); i++) {
         update(1/60); draw();
         maxParticles=Math.max(maxParticles,S.particles.length); maxBubbles=Math.max(maxBubbles,S.bubbles.length);
         maxFloaters=Math.max(maxFloaters,S.floaters.length); maxRipples=Math.max(maxRipples,S.ripples.length);
