@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '62 light on the hill at last';
+const BUILD = '63 the hill stops being a staircase';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2286,6 +2286,13 @@ function drawOutside() {
   hills(0.38, 300, laneY(0) + 4, 90, 190, '#6f9a6a', 2);
   parallaxRange(1, 110, (seg, sx) => {
     if (hash(seg * 7) < 0.45) return;
+    // These are the MOUNTAIN PASS's trees, based at laneY(0) and drawn before drawEncLand
+    // paints the hill. In act three that hill covers their trunks and leaves the crowns
+    // stuck to whatever terrace face happens to be exposed -- headless bushes glued to a
+    // bank, which is what the art pass reported as "shrubs". Act three grows its own in
+    // encFlora, on its own ground, at its own scale; two systems for one object disagreeing
+    // by a factor of two is worse than either.
+    if (ENC.inside(sx + V.left)) return;
     const tx = sx + hash(seg * 3) * 60, th = 74 + hash(seg * 5) * 54, base = laneY(0) + 2;
     ctx.strokeStyle = INK; ctx.lineWidth = 8.5; ctx.beginPath(); ctx.moveTo(tx, base); ctx.quadraticCurveTo(tx + 3, base - th * 0.5, tx, base - th * 0.7); ctx.stroke();
     ctx.strokeStyle = '#3b2a1c'; ctx.lineWidth = 6.5; ctx.beginPath(); ctx.moveTo(tx, base); ctx.quadraticCurveTo(tx + 3, base - th * 0.5, tx, base - th * 0.7); ctx.stroke();
@@ -5545,7 +5552,26 @@ function encSurfaceY(wx) {
     + Math.abs(Math.sin(wx * 0.0011 + 0.6)) * 30
     + Math.abs(Math.sin(wx * 0.0037 + 1.7)) * 13
     + Math.abs(Math.sin(wx * 0.0094 + 3.1)) * 5;
-  return Math.min(base - roll, laneY(encTopLane(wx)) - 20);
+  // RELIEF THAT IS NOT DERIVED FROM THE LANES. Without this the act is a symmetrical
+  // four-step ziggurat, and the cosine window above does not save it: wherever the top
+  // lane is constant across the +/-480 window -- which is most of the act -- `base`
+  // equals laneY(top) exactly, so the whole thing collapses to laneY(top) - roll, and
+  // roll is only 24 to 72. The crest was therefore pinned within one body height of
+  // whichever deck was highest, everywhere, which IS a staircase. The mirror symmetry
+  // then came free from the fork layout, which is symmetrical about 13690.
+  //
+  // Two long wavelengths and a deliberately incommensurate third, so the hill has a shape
+  // of its own and the terraces read as cut INTO it rather than as being it. Capped at
+  // 190: the camera's top edge is world y -550, and a crest much above that swallows the
+  // sky and the birds and the clouds with it.
+  const relief = Math.min(190,
+      104 * (0.5 + 0.5 * Math.sin(wx * 0.00052 + 1.1))
+    +  72 * (0.5 + 0.5 * Math.sin(wx * 0.00023 + 4.3))
+    +  38 * (0.5 + 0.5 * Math.sin(wx * 0.00147 + 2.6)));
+  // The clamp stays, and it is a FLOOR in height terms: min() on y keeps the surface at or
+  // above the highest track, which is what stopped terraces floating over open sky. Relief
+  // is subtracted OUTSIDE it so it can only ever raise the hill, never breach that.
+  return Math.min(base - roll, laneY(encTopLane(wx)) - 20) - relief;
 }
 // ---------------------------------------------------------------- weather in act three
 // ONE wind field, read by everything outdoors that should move together: the turf, the
@@ -5595,8 +5621,20 @@ function drawEncLand() {
   // parallel silhouettes 56 units apart read as stacked cardboard, which is most of what
   // made this look like a model rather than a landscape.
   const wander = (a, f, ph) => wx => a * Math.sin(wx * f + ph);
-  ridge(-96, '#8fb08a', 0.55, wander(30, 0.0013, 2.2));
-  ridge(-40, '#6f9a6a', 0.75, wander(18, 0.0021, 0.4));
+  // OPAQUE, in colours already mixed toward the sky. They were drawn at 0.55 and 0.75
+  // globalAlpha, so the sky read THROUGH the hills -- and worse, the middle ridge came out
+  // two different colours depending on whether sky or the far ridge was behind it, which
+  // is the visible seam running through them. This is the identical mistake drawEncWall's
+  // own comment calls out about the far return: masonry, and hillsides, are not
+  // translucent. If they recede they get hazier, they do not get see-through.
+  //
+  // Their wander amplitudes are also much larger and out of phase with each other now. At
+  // 30/18 against a shared encSurfaceY they were parallel copies of the foreground moving
+  // at the same parallax, which is the stacked cardboard the comment claimed to have
+  // fixed. The -96 ridge keeps its exact wander because encFlora's far treeline is derived
+  // from it; change one and the trees float.
+  ridge(-96, '#9db9ad', 1, wander(30, 0.0013, 2.2));
+  ridge(-46, '#7ba284', 1, wander(46, 0.0026, 3.9));
   ridge(0, '#5c8b52', 1, null);
   // the sunlit face of the turf, and the shade under each terrace
   ctx.save();
@@ -5823,7 +5861,11 @@ function encFlora() {
     if (hv > 0.62 - fenced * 0.46) continue;
     const jx = wx + (hv2 - 0.5) * 34;
     const base = encSurfaceY(jx);
-    const h = (26 + hv3 * 40) * (1 - fenced * 0.25);
+    // 26 to 66 units is 1.0 to 2.6 metres at the measured 38.9mm per unit: a shrub, and
+    // the comment that used to sit here -- "a 45-unit runner against a 60-unit tree says
+    // how big the hill is" -- said the hill was a rockery. A hillside oak is 205 to 385
+    // units. These run 70 to 230, with the biggest on the crest where the silhouette is.
+    const h = (70 + hv3 * 160) * (1 - fenced * 0.3);
     encTree(jx - V.left, base + 3, h, hv3, windAt(jx, S.t), fenced > 0.55 && hv2 > 0.62);
   }
 }
@@ -6165,7 +6207,23 @@ function encDeck(wx0, wx1, y) {
   e.addColorStop(0, '#5b4a33'); e.addColorStop(0.6, '#4a3b2a'); e.addColorStop(1, 'rgba(62,58,40,0)');
   ctx.fillStyle = e; ctx.fillRect(x0, y + 1, x1 - x0, 17);
   // the trodden surface, and a turf lip whose edge wanders on the same noise the hill uses
-  ctx.fillStyle = '#6f5c40'; ctx.fillRect(x0, y - 1, x1 - x0, 4);
+  // A TRACK, not a 4-unit line. At act three's zoom that was about 2 screen pixels of
+  // brown under a green lip, so a hundred people appeared to be running along an edge
+  // rather than on anything. A path cut into a hillside and run down by a crowd has width,
+  // a worn pale centre where the feet go, darker edges where they do not, and stones.
+  const TREAD = 13;
+  ctx.fillStyle = '#6f5c40'; ctx.fillRect(x0, y - 1, x1 - x0, TREAD);
+  // the worn centre line, lighter and dustier than the edges
+  ctx.fillStyle = 'rgba(176,158,126,0.5)'; ctx.fillRect(x0, y + 3.2, x1 - x0, 5);
+  ctx.fillStyle = 'rgba(38,30,20,0.3)'; ctx.fillRect(x0, y + TREAD - 3, x1 - x0, 3);
+  // ruts and stones trodden into it, on their own pitch so they do not line up with the
+  // lip tufts or the stones in the cut below
+  for (let wx = Math.floor(wx0 / 19) * 19; wx < wx1; wx += 19) {
+    const hv = hash(wx * 3.7 + y * 1.3);
+    if (hv < 0.5) continue;
+    ctx.fillStyle = hv > 0.82 ? 'rgba(140,132,116,0.55)' : 'rgba(58,46,32,0.32)';
+    ctx.fillRect(wx - V.left, y + 1.5 + hv * 7, 3 + hv * 9, 1.4 + hv * 1.6);
+  }
   const lip = (h, col) => {
     ctx.fillStyle = col; ctx.beginPath();
     let first = true;
