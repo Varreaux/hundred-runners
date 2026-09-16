@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '86 more water under the bank';
+const BUILD = '87 light, fat and few';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1260,19 +1260,8 @@ function ambient(dt) {
   // act. That is most of what "there are no effects out there" meant.
   if (ENC.inside(S.cam + CFG.packFront)) { encAmbient(); return; }
   const lit = [];
-  for (let wx = Math.ceil((V.left - 100) / 240) * 240; wx < V.left + V.vw + 100; wx += 240) {
-    for (let k = 0; k < CFG.laneCount; k++) {
-      const lx = wx + k * 40;
-      if (lx < CFG.exit && laneAt(k, lx) && Math.abs(lx - CFG.entrance) > 80 && Math.abs(lx - CFG.exit) > 80) {
-        // Fixed pitch, fixed stagger, identical flame, none missing: an evenly spaced dotted
-        // line on every level, forming diagonals across the stack. rockCorridor's own comment
-        // says identical strips at an identical pitch read as wallpaper; the lamps never got
-        // that treatment, and Morgan's reading of act two was lamps and nothing else. One in
-        // three is out and the rest wander by up to 45 units either way.
-        if (hash(lx * 0.031 + k * 7.3) < 0.34) continue;
-        lit.push([lx + (hash(lx * 0.017 + k * 3.1) - 0.5) * 90, laneY(k) - CFG.tunnelH + 2]);
-      }
-    }
+  for (let k = 0; k < CFG.laneCount; k++) {
+    for (const lx of lampsIn(k, V.left - 100, V.left + V.vw + 100, [])) lit.push([lx, laneY(k) - CFG.tunnelH + 2]);
   }
   if (!lit.length) return;
   const [lx, ly] = pick(lit);
@@ -3049,9 +3038,46 @@ function tunnelSag(wx, lane) {
 const SOLID_TYPE = { thorn: 1, mantrap: 1, gears: 1, conveyor: 1, sweeper: 1, presses: 1, wiring: 1 };
 const SOLID_HAZ = { burst: 1, machine: 1, press: 1 };
 const roomIsGap = r => !SOLID_HAZ[r.hazard] && !SOLID_TYPE[r.type];
+// The stretches of a gallery floor that actually exist. The track already breaks on these;
+// the drain did not, so a drainage channel was cut across a hole with a river under it.
+// The AIR PIPE deliberately does not use this: it is hung from the roof, and a pipe spanning
+// a chasm is what a pipe does. Not everything that crosses a gap is wrong.
+function floorSpans(lo, hi, lane) {
+  const gaps = S.rooms.filter(r => r.lane === lane && roomIsGap(r) && r.x + CFG.gapWidth > lo && r.x < hi)
+                      .map(r => [r.x, r.x + CFG.gapWidth]).sort((a, b) => a[0] - b[0]);
+  const out = []; let at = lo;
+  for (const [ga, gb] of gaps) { if (ga > at) out.push([at, Math.min(ga, hi)]); at = Math.max(at, gb); }
+  if (at < hi) out.push([at, hi]);
+  return out;
+}
 // The rail stack, as numbers both the track and the cart read, because a comment saying
 // y-4.4 above a loop drawing y-6.6 is how they came apart the first time.
 const RAIL_TOP = 6.6, RAIL_DEEP = 3.2, WHEEL_R = 4.4;
+// ONE lamp generator. There were FOUR places deciding where a lamp is: the body and flame in
+// carveTunnels, the embers in ambient, the floor pool in lampPools, and the shadow lean in
+// drawRunners, each carrying its own copy of the same loop. Putting a jitter and a skip into
+// only one of them was worse than not doing it at all -- embers began rising out of bare rock
+// up to 45 units from any flame, one lamp in three burned with nothing coming off it, and the
+// visible lamps stayed on a perfect metronome, which was the complaint in the first place.
+function lampsIn(lane, x0, x1, out) {
+  const P = 240;
+  for (let wx = Math.ceil((x0 - P) / P) * P; wx < x1 + P; wx += P) {
+    const lx = wx + lane * 40;
+    if (lx >= CFG.exit || !laneAt(lane, lx)) continue;
+    if (Math.abs(lx - CFG.entrance) <= 80 || Math.abs(lx - CFG.exit) <= 80) continue;
+    if (hash(lx * 0.031 + lane * 7.3) < 0.28) continue;          // rather better than one in four is out
+    out.push(lx + (hash(lx * 0.017 + lane * 3.1) - 0.5) * 80);
+  }
+  return out;
+}
+// The nearest lamp to a point on a lane, for anything that has to lean away from the light.
+function lampNear(lane, wx) {
+  let best = null;
+  for (const x of lampsIn(lane, wx - 300, wx + 300, [])) {
+    if (best === null || Math.abs(x - wx) < Math.abs(best - wx)) best = x;
+  }
+  return best === null ? wx : best;
+}
 const CAVE_CLEAR = 104;
 const PROPS = ['cart', 'prop', 'tools', 'crates', 'spoil', 'barrow', 'keg', 'prop', 'sacks', 'rope', 'ladder'];
 // What tends to be left beside what. A cart stands at a face with the spoil it is being
@@ -3128,29 +3154,38 @@ function mineFabric(wx0, wx1, y, lane) {
     ctx.fillStyle = '#4e3c2a'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
     for (const s of [-1, 1]) {                            // legs, splayed a little as they are set
       ctx.beginPath();
-      ctx.moveTo(sx + s * (halfW + 4), y); ctx.lineTo(sx + s * (halfW - 3), y - H + 2);
+      ctx.moveTo(sx + s * (halfW + 4), y); ctx.lineTo(sx + s * (halfW - 1), y - H + 2);
       ctx.lineTo(sx + s * (halfW - 10), y - H + 2); ctx.lineTo(sx + s * (halfW - 3), y);
       ctx.closePath(); ctx.fill(); ctx.stroke();
     }
-    ctx.fillRect(sx - halfW - 4, y - H - 6, (halfW + 4) * 2, 9);            // cap beam
-    ctx.strokeRect(sx - halfW - 4, y - H - 6, (halfW + 4) * 2, 9);
-    ctx.fillStyle = 'rgba(255,214,150,0.14)'; ctx.fillRect(sx - halfW - 4, y - H - 6, (halfW + 4) * 2, 2.2);
-    ctx.fillStyle = 'rgba(0,0,0,0.34)';                                     // lagging behind the cap
-    for (let i = -2; i <= 2; i++) ctx.fillRect(sx + i * 13 - 2, y - H - 12, 4, 6);
+    // The cap spanned +-34 against leg tops at +-20 to +-27, so seven units of beam hung past
+    // each leg with nothing under it. It ends where the legs do now.
+    ctx.fillRect(sx - halfW - 1, y - H - 6, (halfW + 1) * 2, 9);            // cap beam
+    ctx.strokeRect(sx - halfW - 1, y - H - 6, (halfW + 1) * 2, 9);
+    ctx.fillStyle = 'rgba(255,214,150,0.16)'; ctx.fillRect(sx - halfW - 1, y - H - 6, (halfW + 1) * 2, 2.4);
+    // The lagging used to be drawn at y-H-12, which is above the roof line and therefore
+    // inside solid rock behind the ceiling lip: five fillRects a set a frame that nobody has
+    // ever seen. It packs the gap under the cap instead, where lagging actually goes.
   }
 
   // ---- the drain: mines are always wet, and the water has to go somewhere
-  ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.fillRect(x0, y - 3.2, x1 - x0, 3.2);
-  ctx.fillStyle = 'rgba(120,170,190,0.16)'; ctx.fillRect(x0, y - 2.6, x1 - x0, 1.4);
+  // 5.2 world units is two screen pixels at the zoom this act is played at, and that is the
+  // floor for anything meant to carry information here.
+  for (const [ga, gb] of floorSpans(lo, hi, lane)) {
+    const a = Math.max(x0, ga - V.left), b = Math.min(x1, gb - V.left);
+    if (b <= a) continue;
+    ctx.fillStyle = 'rgba(0,0,0,0.40)'; ctx.fillRect(a, y - 5.6, b - a, 5.6);
+    ctx.fillStyle = 'rgba(150,200,220,0.26)'; ctx.fillRect(a, y - 4.6, b - a, 2.6);
+  }
   for (let wx = Math.floor(lo / 210) * 210; wx < hi; wx += 210) {
     if (hash(wx * 0.029 + lane * 2.3) < 0.55) continue;
     const sx = wx - V.left;
     if (sx < x0 || sx > x1) continue;
-    const pw = 9 + hash(wx * 0.07) * 13;
-    ctx.fillStyle = 'rgba(96,150,170,0.20)';
-    ctx.beginPath(); ctx.ellipse(sx, y - 1.6, pw, 2.4, 0, 0, 6.28); ctx.fill();
-    ctx.fillStyle = 'rgba(210,240,255,0.18)';
-    ctx.beginPath(); ctx.ellipse(sx - pw * 0.3, y - 2.1, pw * 0.34, 0.9, 0, 0, 6.28); ctx.fill();
+    const pw = 14 + hash(wx * 0.07) * 18;
+    ctx.fillStyle = 'rgba(96,150,170,0.30)';
+    ctx.beginPath(); ctx.ellipse(sx, y - 2.6, pw, 5.2, 0, 0, 6.28); ctx.fill();
+    ctx.fillStyle = 'rgba(210,240,255,0.34)';
+    ctx.beginPath(); ctx.ellipse(sx - pw * 0.3, y - 3.4, pw * 0.36, 2.2, 0, 0, 6.28); ctx.fill();
   }
 
   // ---- seepage off the roof. One drop per gallery, on its own clock, falling into the drain.
@@ -3526,13 +3561,17 @@ const SKEL_SPINE = {
 };
 // hip and shoulder as an index into the spine, and how deep the ribs hang
 const SKEL_FORM = {
-  longneck: { hip: 3, shoulder: 7, ribFrom: 4, ribTo: 7, ribLen: 0.18, legLen: 0.22, skull: 0.075, biped: 0 },
-  raptor:   { hip: 4, shoulder: 8, ribFrom: 5, ribTo: 8, ribLen: 0.15, legLen: 0.20, skull: 0.110, biped: 1 },
+  longneck: { hip: 3, shoulder: 7, ribFrom: 3, ribTo: 8, ribLen: 0.19, legLen: 0.22, skull: 0.075, biped: 0 },
+  raptor:   { hip: 4, shoulder: 8, ribFrom: 4, ribTo: 9, ribLen: 0.16, legLen: 0.20, skull: 0.110, biped: 1 },
 };
+// The sunk shadow offset must NOT mirror with the body. drawSkeleton wraps everything in
+// scale(flip, 1), so a hardcoded +2.2 landed down-LEFT on every reversed animal while the
+// rock around it is lit from the upper left. Signed, so the light stays where the rock's is.
+let SKEL_FLIP = 1;
 function skelBone(x0, y0, x1, y1, w) {
   ctx.lineCap = 'round';
   ctx.strokeStyle = 'rgba(0,0,0,0.42)'; ctx.lineWidth = w + 3.2;      // sunk into the stone
-  ctx.beginPath(); ctx.moveTo(x0 + 2.2, y0 + 2.6); ctx.lineTo(x1 + 2.2, y1 + 2.6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x0 + 2.2 * SKEL_FLIP, y0 + 2.6); ctx.lineTo(x1 + 2.2 * SKEL_FLIP, y1 + 2.6); ctx.stroke();
   ctx.strokeStyle = INK; ctx.lineWidth = w + 2;
   ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
   ctx.strokeStyle = BONE; ctx.lineWidth = w;
@@ -3540,13 +3579,14 @@ function skelBone(x0, y0, x1, y1, w) {
 }
 function skelJoint(x, y, r) {
   ctx.fillStyle = 'rgba(0,0,0,0.42)';
-  ctx.beginPath(); ctx.arc(x + 2.2, y + 2.6, r, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 2.2 * SKEL_FLIP, y + 2.6, r, 0, 6.28); ctx.fill();
   ctx.fillStyle = BONE; ctx.strokeStyle = INK; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill(); ctx.stroke();
 }
 function drawSkeleton(ax, ay, L, kind, seed) {
   const f = SKEL_FORM[kind], sp = SKEL_SPINE[kind];
   const flip = hash(seed * 3.7) > 0.5 ? -1 : 1;                        // some face the other way
+  SKEL_FLIP = flip;                                                    // so the sunk shadow does not mirror with them
   const tilt = (hash(seed * 1.9) - 0.5) * 0.30;                        // lying at an angle in the bed
   ctx.save(); ctx.translate(ax, ay); ctx.rotate(tilt); ctx.scale(flip, 1);
   const P = sp.map(([px, py]) => [(px - 0.5) * L, py * L]);
@@ -3559,8 +3599,9 @@ function drawSkeleton(ax, ay, L, kind, seed) {
     const w = L * 0.012;                                             // an animal this size has heavy ribs
     ctx.lineCap = 'round';
     ctx.strokeStyle = 'rgba(0,0,0,0.42)'; ctx.lineWidth = w + 3.2;
-    ctx.beginPath(); ctx.moveTo(px + 2.2, py + 2.6);
-    ctx.quadraticCurveTo(px + len * 0.52 + 2.2, py + len * 0.62 + 2.6, px + len * 0.16 + 2.2, py + len + 2.6); ctx.stroke();
+    const so = 2.2 * SKEL_FLIP;
+    ctx.beginPath(); ctx.moveTo(px + so, py + 2.6);
+    ctx.quadraticCurveTo(px + len * 0.52 + so, py + len * 0.62 + 2.6, px + len * 0.16 + so, py + len + 2.6); ctx.stroke();
     ctx.strokeStyle = INK; ctx.lineWidth = w + 2;
     ctx.beginPath(); ctx.moveTo(px, py); ctx.quadraticCurveTo(px + len * 0.52, py + len * 0.62, px + len * 0.16, py + len); ctx.stroke();
     ctx.strokeStyle = BONE; ctx.lineWidth = w;
@@ -3569,21 +3610,29 @@ function drawSkeleton(ax, ay, L, kind, seed) {
   // the spine, thick at the hip and tapering to nothing at the tail tip
   for (let i = 0; i < P.length - 1; i++) {
     const t = i / (P.length - 1);
-    const w = L * (0.010 + 0.024 * Math.sin(Math.min(1, t * 1.5) * 3.14) + (t < 0.2 ? 0 : 0.003));
+    // sin(min(1, t*1.5) * PI) SATURATES at t = 0.667, so every neck segment evaluated sin(PI)
+    // = 0 and came out the same width: no taper, no articulation, a stick with a spoon on the
+    // end. And the tail tip took sin(0) = 0 too, so it stopped square instead of whipping out.
+    // A bell about the ribcage, multiplied by a tail taper and a neck taper, so both ends thin.
+    const peak = Math.exp(-Math.pow((t - 0.42) / 0.30, 2));
+    const thin = Math.max(0.20, Math.min(1, t * 3.2) * (1 - Math.max(0, t - 0.62) * 1.5));
+    const w = L * (0.005 + 0.026 * peak) * thin;
     skelBone(P[i][0], P[i][1], P[i + 1][0], P[i + 1][1], Math.max(1.6, w));
-    if (i >= 2 && i <= f.shoulder) {                                   // neural spines along the back
+    if (i >= 2 && i <= f.shoulder + 2) {                               // neural spines along the back and neck
       const nx = (P[i][0] + P[i + 1][0]) / 2, ny = (P[i][1] + P[i + 1][1]) / 2;
       skelBone(nx, ny, nx - L * 0.004, ny - L * (0.030 + 0.012 * Math.sin(i)), L * 0.006);
     }
   }
   // pelvis and shoulder girdle
   const hipP = P[f.hip], shP = P[f.shoulder];
-  skelJoint(hipP[0], hipP[1], L * 0.030);
-  skelJoint(shP[0], shP[1], L * 0.024);
+  skelJoint(hipP[0], hipP[1], L * 0.020);
+  skelJoint(shP[0], shP[1], L * 0.016);
   // legs. A hind leg is femur down-forward, shin down-back, then a foot.
   const leg = (bx, by, len, back, wf) => {
-    const kx = bx + len * 0.34 * back, ky = by + len * 0.54;
-    const fx = kx - len * 0.22 * back, fy = by + len;
+    // 0.34 forward then 0.22 back put the foot almost under the hip and read as a bent noodle.
+    // A leg carrying an animal this size is a column with a slight bend in it.
+    const kx = bx + len * 0.13 * back, ky = by + len * 0.54;
+    const fx = kx - len * 0.06 * back, fy = by + len;
     skelBone(bx, by, kx, ky, wf); skelJoint(kx, ky, wf * 0.8);
     skelBone(kx, ky, fx, fy, wf * 0.8);
     skelBone(fx, fy, fx + len * 0.18, fy + len * 0.03, wf * 0.7);      // the foot
@@ -3603,7 +3652,7 @@ function drawSkeleton(ax, ay, L, kind, seed) {
   const a = Math.atan2(H[1] - N[1], H[0] - N[0]), S = f.skull * L;
   ctx.save(); ctx.translate(H[0], H[1]); ctx.rotate(a);
   ctx.fillStyle = 'rgba(0,0,0,0.42)';
-  ctx.beginPath(); ctx.ellipse(2.2, 2.6, S, S * 0.52, 0, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(2.2 * SKEL_FLIP, 2.6, S, S * 0.52, 0, 0, 6.28); ctx.fill();
   ctx.fillStyle = BONE; ctx.strokeStyle = INK; ctx.lineWidth = 2.2;
   ctx.beginPath();
   ctx.moveTo(-S * 0.7, -S * 0.30);
@@ -3613,6 +3662,11 @@ function drawSkeleton(ax, ay, L, kind, seed) {
   ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.fillStyle = 'rgba(0,0,0,0.66)';                                   // orbit
   ctx.beginPath(); ctx.ellipse(-S * 0.14, -S * 0.10, S * 0.20, S * 0.17, 0, 0, 6.28); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.44)';                                   // nares, up the snout
+  ctx.beginPath(); ctx.ellipse(S * 0.52, -S * 0.22, S * 0.11, S * 0.08, 0.2, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.6;                           // the jaw, and the joint it hangs on
+  ctx.beginPath(); ctx.moveTo(-S * 0.5, S * 0.16); ctx.quadraticCurveTo(S * 0.2, S * 0.40, S * 0.9, S * 0.02); ctx.stroke();
+  ctx.beginPath(); ctx.arc(-S * 0.46, S * 0.10, S * 0.09, 0, 6.28); ctx.stroke();
   if (f.biped) {                                                        // teeth, along the jaw
     ctx.fillStyle = BONE;
     for (let i = 0; i < 6; i++) {
@@ -3749,8 +3803,8 @@ function carveTunnels() {
     ctx.fillStyle = '#fff6d0'; ctx.beginPath(); ctx.ellipse(sx + lean * 0.3, y + 15, 1.1, 2, 0, 0, 6.28); ctx.fill();
     ctx.fillStyle = '#7a5a20'; ctx.fillRect(sx - 5, y + 7, 10, 2); ctx.fillRect(sx - 5, y + 18, 10, 2);
   };
-  for (let wx = Math.ceil((V.left - 200) / 240) * 240; wx < V.left + V.vw + 200; wx += 240) {
-    for (let k = 0; k < CFG.laneCount; k++) { const lx = wx + k * 40; if (lx < CFG.exit && laneAt(k, lx) && Math.abs(lx - CFG.entrance) > 80 && Math.abs(lx - CFG.exit) > 80) lamp(lx, laneY(k) - th + 2); }
+  for (let k = 0; k < CFG.laneCount; k++) {
+    for (const lx of lampsIn(k, V.left - 200, V.left + V.vw + 200, [])) lamp(lx, laneY(k) - th + 2);
   }
   ctx.fillStyle = '#231b28';
   for (const wx of [CFG.entrance, CFG.exit]) { if (!inView(wx, 100) || inMill(wx)) continue; const ax = wx - V.left, cy = laneY(0) - th; ctx.fillRect(ax - 36, cy - 3, 72, 22); ctx.beginPath(); ctx.arc(ax, cy - 2, 36, Math.PI, 0); ctx.fill(); }
@@ -3821,7 +3875,9 @@ function rockCorridor(wx0, wx1, y, lane = 0) {
   ctx.save(); ctx.beginPath(); ctx.rect(x0, cy, x1 - x0, CFG.tunnelH + 1); ctx.clip();
   for (let sy = cy - 34; sy < y; sy += 34) {
     const k = Math.floor(sy / 34) + lane * 3;
-    ctx.fillStyle = k % 3 === 0 ? 'rgba(255,255,255,0.030)' : k % 3 === 1 ? 'rgba(0,0,0,0.085)' : 'rgba(150,100,130,0.055)';
+    // 0.030 white on a wall at 30/255 is +6.8, and grain swings it +-2.7 on its own: a band
+    // you cannot see is a band you did not draw. Light side up, and worth having.
+    ctx.fillStyle = k % 3 === 0 ? 'rgba(255,240,214,0.075)' : k % 3 === 1 ? 'rgba(0,0,0,0.13)' : 'rgba(170,120,150,0.085)';
     strataBand(sy + hash(k) * 10, 7 + hash(k * 7) * 8, k);
   }
   const S2 = 58;
@@ -3839,12 +3895,25 @@ function rockCorridor(wx0, wx1, y, lane = 0) {
     }
   }
   // pick marks: short chisel scars, the one thing that says a person cut this
-  ctx.strokeStyle = 'rgba(0,0,0,0.13)'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
-  for (let wx = Math.floor((x0 + V.left) / 26) * 26; wx < x1 + V.left; wx += 26) {
+  // A fresh chisel bite exposes stone LIGHTER than the weathered face round it. These were
+  // black at 13% on a wall at 30/255 -- a change of about four levels, inside a grain field of
+  // plus or minus three, on a line 0.54 screen pixels wide at the zoom this act is played at.
+  // Correct marks, painted in the bottom tenth of the value range, which is not detail but
+  // cost. Light, fat and few instead: minimum two screen pixels, a third as many, and grouped
+  // low on the wall where a person standing would actually swing.
+  ctx.lineCap = 'round';
+  for (let wx = Math.floor((x0 + V.left) / 74) * 74; wx < x1 + V.left; wx += 74) {
     const n = hash(wx * 0.047 + lane * 5.1);
-    if (n < 0.55) continue;
-    const px = wx - V.left, py = cy + 16 + n * (CFG.tunnelH - 40);
-    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + 5 + n * 5, py - 3 - n * 4); ctx.stroke();
+    if (n < 0.52) continue;
+    const px = wx - V.left;
+    for (let i = 0; i < 3; i++) {
+      const py = y - 26 - hash(wx + i * 3.7) * 52, ox = (hash(wx * 0.3 + i) - 0.5) * 22;
+      const len = 7 + hash(wx + i * 1.3) * 7;
+      ctx.strokeStyle = 'rgba(0,0,0,0.20)'; ctx.lineWidth = 5.4;
+      ctx.beginPath(); ctx.moveTo(px + ox, py + 1.6); ctx.lineTo(px + ox + len, py - len * 0.5 + 1.6); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,240,214,0.13)'; ctx.lineWidth = 3.0;
+      ctx.beginPath(); ctx.moveTo(px + ox, py); ctx.lineTo(px + ox + len, py - len * 0.5); ctx.stroke();
+    }
   }
   ctx.restore();
   // ribs cut into the back wall at intervals, so the corridor has an inside rather than a flat face.
@@ -7399,21 +7468,23 @@ function drawLane(lane) {
 }
 function lampPools(lane) {
   const y = laneY(lane);
-  for (let wx = Math.ceil((V.left - 200) / 240) * 240; wx < V.left + V.vw + 200; wx += 240) {
-    const lx = wx + lane * 40;
-    // The lamps themselves stop at the mouth (carveTunnels guards them); their POOLS did
-    // not, so a warm radial was laid on open grass every 240 units through the whole of
-    // act three, in daylight, with no lamp above it. Measured, the turf under one changed
-    // hue rather than value: (90,106,65) green-dominant became (138,134,78) red-dominant.
-    if (lx >= CFG.exit) continue;
-    if (!laneAt(lane, lx) || !inView(lx, 120) || Math.abs(lx - CFG.entrance) < 80 || Math.abs(lx - CFG.exit) < 80) continue;
+  // Same generator as the lamp bodies, the embers and the runners' shadows, so a pool cannot
+  // land where there is no flame. The lamps stop at the mouth and so must their pools: a warm
+  // radial on open grass in daylight turned turf from green-dominant to red-dominant.
+  for (const lx of lampsIn(lane, V.left - 200, V.left + V.vw + 200, [])) {
+    if (!inView(lx, 140)) continue;
     const sx = lx - V.left;
     ctx.save();
-    ctx.beginPath(); ctx.rect(sx - 160, y - CFG.tunnelH, 320, CFG.tunnelH + 18); ctx.clip();
+    // The clip has to be WIDER than the gradient's own radius, not narrower. At a bottom edge
+    // of y+18 the 126-unit ramp was cut at 0.247 alpha -- a 320-unit bar terminating dead at a
+    // quarter of full strength, which is the fill-narrower-than-its-gradient fault this file
+    // records twice already. R is one number, read by the clip, the gradient and the fill.
+    const R = 126;
+    ctx.beginPath(); ctx.rect(sx - R - 20, y - CFG.tunnelH, (R + 20) * 2, CFG.tunnelH + R + 20); ctx.clip();
     const mill = inMill(lx), c = mill ? '255,214,152' : '255,200,110';
-    const g = ctx.createRadialGradient(sx, y + 3, 4, sx, y + 3, 126);
+    const g = ctx.createRadialGradient(sx, y + 3, 4, sx, y + 3, R);
     g.addColorStop(0, `rgba(${c},${mill ? 0.44 : 0.3})`); g.addColorStop(0.45, `rgba(${c},${mill ? 0.12 : 0.1})`); g.addColorStop(1, `rgba(${c},0)`);
-    ctx.fillStyle = g; ctx.fillRect(sx - 140, y - 137, 280, 280);
+    ctx.fillStyle = g; ctx.fillRect(sx - R, y + 3 - R, R * 2, R * 2);
     ctx.restore();
   }
 }
@@ -9541,7 +9612,7 @@ function drawRunners(lane) {
       // fixed upper-left, so the shadow is long and thrown right; under a ceiling lamp it
       // is short and directly underfoot. The same blob for both is what flattened them.
       const out = r.x < CFG.entrance || r.x > CFG.exit;
-      const lampX = Math.round((r.x - lane * 40) / 240) * 240 + lane * 40;
+      const lampX = out ? r.x : lampNear(lane, r.x);
       const lean = out ? 9 : Math.max(-7, Math.min(7, (r.x - lampX) * 0.06));
       const len = out ? 11 : 6.4;
       ctx.fillStyle = out ? 'rgba(0,0,0,0.17)' : 'rgba(0,0,0,0.24)';
@@ -9575,7 +9646,7 @@ function drawRunners(lane) {
     // shoulder and leaves the far side of the body dark. Lighting the chest evenly on
     // both sides made people look lit from inside.
     if (r.state === 'run' && r.x > CFG.entrance && r.x < CFG.exit) {
-      const lampX = Math.round((r.x - lane * 40) / 240) * 240 + lane * 40;
+      const lampX = lampNear(lane, r.x);
       const off = r.x - lampX;
       const warm = 1 - Math.min(1, Math.abs(off) / 118);
       if (warm > 0.03) {
