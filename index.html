@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '61 birds over the open country';
+const BUILD = '62 light on the hill at last';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2150,13 +2150,33 @@ function drawSky() {
   const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, '#5f9bd1'); g.addColorStop(0.55, '#a4c8e4'); g.addColorStop(1, '#efdcb7');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  const sunX = 190 - V.left * 0.02, sunY = 110;
+  // How far into the fencing the view is: 0 in the free country, 1 at the wall. The act's
+  // whole shape is freedom closing into confinement, and the light is the fastest way a
+  // player reads that -- faster than the fences, which are nine sets of ticks he has to
+  // notice. encAmbient and encFlora already thin their contents on this scalar; until now
+  // nothing graded the LIGHT with it, so the sky at the wall was identical to the sky
+  // coming out of the mountain.
+  const encT = clamp01((V.left + V.vw * 0.5 - ENC.free) / Math.max(1, ENC.wall - ENC.free));
+  // Parallax 0.02 put the sun off the left edge at V.left 9500 -- 2800 units BEFORE the
+  // mountain's mouth -- so the one act that is about open air never showed the sun, and
+  // everything in it was lit from a source the player could not see. 0.004 keeps the disc
+  // in frame for the whole course. It also sinks as the land is taken.
+  const sunX = 190 - V.left * 0.004, sunY = 110 + encT * 104;
   const sg = ctx.createRadialGradient(sunX, sunY, 10, sunX, sunY, 160);
   sg.addColorStop(0, 'rgba(255,236,190,0.7)'); sg.addColorStop(1, 'rgba(255,236,190,0)');
   ctx.fillStyle = sg; ctx.fillRect(sunX - 160, sunY - 160, 320, 320);
   ctx.fillStyle = '#fff3cf'; ctx.beginPath(); ctx.arc(sunX, sunY, 26, 0, 6.28); ctx.fill();
   for (let i = 0; i < 7; i++) {
-    const cx = ((hash(i) * 1400 - V.left * 0.06 - S.t * 6) % 1400 + 1400) % 1400 - 200, cy = 40 + hash(i + 50) * 150, sc = 0.7 + hash(i + 90) * 0.8;
+    // cy started at 40, which is exactly the top of the play viewport. A cloud's white
+    // lobes reach 30 units above centre and were cropped away, while the shaded underside
+    // is offset 9 DOWN with a small half-height and survived -- so the sky held grey
+    // clouds with no cloud above them, next to white ones at the same height. 74 clears it.
+    //
+    // sc also tracks the zoom. Clouds are drawn in screen space, so at act three's 0.453
+    // the same cloud is 2.2x larger against the land than it is in the mill, which is why
+    // they read as low and enormous out there.
+    const cx = ((hash(i) * 1400 - V.left * 0.06 - S.t * 6) % 1400 + 1400) % 1400 - 200;
+    const cy = 74 + hash(i + 50) * 130, sc = (0.7 + hash(i + 90) * 0.8) * (0.55 + V.zoom * 0.62);
     // Lobes of unequal size on an uneven line, and the shaded underside offset AWAY from the
     // sun. Five equal ellipses in a row with the shadow dropped straight down gave every
     // cloud the same silhouette and the same lighting whichever side of the sun it sat on,
@@ -2201,6 +2221,16 @@ function drawSky() {
     ctx.fill();
   }
   drawBirds();
+  // The land closing in, said in the light. The sky cools and greys, and a cold haze band
+  // rises off the horizon, so the last 1600 units go from a bright summer hillside to a
+  // flat overcast one. Same machinery as the mill's smog below, pointed the other way.
+  if (encT > 0.01) {
+    const cold = ctx.createLinearGradient(0, 0, 0, H);
+    cold.addColorStop(0, `rgba(96,110,130,${0.34 * encT})`);
+    cold.addColorStop(0.5, `rgba(126,140,156,${0.30 * encT})`);
+    cold.addColorStop(1, `rgba(150,156,160,${0.40 * encT})`);
+    ctx.fillStyle = cold; ctx.fillRect(0, 0, W, H);
+  }
   // the mill makes its own weather: the sky browns over for the whole of act one
   const smog = clamp01((FAC.seam + 420 - (V.left + V.vw * 0.5)) / 900);
   if (smog > 0.01) {
@@ -5528,6 +5558,17 @@ function encSurfaceY(wx) {
 // the thing is, because a 3-unit tuft and a 40-unit sapling do not move by the same number
 // of units, they move by the same fraction of their height.
 const windAt = (wx, t) => Math.sin(wx * 0.0042 - t * 1.7) * 0.66 + Math.sin(wx * 0.0013 - t * 0.62) * 0.34;
+// Act three is always seen at zoom 0.453 -- the top live lane is 4, so the camera pulls
+// back far enough to hold 1090 world units in 494 screen pixels. Every line out here was
+// authored at the MILL's weights, where zoom is 0.7 to 1.0, and then halved by the camera:
+// a 1.4-unit rim light is 0.63px, a 1-unit coursing highlight is 0.45px, a 2-unit surveyor
+// pole is 0.9px. That is the mechanical cause of "blurry" -- not blur, but every edge in
+// the act landing under a pixel and being resolved as grey mush.
+//
+// encStroke(px) returns the WORLD width that renders as `px` screen pixels at whatever
+// zoom is current, so a line asked for in pixels stays that many pixels. The particle
+// system already does this (`Math.max(1.4 / V.zoom, ...)`) and nothing else did.
+const encStroke = px => px / V.zoom;
 // Cloud shadows crossing the land. Slower than the wind and much wider, so the two do not
 // beat against each other. Returns 0 (full sun) to 1 (under a cloud).
 const cloudShadeAt = (wx, t) => {
@@ -5564,11 +5605,20 @@ function drawEncLand() {
   for (let wx = x0; wx <= x1 + step; wx += step) ctx.lineTo(wx - V.left, encSurfaceY(wx));
   ctx.lineTo(x1 + step - V.left, CFG.worldBottom + 200);
   ctx.closePath(); ctx.clip();
-  const g = ctx.createLinearGradient(0, laneY(CFG.laneCount - 1) - 60, 0, CFG.worldBottom);
+  // gTop is hoisted so the gradient and the fill CANNOT disagree. They did, and it is the
+  // single reason act three read as one flat chip of green: the fill passed
+  // CFG.worldBottom as a HEIGHT when the rect already started at y -610, so it covered
+  // -610..-70 -- 540 units of an 1150-unit ramp, 47% of it, cut off at alpha 0.101. The
+  // dark base stop was never painted at all, and everything below world y -70, which is
+  // every terrace the crowd actually runs on, got no top light, no mid tone and no ground
+  // shade. This is the exact trap CLAUDE.md records: "a fill NARROWER than its gradient
+  // truncates the ramp before it reaches zero, leaving a hard edge at the fill boundary".
+  const gTop = laneY(CFG.laneCount - 1) - 60;
+  const g = ctx.createLinearGradient(0, gTop, 0, CFG.worldBottom);
   g.addColorStop(0, 'rgba(190,214,150,0.30)');
   g.addColorStop(0.5, 'rgba(120,160,100,0.10)');
   g.addColorStop(1, 'rgba(24,40,28,0.45)');
-  ctx.fillStyle = g; ctx.fillRect(-60, laneY(CFG.laneCount - 1) - 60, V.vw + 120, CFG.worldBottom);
+  ctx.fillStyle = g; ctx.fillRect(-60, gTop, V.vw + 120, CFG.worldBottom - gTop);
   // Cloud shadows, inside the hill's clip so they land on the land and not on the sky.
   // Drawn before the grass so the blades still catch their own gust highlight on top.
   // ONE gradient sampled across the view, not a strip per band. Filling each band at its
@@ -5689,11 +5739,17 @@ function drawEncLand() {
   // crest at the same weight as a runner's ink is an outline, and hills do not have
   // outlines -- it read as a cut-out sticker laid on the sky. Drawn only where the surface
   // is falling away to the left, which is the side the sun is on.
-  ctx.lineWidth = 1.4;
+  // The test was INVERTED, and the comment above it describes what it was meant to do
+  // rather than what it did. Canvas y grows downward, so b > a is the ground getting LOWER
+  // to the right -- a right-facing slope, turned away from the upper-left sun the rest of
+  // the game is lit by. Every rim light in act three was painted on the shaded side, and
+  // since alpha scaled with the drop, the more deeply shaded the slope the brighter its
+  // highlight. The sunward face is the one that RISES to the right: b < a.
+  ctx.lineWidth = encStroke(1.2);
   for (let wx = x0; wx <= x1; wx += step) {
     const a = encSurfaceY(wx), b = encSurfaceY(wx + step);
-    if (b <= a) continue;                       // only the slopes that face the sun
-    ctx.strokeStyle = `rgba(190,222,150,${Math.min(0.5, (b - a) / step * 0.9)})`;
+    if (b >= a) continue;                       // only the slopes that face the sun
+    ctx.strokeStyle = `rgba(190,222,150,${Math.min(0.5, (a - b) / step * 0.9)})`;
     ctx.beginPath(); ctx.moveTo(wx - V.left, a - 0.6); ctx.lineTo(wx + step - V.left, b - 0.6); ctx.stroke();
   }
 }
@@ -5749,7 +5805,13 @@ function encFlora() {
   for (let wx = Math.floor(x0 / 26) * 26; wx < x1; wx += 26) {
     const hv = hash(wx * 0.91);
     if (hv < 0.35) continue;
-    const by = encSurfaceY(wx) - 74 + Math.sin(wx * 0.0013 + 0.4) * 18;
+    // Derived from the ridge it stands on, NOT from a constant offset. At -74 the blob
+    // centre sat 56 to 92 units above the near crest with a half-height of 5 to 12, while
+    // the only thing that could be under it -- ridge(-96) -- wanders between -66 and -126.
+    // Wherever that wander was shallow the treeline hung in open blue with nothing beneath
+    // it: the same class of fault as terraces floating above their own hillside, which is
+    // what tools/enc-check.js was written for.
+    const by = encSurfaceY(wx) - 96 + 30 * Math.sin(wx * 0.0013 + 2.2) + 6;
     const h = 10 + hv * 14;
     ctx.beginPath();
     ctx.ellipse(wx - V.left, by, 5 + hv * 5, h * 0.5, 0, 0, 6.28); ctx.fill();
@@ -6270,7 +6332,7 @@ function drawGate(g, lane, front) {
       if (lane === 0 && (g.state === 'armed' || holding)) {
         ctx.fillStyle = holding ? 'rgba(92,225,255,0.10)' : 'rgba(92,225,255,0.06)';
         ctx.fillRect(sx - 42, cy - 16, 84, th + 18);
-        ctx.strokeStyle = '#5ce1ff'; ctx.lineWidth = holding ? 3 : 2; ctx.strokeRect(sx - 42, cy - 16, 84, th + 18);
+        ctx.strokeStyle = '#5ce1ff'; ctx.lineWidth = encStroke(holding ? 3 : 2); ctx.strokeRect(sx - 42, cy - 16, 84, th + 18);
       }
     } else millShutterBack(g, sx, y, th, holding);
     return;
@@ -6354,7 +6416,7 @@ function encGate(g, sx, y, holding, lane) {
   if (lane === 0 && (g.state === 'armed' || holding)) {
     ctx.fillStyle = holding ? 'rgba(92,225,255,0.10)' : 'rgba(92,225,255,0.06)';
     ctx.fillRect(sx - 42, y - H - 22, 84, H + 26);
-    ctx.strokeStyle = '#5ce1ff'; ctx.lineWidth = holding ? 3 : 2;
+    ctx.strokeStyle = '#5ce1ff'; ctx.lineWidth = encStroke(holding ? 3 : 2);
     ctx.strokeRect(sx - 42, y - H - 22, 84, H + 26);
   }
 }
@@ -6417,7 +6479,7 @@ function gateBars(g, sx, y, th, cy, holding, lane) {
   if (lane === 0 && (g.state === 'armed' || holding)) {
     ctx.fillStyle = holding ? 'rgba(92,225,255,0.10)' : 'rgba(92,225,255,0.06)';
     ctx.fillRect(sx - 38, cy - 16, 76, th + 18);
-    ctx.strokeStyle = '#5ce1ff'; ctx.lineWidth = holding ? 3 : 2; ctx.strokeRect(sx - 38, cy - 16, 76, th + 18);
+    ctx.strokeStyle = '#5ce1ff'; ctx.lineWidth = encStroke(holding ? 3 : 2); ctx.strokeRect(sx - 38, cy - 16, 76, th + 18);
   }
 }
 // Masonry in the same stone as the gate jambs. This used to be cold blue-grey brick with
@@ -6459,7 +6521,14 @@ function drawRoomProps(lane) {
 function drawRoom(room, y) {
   if (!inView(room.x, 240)) return;
   if (room.hazard === 'machine' || room.hazard === 'press') { drawMachineRoom(room, y); return; }
-  if (ENC.inside(room.x)) { drawEncRoom(room, y); return; }
+  // armedMark goes HERE and not at the end of drawEncRoom, because that function returns
+  // early for every room type -- ditch, thorn, mantrap and wall each have their own exit,
+  // so anything appended to its tail would run for none of them.
+  if (ENC.inside(room.x)) {
+    drawEncRoom(room, y);
+    if (room.state === 'armed') armedMark(room, y, room.x - V.left, CFG.gapWidth, true);
+    return;
+  }
   const sx = room.x - V.left, gw = CFG.gapWidth;
   const b = room.bridge, prog = room.mg && room.state === 'armed' ? VERBS[room.verb].progress(room.mg) : 0;
   // in the mill the crossings are steel plate and wire rope; in the rock, timber and hemp
@@ -6582,32 +6651,54 @@ function drawRoom(room, y) {
     for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(sx + 60 - bw / 2 + 3 + i * 10, top + bh - 2); ctx.lineTo(sx + 60 - bw / 2 + 8 + i * 10, top + bh + 6); ctx.lineTo(sx + 60 - bw / 2 + 13 + i * 10, top + bh - 2); ctx.closePath(); ctx.fillStyle = '#b0b0c4'; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1.2; ctx.stroke(); }
     if (room.state === 'solved') { ctx.fillStyle = INK; ctx.fillRect(sx + 60 - bw / 2 - 7, y - th + 1, bw + 14, 8); ctx.fillStyle = M.line; ctx.fillRect(sx + 60 - bw / 2 - 6, y - th + 2, bw + 12, 6); }
   }
-  if (room.state === 'armed') {
-    const pulse = 0.6 + 0.4 * Math.sin(S.t * 10);
-    const isActive = S.active === room;
-    // danger reads off the floor and the tunnel, not a box drawn over the scene
-    const col = isActive ? '#5ce1ff' : room.color, ch = CFG.tunnelH - 6;
-    const wash = ctx.createLinearGradient(0, y - ch, 0, y + 20);
+  if (room.state === 'armed') armedMark(room, y, sx, gw, false);
+}
+// The armed treatment: a floor wash, crawling hazard chevrons and a bracket at the mouth.
+//
+// This used to live inline at the end of drawRoom, AFTER the line that returns early for
+// act three -- so the enclosure's ditches, mantraps and thorn hedges carried no danger
+// language at all. The only thing telling a player an outdoor room was armed was the HUD
+// badge at the edge of the screen. It was also, with the mantrap's snap, most of the
+// missing animation out there: the chevrons crawl on S.t and the wash pulses, and act
+// three got neither.
+//
+// `outdoors` retints rather than reskins. The cave's version glows orange out of the dark
+// and hangs its bracket on the tunnel roof; on a sunlit hillside there is no roof to hang
+// from and a black gradient reads as a stain, so daylight gets a scuffed pale ground mark
+// and rope-and-rag chevrons, at the same rhythm and on the same clock.
+function armedMark(room, y, sx, gw, outdoors) {
+  const pulse = 0.6 + 0.4 * Math.sin(S.t * 10);
+  const isActive = S.active === room;
+  // danger reads off the floor and the tunnel, not a box drawn over the scene
+  const col = isActive ? '#5ce1ff' : room.color;
+  const ch = outdoors ? 62 : CFG.tunnelH - 6;
+  const wash = ctx.createLinearGradient(0, y - ch, 0, y + 20);
+  if (outdoors) {
+    // trodden, scuffed ground rather than a shadow: the danger here is the land itself
+    wash.addColorStop(0, 'rgba(255,240,214,0)');
+    wash.addColorStop(1, isActive ? `rgba(92,225,255,${0.20 + 0.06 * pulse})` : `rgba(228,96,72,${0.17 + 0.09 * pulse})`);
+  } else {
     wash.addColorStop(0, 'rgba(0,0,0,0)');
     wash.addColorStop(1, isActive ? `rgba(92,225,255,${0.16 + 0.05 * pulse})` : `rgba(255,70,70,${0.13 + 0.07 * pulse})`);
-    ctx.fillStyle = wash; ctx.fillRect(sx - 12, y - ch, gw + 24, ch + 20);
-    // hazard chevrons crawling along both lips of the gap
-    ctx.save(); ctx.beginPath(); ctx.rect(sx - 12, y - 10, gw + 24, 22); ctx.clip();
-    ctx.globalAlpha = isActive ? 0.9 : 0.55 + 0.3 * pulse; ctx.fillStyle = col;
-    const off = (S.t * 34) % 24;
-    for (let cx2 = sx - 36 + off; cx2 < sx + gw + 24; cx2 += 24) {
-      ctx.beginPath(); ctx.moveTo(cx2, y + 6); ctx.lineTo(cx2 + 9, y - 6); ctx.lineTo(cx2 + 16, y - 6); ctx.lineTo(cx2 + 7, y + 6); ctx.fill();
-    }
-    ctx.restore(); ctx.globalAlpha = 1;
-    // a thin bracket at the mouth of the gap instead of a full rectangle
-    ctx.strokeStyle = col; ctx.globalAlpha = isActive ? 1 : pulse; ctx.lineWidth = 2.4 / V.zoom;
-    for (const [ex, dir] of [[sx - 12, 1], [sx + gw + 12, -1]]) {
-      ctx.beginPath();
-      ctx.moveTo(ex + dir * 16, y - ch); ctx.lineTo(ex, y - ch); ctx.lineTo(ex, y + 16); ctx.lineTo(ex + dir * 16, y + 16);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
   }
+  ctx.fillStyle = wash; ctx.fillRect(sx - 12, y - ch, gw + 24, ch + 20);
+  // hazard chevrons crawling along both lips of the gap
+  ctx.save(); ctx.beginPath(); ctx.rect(sx - 12, y - 10, gw + 24, 22); ctx.clip();
+  ctx.globalAlpha = isActive ? 0.9 : 0.55 + 0.3 * pulse;
+  ctx.fillStyle = outdoors && !isActive ? '#f2ede0' : col;
+  const off = (S.t * 34) % 24;
+  for (let cx2 = sx - 36 + off; cx2 < sx + gw + 24; cx2 += 24) {
+    ctx.beginPath(); ctx.moveTo(cx2, y + 6); ctx.lineTo(cx2 + 9, y - 6); ctx.lineTo(cx2 + 16, y - 6); ctx.lineTo(cx2 + 7, y + 6); ctx.fill();
+  }
+  ctx.restore(); ctx.globalAlpha = 1;
+  // a thin bracket at the mouth of the gap instead of a full rectangle
+  ctx.strokeStyle = col; ctx.globalAlpha = isActive ? 1 : pulse; ctx.lineWidth = 2.4 / V.zoom;
+  for (const [ex, dir] of [[sx - 12, 1], [sx + gw + 12, -1]]) {
+    ctx.beginPath();
+    ctx.moveTo(ex + dir * 16, y - ch); ctx.lineTo(ex, y - ch); ctx.lineTo(ex, y + 16); ctx.lineTo(ex + dir * 16, y + 16);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
 }
 // The machine rooms stand ON the deck rather than being holes in it. The art
 // for each is being built elsewhere by promoting the plant millCorridor already
@@ -6859,10 +6950,37 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
   ctx.fillStyle = 'rgba(0,0,0,0.26)';
   ctx.beginPath();
   ctx.moveTo(wx0 + ww, y - 210); ctx.lineTo(wx0 + ww + bat, bottom); ctx.lineTo(wx0 + ww + bat - 5, bottom); ctx.lineTo(wx0 + ww - 4, y - 210); ctx.closePath(); ctx.fill();
-  // it is newer than everything else: clean mortar, a lit left face and a dark right one
-  ctx.fillStyle = 'rgba(0,0,0,0.26)'; ctx.fillRect(wx0 + ww - 10, top, 10, bottom - top);
-  ctx.fillStyle = 'rgba(255,248,230,0.10)'; ctx.fillRect(wx0, top, 4, bottom - top);
+  // Modelled across its WIDTH, not edged. 4 units of lit face and 10 of shade on a 244-unit
+  // wall is 1.8px and 4.5px at act three's zoom -- nothing crosses the other 230, so the
+  // biggest object in the game was a flat grey rectangle. A gradient the full width gives
+  // it a cylinder of light, which is what tells the eye it is a solid thing and not a
+  // painted panel.
+  const face = ctx.createLinearGradient(wx0, 0, wx0 + ww, 0);
+  face.addColorStop(0, 'rgba(255,248,230,0.16)');
+  face.addColorStop(0.28, 'rgba(255,248,230,0.05)');
+  face.addColorStop(0.62, 'rgba(0,0,0,0.10)');
+  face.addColorStop(1, 'rgba(0,0,0,0.34)');
+  ctx.fillStyle = face; ctx.fillRect(wx0, top, ww, bottom - top);
+  // Damp rising out of the ground, and clean stone up top: it is newly built.
+  const damp = ctx.createLinearGradient(0, bottom - 300, 0, bottom);
+  damp.addColorStop(0, 'rgba(48,56,44,0)');
+  damp.addColorStop(1, 'rgba(48,56,44,0.34)');
+  ctx.fillStyle = damp; ctx.fillRect(wx0, bottom - 300, ww, 300);
   ctx.restore();
+  // A COPING, so the wall has a top rather than running off the frame as an open-ended
+  // band. Even off-screen it matters at the finale zoom, and it is the one line that says
+  // somebody finished building this.
+  ctx.fillStyle = '#7a7168'; ctx.fillRect(wx0 - 9, top, ww + 18, 15);
+  ctx.fillStyle = 'rgba(255,248,230,0.22)'; ctx.fillRect(wx0 - 9, top, ww + 18, 3);
+  ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(wx0 - 9, top + 13, ww + 18, 3.5);
+  // Putlog holes: the sockets a scaffold sat in, left unfilled. Two columns, because a
+  // scaffold has two standards, and they are the cheapest possible statement that this was
+  // BUILT -- by people, recently, and in a hurry.
+  ctx.fillStyle = 'rgba(28,24,22,0.55)';
+  for (let hy = top + 96; hy < bottom - 120; hy += 118) {
+    ctx.fillRect(wx0 + ww * 0.24, hy, 9, 7);
+    ctx.fillRect(wx0 + ww * 0.68, hy + 40, 9, 7);
+  }
   // The shadow of the tallest object in the game. It was 150 long and TWELVE units tall,
   // which at play zoom is invisible -- the comment promised a shadow the length of the
   // wall's height and the code drew a smudge. It now runs the full height of the terraces
@@ -6889,8 +7007,12 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
     ctx.quadraticCurveTo(sx + gw / 2, y - 134, bR, y - 62);
     ctx.lineTo(bR, y + 4);
     ctx.closePath(); ctx.clip();
+    // The SAME sky the player can already see, sampled from drawSky's own stops at this
+    // height. It was #8fc1e4 -> #cfe3ea, both LIGHTER than the real sky there, so the
+    // breach glowed: a hole you look through cannot be brighter than the daylight it is
+    // showing you, and a lit panel is exactly what it read as.
     const sky = ctx.createLinearGradient(0, y - 128, 0, y - 20);
-    sky.addColorStop(0, '#8fc1e4'); sky.addColorStop(1, '#cfe3ea');
+    sky.addColorStop(0, '#7fadd4'); sky.addColorStop(1, '#b8cfd8');
     ctx.fillStyle = sky; ctx.fillRect(bL - 2, y - 136, bR - bL + 4, 118);
     ctx.fillStyle = '#9dbd93';                                   // far hills through the gap
     ctx.beginPath();
@@ -6900,10 +7022,22 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
     ctx.lineTo(bR + 2, y + 6); ctx.lineTo(bL - 2, y + 6); ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#5c8b52'; ctx.fillRect(bL - 2, y - 14, bR - bL + 4, 20);
     ctx.fillStyle = '#84b063'; ctx.fillRect(bL - 2, y - 14, bR - bL + 4, 2.4);
-    // the light through the opening goes on TOP of the far side, not instead of it
-    const lg2 = ctx.createLinearGradient(sx, y - 128, sx, y);
-    lg2.addColorStop(0, 'rgba(255,244,206,0.30)'); lg2.addColorStop(1, 'rgba(255,244,206,0)');
-    ctx.fillStyle = lg2; ctx.fillRect(bL - 2, y - 136, bR - bL + 4, 142);
+    ctx.restore();
+    // The light SPILLS OUT of the opening onto the ground and the crowd, rather than
+    // sitting inside it as a film. A wash laid within the clip is a pane of frosted glass
+    // in the hole; light coming through a gap lands on what is in front of it, and that is
+    // also the only way the breach can look like the way out rather than like a window.
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const spill = ctx.createLinearGradient(sx + gw / 2, y - 100, sx + gw / 2, y + 40);
+    spill.addColorStop(0, 'rgba(255,244,206,0.26)');
+    spill.addColorStop(0.55, 'rgba(255,240,196,0.13)');
+    spill.addColorStop(1, 'rgba(255,240,196,0)');
+    ctx.fillStyle = spill;
+    ctx.beginPath();
+    ctx.moveTo(bL + 4, y - 120); ctx.lineTo(bR - 4, y - 120);
+    ctx.lineTo(bR + 74, y + 46); ctx.lineTo(bL - 74, y + 46);
+    ctx.closePath(); ctx.fill();
     ctx.restore();
     // rubble on the ground and a burnt rim, so the hole was made rather than left
     ctx.fillStyle = 'rgba(30,22,20,0.55)';
