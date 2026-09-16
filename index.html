@@ -4065,6 +4065,19 @@ function millCupola(sx, y, gx, shy) {
 // spreads along the underside of the roof. Drawn over the hood, not under it: the hood is
 // 86 units wide and sits directly over the throat, so every puff made underneath it was
 // hidden by it, which is what the first pass at this did.
+//
+// MEASURED, because looking at a play-zoom frame and saying "I cannot see any smoke" is
+// the failure this repo already has a note about. Lane 0 cupola at wx 4585, zoom 0.696,
+// S.t frozen, 25x11 patches averaged, each taken with the smoke pass on and then off, and
+// the whole set repeated -- deltas in luminance:
+//
+//   directly over the hood, 74 / 86 / 98 / 108 above the floor   +4.2  +10.4  +4.3  +0.6
+//   along the roof at 98 up, 40 and 78 units either side          +23.5 +26.3 / +31.1 +33.7
+//
+// So the smoke reads, and it reads where it should: the band under the roof lifts a bare
+// 48.9 to 75.3, better than half again. The thin part is the column directly over the
+// centre, and that is the hood doing its job -- what goes up the middle goes up the flue
+// and out of the building. Do not "fix" that by pushing smoke through the hood.
 function millCupolaSmoke(sx, y, gx) {
   const fl = cupolaFlame(gx);
   for (const d of [-1, 1]) {
