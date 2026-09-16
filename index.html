@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '46 the enclosure';
+const BUILD = '47 the keypad tells you the order';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -492,14 +492,27 @@ const VERBS = {
   code: {
     ph: 196,          // same 3x3 keypad as the sweeper, same reason
     takesDigits: true,
-    now: m => 'press the worn keys, in order',
-    hint: 'the three fingerprinted keys, in the right order',
+    // A STATUS, not the rule. panelStep prints this right-aligned on the same line as the
+    // room title, so anything long collides with it: "press the worn keys, dirtiest first"
+    // printed straight through "unlock the press controls". The rule lives in hint, which
+    // has the whole bottom of the screen to itself.
+    now: m => (m.failed ? 'REJECTED' : `${m.input.length}/3`),
+    hint: 'three greasy keys: press them dirtiest first',
     solveKey: m => m.secret[m.input.length],
     start() {
       const digits = Array.from({ length: 9 }, (_, i) => String(i + 1));
       for (let i = digits.length - 1; i > 0; i--) { const j = Math.floor(rand(0, i + 1)); [digits[i], digits[j]] = [digits[j], digits[i]]; }
-      // marks are SORTED so the display gives away which keys, never their order
-      return { secret: digits.slice(0, 3).join(''), marks: digits.slice(0, 3).sort(), input: '', failed: false };
+      const secret = digits.slice(0, 3);
+      // The marks used to be SORTED, deliberately hiding the order, and the panel said so:
+      // "three prints, six possible orders". That is not a puzzle, it is a coin flipped
+      // three ways, and nothing on screen could tell you which. Measured: a player who
+      // knows the keys but not the order needs 10.5 presses on average and 18 at worst,
+      // against 2.18s of road, so 4.8 to 8.3 keys a second. The bot reported 1.38 because
+      // solveKey knows the answer, so every instrument called the room fine.
+      // The order is now legible instead: the finger is greasiest on the first press and
+      // leaves less each time, so wear rank 0 is pressed first. Three keys, three presses,
+      // no guessing.
+      return { secret: secret.join(''), wear: { [secret[0]]: 0, [secret[1]]: 1, [secret[2]]: 2 }, input: '', failed: false };
     },
     key(m, k) {
       if (!/^[1-9]$/.test(k)) return null;
@@ -517,25 +530,43 @@ const VERBS = {
       ctx.fillStyle = m.failed ? '#ff7777' : '#5ce1ff'; ctx.font = 'bold 20px monospace';
       ctx.fillText(m.failed ? 'REJECTED' : m.input.padEnd(3, '\u00b7').split('').join('   '), cx, py + 46);
       for (let i = 0; i < 9; i++) {
-        const d = String(i + 1), marked = m.marks.includes(d);
+        const d = String(i + 1), rank = m.wear[d];
+        const marked = rank !== undefined, used = marked && m.input.includes(d);
         const x = cx - 74 + (i % 3) * 50, y = py + 56 + Math.floor(i / 3) * 38;
         ctx.fillStyle = '#2a2d3a'; roundRect(x, y, 44, 32, 5); ctx.fill();
-        ctx.strokeStyle = marked ? '#a7987d' : '#4c4455'; ctx.lineWidth = marked ? 2 : 1;
+        // The whole key face darkens with wear, not just the print on it. The print alone
+        // separated first from third at a glance but not second from third, and second
+        // versus third is the only comparison the player actually has to make twice.
+        if (marked) {
+          ctx.fillStyle = `rgba(122,104,72,${[0.5, 0.26, 0.1][rank]})`;
+          roundRect(x, y, 44, 32, 5); ctx.fill();
+        }
+        ctx.strokeStyle = used ? '#6ee7a0' : marked ? '#a7987d' : '#4c4455';
+        ctx.lineWidth = marked ? 2 : 1;
         roundRect(x, y, 44, 32, 5); ctx.stroke();
         if (marked) {
-          // a greasy thumbprint: concentric arcs, clipped to the key
+          // A greasy thumbprint whose HEAVINESS is the answer: the first key pressed took
+          // the most off the finger. Three ranks, and they have to be tellable apart in one
+          // look, so they differ in ink, in ring count and in size rather than in one of
+          // those alone.
+          const ink = [0.92, 0.5, 0.2][rank], rings = [6, 4, 2][rank], grow = [1.15, 0.8, 0.5][rank];
           ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2, 40, 28); ctx.clip();
-          ctx.strokeStyle = 'rgba(190,170,130,0.75)'; ctx.lineWidth = 0.8;
-          for (let j = 0; j < 4; j++) {
-            ctx.beginPath(); ctx.ellipse(x + 32, y + 17, 2 + j * 1.4, 4 + j * 1.7, 0.15, 0.2, 5.4); ctx.stroke();
+          ctx.fillStyle = `rgba(150,132,98,${ink * 0.45})`;
+          ctx.beginPath(); ctx.ellipse(x + 31, y + 17, 9 * grow, 12 * grow, 0.15, 0, 6.28); ctx.fill();
+          ctx.strokeStyle = `rgba(214,196,156,${ink})`; ctx.lineWidth = 0.9;
+          for (let j = 0; j < rings; j++) {
+            ctx.beginPath();
+            ctx.ellipse(x + 31, y + 17, (2 + j * 1.5) * grow, (3.4 + j * 1.9) * grow, 0.15, 0.2, 5.4);
+            ctx.stroke();
           }
           ctx.restore();
         }
         ctx.fillStyle = marked ? '#e8e4ea' : '#6a6270'; ctx.font = 'bold 17px monospace';
-        ctx.fillText(d, x + 16, y + 22);
+        ctx.fillText(d, x + 14, y + 22);
       }
-      ctx.fillStyle = '#8a8fa3'; ctx.font = '11px monospace';
-      ctx.fillText('three prints, six possible orders', cx, py + 178);
+      // No footer line here. panelGauges owns everything from py + 171 down, and a caption
+      // at py + 178 printed across its bars and across "N reach this in Xs", which is the
+      // one readout that tells you whether to stay in the room or run.
       ctx.textAlign = 'left';
     },
   },
