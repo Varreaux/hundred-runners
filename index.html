@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '48 out of the machine';
+const BUILD = '49 the drill';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -446,7 +446,10 @@ const VERBS = {
     },
   },
   lights: {
-    ph: 196,          // a 3x3 keypad does not fit the default panel; its last row fell outside
+    ph: 210,          // a 3x3 keypad does not fit the default panel; its last row fell outside.
+                      // 210 not 196: at 196 the round pips at py+175 landed ON the progress
+                      // bar that panelFrame's callers draw at py+ph-20, two unrelated readouts
+                      // in the same five pixel rows.
     now: m => (m.watch ? 'WATCH' : m.won ? 'done' : `repeat it  (${m.idx}/${m.seq.length})`),
     takesDigits: true,
     hint: 'watch the sweeper, then repeat the order with 1-9',
@@ -483,7 +486,7 @@ const VERBS = {
       ctx.fillText(`ROUND ${Math.min(2, m.round + 1)} OF 2   ${m.watch ? 'WATCH' : 'YOUR TURN'}   ${m.seq.length} FLASHES`, cx, py + 44);
       for (let i = 0; i < 9; i++) {
         const isLit = lit === String(i + 1);
-        const x = cx - 74 + (i % 3) * 50, y = py + 54 + Math.floor(i / 3) * 38;
+        const x = cx - 72 + (i % 3) * 50, y = py + 54 + Math.floor(i / 3) * 38;
         ctx.fillStyle = isLit ? (own ? '#5ce1ff' : '#ffc64d') : '#2a2d3a';
         roundRect(x, y, 44, 32, 5); ctx.fill();
         ctx.strokeStyle = isLit ? '#fff' : '#4c4455'; ctx.lineWidth = isLit ? 2 : 1;
@@ -500,7 +503,7 @@ const VERBS = {
     },
   },
   code: {
-    ph: 196,          // same 3x3 keypad as the sweeper, same reason
+    ph: 210,          // same 3x3 keypad as the sweeper, same reason, same clearance
     takesDigits: true,
     // A STATUS, not the rule. panelStep prints this right-aligned on the same line as the
     // room title, so anything long collides with it: "press the worn keys, dirtiest first"
@@ -542,7 +545,7 @@ const VERBS = {
       for (let i = 0; i < 9; i++) {
         const d = String(i + 1), rank = m.wear[d];
         const marked = rank !== undefined, used = marked && m.input.includes(d);
-        const x = cx - 74 + (i % 3) * 50, y = py + 56 + Math.floor(i / 3) * 38;
+        const x = cx - 72 + (i % 3) * 50, y = py + 56 + Math.floor(i / 3) * 38;
         ctx.fillStyle = '#2a2d3a'; roundRect(x, y, 44, 32, 5); ctx.fill();
         // The whole key face darkens with wear, not just the print on it. The print alone
         // separated first from third at a glance but not second from third, and second
@@ -1232,7 +1235,7 @@ function reset() {
     stats: { dead: 0, arrived: 0 },
     finale: null, best: loadBest(), rollBottom: 254,
     endT: 0, endEmb: [], endSpawn: 0, endRoll: null,
-    introT: 0, doorOpen: 0,
+    introT: 0, doorOpen: 0, drill: null,
     recent: [], spike: null, spikeCool: 0, streak: 0, bestStreak: 0, lastScream: 0,
   };
   for (let i = 0; i < CFG.runnerCount; i++) {
@@ -1339,8 +1342,15 @@ window.addEventListener('keydown', e => {
   AU.init();
   if (k === 'M' && !S.active) { AU.muted = !AU.muted; return; }
   if (S.mode === 'title') { if (k === ' ') { S.mode = 'intro'; S.introT = 0; } return; }
-  // any key skips the opening; nobody wants to watch it twice
-  if (S.mode === 'intro') { startRun(); return; }
+  // Any key skips the opening; nobody wants to watch it twice. It skips TO the drill
+  // rather than past it -- people mash space off the title, and landing on the road
+  // having never seen a room is the thing the drill exists to prevent. Inside the drill
+  // ESC moves past the kind on screen; see drillKey for why it is one and not all eleven.
+  if (S.mode === 'intro') {
+    if (S.drill && !S.drill.done) { drillKey(k); return; }
+    if (!S.drill) { const c = I(); S.introT = c.deliver + c.settle; startDrill(); return; }
+    startRun(); return;
+  }
   if (S.mode === 'win' || S.mode === 'lose') { if (k === 'R') { reset(); S.mode = 'intro'; S.introT = 0; } return; }
   if (S.paused) { if (k === 'P') S.paused = false; else if (k === 'R') { reset(); S.mode = 'intro'; S.introT = 0; } return; }
   if (k === 'P' && !S.active) { S.paused = true; return; }
@@ -1378,8 +1388,11 @@ window.addEventListener('keydown', e => {
 // nothing else has to know keyup exists. A verb whose panel closes mid-hold never gets its
 // release, which is why every hold verb also decays its own state in update().
 window.addEventListener('keyup', e => {
-  const room = S.active;
-  if (S.mode !== 'play' || !room) return;
+  // The drill plays the same verbs, so a hold started in the drill needs its release
+  // too -- without this the mantrap and the charge can never be let go of in there.
+  const room = S.mode === 'play' ? S.active
+             : S.mode === 'intro' && S.drill && !S.drill.done ? S.drill.room : null;
+  if (!room) return;
   const v = VERBS[room.verb];
   if (v.takesHold && v.release) v.release(room.mg, e.key.toUpperCase());
 });
@@ -1670,10 +1683,83 @@ const STAIR_RUN = STAIR_N * STAIR_TREAD;
 // a walker is on tread i for the whole of tread i, and drops a riser between them.
 const stairY = k => introBeltY() + Math.min(STAIR_N, Math.floor(k * STAIR_N + 0.0001)) * STAIR_RISER;
 const stairFootX = () => CFG.intro.drop + STAIR_RUN;
+// ---------------------------------------------------------------- the drill
+// Between the shift assembling at the doors and the doors opening, the player is run
+// through one of every kind of room, at difficulty 1, with nobody on the road. That gap
+// already existed and was dead time; this is what it is for.
+//
+// The reason it exists at all: a room's usable window is 0.36 * V.vw ahead of the crowd,
+// which is 3.13s at zoom 1, and every one of those budgets is an EXPERT's -- none of them
+// contains a second for working out what you are looking at. Measured, the first bridge
+// gives 3.13s for 3 keys while the same bridge deep in the cave gives 8.13s for 6, so the
+// course hands you its tightest windows exactly where everything is new. The drill is
+// where that reading happens instead, at no cost in lives.
+//
+// Panels arrive from the right, are played, and leave to the left. ESC moves past one.
+const DRILL = { in: 0.34, out: 0.26 };
+// The horizontal line every drill panel is centred on, whatever its height.
+const DRILL_MID = 163;
+function startDrill() {
+  const order = [], seen = {};
+  // course order, so the drill hands them over in the order the road will
+  for (const r of CFG.rooms.slice().sort((a, b) => a.x - b.x)) {
+    const t = CFG.types[r.type];
+    if (!seen[t.verb]) { seen[t.verb] = 1; order.push({ verb: t.verb, title: t.title, color: t.color }); }
+  }
+  S.drill = { order, idx: -1, room: null, pos: 1, phase: 'in', done: false, flash: 0 };
+  drillNext();
+}
+function drillNext() {
+  const d = S.drill;
+  d.idx++;
+  if (d.idx >= d.order.length) { d.done = true; d.room = null; AU.clank(); return; }
+  const o = d.order[d.idx];
+  // Difficulty 1 throughout. The drill teaches what a room IS, not how hard it gets; a
+  // diff-5 wall as your first ever sight of the verb would be the bug this is fixing.
+  d.room = { verb: o.verb, title: o.title, color: o.color, mg: VERBS[o.verb].start(1), hot: d.idx + 1 };
+  d.pos = 1; d.phase = 'in';
+  AU.arm();
+}
+function drillSolved() {
+  const d = S.drill;
+  if (d.phase !== 'play') return;
+  d.phase = 'out'; d.flash = 1; AU.thud();
+}
+function updateDrill(dt) {
+  const d = S.drill;
+  d.flash = Math.max(0, d.flash - dt * 2.2);
+  if (d.phase === 'in') { d.pos = Math.max(0, d.pos - dt / DRILL.in); if (d.pos <= 0) d.phase = 'play'; return; }
+  if (d.phase === 'out') { d.pos -= dt / DRILL.out; if (d.pos <= -1) drillNext(); return; }
+  const v = VERBS[d.room.verb];
+  v.update(d.room.mg, dt);
+  // the sweeper, the mantrap and the charge bank a win on their own clock rather than
+  // returning 'done' from a keypress, so both routes out have to be watched
+  if (d.room.mg.won) drillSolved();
+}
+function drillKey(k) {
+  const d = S.drill;
+  // ESC moves past THIS kind, not past the drill. The ditch has a hard floor: measured at
+  // difficulty 1 over 200 attempts a side, it cuts through 100% of the time at 2.5 presses
+  // a second and NEVER at 2 -- below that the spade slumps back faster than it digs, which
+  // is the point of the room on the road, where failing it costs people and the crowd
+  // walks on. Here it would hold the doors shut against a player who simply cannot drum
+  // that fast, and a skip that dumps the whole drill is no answer for them. Tapping ESC
+  // eleven times is the cost to somebody replaying, which is the lighter of the two.
+  if (k === 'ESCAPE') { d.phase = 'out'; return; }
+  if (d.phase !== 'play') return;
+  const v = VERBS[d.room.verb];
+  const res = v.key(d.room.mg, k);
+  if (res === 'done') drillSolved();
+  else if (res === 'wrong') { S.wrongFlash = 0.25; AU.wrong(); }
+  else if (res === 'ok') AU.tick(v.progress(d.room.mg));
+}
 function updateIntro(dt) {
   const c = I();
-  S.introT += dt;
   const gather = c.deliver + c.settle;
+  // introT stops while the drill runs, so the crowd holds its place against the leaves
+  // and the doors stay shut. One clock, stopped, rather than a second clock to drift.
+  const drilling = S.drill && !S.drill.done;
+  if (!drilling) S.introT += dt;
   for (const r of S.runners) {
     if (S.introT < r.bornAt) { r.x = c.belt - 56; r.y = introBeltY(); r.onBelt = true; r.offLine = false; r.held = true; r.stagger = 0.06; continue; }
     const since = S.introT - r.bornAt;
@@ -1703,6 +1789,14 @@ function updateIntro(dt) {
       r.x = from + k * (target - from);
       r.held = k >= 1;                             // arrived: stand still
     }
+  }
+  // The shift is assembled and the doors are still shut: run the drill in that gap.
+  if (S.introT >= gather && !S.drill) startDrill();
+  if (drilling) {
+    updateDrill(dt);
+    if (S.introT > 0.8) chatter(dt);
+    AU.ambient(false, S.runners.filter(r => !r.onBelt).length, dt);
+    return;
   }
   // doors
   if (S.introT >= gather) S.doorOpen = Math.min(1, (S.introT - gather) / c.open);
@@ -1946,6 +2040,13 @@ function draw() {
     ctx.fillStyle = `rgba(20,0,0,${0.3 * Math.min(1, S.spike.t / 0.25)})`; ctx.fillRect(0, 0, W, H);
   }
   if (S.mode === 'play' || S.mode === 'finale') drawOverlays();
+  // The drill turned a two-second gap into half a minute of a hundred people standing at
+  // shut doors, and updateIntro has been calling chatter() throughout it -- building
+  // bubbles, capping the pool, expiring them, and drawing none, because bubbles are only
+  // reached through drawOverlays. That is the stretch where one line from the floor is
+  // worth most, so the bubbles alone come through; the rest of drawOverlays is room badges
+  // and name tags for a run that has not started.
+  else if (S.mode === 'intro' && S.drill && !S.drill.done) { ctx.textAlign = 'center'; drawBubbles(); ctx.textAlign = 'left'; }
   // The plate names deaths, so it points at the deaths without standing on them: it takes
   // the opposite half of the screen and reaches across with a stem.
   // Same guard as the wash above, and for the same reason. See the note there.
@@ -1971,6 +2072,7 @@ function draw() {
   }
   drawHud();
   if (S.mode === 'play' && S.active) drawPanel(S.active);
+  if (S.mode === 'intro' && S.drill && !S.drill.done) drawDrill();
   if (S.mode === 'finale') drawFinalePanel();
   if (S.mode === 'title') drawTitle();
   if (S.mode === 'win' || S.mode === 'lose') drawEnd();
@@ -7001,24 +7103,47 @@ function drawHud() {
   // A one-line comment before a statement swallows the statement. Keep them on their own lines.)
   ctx.fillStyle = '#0a0c14'; ctx.fillRect(0, 0, W, 40);
   ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 40, W, 2);
+  const drilling = S.mode === 'intro' && S.drill && !S.drill.done;
   let x = 10;
-  x = pill(x, 'RUNNING', alive, '#2ecc71');
-  x = pill(x, 'LOST', S.stats.dead, '#ff6b6b');
-  x = pill(x, 'FINISHED', S.stats.arrived, '#f1c40f');
-  if (S.streak > 1) x = pill(x, 'CLEAN', `x${S.streak}`, '#5cff9a');
-  if (AU.muted) x = pill(x, 'MUTED', '', '#999');
-  const tx = 690, tw = 256;
-  ctx.fillStyle = '#2a2d3a'; roundRect(tx, 8, tw, 24, 4); ctx.fill();
-  const p = Math.min(1, S.cam / S.camMax);
-  ctx.fillStyle = '#3d4256'; roundRect(tx, 8, tw * p, 24, 4); ctx.fill();
-  for (const g of S.gates) { ctx.fillStyle = g.state === 'spent' ? '#3a5a66' : '#5ce1ff'; ctx.fillRect(tx + tw * g.x / CFG.finale.x - 1, 9, 2, 22); }
-  for (const room of S.rooms) {
-    const rx = tx + tw * Math.min(1, room.x / CFG.finale.x);
-    ctx.fillStyle = room.state === 'solved' ? '#2ecc71' : room.state === 'armed' ? room.color : '#8a8fa3';
-    ctx.fillRect(rx - 2, 27 - room.lane * 3.6, 4, 3);
+  // Three tallies of a run that has not started read as a report on nothing: nobody is
+  // running, nothing is lost, nothing is finished. During the drill the bar says what is
+  // actually happening, and carries the step count so the panel title does not have to.
+  if (drilling) x = pill(x, 'DRILL', `${S.drill.idx + 1} of ${S.drill.order.length}`, '#5ce1ff');
+  else {
+    x = pill(x, 'RUNNING', alive, '#2ecc71');
+    x = pill(x, 'LOST', S.stats.dead, '#ff6b6b');
+    x = pill(x, 'FINISHED', S.stats.arrived, '#f1c40f');
+    if (S.streak > 1) x = pill(x, 'CLEAN', `x${S.streak}`, '#5cff9a');
   }
-  const cx = tx + tw * Math.min(1, (S.cam + CFG.packFront) / CFG.finale.x);
-  ctx.fillStyle = '#fff'; ctx.fillRect(cx - 1, 6, 2, 28);
+  if (AU.muted) x = pill(x, 'MUTED', '', '#999');
+  // The course track is a report on a run. During the drill there is no run: nobody is
+  // running, nothing is lost, and the playhead would sit pinned at the far left pointing
+  // down a course the doors have not opened onto. It also competes directly with the
+  // thing the player is meant to be reading -- a bright 256x24 progress strip 140px from
+  // the drill's own progress row, in the same 40px bar, and the eye goes to the wrong one.
+  if (drilling) {
+    // The pips take the space the course track has vacated rather than being tucked into a
+    // corner of it: eleven of them across 256px is 23px each, which is legible, and it is
+    // the only progress reading in the bar so it cannot lose the eye to a brighter one.
+    const tx = 690, tw = 256, d = S.drill, n = d.order.length, w = tw / n;
+    for (let i = 0; i < n; i++) {
+      ctx.fillStyle = i < d.idx ? '#2ecc71' : i === d.idx ? '#5ce1ff' : 'rgba(255,255,255,0.35)';
+      roundRect(tx + i * w, 15, w - 5, 6, 3); ctx.fill();
+    }
+  } else {
+    const tx = 690, tw = 256;
+    ctx.fillStyle = '#2a2d3a'; roundRect(tx, 8, tw, 24, 4); ctx.fill();
+    const p = Math.min(1, S.cam / S.camMax);
+    ctx.fillStyle = '#3d4256'; roundRect(tx, 8, tw * p, 24, 4); ctx.fill();
+    for (const g of S.gates) { ctx.fillStyle = g.state === 'spent' ? '#3a5a66' : '#5ce1ff'; ctx.fillRect(tx + tw * g.x / CFG.finale.x - 1, 9, 2, 22); }
+    for (const room of S.rooms) {
+      const rx = tx + tw * Math.min(1, room.x / CFG.finale.x);
+      ctx.fillStyle = room.state === 'solved' ? '#2ecc71' : room.state === 'armed' ? room.color : '#8a8fa3';
+      ctx.fillRect(rx - 2, 27 - room.lane * 3.6, 4, 3);
+    }
+    const cx = tx + tw * Math.min(1, (S.cam + CFG.packFront) / CFG.finale.x);
+    ctx.fillStyle = '#fff'; ctx.fillRect(cx - 1, 6, 2, 28);
+  }
   if (S.mode === 'play') {
     let hint = (ENC.inside(S.cam + CFG.packFront) ? 'the land is being fenced \u2014 keep them moving' : 'watch the tunnels ahead');
     const armed = S.rooms.filter(r => r.state === 'armed');
@@ -7026,16 +7151,45 @@ function drawHud() {
     if (S.active) hint = VERBS[S.active.verb].hint + '   (ESC to close)';
     else if (armed.length) hint = `press ${armed.map(r => r.hot).sort().join(' or ')} to open a flashing room`;
     if (gate) hint += gate.state === 'holding' ? '   ENTER releases the gate' : '   ENTER holds the crowd at the gate';
-    ctx.fillStyle = 'rgba(8,10,18,0.6)'; ctx.fillRect(0, H - 26, W, 26);
-    ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.textAlign = 'center';
-    // Shrink to fit rather than run off both ends. The longest combination -- a verb hint
-    // plus "(ESC to close)" plus the gate line -- overran the canvas at both edges, so it
-    // began mid-word and ended mid-word, on the one line that explains the controls.
-    let fs = 13;
-    ctx.font = `${fs}px monospace`;
-    while (fs > 9 && ctx.measureText(hint).width > W - 24) { fs -= 1; ctx.font = `${fs}px monospace`; }
-    ctx.fillText(hint, W / 2, H - 9); ctx.textAlign = 'left';
+    hintBar(hint);
   }
+  // the drill runs during the intro and needs the same line: what this room wants, and
+  // the way out for anyone who has played before
+  if (drilling && S.drill.room) {
+    const note = '(ESC skips this one)';
+    // size every panel's line off the longest in the set, not off its own
+    const longest = S.drill.order.reduce((a, o) => {
+      const s = VERBS[o.verb].hint; return s.length > a.length ? s : a;
+    }, '');
+    hintBar(VERBS[S.drill.room.verb].hint, note, longest + '    ' + note);
+  }
+}
+// The line across the bottom that explains the controls. Shrink to fit rather than run
+// off both ends: the longest combination -- a verb hint plus "(ESC to close)" plus the
+// gate line -- overran the canvas at both edges, so it began mid-word and ended mid-word,
+// on the one line that explains the controls.
+// `note` is a subordinate aside set at lower alpha after the instruction, rather than
+// appended to it -- in the same colour and weight the drill's line read as one sentence,
+// "keep the rhythm and the spade keeps cutting (ESC skips this one)".
+//
+// `sizeFrom` pins the type size to a string the caller chooses instead of to this line.
+// The drill shows eleven of these back to back and blast's hint plus the aside is 936px at
+// 13px, a hair over the limit, so that one panel alone dropped a step and the size visibly
+// flickered mid-sequence. Passing the longest line in the set makes all eleven agree.
+function hintBar(text, note, sizeFrom) {
+  ctx.fillStyle = 'rgba(8,10,18,0.6)'; ctx.fillRect(0, H - 26, W, 26);
+  const gap = '    ';
+  let fs = 13;
+  ctx.font = `${fs}px monospace`;
+  const measure = sizeFrom || (text + (note ? gap + note : ''));
+  while (fs > 9 && ctx.measureText(measure).width > W - 24) { fs -= 1; ctx.font = `${fs}px monospace`; }
+  // laid out left-to-right from a computed start, so the pair is centred as one run and
+  // the aside cannot land on top of a long instruction the way a right-aligned one does
+  ctx.textAlign = 'left';
+  const tw = ctx.measureText(text).width, nw = note ? ctx.measureText(gap + note).width : 0;
+  const x0 = W / 2 - (tw + nw) / 2;
+  ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillText(text, x0, H - 9);
+  if (note) { ctx.fillStyle = 'rgba(255,255,255,0.38)'; ctx.fillText(gap + note, x0 + tw, H - 9); }
 }
 // The word is read and typed, not followed. drawKeyBoxes highlights the next
 // key, which turns 'type the word' into 'press the lit thing' -- fine for the
@@ -7097,8 +7251,13 @@ function drawKeyBoxes(chars, idx, px, py, pw) {
   }
   ctx.textAlign = 'left';
 }
-function panelFrame(pw, title, color, ph = 150) {
-  const px = W / 2 - pw / 2, py = 48;
+// py0 exists for the drill. On the road one panel is open at a time and a fixed top edge
+// is right; in the drill eleven are swapped in sequence and the two panel heights (150,
+// and 210 for the keypads) made the box jump 60px taller and back again mid-run. The drill
+// passes a top derived from a shared midline so all eleven read as one object being
+// exchanged rather than a box that keeps resizing. Default unchanged, so the road is.
+function panelFrame(pw, title, color, ph = 150, py0 = 48) {
+  const px = W / 2 - pw / 2, py = py0;
   // a cast shadow, so the panel sits over the world instead of being cut into it
   ctx.fillStyle = 'rgba(0,0,0,0.38)'; roundRect(px + 3, py + 6, pw, ph, 12); ctx.fill();
   const g = ctx.createLinearGradient(0, py, 0, py + ph);
@@ -7168,9 +7327,15 @@ function panelGauges(room, px, py, pw, ph) {
   ctx.fillText(n ? `${n} reach this in ${eta.toFixed(1)}s` : 'nobody left to save here', px + pw - 22, by - 5);
   ctx.textAlign = 'left';
 }
+// One width, read by both the room panel and the drill panel. The keys and word verbs
+// size themselves to their content, and a second copy of this arithmetic is a second
+// number to drift: the drill would have drawn a 420 panel around a 6-letter word.
+function panelWidth(room) {
+  return Math.max(420, 80 + (room.verb === 'keys' ? room.mg.seq.length : room.verb === 'word' ? room.mg.word.length : 0) * 48);
+}
 function drawPanel(room) {
   const v = VERBS[room.verb];
-  const pw = Math.max(420, 80 + (room.verb === 'keys' ? room.mg.seq.length : room.verb === 'word' ? room.mg.word.length : 0) * 48);
+  const pw = panelWidth(room);
   // Panel height comes from the verb when it asks for one. At a flat 150 the sweeper and
   // the press keypad drew a 3x3 grid whose bottom row landed outside the panel entirely,
   // on top of the world, with the urgency readout hidden behind it -- on the two rooms
@@ -7187,6 +7352,54 @@ function drawPanel(room) {
   v.draw(room.mg, px, py, pw);
   panelStep(room, px, py, pw, ph);
   panelGauges(room, px, py, pw, ph);
+  ctx.restore();
+}
+// The drill panel. Same frame, same verb drawing, same step line as a real room, so what
+// the player learns here is literally the thing they will see on the road -- a drill that
+// looked different would teach the wrong picture.
+//
+// What it does NOT carry is panelGauges: those read `approaching(room)`, and in the drill
+// nobody is approaching anything. A crowd countdown against an empty road would be a
+// fiction, and the one honest reading here -- how far through the puzzle you are -- is
+// drawn on its own below.
+function drawDrill() {
+  const d = S.drill;
+  if (!d.room) return;
+  const v = VERBS[d.room.verb], pw = panelWidth(d.room), ph = v.ph || 150;
+  // The step count and the pips live in the HUD bar, drawn by drawHud in the space the
+  // course track vacates. Two reasons they are not in here: the title slot is where the
+  // road writes "ROOM 6", which is the KEY YOU PRESS, and "6 of 11" in that exact place,
+  // font and centring would teach that 6 opens the sweeper -- in the one screen whose
+  // whole purpose is that the picture matches the road. And a progress reading tucked
+  // under the HUD's hairline loses the eye to the brighter 256px strip beside it.
+  //
+  // Cubed, so it flies in and settles rather than arriving at a constant speed. pos runs
+  // 1 (off the right) to 0 (centred) to -1 (off the left), and the span clears the panel's
+  // own half-width, or a wide one would still have an edge on screen at rest.
+  ctx.save();
+  ctx.translate(d.pos * d.pos * d.pos * (W / 2 + pw / 2 + 40), 0);
+  if (S.wrongFlash > 0) ctx.translate(Math.sin(S.wrongFlash * 90) * S.wrongFlash * 9, 0);
+  const col = d.flash > 0 ? '#2ecc71' : '#5ce1ff';
+  // DRILL_MID is a shared midline rather than a shared top: the keypad panels are 210 tall
+  // against 150 for the rest, so a fixed top made the box jump 60px taller between panel 5
+  // and panel 6 and back again. It also clears the HUD hairline properly -- at py 48 the
+  // 150-tall panels left a ~10px sliver of sky under the bar, too small to read as
+  // separation and too large to read as alignment.
+  const [px, py] = panelFrame(pw, d.room.title, col, ph, Math.round(DRILL_MID - ph / 2));
+  v.draw(d.room.mg, px, py, pw);
+  panelStep(d.room, px, py, pw, ph);
+  // Both bars, not just the one. On the road panelGauges draws progress AND an urgency bar
+  // under it; teaching a player to read the first bar they see, when on the road the first
+  // bar they see is the one that does not say when people die, is the wrong lesson. The
+  // second is drawn dead, and labelled, because in the drill it is honestly dead.
+  const bw = pw - 44, bx = px + 22, by = py + ph - 20;
+  ctx.fillStyle = 'rgba(255,255,255,0.09)'; roundRect(bx, by, bw, 5, 3); ctx.fill();
+  ctx.fillStyle = col; roundRect(bx, by, bw * clamp01(v.progress(d.room.mg)), 5, 3); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.09)'; roundRect(bx, by + 9, bw, 5, 3); ctx.fill();
+  ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(210,220,236,0.45)';
+  ctx.fillText('nobody on the road yet', px + pw - 22, by - 5);
+  ctx.textAlign = 'left';
   ctx.restore();
 }
 function drawFinalePanel() {
@@ -7514,6 +7727,18 @@ if (qs.has('intro')) {
   S.mode = 'intro'; S.introT = 0;
   const n = Math.round(+(qs.get('intro') || 0) * 60);
   for (let i = 0; i < n && S.mode === 'intro'; i++) update(1 / 60);
+}
+// ?drill=N holds the drill on its Nth kind (1-based), centred and ready to play. Without
+// this a screenshot of the eleventh panel means beating ten puzzles on the way to it.
+if (qs.has('drill')) {
+  S.mode = 'intro';
+  const c = I(); S.introT = c.deliver + c.settle;
+  for (let i = 0; i < 60 * 8 && !S.drill; i++) update(1 / 60);
+  const n = Math.max(1, Math.min(+(qs.get('drill') || 1), S.drill.order.length));
+  // walk it forward by shoving each panel straight to the end of its exit
+  for (let g = 0; S.drill.idx < n - 1 && g < 4000; g++) { S.drill.phase = 'out'; S.drill.pos = -1; update(1 / 60); }
+  S.drill.phase = 'play'; S.drill.pos = 0;
+  for (let i = 0; i < 30; i++) update(1 / 60);     // let the verb's own animation settle
 }
 if (qs.has('finale')) {
   S.runners.slice(0, 12).forEach(r => { r.state = 'arrived'; });
