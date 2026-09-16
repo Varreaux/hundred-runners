@@ -40,8 +40,15 @@ const CFG = {
   // The timeline has to close: the last person born at `deliver` still has ride + step +
   // cross to walk, so `settle` must be at least that or the run starts with people still
   // on the stair. settle = 1.15 against a 3.6s walk was why stragglers were teleported.
-  intro: { belt: -300, drop: 230, doors: 640, half: 44, jamb: 13, lift: 126,
-           deliver: 2.2, ride: 1.8, step: 1.0, cross: 0.8, settle: 3.6, open: 1.2, hold: 0.4 },
+  // `belt` is where the band starts, and it has to be inside the frame: at cam 0 the view
+  // begins at world -74, so a belt starting at -300 put its head house entirely off screen
+  // and the conveyor still appeared to come in from nowhere. Riders are spaced
+  // (drop-belt)/ride * deliver/100 apart -- 4.0 units here, which is the same density the
+  // pack runs at on the road, so the line reads as a crowd rather than as one solid body.
+  // `settle` must be at least ride + step + cross or the run starts with people still on
+  // the flight, and the door timings hang off it.
+  intro: { belt: 30, drop: 230, doors: 640, half: 44, jamb: 13, lift: 126,
+           deliver: 2.4, ride: 1.2, step: 1.4, cross: 0.8, settle: 3.4, open: 1.2, hold: 0.4 },
   riverY: 470,
   // Where rock stands over the water. The river darkens because there is rock above it,
   // not because it has crossed the entrance, so the darkening is keyed to these. They are
@@ -92,10 +99,14 @@ const CFG = {
     // is then funnelled back down to the valley floor before the wall, which is the point:
     // the choices were real and they all arrive at the same fence. Nested forks merge
     // before their parent, as the rule above requires: 14700 > 14400 > 14100 > 13800.
-    { x: 12520, from: 0, to: 1, merge: 14700, split: 0.5 },
-    { x: 12820, from: 1, to: 2, merge: 14400, split: 0.5 },
-    { x: 13120, from: 2, to: 3, merge: 14100, split: 0.5 },
-    { x: 13420, from: 3, to: 4, merge: 13800, split: 0.5 },
+    // Spans checked by tools/room-check.js, which now refuses a room whose lane does not
+    // exist where it stands. Four of these did: lane 4 lived for 180 units and carried a
+    // 120-wide ditch that ran off the end of it, and three more sat past their merge
+    // entirely -- drawn as hazards hanging in open sky with no track under them.
+    { x: 12520, from: 0, to: 1, merge: 14980, split: 0.5 },
+    { x: 12760, from: 1, to: 2, merge: 14820, split: 0.5 },
+    { x: 13000, from: 2, to: 3, merge: 14660, split: 0.5 },
+    { x: 13240, from: 3, to: 4, merge: 14500, split: 0.5 },
   ],
   gates: [3150, 8150, 13260],
   gateArm: 140, holdMax: 8,
@@ -141,17 +152,22 @@ const CFG = {
     { x: 10200, lane: 2, type: 'rope',    diff: 4 },
     { x: 11600, lane: 0, type: 'bridge',  diff: 5 },
     // ---- act three -------------------------------------------------------------
+    // The warn values are not decoration: tools/room-check.js works out what each room
+    // costs an optimal player against the road CFG.scroll gives them, and the mantrap
+    // came back IMPOSSIBLE at the default 240 -- it needs three holds of 1.06s with a
+    // 0.45s recovery between, which is 4.5s of work against 2.18s of road. Re-run that
+    // tool after touching any of these numbers.
     // Nothing between the mouth at 12290 and 13500: the crowd comes out into open country
     // and runs through it unthreatened, because the stretch has to be worth losing.
-    { x: 13560, lane: 0, type: 'ditch',   diff: 3 },
-    { x: 13640, lane: 2, type: 'thorn',   diff: 3 },
-    { x: 13720, lane: 4, type: 'ditch',   diff: 3 },
-    { x: 13980, lane: 1, type: 'mantrap', diff: 4 },
+    { x: 13560, lane: 0, type: 'ditch',   diff: 3, warn: 360 },
+    { x: 13700, lane: 2, type: 'thorn',   diff: 3 },
+    { x: 13800, lane: 4, type: 'ditch',   diff: 3, warn: 360 },
+    { x: 13980, lane: 1, type: 'mantrap', diff: 4, warn: 620 },
     { x: 14180, lane: 3, type: 'thorn',   diff: 4 },
-    { x: 14320, lane: 0, type: 'mantrap', diff: 4 },
-    { x: 14560, lane: 2, type: 'ditch',   diff: 4 },
-    { x: 14860, lane: 1, type: 'thorn',   diff: 5 },
-    { x: 15020, lane: 0, type: 'ditch',   diff: 5 },
+    { x: 14320, lane: 0, type: 'mantrap', diff: 4, warn: 620 },
+    { x: 14460, lane: 2, type: 'ditch',   diff: 4, warn: 360 },
+    { x: 14700, lane: 1, type: 'thorn',   diff: 5 },
+    { x: 15020, lane: 0, type: 'ditch',   diff: 5, warn: 360 },
     // the wall across everything. Its warning is long because it is the one room the
     // whole act has been walking toward and a player should see it coming.
     { x: 15180, lane: 0, type: 'wall',    diff: 5, warn: 1000 },
@@ -327,6 +343,7 @@ const VERBS = {
   // ported: hers assume a panel about 220 tall and this one is 110, so copying her layout
   // would have run every puzzle off the bottom of the frame.
   gears: {
+    now: m => (m.phase === m.goal ? 'lined up' : 'turn until the marks meet'),
     hint: 'arrow keys rotate the train · line the marks up at every contact',
     solveKey: m => ((m.goal - m.phase + 12) % 12 <= 6 ? 'ARROWUP' : 'ARROWDOWN'),
     start(diff) {
@@ -363,6 +380,7 @@ const VERBS = {
     },
   },
   levers: {
+    now: m => `set lever ${m.idx + 1} of ${m.seq.length}`,
     hint: 'set each lever the way the board above it asks',
     // Linh stores DIRECTION INDICES in seq, not key names, so the bot has to translate.
     // Returning m.seq[m.idx] here would hand the bot the number 2 and it would never solve.
@@ -400,6 +418,7 @@ const VERBS = {
     },
   },
   lights: {
+    now: m => (m.watch ? 'WATCH' : m.won ? 'done' : `repeat it  (${m.idx}/${m.seq.length})`),
     takesDigits: true,
     hint: 'watch the sweeper, then repeat the order with 1-9',
     solveKey: m => (m.watch || m.won ? null : m.seq[m.idx]),
@@ -500,6 +519,7 @@ const VERBS = {
     },
   },
   wires: {
+    now: m => (m.held == null ? 'pull a live wire with \u2192' : 'choose a socket \u2191\u2193, then \u2192'),
     hint: '→ pull the live wire · ↑↓ choose a socket · → again to connect',
     // Two states per wire: pulled or not. Pull first, then walk the sockets until the
     // colour matches, then connect. Returning ARROWRIGHT while the wrong socket is
@@ -554,6 +574,7 @@ const VERBS = {
     },
   },
   keys: {
+    now: m => `press ${m.seq[m.idx] || ''}`,
     hint: 'hit the highlighted keys in order',
     solveKey: m => m.seq[m.idx],
     start(diff) { return { seq: themeWord(diff).split(''), idx: 0 }; },
@@ -567,6 +588,7 @@ const VERBS = {
     draw(m, px, py, pw) { drawKeyBoxes(m.seq, m.idx, px, py, pw); },
   },
   bar: {
+    now: m => `SPACE in the green  (${m.hits}/${m.need})`,
     hint: 'SPACE when the marker is in the green',
     start(diff) {
       const m = { pos: 0, dir: 1, speed: 0.9 + 0.12 * diff, zoneW: 0.3 - 0.025 * diff, zone: 0, hits: 0, need: [1, 2, 2, 2, 3][diff - 1] };
@@ -612,11 +634,17 @@ const VERBS = {
   // that is what these two are; blast is a three-beat sequence because it is a finale and
   // wants a shape of its own.
   dig: {
+    now: m => (m.last === 'ARROWLEFT' ? 'now RIGHT' : 'now LEFT'),
     hint: 'left, right, left, right \u2014 keep the rhythm and the spade keeps cutting',
     // alternating, so the next key is always the one you did not just press
     solveKey: m => (m.last === 'ARROWLEFT' ? 'ARROWRIGHT' : 'ARROWLEFT'),
     start(diff) {
-      return { cut: 0, need: 1, last: null, swing: 0, slip: 0, rate: 0.30 + 0.03 * diff, decay: 0.16 + 0.02 * diff };
+      // These two are the whole puzzle and they are set against each other deliberately:
+      // the bank slumps back at `decay`, so a press only gains ground if you are pressing
+      // faster than decay/rate. At these numbers that is about three a second to make any
+      // progress at all and five to cut through in under two -- which is a rhythm you have
+      // to keep, not a key to mash. At the shipped 0.30/0.16 four presses finished it.
+      return { cut: 0, last: null, swing: 0, slip: 0, rate: 0.19 + 0.005 * diff, decay: 0.40 + 0.03 * diff };
     },
     key(m, k) {
       if (k !== 'ARROWLEFT' && k !== 'ARROWRIGHT') return null;
@@ -673,6 +701,7 @@ const VERBS = {
     },
   },
   lift: {
+    now: m => (m.holding ? (m.strain > 0.72 ? 'LET GO' : 'keep holding') : m.strain > 0.2 ? 'let the spring settle' : 'hold SPACE'),
     hint: 'hold SPACE to force the jaws \u2014 let go before the spring bites, then take hold again',
     // Hold until the strain is nearly up, let go, take hold again. The numbers matter:
     // strain fills in 1/0.62 = 1.61s and the jaws open in 1/0.42 = 2.38s, so holding
@@ -714,41 +743,55 @@ const VERBS = {
     },
     progress(m) { return m.open; },
     draw(m, px, py, pw) {
-      const cx = px + pw / 2, cy = py + 74;
-      const gap = 6 + m.open * 46;
-      // the jaws, hinged at the centre and opening upward and downward
+      const cx = px + pw / 2, cy = py + 92;
+      // A trap seen from the side: a base plate on the ground, two jaws hinged at its ends
+      // that swing APART as it opens. The first version drew two mirrored arcs of one
+      // circle, which reads as a broken ring rather than as something with jaws.
+      const ang = m.open * 1.32;                         // up to about 75 degrees each
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(cx - 54, cy + 2, 108, 4);
+      ctx.fillStyle = '#6b5a48'; ctx.fillRect(cx - 50, cy - 4, 100, 7);   // the plate
+      ctx.fillStyle = 'rgba(255,244,214,0.16)'; ctx.fillRect(cx - 50, cy - 4, 100, 1.6);
       for (const dir of [-1, 1]) {
-        ctx.save(); ctx.translate(cx, cy); ctx.scale(1, dir);
-        ctx.strokeStyle = m.snapped > 0 ? '#ff7a7a' : '#aab4c4'; ctx.lineWidth = 6;
-        ctx.beginPath(); ctx.arc(0, 0, 44, Math.PI * 1.06, Math.PI * 1.94); ctx.stroke();
-        // teeth along the jaw, meeting when it is shut
-        ctx.fillStyle = m.snapped > 0 ? '#ff7a7a' : '#cdd6e2';
-        for (let i = -3; i <= 3; i++) {
-          const a = Math.PI * 1.5 + i * 0.17;
-          const jx = Math.cos(a) * 44, jy = Math.sin(a) * 44;
-          ctx.beginPath(); ctx.moveTo(jx - 4, jy); ctx.lineTo(jx + 4, jy); ctx.lineTo(jx, jy + gap * 0.22); ctx.closePath(); ctx.fill();
+        ctx.save();
+        ctx.translate(cx + dir * 42, cy - 3);
+        ctx.rotate(dir * -ang);
+        const col = m.snapped > 0 ? '#ff7a7a' : '#aeb8c6';
+        // the jaw itself, a flat bar with teeth along its inner edge
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(dir * -6, -6); ctx.lineTo(dir * -78, -6); ctx.lineTo(dir * -78, 0);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = m.snapped > 0 ? '#ffb2b2' : '#dfe6f0';
+        for (let i = 1; i <= 6; i++) {
+          const tx = dir * -(8 + i * 11);
+          ctx.beginPath(); ctx.moveTo(tx - 3.4, -6); ctx.lineTo(tx + 3.4, -6); ctx.lineTo(tx, -16); ctx.closePath(); ctx.fill();
         }
+        ctx.fillStyle = '#7f8a99'; ctx.beginPath(); ctx.arc(0, 0, 5, 0, 6.28); ctx.fill();   // the hinge
         ctx.restore();
       }
-      // the spring at the hinge, compressing as the jaws come apart
-      ctx.strokeStyle = '#6e7a8e'; ctx.lineWidth = 2.6;
+      // the spring at the centre, flattening as the jaws come apart
+      ctx.strokeStyle = m.snapped > 0 ? '#ff7a7a' : '#7d8794'; ctx.lineWidth = 3;
       ctx.beginPath();
-      for (let i = 0; i <= 8; i++) ctx.lineTo(cx - 62 + i * 5, cy + (i % 2 ? -1 : 1) * (7 - m.open * 4));
+      const sh = 13 - m.open * 8;
+      for (let i = 0; i <= 8; i++) ctx.lineTo(cx - 20 + i * 5, cy - 9 - (i % 2 ? 0 : sh * 0.5));
       ctx.stroke();
-      // strain gauge: green while it is safe to keep holding, red once the spring is about
-      // to bite. This is the whole puzzle, so it is the biggest thing in the panel.
-      const bw = Math.min(190, pw - 90), bx = cx - bw / 2, by = py + 22;
-      ctx.fillStyle = '#242c37'; roundRect(bx, by, bw, 13, 6); ctx.fill();
+      // THE STRAIN GAUGE. This is the puzzle: hold while it is green, let go before the
+      // line, take hold again. It is the biggest, brightest thing in the panel for that
+      // reason, and the line you must stay under is drawn on it rather than described.
+      const bw = Math.min(210, pw - 90), bx = cx - bw / 2, by = py + 36;
+      ctx.fillStyle = '#20262f'; roundRect(bx, by, bw, 15, 7); ctx.fill();
       const danger = Math.min(1, m.strain);
       ctx.fillStyle = danger > 0.78 ? '#ff5a5a' : danger > 0.55 ? '#f1c40f' : '#6ee7a0';
-      roundRect(bx, by, bw * danger, 13, 6); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(bx + bw * 0.78, by - 3, 2, 19);   // the line to stay under
-      // how far open, against how far it must go
-      ctx.fillStyle = '#242c37'; ctx.fillRect(bx, py + 100, bw, 5);
-      ctx.fillStyle = '#5ce1ff'; ctx.fillRect(bx, py + 100, bw * m.open, 5);
+      roundRect(bx, by, bw * danger, 15, 7); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillRect(bx + bw * 0.78, by - 4, 2.4, 23);
+      ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+      ctx.fillStyle = m.holding ? (danger > 0.72 ? '#ff8a8a' : '#bff0d0') : '#8a93a4';
+      ctx.fillText(m.holding ? (danger > 0.72 ? 'LET GO' : 'HOLDING') : 'HOLD SPACE', cx, by - 8);
+      ctx.textAlign = 'left';
     },
   },
   blast: {
+    now: m => (m.stage === 0 ? `charge the holes  (${m.idx}/${m.holes.length})` : m.stage === 1 ? `pay out the fuse  (SPACE x${m.need - m.pays})` : m.arm > 0 ? 'stand back...' : 'FIRE'),
     hint: 'press the lit holes to charge them \u2014 then hold SPACE to pay out the fuse \u2014 then SPACE to fire',
     solveKey(m) {
       if (m.stage === 0) return m.holes[m.idx].k;
@@ -833,6 +876,7 @@ const VERBS = {
     },
   },
   word: {
+    now: m => `type it  (${m.idx}/${m.word.length})`,
     hint: 'type the word',
     solveKey: m => m.word[m.idx],
     start(diff) { return { word: themeWord(diff), idx: 0 }; },
@@ -1510,6 +1554,11 @@ const I = () => CFG.intro;
 // CFG.intro.lift is the band's WALKING SURFACE above the yard, not the underside of the
 // frame. That distinction is the whole bug: the frame hangs BELOW the surface you stand on.
 const BELT_H = 22;                                    // frame depth, hanging below the band
+// The gateway's VERTICAL datum, for the same reason. 122 was written in drawGateWall and
+// again in drawYardDoors, and twice more as a literal `y - 122` in drawDoorSpill; they
+// agreed today by luck, and one already meant something subtly different -- the spill's
+// jamb licks started 10 units below the head of the opening they were lighting.
+const GATE_H = 122, GATE_HEAD = 18, GATE_REVEAL = 10;
 const introBeltY = () => laneY(0) - CFG.intro.lift;   // the surface a rider's feet are on
 const introGroundY = () => laneY(0);
 const STAIR_RISE = 7, STAIR_TREAD = 11;               // a 45-unit body wants a 7 riser, not a 13
@@ -1525,22 +1574,22 @@ function updateIntro(dt) {
   S.introT += dt;
   const gather = c.deliver + c.settle;
   for (const r of S.runners) {
-    if (S.introT < r.bornAt) { r.x = c.belt - 260 - (r.bornAt / c.deliver) * 900; r.y = introBeltY(); r.onBelt = true; r.offLine = false; r.held = true; continue; }
+    if (S.introT < r.bornAt) { r.x = c.belt - 260 - (r.bornAt / c.deliver) * 900; r.y = introBeltY(); r.onBelt = true; r.offLine = false; r.held = true; r.stagger = 0.06; continue; }
     const since = S.introT - r.bornAt;
     const ride = c.ride, step = c.step;            // along the line, then down the stair
     // (a)8: a rider is carried, and someone standing in the queue is standing. r.held
     // is what drawRunners already reads to stop the legs cycling.
     if (since < ride) {                            // carried along, feet still
-      r.onBelt = true; r.offLine = false; r.held = true;
+      r.onBelt = true; r.offLine = false; r.held = true; r.stagger = 0.06;
       r.x = c.belt + (since / ride) * (c.drop - c.belt);
       r.y = introBeltY();                          // the band's surface, the same line drawBelt draws
     } else if (since < ride + step) {              // down the stair, walking
       const k = (since - ride) / step;
-      r.onBelt = false; r.offLine = true; r.held = false;
+      r.onBelt = false; r.offLine = true; r.held = false; r.stagger = 0.10;
       r.x = c.drop + k * STAIR_RUN;                // the flight's own run, so feet land on treads
       r.y = stairY(k);                             // the tread they are actually over
     } else {                                       // across the yard to the gate
-      r.onBelt = false; r.offLine = false;
+      r.onBelt = false; r.offLine = false; r.stagger = 1;   // out on open ground it is a depth cue again
       r.y = introGroundY();
       // press the pack up against the leaves instead of re-forming it 100-500 units back
       const target = c.doors - 46 - (CFG.packFront - r.slot) * 0.30 - Math.abs(r.dy) * 0.9;
@@ -1568,7 +1617,7 @@ function startRun() {
   // was watching it. update() already walks a runner toward its slot at a capped rate,
   // so leaving the positions alone turns that pop into what it should be: a compressed
   // crowd bursting through the gate and spreading out over the first stretch of road.
-  for (const r of S.runners) { r.onBelt = false; r.offLine = false; r.held = false; }
+  for (const r of S.runners) { r.onBelt = false; r.offLine = false; r.held = false; r.stagger = 1; }
   S.bubbles.length = 0;
   AU.clank();
 }
@@ -1659,7 +1708,13 @@ function canReach(r, room) {
   return lanes.has(r.lane);
 }
 // where a runner's feet are: the pack's depth (dy) is squeezed onto the walkable strip of the floor
-const footY = r => r.y + (r.dy + 22) * 0.3 - 2;
+// The per-runner depth stagger. On open ground it is a depth cue and reads correctly:
+// people stand nearer and further back, up to 13.2 apart. On the conveyor band and on the
+// flight it is read as HEIGHT instead, and 13.2 is 1.9 risers of a 7-unit stair -- so half
+// the shift stood buried in the machine, and the column on the stair was a band two steps
+// thick rather than a line parallel to it. `stagger` is scaled right down for both, and
+// not to zero: zero makes a hundred riders exactly collinear.
+const footY = r => r.y + (r.dy + 22) * 0.3 * (r.stagger === undefined ? 1 : r.stagger) - 2;
 function approaching(room) {
   let n = 0, maxX = -1e9;
   for (const r of S.runners) {
@@ -1755,6 +1810,7 @@ function draw() {
   drawOutside();
   drawMountain();
   drawEncLand();
+  drawEncBounds();
   drawRiver();
   carveTunnels();
   // the bars go on after the bodies: a closed gate that people are drawn over is not a barrier
@@ -1856,7 +1912,7 @@ function drawOutside() {
   // the works on the horizon go behind the hills and at a slower parallax than either,
   // so the furthest thing in the frame is also the highest and the palest
   millSkyline();
-  // A runner is about 36px. Trees at 34 and hills at 130 made the outdoors a model railway
+  // A runner is about 39px unnamed and 45 at the tallest. Trees at 34 and hills at 130 made the outdoors a model railway
   // and undercut the scale the interior works hard to establish; these are the sizes that
   // let a person read as a person standing in a mountain pass.
   hills(0.2, 420, laneY(0) + 6, 170, 330, '#93b48c', 1);
@@ -3491,7 +3547,7 @@ function millDeck(wx0, wx1, y) {
 // --- an open steel stair between floors
 function millStair(wx0, y0, wx1, y1) {
   if (!inView(wx0, 280)) return;
-  // 26 risers, so a 33-unit runner climbs about a fifth of their own height a step
+  // 26 risers, so a 45-unit runner climbs about a sixth of their own height a step
   // 14, not 26: at the zoom a fork is actually seen at, 26 treads are 4.6 screen
   // pixels apart and alias into the smooth ramp they were meant to break up
   const x0 = wx0 - V.left, x1 = wx1 - V.left, n = 14;
@@ -3520,7 +3576,7 @@ function millStair(wx0, y0, wx1, y1) {
   ctx.fillStyle = '#1b1922'; ctx.fillRect(x1 - 3, y1 - 4.4, 22, 7);
   ctx.fillStyle = '#4c5060'; ctx.fillRect(x1 - 2, y1 - 3.4, 20, 5);
   ctx.fillStyle = 'rgba(214,228,244,0.3)'; ctx.fillRect(x1 - 2, y1 - 3.4, 20, 1.3);
-  // handrail at hand height on a 33-unit figure, with a mid rail under it
+  // handrail at hand height on a 45-unit figure, with a mid rail under it
   ctx.strokeStyle = '#14121a'; ctx.lineWidth = 4.4;
   ctx.beginPath(); ctx.moveTo(x0, y0 - 18); ctx.lineTo(x1 + 18, y1 - 18); ctx.stroke();
   ctx.strokeStyle = '#5b5f6c'; ctx.lineWidth = 2.6;
@@ -3806,7 +3862,7 @@ function drawSeamPortal(y) {
 // --- an arrow plate on a pipe standard, pointing up the stair
 function millSign(wx, y) {
   if (!inView(wx, 120)) return;
-  // the post has to clear a 33-unit crowd or the plate is never seen
+  // the post has to clear a 45-unit crowd or the plate is never seen
   // same height, angle and yellow as the rock-side signpost: at the seam both
   // are on screen at once and two conventions read as a mistake
   const sx = wx - V.left - 70;
@@ -3977,21 +4033,23 @@ function millYard() {
     ctx.fillStyle = 'rgba(255,244,220,0.2)'; ctx.fillRect(px - 12, wy - 24, 26, 1.8);
     ctx.fillStyle = 'rgba(255,238,206,0.12)'; ctx.fillRect(px - 9, wy - 18, 3.4, 62);
   }
-  // crates and a barrel stacked against it
-  // all four sit left of the gateway: at the old offsets the handcart stood at world
-  // 626 to 660, which is the middle of the opening, and the last crate crossed its jamb
-  // Props have two things to stay out of: the foot of the stair, which they stood on, and
-  // the gateway, which the first attempt at moving them put them INSIDE. x0 already
-  // clears the flight, and the guard below clears the opening, so both are structural
-  // rather than four offsets that happen to work at today's numbers.
+  // crates, a barrel and a handcart.
+  // Props have THREE things to stay out of, and the first two fixes each found one of them:
+  // the foot of the flight, the gateway itself, and -- the one that was still wrong -- the
+  // band the crowd stands in while it waits. That band is doors - 46 back to
+  // doors - 46 - (packFront - packBack)*0.30, i.e. world 448 to 594 on today's numbers,
+  // which is the whole of the open yard; moving the props right to clear the stair moved
+  // them further INTO it. There is nowhere in the yard that works, so they go where people
+  // do not walk: under the flight, where it is still high enough overhead to stand under.
   const gateL = gc.doors - clear - 14, gateR = gc.doors + clear + 14;
-  for (const [off, kind] of [[8, 2], [38, 0], [66, 1], [88, 0]]) {
-    const wxp = x0 + off;
-    if (wxp + 40 > gateL && wxp < gateR) continue;     // never in the doorway everyone uses
+  const standL = gc.doors - 46 - (CFG.packFront - CFG.packBack) * 0.30 - 24, standR = gc.doors - 34;
+  for (const [wxp, kind] of [[292, 0], [330, 1], [362, 0], [700, 2]]) {
+    if (wxp + 40 > gateL && wxp < gateR) continue;      // never in the doorway everyone uses
+    if (wxp + 40 > standL && wxp < standR) continue;    // never where the shift stands waiting
     const cx = wxp - V.left;
-    if (cx < sx0 - 40 || cx > sx1 + 10) continue;
+    if (!inView(wxp, 80)) continue;
     if (kind === 0) {
-      const cw = 22 + hash(off) * 8;
+      const cw = 22 + hash(wxp) * 8;
       ctx.fillStyle = '#17141a'; ctx.fillRect(cx - 1, base - cw * 0.9 - 1, cw + 2, cw * 0.9 + 2);
       ctx.fillStyle = '#4a3b2c'; ctx.fillRect(cx, base - cw * 0.9, cw, cw * 0.9);
       ctx.fillStyle = 'rgba(255,236,200,0.14)'; ctx.fillRect(cx, base - cw * 0.9, cw, 2.2);
@@ -4218,31 +4276,44 @@ function encTopLane(wx) {
   return top;
 }
 function encSurfaceY(wx) {
-  // average the lane height over a window, so the hill swells up to a fork and settles
-  // after a merge instead of stepping 190 units in one column
-  let sum = 0, n = 0;
-  for (let d = -300; d <= 300; d += 60) { sum += laneY(encTopLane(wx + d)); n++; }
-  const base = sum / n;
-  // two long waves so the crest is never a flat average
-  return base + 16 + Math.sin(wx * 0.0016) * 26 + Math.sin(wx * 0.0043 + 1.7) * 11;
+  // A COSINE-weighted average of the lane height over a wide window. A flat average over
+  // a narrow one gives a straight ramp between two terrace heights, and a stack of those
+  // is a ziggurat: hard 45-degree diagonals and a symmetrical green pyramid, which is the
+  // opposite of the rolling country this act is supposed to open with. Weighting the
+  // window by a raised cosine turns each of those ramps into an S-curve that leaves and
+  // arrives horizontally, so the land swells toward a fork and settles after a merge.
+  let sum = 0, wsum = 0;
+  for (let d = -480; d <= 480; d += 40) {
+    const w = 0.5 + 0.5 * Math.cos(d / 480 * Math.PI);
+    sum += laneY(encTopLane(wx + d)) * w; wsum += w;
+  }
+  const base = sum / wsum;
+  // three octaves, biggest first, so the crest is never the smooth curve underneath it
+  return base + 20
+    + Math.sin(wx * 0.0011 + 0.6) * 38
+    + Math.sin(wx * 0.0037 + 1.7) * 15
+    + Math.sin(wx * 0.0094 + 3.1) * 6;
 }
 function drawEncLand() {
   const x0 = Math.max(ENC.x0, V.left - 80), x1 = Math.min(CFG.finale.x + 300, V.left + V.vw + 80);
   if (x1 <= x0) return;
   const step = 24;
-  const ridge = (off, col, alpha) => {
+  const ridge = (off, col, alpha, wob) => {
     ctx.fillStyle = col; ctx.globalAlpha = alpha;
     ctx.beginPath();
     ctx.moveTo(x0 - V.left, CFG.worldBottom + 200);
-    for (let wx = x0; wx <= x1 + step; wx += step) ctx.lineTo(wx - V.left, encSurfaceY(wx) + off);
+    for (let wx = x0; wx <= x1 + step; wx += step) ctx.lineTo(wx - V.left, encSurfaceY(wx) + off + (wob ? wob(wx) : 0));
     ctx.lineTo(x1 + step - V.left, CFG.worldBottom + 200);
     ctx.closePath(); ctx.fill();
     ctx.globalAlpha = 1;
   };
-  // a pale ridge set back and above, then the hill the paths are cut into
-  ridge(-96, '#8fb08a', 0.55);
-  ridge(-40, '#6f9a6a', 0.75);
-  ridge(0, '#5c8b52', 1);
+  // Ridges set back and above. Their offsets WANDER rather than being three constants:
+  // parallel silhouettes 56 units apart read as stacked cardboard, which is most of what
+  // made this look like a model rather than a landscape.
+  const wander = (a, f, ph) => wx => a * Math.sin(wx * f + ph);
+  ridge(-96, '#8fb08a', 0.55, wander(30, 0.0013, 2.2));
+  ridge(-40, '#6f9a6a', 0.75, wander(18, 0.0021, 0.4));
+  ridge(0, '#5c8b52', 1, null);
   // the sunlit face of the turf, and the shade under each terrace
   ctx.save();
   ctx.beginPath();
@@ -4270,6 +4341,102 @@ function drawEncLand() {
   ctx.beginPath();
   for (let wx = x0; wx <= x1 + step; wx += step) ctx.lineTo(wx - V.left, encSurfaceY(wx) - 1);
   ctx.stroke();
+}
+// The fences. This is the act's argument, so it is drawn rather than implied: for the
+// first stretch out of the mountain the land is open and unmarked, and from ENC.free
+// onward boundaries start going up across it, closer together and higher as you go, until
+// the last one is a wall you cannot get over.
+//
+// They run UP the hillside between the paths rather than across them. Every track keeps a
+// gap, because the crowd has to be able to run; what changes is the land either side of
+// them being parcelled, and the gates in the gaps closing behind you.
+function encFenceKind(wx) {
+  // 0 open country, 1 stakes and a rail, 2 post and rail, 3 drystone wall
+  if (wx < ENC.free) return 0;
+  const t = (wx - ENC.free) / (ENC.wall - ENC.free);
+  return t < 0.3 ? 1 : t < 0.65 ? 2 : 3;
+}
+function drawEncBounds() {
+  const x0 = Math.max(ENC.x0, V.left - 200), x1 = Math.min(ENC.wall, V.left + V.vw + 200);
+  const PITCH = 300;
+  for (let wx = Math.ceil(x0 / PITCH) * PITCH; wx <= x1; wx += PITCH) {
+    const kind = encFenceKind(wx);
+    if (!kind) continue;
+    const sx = wx - V.left, crest = encSurfaceY(wx);
+    // the line climbs from the valley floor to the crest of the hill
+    for (let y = CFG.worldBottom - 10; y > crest; y -= 6) {
+      // leave a gap wherever a track passes through, and stand a gate in it
+      let inGap = false;
+      for (let k = 0; k < CFG.laneCount; k++) {
+        if (!laneAt(k, wx)) continue;
+        if (y < laneY(k) + 4 && y > laneY(k) - 54) { inGap = true; break; }
+      }
+      if (inGap) continue;
+      const hv = hash(wx * 0.7 + y);
+      if (kind === 3) {
+        // drystone: courses of irregular blocks, lit on top
+        ctx.fillStyle = `rgb(${Math.round(128 + hv * 26)},${Math.round(124 + hv * 24)},${Math.round(114 + hv * 22)})`;
+        ctx.fillRect(sx - 5 - hv * 2, y - 6, 11 + hv * 4, 6);
+        ctx.fillStyle = 'rgba(255,248,226,0.20)'; ctx.fillRect(sx - 5 - hv * 2, y - 6, 11 + hv * 4, 1.4);
+        ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(sx - 5 - hv * 2, y - 1.2, 11 + hv * 4, 1.2);
+      } else {
+        ctx.fillStyle = '#4a3a28';
+        ctx.fillRect(sx - 1.6, y - 6, 3.2, 6);
+      }
+    }
+    if (kind !== 3) {
+      // rails running along the line, one for stakes and two for post-and-rail
+      ctx.strokeStyle = '#5c4830'; ctx.lineWidth = 2.2;
+      for (const off of (kind === 1 ? [16] : [14, 30])) {
+        ctx.beginPath();
+        for (let y = crest; y < CFG.worldBottom - 10; y += 14) ctx.lineTo(sx - off * 0.1, y);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#6b5438';
+      for (let y = crest + 20; y < CFG.worldBottom - 10; y += 46) ctx.fillRect(sx - 3, y, 6, 30);
+    }
+    // the gate in each track's gap, swinging shut as the act goes on
+    for (let k = 0; k < CFG.laneCount; k++) {
+      if (!laneAt(k, wx)) continue;
+      const gy = laneY(k);
+      const shut = clamp01((wx - ENC.free) / (ENC.wall - ENC.free) * 1.5);
+      ctx.save(); ctx.translate(sx, gy + 2);
+      // a five-bar gate seen from the side: open it lies along the line, shut it crosses
+      const span = 8 + shut * 30;
+      ctx.strokeStyle = '#6b5438'; ctx.lineWidth = 2.6;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(span, -34); ctx.stroke();
+      ctx.lineWidth = 1.8;
+      for (let i = 1; i <= 3; i++) {
+        const t = i / 4;
+        ctx.beginPath(); ctx.moveTo(span * t * 0.25, -34 * t); ctx.lineTo(span * t, -34 * t); ctx.stroke();
+      }
+      ctx.fillStyle = '#4a3a28'; ctx.fillRect(-3, -40, 5, 42);        // the hanging post
+      ctx.restore();
+    }
+    // a board nailed to the line, once there is something to say
+    if (kind >= 2 && hash(wx) > 0.45) {
+      // nailed up beside the valley track, at head height. Hung off the hill's crest it
+      // floated in open sky, hundreds of units above anything, and read as a brown crate.
+      const by = laneY(0) - 62;
+      ctx.fillStyle = '#7d6a4e'; ctx.fillRect(sx + 4, by, 42, 20);
+      ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(sx + 4, by + 17, 42, 3);
+      ctx.fillStyle = 'rgba(28,22,18,0.75)';
+      ctx.font = 'bold 8px Georgia, serif'; ctx.textAlign = 'center';
+      ctx.fillText(hash(wx * 3) > 0.5 ? 'PRIVATE' : 'NO ROAD', sx + 25, by + 13);
+      ctx.textAlign = 'left';
+    }
+  }
+  // surveyors' poles out ahead of the fencing, where the land is still open. The land is
+  // measured before it is taken, and that is the only warning the crowd gets.
+  for (let wx = Math.ceil(Math.max(ENC.x0, V.left - 200) / 220) * 220; wx < Math.min(ENC.free + 900, V.left + V.vw + 200); wx += 220) {
+    if (hash(wx * 1.7) < 0.5) continue;
+    const sx = wx - V.left, gy = encSurfaceY(wx) + 10;
+    ctx.strokeStyle = '#d8d2c4'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(sx, gy); ctx.lineTo(sx, gy - 46); ctx.stroke();
+    ctx.fillStyle = '#c0392b';
+    for (let i = 0; i < 3; i++) ctx.fillRect(sx - 1.6, gy - 42 + i * 14, 3.2, 7);
+    ctx.fillStyle = '#e8e2d2'; ctx.fillRect(sx - 5, gy - 50, 10, 5);
+  }
 }
 function drawVignette() {
   const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, H * 0.95);
@@ -4392,6 +4559,7 @@ function rockGround(wx0, wx1, y, style = 'in') {
 }
 function ramp(wx0, y0, wx1, y1) {
   if (inMill(wx0)) return millStair(wx0, y0, wx1, y1);
+  if (ENC.inside(wx0)) return encPath(wx0, y0, wx1, y1);
   if (!inView(wx0, 260)) return;
   const x0 = wx0 - V.left, x1 = wx1 - V.left;
   ctx.fillStyle = '#3a3038';
@@ -4416,6 +4584,50 @@ function ramp(wx0, y0, wx1, y1) {
     ctx.fillStyle = 'rgba(0,0,0,0.13)'; for (let k = py + 11; k < py + h - 4; k += 13) ctx.fillRect(px - 7, k, 14, 1.2);
   }
   ctx.fillStyle = INK; ctx.fillRect(x0, y0 + 43, 0, 0);
+}
+// A track climbing the hillside between two terraces. The rock version is a 44-deep
+// timber slab on piers, which out here reads as a brown plank bridge nailed across a
+// field -- and a stack of them at a constant angle is most of what made the enclosure
+// look like a ziggurat rather than country. This is a path worn into the slope: no
+// structure, a lighter trodden line, a soft edge, and a few steps cut where it is
+// steepest.
+function encPath(wx0, y0, wx1, y1) {
+  if (!inView(wx0, 300) && !inView(wx1, 300)) return;
+  const x0 = wx0 - V.left, x1 = wx1 - V.left;
+  const dx = x1 - x0, dy = y1 - y0;
+  // the cut: bare earth under the track, thicker at the downhill end
+  ctx.fillStyle = '#6b5a42';
+  ctx.beginPath();
+  ctx.moveTo(x0, y0 + 2);
+  ctx.lineTo(x1, y1 + 2);
+  ctx.lineTo(x1, y1 + 15);
+  ctx.lineTo(x0, y0 + 20);
+  ctx.closePath(); ctx.fill();
+  // the trodden surface, lighter where feet have worn it
+  ctx.strokeStyle = '#8a7350'; ctx.lineWidth = 7; ctx.lineCap = 'butt';
+  ctx.beginPath(); ctx.moveTo(x0, y0 + 4); ctx.lineTo(x1, y1 + 4); ctx.stroke();
+  ctx.strokeStyle = 'rgba(206,188,150,0.30)'; ctx.lineWidth = 2.4;
+  ctx.beginPath(); ctx.moveTo(x0, y0 + 1.5); ctx.lineTo(x1, y1 + 1.5); ctx.stroke();
+  // grass breaking the edges, so it is worn rather than cut
+  ctx.fillStyle = '#5c8b52';
+  for (let t = 0; t <= 1; t += 0.035) {
+    const hv = hash(wx0 + t * 977);
+    if (hv < 0.4) continue;
+    const px = x0 + dx * t, py = y0 + dy * t;
+    ctx.fillRect(px - 1, py - 1 + hv * 2, 2 + hv * 4, 2 + hv * 2);
+    ctx.fillRect(px - 1, py + 13 + hv * 4, 2 + hv * 5, 2 + hv * 3);
+  }
+  // steps cut into the steep half, which is what stops it reading as a slide
+  const steps = 7;
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const px = x0 + dx * t, py = y0 + dy * t;
+    ctx.fillStyle = 'rgba(38,30,22,0.40)';
+    ctx.fillRect(px - 7, py + 4, 15, 2.2);
+    ctx.fillStyle = 'rgba(232,216,178,0.22)';
+    ctx.fillRect(px - 7, py + 3, 15, 1.2);
+  }
+  ctx.lineCap = 'round';
 }
 function archway(wx, y, exit = false) {
   if (inMill(wx)) return millDoorway(wx, y);
@@ -4849,13 +5061,23 @@ function drawEncRoom(room, y) {
     return;
   }
   // ditch and wall both cut the ground. An earth section, not a black one.
-  const depth = room.lane === 0 ? Math.max(70, CFG.riverY - y) : 74;
-  ctx.fillStyle = '#4a3b2a'; ctx.fillRect(sx, y, gw, depth);
+  // A ditch is a cut in daylight, not a shaft. The first version ramped to rgba(22,18,14)
+  // -- effectively black -- which at play zoom is a black rectangle sitting on a sunlit
+  // hillside, indistinguishable from the cave's pit. It stays in earth the whole way down,
+  // and the far face catches light because the sun is upper left and reaches into a ditch.
+  const depth = room.lane === 0 ? Math.max(70, CFG.riverY - y) : 58;
+  ctx.fillStyle = '#5c4a34'; ctx.fillRect(sx, y, gw, depth);
   const soil = ctx.createLinearGradient(0, y, 0, y + depth);
-  soil.addColorStop(0, 'rgba(92,74,50,1)');
-  soil.addColorStop(0.35, 'rgba(58,45,32,1)');
-  soil.addColorStop(1, 'rgba(22,18,14,1)');
+  soil.addColorStop(0, 'rgba(112,92,64,1)');
+  soil.addColorStop(0.45, 'rgba(82,64,45,1)');
+  soil.addColorStop(1, 'rgba(52,41,30,1)');
   ctx.fillStyle = soil; ctx.fillRect(sx, y, gw, depth);
+  // the lit far face, and the near face in its own shadow
+  const face = ctx.createLinearGradient(sx, 0, sx + gw, 0);
+  face.addColorStop(0, 'rgba(0,0,0,0.34)');
+  face.addColorStop(0.42, 'rgba(0,0,0,0)');
+  face.addColorStop(1, 'rgba(255,238,196,0.16)');
+  ctx.fillStyle = face; ctx.fillRect(sx, y, gw, depth);
   // stones and roots in the cut face
   for (let i = 0; i < 14; i++) {
     const hv = hash(room.x * 1.7 + i * 3.1), hv2 = hash(room.x * 0.9 + i * 5.7);
@@ -4865,7 +5087,13 @@ function drawEncRoom(room, y) {
   // the turf lip overhanging both cut edges, so it is dug rather than punched
   ctx.fillStyle = '#3f5a2e'; ctx.fillRect(sx - 4, y - 2, 8, 6); ctx.fillRect(sx + gw - 4, y - 2, 8, 6);
   ctx.fillStyle = '#6b8e4e'; ctx.fillRect(sx - 4, y - 3, 8, 2); ctx.fillRect(sx + gw - 4, y - 3, 8, 2);
-  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(sx, y, 6, depth);
+  // roots and grass trailing over both lips
+  ctx.strokeStyle = '#4e6b3a'; ctx.lineWidth = 1.4;
+  for (let i = 0; i < 9; i++) {
+    const hv = hash(room.x * 2.3 + i * 4.1);
+    const gx = sx + (i < 5 ? 1 + hv * 5 : gw - 6 + hv * 5);
+    ctx.beginPath(); ctx.moveTo(gx, y + 1); ctx.lineTo(gx + (hv - 0.5) * 5, y + 5 + hv * 9); ctx.stroke();
+  }
   // standing water in the bottom, which is what made a ditch worth being afraid of
   const wy = y + depth - 14;
   ctx.fillStyle = 'rgba(56,72,68,0.85)'; ctx.fillRect(sx + 3, wy, gw - 6, 14);
@@ -4893,6 +5121,75 @@ function drawEncRoom(room, y) {
     }
   }
   if (room.type === 'wall') drawEncWall(room, y, sx, gw, solved, prog);
+}
+// The wall. It is not a bigger fence: it runs off the top of the frame and down past the
+// water, it has no gate, and it is the first thing in the act that is built rather than
+// grown. The blast puts a hole in it, and the hole is the only way anyone gets through.
+function drawEncWall(room, y, sx, gw, solved, prog) {
+  const top = laneY(CFG.laneCount - 1) - 260, bottom = CFG.worldBottom + 120;
+  const wx0 = sx - 26, ww = gw + 52;
+  ctx.save();
+  if (solved) {
+    // the breach: everything inside this arch is gone, so the wall is drawn around it
+    ctx.beginPath();
+    ctx.rect(-80, top - 40, V.vw + 160, bottom - top + 80);
+    ctx.moveTo(sx - 6, y + 4);
+    ctx.lineTo(sx - 6, y - 62);
+    ctx.quadraticCurveTo(sx + gw / 2, y - 128, sx + gw + 6, y - 62);
+    ctx.lineTo(sx + gw + 6, y + 4);
+    ctx.closePath();
+    ctx.clip('evenodd');
+  }
+  ctx.fillStyle = '#5b5148'; ctx.fillRect(wx0, top, ww, bottom - top);
+  // Clip the coursing to the wall. The block loop starts 30 left of the face and steps 60
+  // with a 30 stagger, so without this every other course hangs a half block out into the
+  // sky on both sides and the wall grows a set of teeth.
+  ctx.save(); ctx.beginPath(); ctx.rect(wx0, top, ww, bottom - top); ctx.clip();
+  for (let by = top; by < bottom; by += 26) {
+    const stag = (Math.floor(by / 26) % 2) * 30;
+    for (let bx = wx0 - 30; bx < wx0 + ww; bx += 60) {
+      const hv = hash(bx * 0.3 + by * 0.7);
+      ctx.fillStyle = `rgb(${Math.round(104 + hv * 30)},${Math.round(97 + hv * 27)},${Math.round(88 + hv * 24)})`;
+      ctx.fillRect(bx + stag + 1, by + 1, 58, 24);
+      ctx.fillStyle = 'rgba(255,248,230,0.13)'; ctx.fillRect(bx + stag + 1, by + 1, 58, 1.6);
+      ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(bx + stag + 1, by + 22, 58, 3);
+    }
+  }
+  ctx.restore();
+  // it is newer than everything else: the mortar is clean and it throws a hard shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(wx0 + ww, top, 16, bottom - top);
+  ctx.fillStyle = 'rgba(255,248,230,0.10)'; ctx.fillRect(wx0, top, 4, bottom - top);
+  ctx.restore();
+  if (solved) {
+    // rubble on the ground and a burnt rim, so the hole was made rather than left
+    ctx.fillStyle = 'rgba(30,22,20,0.55)';
+    ctx.beginPath();
+    ctx.moveTo(sx - 6, y - 62);
+    ctx.quadraticCurveTo(sx + gw / 2, y - 128, sx + gw + 6, y - 62);
+    ctx.lineTo(sx + gw + 1, y - 62);
+    ctx.quadraticCurveTo(sx + gw / 2, y - 121, sx - 1, y - 62);
+    ctx.closePath(); ctx.fill();
+    for (let i = 0; i < 18; i++) {
+      const hv = hash(room.x + i * 5.3), hv2 = hash(room.x * 2 + i);
+      ctx.fillStyle = `rgba(${Math.round(96 + hv * 30)},${Math.round(90 + hv * 26)},${Math.round(82 + hv * 22)},0.95)`;
+      ctx.beginPath();
+      ctx.ellipse(sx - 20 + hv * (gw + 40), y - 2 - hv2 * 6, 3 + hv * 6, 2 + hv * 4, hv * 3, 0, 6.28);
+      ctx.fill();
+    }
+    // daylight coming through from the far side
+    const lg = ctx.createLinearGradient(sx, y - 120, sx, y);
+    lg.addColorStop(0, 'rgba(255,244,206,0.34)'); lg.addColorStop(1, 'rgba(255,244,206,0.06)');
+    ctx.fillStyle = lg; ctx.fillRect(sx - 6, y - 128, gw + 12, 130);
+  } else {
+    // the boreholes the puzzle is charging, drilled along the base
+    const n = 5;
+    for (let i = 0; i < n; i++) {
+      const hx = sx + 14 + (i / (n - 1)) * (gw - 28);
+      ctx.fillStyle = 'rgba(16,12,14,0.9)';
+      ctx.beginPath(); ctx.arc(hx, y - 22, 3.4, 0, 6.28); ctx.fill();
+      if (prog > (i + 1) / (n + 2)) { ctx.fillStyle = '#c4762e'; ctx.beginPath(); ctx.arc(hx, y - 22, 2, 0, 6.28); ctx.fill(); }
+    }
+  }
 }
 function drawMachineRoom(room, y) {
   const sx = room.x - V.left, gw = CFG.gapWidth;
@@ -5093,12 +5390,26 @@ function drawStairRail() {
 // two leaves that SLIDE apart on a rail overhead. See drawYardDoors for why they
 // slide rather than swing.
 function drawGateWall(y) {
-  const c = I(), cx = c.doors - V.left, half = c.half, h = 122;
-  const top = y - h - 18, x0 = cx - half - c.jamb, x1 = cx + half + c.jamb;
+  const c = I(), cx = c.doors - V.left, half = c.half, h = GATE_H;
+  const top = y - h - GATE_HEAD, x0 = cx - half - c.jamb, x1 = cx + half + c.jamb;
   // the wall runs off the top of the frame on both sides of the opening
   ctx.fillStyle = '#4a3f45';
   ctx.fillRect(x0 - 260, top - 150, 260, h + 168);
   ctx.fillRect(x1, top - 150, 300, h + 168);
+  // Where this wall runs past the mill's own gable it is standing against open sky for 86
+  // units -- nearly two body heights -- and used to stop dead in a zero-thickness vertical
+  // cut. A pilaster and a coping stop, the way millYard terminates its boundary with a
+  // gate pier: it ends because something ends it.
+  const endX = x1 + 300;
+  ctx.fillStyle = '#453a44'; ctx.fillRect(endX - 16, top - 158, 22, h + 176);
+  ctx.save(); ctx.beginPath(); ctx.rect(endX - 16, top - 158, 22, h + 176); ctx.clip();
+  brickFill(endX - 20, top - 162, 30, h + 184, 0.85);
+  ctx.fillStyle = 'rgba(26,20,26,0.26)'; ctx.fillRect(endX - 16, top - 158, 22, h + 176);
+  ctx.restore();
+  ctx.fillStyle = '#524657'; ctx.fillRect(endX - 20, top - 166, 30, 10);
+  ctx.fillStyle = 'rgba(255,244,222,0.18)'; ctx.fillRect(endX - 20, top - 166, 30, 2);
+  ctx.fillStyle = 'rgba(255,238,206,0.10)'; ctx.fillRect(endX - 16, top - 158, 3.4, h + 176);
+  ctx.fillStyle = 'rgba(0,0,0,0.26)'; ctx.fillRect(endX + 6, top - 158, 6, h + 176);
   ctx.fillRect(x0, top - 150, x1 - x0, 150);          // the spandrel OVER the opening
   // brick courses
   // One bond for the whole wall. Three separate origins on a 16 pitch stepped the
@@ -5205,11 +5516,19 @@ function drawGateWall(y) {
 // squeezed to zero width simply vanished, so the doors finished the animation by ceasing
 // to exist. These run out to the piers and stay visible, parked, as the crowd goes through.
 function drawYardDoors(y) {
-  const c = I(), cx = c.doors - V.left, h = 122, half = c.half, jamb = c.jamb;
+  const c = I(), cx = c.doors - V.left, h = GATE_H, half = c.half, jamb = c.jamb;
   const open = S.doorOpen;
-  // heavy: slow to start, then it runs. Same easing the old leaves used.
-  const slide = Math.pow(open, 1.7) * (half * 2 - 6);
-  const headY = y - h - 18, voidTop = y - h - 10;
+  // Heavy: slow to start, then it runs. Two numbers here were wrong in opposite directions.
+  // The leaf was `half - 3` wide and started `3` off the centreline, so two leaves of 41
+  // could never close an opening of 88 and left a permanent 6-unit black slot down the
+  // middle of a shut door. And the travel was `half*2 - 6` = 82, twice what a leaf needs to
+  // clear the opening, which parked the right leaf at world 725-766 -- half inside the
+  // mill's loading-bay jamb at 746-762, drawn afterwards and painted straight over it.
+  // A leaf is exactly `half`, meets its partner on the centreline, and runs exactly its
+  // own width, which is the least that clears the opening and the most that misses the mill.
+  const leafW = half, travel = half;
+  const slide = Math.pow(open, 1.7) * travel;
+  const headY = y - h - GATE_HEAD, voidTop = y - h - GATE_REVEAL;
   // The hole. Without it the opening frames the mill's own window and the parallax
   // hillside, which says the building has no inside.
   ctx.fillStyle = '#191316'; ctx.fillRect(cx - half, voidTop, half * 2, h + 10);
@@ -5236,7 +5555,7 @@ function drawYardDoors(y) {
   // parked doors hang from thin air: a leaf runs out to cx +/- 126 and the rail was only
   // +/- 91, so at full open both hangers on each leaf were past the end of it. Derived
   // from the same travel the leaves use rather than guessed a second time.
-  const reachOut = 3 + (half * 2 - 6) + (half - 3) + 10;
+  const reachOut = travel + leafW + 10;
   // The head band goes on HERE, before the leaves, so the hangers read continuously from
   // wheel to leaf. Drawn with the jambs at the end it covered 11 of each hanger's 14
   // units and the doors appeared to hang from nothing.
@@ -5245,8 +5564,13 @@ function drawYardDoors(y) {
   ctx.fillStyle = 'rgba(255,244,222,0.14)'; ctx.fillRect(cx - reachOut, headY - 7, reachOut * 2, 1.4);
   // brackets carrying the rail back to the wall, every 60 or so. A 272-unit rail held up
   // by nothing along its whole length was the other half of the doors hanging from air.
+  // Stepped so the pattern LANDS on both ends. A fixed 62 pitch from one end stopped 68
+  // short of the other, and at full open both of the right leaf's hangers were outboard
+  // of the last bracket -- the parked door hung off an unsupported rail end.
   ctx.fillStyle = '#3d3547';
-  for (let bx = -reachOut + 18; bx <= reachOut - 18; bx += 62) {
+  const bspan = reachOut - 14, bn = Math.max(2, Math.round(bspan * 2 / 62));
+  for (let i = 0; i <= bn; i++) {
+    const bx = -bspan + (i / bn) * bspan * 2;
     ctx.fillRect(cx + bx - 2.5, headY - 20, 5, 14);
     ctx.beginPath();
     ctx.moveTo(cx + bx - 2.5, headY - 20); ctx.lineTo(cx + bx + 12, headY - 20); ctx.lineTo(cx + bx - 2.5, headY - 8);
@@ -5260,9 +5584,9 @@ function drawYardDoors(y) {
   // finished the animation as two narrow striped posts. Nothing needs clipping: the leaf
   // is exactly the height of the opening, and the frame is drawn after it.
   for (const dir of [-1, 1]) {
-    const w = half - 3;
+    const w = leafW;
     // closed: the two leaves meet on the centreline. open: each has run out past its jamb.
-    const inner = cx + dir * (3 + slide);
+    const inner = cx + dir * slide;
     const outer = inner + dir * w;
     const lx = Math.min(inner, outer);
     ctx.save();
@@ -5321,7 +5645,11 @@ function drawDoorSpill() {
   // as well, with hard vertical edges at the jambs, so it read as a pale beige panel
   // stuck on the wall rather than as light. A pool, splayed outward the way a beam
   // through an opening actually splays, and ending where the light would.
-  const reach = 30, spread = half + 26;
+  // ONE extent for both. reach was 30 while the gradient's radius was 70, so the ramp was
+  // cut off at 0.16 alpha and left a hard horizontal edge across the yard at exactly
+  // y + 30 -- the same gradient-against-fill fault the project already has a rule about,
+  // committed in the very commit that quoted the rule.
+  const spread = half + 26, reach = spread;
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(cx - half, y - 3);
@@ -5346,8 +5674,9 @@ function drawDoorSpill() {
   ctx.restore();
   // a warm lick up the inside faces of the jambs, which is the other half of the tell
   ctx.fillStyle = `rgba(255,228,170,${0.16 * swing})`;
-  ctx.fillRect(cx - half - 2, y - 122, 3, 122);
-  ctx.fillRect(cx + half - 1, y - 122, 3, 122);
+  const lick = GATE_H + GATE_REVEAL;              // the whole opening, not 10 short of it
+  ctx.fillRect(cx - half - 2, y - lick, 3, lick);
+  ctx.fillRect(cx + half - 1, y - lick, 3, lick);
 }
 function drawIntro() {
   const y = laneY(0);
@@ -5397,19 +5726,93 @@ function drawFinish() {
     // Forty bolt-upright figures in one pose at even spacing is inert, and this is the
     // payoff moment of the run. Each one idles on its own phase, a few have turned to
     // face back down the line, and the contact shadows are dark enough to read.
+    // They dance. Everyone who reaches here has spent the whole run inside one shared
+    // rhythm -- one stride, one pace, one direction, set by a camera moving at a fixed
+    // speed -- and getting through the wall is the first moment that stops being true.
+    // Each body moves at its own tempo, which is why `beat` is per-person.
     for (const { r, x, y: qy } of q) {
       ctx.fillStyle = 'rgba(0,0,0,0.34)';
       ctx.beginPath(); ctx.ellipse(x + 9, qy + 2, 9, 2.4, 0, 0, 6.28); ctx.fill();
-      const idle = Math.sin(S.t * 1.7 + r.jit) * 0.5 + 0.5;
       const back = hash(r.jit * 7.3) > 0.82;
       ctx.save(); ctx.translate(x, qy);
       if (back) ctx.scale(-1, 1);
-      drawFigure(r, 0, 0, idle * 0.35, r.height || 1, 1);
+      drawDancer(r, 0, 0, S.t, r.height || 1, 1);
       ctx.restore();
     }
     for (const l of f.leaving) drawFigure(l.r, fx - 60 - l.t * 60, y + 4, l.t * 12, l.r.height || 1, Math.max(0, 1 - l.t / 1.2));
     f.leaving = f.leaving.filter(l => l.t < 1.2);
   }
+}
+// The dance.
+//
+// Federici's closing argument is that the resistance is in the body -- it tires, it ages,
+// it refuses, it will never be a good machine -- and that this is why she praises dancing:
+// a body moving to its OWN rhythm instead of an ordered one. The whole run to here has
+// been an ordered rhythm. Everyone in the crowd shares one stride, one pace, one direction,
+// set by a camera moving at a fixed speed. So the survivors do not run any more, and they
+// do not stand in a line either.
+//
+// This is a separate function rather than a mode inside drawFigure on purpose: the run
+// cycle belongs to another session and is not mine to reach into. It calls backHair and
+// frontHair unchanged, so a dancing Skodo still has his dreads and a dancing Valeria still
+// has her tails -- the likenesses are the point and they are not re-implemented here.
+//
+// `beat` is per-person, not global: a crowd dancing in unison is another ordered rhythm,
+// which would say the opposite of what the scene is for.
+function drawDancer(r, sx, sy, t, scale, alpha) {
+  const own = 1.6 + hash(r.jit * 3.7) * 1.5;            // this body's own tempo
+  const ph = t * own + r.jit * 6.3;
+  const step = Math.sin(ph), sway = Math.sin(ph * 0.5), bounce = Math.abs(Math.sin(ph));
+  const style = Math.floor(hash(r.jit * 11.3) * 3);     // three ways of moving, not one
+  ctx.save();
+  ctx.translate(sx, sy - bounce * 4 * scale);
+  ctx.scale(scale, scale);
+  ctx.globalAlpha *= alpha;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // the torso leans into the sway rather than forward: nobody is going anywhere
+  const lean = sway * (style === 0 ? 0.24 : 0.14);
+  const hipY = -7;
+  const ax = Math.sin(lean), ay = -Math.cos(lean);
+  const shX = ax * 10.5, shY = hipY + ay * 10.5;
+  const hx = ax * 18.2, hy = hipY + ay * 18.2;
+  const limb = (x0, y0, cx, cy, x1, y1, col, w) => {
+    ctx.strokeStyle = INK; ctx.lineWidth = w + 1.6; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(cx, cy, x1, y1); ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(cx, cy, x1, y1); ctx.stroke();
+  };
+  // ARMS UP. This is the whole silhouette: the run cycle keeps both hands at hip height,
+  // so raised arms are what reads as dancing from across a zoomed-out frame.
+  const armUp = style === 2 ? 1 : 0.55 + 0.45 * bounce;
+  const swingA = step * (style === 1 ? 7 : 4);
+  const handA = { x: shX + swingA + 6, y: shY - 14 * armUp };
+  const handB = { x: shX - swingA - 6, y: shY - 14 * (style === 2 ? 1 : 1 - armUp * 0.6) };
+  // back arm and back leg first
+  limb(shX - 1, shY, shX - 5, shY - 6 * armUp, handB.x, handB.y, shade(r.skin), 2.4);
+  const legB = -step * 5, liftB = Math.max(0, -Math.cos(ph)) * 4;
+  limb(0, hipY, legB * 0.5 + 2, hipY + 5 - liftB, legB, 2 - liftB, shade(r.pants), 3);
+  ctx.fillStyle = shade(r.pants, 0.45);
+  ctx.beginPath(); ctx.ellipse(legB + 1.2, 2.6 - liftB, 2.8, 1.5, 0, 0, 6.28); ctx.fill();
+  // hair trails the SWAY. Passing 0 here gives dead-straight hair on a moving body, which
+  // is the exact tell the run cycle had removed from it; drive it off this dance's motion.
+  backHair(r, hx, hy, 2 + Math.abs(sway) * 2.6);
+  ctx.save(); ctx.translate(0, hipY); ctx.rotate(lean);
+  ctx.fillStyle = INK; roundRect(-4.9, -11.9, 9.8, 13.8, 4.6); ctx.fill();
+  ctx.fillStyle = r.shirt; roundRect(-4, -11, 8, 12, 4); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.14)'; roundRect(-4, -4.5, 8, 5.5, 3); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.18)'; roundRect(-3.2, -10, 3, 4, 1.5); ctx.fill();
+  ctx.restore();
+  const legA = step * 5, liftA = Math.max(0, Math.cos(ph)) * 4;
+  limb(0, hipY, legA * 0.5 + 2, hipY + 5 - liftA, legA, 2 - liftA, r.pants, 3);
+  ctx.fillStyle = INK;
+  ctx.beginPath(); ctx.ellipse(legA + 1.2, 2.6 - liftA, 2.8, 1.5, 0, 0, 6.28); ctx.fill();
+  const nx = ax * 13, ny = hipY + ay * 13;
+  ctx.strokeStyle = INK; ctx.lineWidth = 3.6; ctx.beginPath(); ctx.moveTo(shX, shY); ctx.lineTo(nx, ny); ctx.stroke();
+  ctx.strokeStyle = r.skin; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(hx, hy, 5.9, 0, 6.28); ctx.fill();
+  ctx.fillStyle = r.skin; ctx.beginPath(); ctx.arc(hx, hy, 5, 0, 6.28); ctx.fill();
+  frontHair(r, hx, hy);
+  ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(hx + 2.5, hy + 1, 1.3, 0, 6.28); ctx.fill();
+  limb(shX + 1, shY, shX + 5, shY - 6 * armUp, handA.x, handA.y, r.skin, 2.4);
+  ctx.restore();
 }
 // Hair long enough to fall behind the body is drawn before it; the rest goes on after the head.
 function backHair(r, hx, hy, drift) {
@@ -5847,11 +6250,16 @@ function drawOverlays() {
     // arch with nothing joining it to a body: past four rows, give up and drop the tag.
     const base = ny;
     let rows = 0;
-    for (; rows < 5; rows++) { const hit = tags.find(t => Math.abs(t.x - nx) < t.half + half && Math.abs(t.y - ny) < 13) || placedUI.find(q => nx + half > q.x && nx - half < q.x + q.w && ny > q.y && ny - 12 < q.y + q.h); if (!hit) break; ny = hit.y - 13; }
-    if (rows >= 5) continue;
+    // Three rows, not five. Five rows of 13 is a 65px ladder of white text standing over
+    // one dense pack, and with the whole roster on screen at full zoom it read as a block
+    // of names rather than as labels: you could not tell which of forty figures owned
+    // which tag, which is the only thing a name tag is for. Past three, drop the tag --
+    // the roll call on the end screen is where every name is guaranteed to be read.
+    for (; rows < 3; rows++) { const hit = tags.find(t => Math.abs(t.x - nx) < t.half + half && Math.abs(t.y - ny) < 13) || placedUI.find(q => nx + half > q.x && nx - half < q.x + q.w && ny > q.y && ny - 12 < q.y + q.h); if (!hit) break; ny = hit.y - 13; }
+    if (rows >= 3) continue;
     tags.push({ x: nx, y: ny, half }); claim(nx - half, ny - 12, half * 2, 13);
-    // anything lifted more than a row gets a hairline back down to the head it belongs to
-    if (base - ny > 16) {
+    // anything lifted off its own head at all gets a hairline back down to it
+    if (base - ny > 4) {
       ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(nx, ny + 2); ctx.lineTo(nx, base - 1); ctx.stroke();
     }
@@ -6002,36 +6410,120 @@ function drawWordPrompt(word, idx, px, py, pw) {
   ctx.fillRect(px + pw / 2 - total / 2, py + 86, typed, 2);
   ctx.textAlign = 'left';
 }
+// Keys drawn as key CAPS -- a body, a top face and a lip -- rather than flat swatches.
+// The one the player must press now sits proud and pulses; the ones already pressed are
+// shown depressed. It is the same information, but the picture says "press this" without
+// the legend having to.
 function drawKeyBoxes(chars, idx, px, py, pw) {
-  const boxW = 40, gap = 8, total = chars.length * boxW + (chars.length - 1) * gap;
+  const boxW = 40, gap = 9, total = chars.length * boxW + (chars.length - 1) * gap;
   let bx = px + (pw - total) / 2;
+  const pulse = 0.5 + 0.5 * Math.sin(S.t * 7);
   for (let i = 0; i < chars.length; i++, bx += boxW + gap) {
     const done = i < idx, cur = i === idx;
-    ctx.fillStyle = done ? '#2ecc71' : cur ? '#f1c40f' : '#2a2d3a';
-    roundRect(bx, py + 36, boxW, boxW, 6); ctx.fill();
-    if (cur) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; roundRect(bx - 2, py + 34, boxW + 4, boxW + 4, 7); ctx.stroke(); }
-    ctx.fillStyle = done || cur ? '#111' : '#8a8fa3'; ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center';
-    ctx.fillText(chars[i], bx + boxW / 2, py + 36 + boxW / 2 + 8);
+    const lift = done ? 0 : cur ? 3 + pulse * 1.5 : 2.4;
+    const top = py + 40 - lift;
+    // the body below the cap, which is what gives it height
+    ctx.fillStyle = done ? '#1d6b42' : cur ? '#8a6d10' : '#191c26';
+    roundRect(bx, top + 4, boxW, boxW, 7); ctx.fill();
+    // the cap
+    const g = ctx.createLinearGradient(0, top, 0, top + boxW);
+    if (done) { g.addColorStop(0, '#6ee7a0'); g.addColorStop(1, '#2ecc71'); }
+    else if (cur) { g.addColorStop(0, '#ffe07a'); g.addColorStop(1, '#f1c40f'); }
+    else { g.addColorStop(0, '#333949'); g.addColorStop(1, '#262b38'); }
+    ctx.fillStyle = g; roundRect(bx, top, boxW, boxW, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.22)'; roundRect(bx + 3, top + 2.5, boxW - 6, boxW * 0.42, 5); ctx.fill();
+    if (cur) {
+      ctx.strokeStyle = `rgba(255,255,255,${0.45 + pulse * 0.45})`; ctx.lineWidth = 2;
+      roundRect(bx - 2.5, top - 2.5, boxW + 5, boxW + 5, 9); ctx.stroke();
+    }
+    ctx.fillStyle = done || cur ? '#10131a' : '#99a0b4';
+    ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(chars[i], bx + boxW / 2, top + boxW / 2 + 8);
   }
   ctx.textAlign = 'left';
 }
-function panelFrame(pw, title, color) {
-  const px = W / 2 - pw / 2, py = 48, ph = 110;
-  ctx.fillStyle = 'rgba(10,12,20,0.9)'; roundRect(px, py, pw, ph, 10); ctx.fill();
-  ctx.strokeStyle = color; ctx.lineWidth = 2; roundRect(px, py, pw, ph, 10); ctx.stroke();
+function panelFrame(pw, title, color, ph = 132) {
+  const px = W / 2 - pw / 2, py = 48;
+  // a cast shadow, so the panel sits over the world instead of being cut into it
+  ctx.fillStyle = 'rgba(0,0,0,0.38)'; roundRect(px + 3, py + 6, pw, ph, 12); ctx.fill();
+  const g = ctx.createLinearGradient(0, py, 0, py + ph);
+  g.addColorStop(0, 'rgba(26,30,44,0.97)');
+  g.addColorStop(0.18, 'rgba(15,18,28,0.97)');
+  g.addColorStop(1, 'rgba(9,10,17,0.97)');
+  ctx.fillStyle = g; roundRect(px, py, pw, ph, 12); ctx.fill();
+  // a header strip in the room's own colour, then a hairline under it
+  ctx.save(); roundRect(px, py, pw, ph, 12); ctx.clip();
+  ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(px, py, pw, 30);
+  ctx.fillStyle = color; ctx.globalAlpha = 0.5; ctx.fillRect(px, py + 29, pw, 1.4); ctx.globalAlpha = 1;
+  ctx.restore();
+  ctx.strokeStyle = color; ctx.lineWidth = 1.6; roundRect(px + 0.5, py + 0.5, pw - 1, ph - 1, 12); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.10)'; roundRect(px + 2, py + 2, pw - 4, ph - 4, 10); ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
-  ctx.fillText(title, W / 2, py + 22); ctx.textAlign = 'left';
+  ctx.fillText(title, W / 2, py + 20); ctx.textAlign = 'left';
   return [px, py];
+}
+// What to do RIGHT NOW, in three or four words, inside the panel.
+//
+// The hint line across the bottom of the screen states the whole rule -- "pull the live
+// wire, choose a socket, connect" -- which is what you need the first time you ever see a
+// room and nearly useless on the fourth, when what you want is which of those three you
+// are on. It is also at the far bottom of the screen while the puzzle is at the top, so
+// reading it means looking away from the thing you are playing.
+function panelStep(room, px, py, pw) {
+  const v = VERBS[room.verb];
+  if (!v.now) return;
+  let txt;
+  try { txt = v.now(room.mg); } catch (e) { return; }   // never let a label kill the frame
+  if (!txt) return;
+  ctx.font = 'bold 11px monospace'; ctx.textAlign = 'right';
+  const urgent = /LET GO|FIRE|WATCH/.test(txt);
+  ctx.fillStyle = urgent ? (Math.sin(S.t * 12) > 0 ? '#ffd23c' : '#fff3bd') : 'rgba(180,196,220,0.85)';
+  ctx.fillText(txt, px + pw - 14, py + 20);
+  ctx.textAlign = 'left';
+}
+// How long the player has, and how far through the puzzle they are. Neither was shown
+// anywhere: you could see a puzzle and the crowd, but nothing told you whether you had
+// four seconds or half of one, which is the single thing that decides whether to keep
+// working on this room or abandon it for the next. In a game about triage that is not a
+// nicety, it is the decision the game is made of.
+function panelGauges(room, px, py, pw, ph) {
+  const bw = pw - 44, bx = px + 22, by = py + ph - 20;
+  const { n, eta } = approaching(room);
+  const prog = room.mg ? clamp01(VERBS[room.verb].progress(room.mg)) : 0;
+  // puzzle progress
+  ctx.fillStyle = 'rgba(255,255,255,0.09)'; roundRect(bx, by, bw, 5, 3); ctx.fill();
+  ctx.fillStyle = '#5ce1ff'; roundRect(bx, by, bw * prog, 5, 3); ctx.fill();
+  // time before the first of them walks in, capped at six seconds of bar
+  const t = Math.min(1, eta / 6);
+  const urgent = eta < 1.6;
+  ctx.fillStyle = 'rgba(255,255,255,0.09)'; roundRect(bx, by + 9, bw, 5, 3); ctx.fill();
+  ctx.fillStyle = urgent ? (Math.sin(S.t * 14) > 0 ? '#ff5a5a' : '#ff9a9a') : eta < 3 ? '#f1c40f' : '#6ee7a0';
+  roundRect(bx, by + 9, bw * t, 5, 3); ctx.fill();
+  ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right';
+  ctx.fillStyle = urgent ? '#ff8a8a' : 'rgba(210,220,236,0.7)';
+  ctx.fillText(n ? `${n} reach this in ${eta.toFixed(1)}s` : 'nobody left to save here', px + pw - 22, by - 5);
+  ctx.textAlign = 'left';
 }
 function drawPanel(room) {
   const v = VERBS[room.verb];
   const pw = Math.max(420, 80 + (room.verb === 'keys' ? room.mg.seq.length : room.verb === 'word' ? room.mg.word.length : 0) * 48);
-  const [px, py] = panelFrame(pw, `ROOM ${room.hot}   ${room.title}`, '#5ce1ff');
+  const ph = 132;
+  ctx.save();
+  // a wrong key shakes the panel. Cheap, and it puts the feedback where the player is
+  // already looking rather than only in a full-screen red flash.
+  if (S.wrongFlash > 0) ctx.translate(Math.sin(S.wrongFlash * 90) * S.wrongFlash * 9, 0);
+  const [px, py] = panelFrame(pw, `ROOM ${room.hot}   ${room.title}`, '#5ce1ff', ph);
+  // cyan deliberately, NOT room.color: drawRoom already turns the ACTIVE room's badge and
+  // frame cyan, so cyan is what "the room you are in" looks like out in the world. Colouring
+  // the panel by hazard instead would break the one association the player has to follow.
   v.draw(room.mg, px, py, pw);
+  panelStep(room, px, py, pw);
+  panelGauges(room, px, py, pw, ph);
+  ctx.restore();
 }
 function drawFinalePanel() {
   const f = S.finale, pw = 80 + f.len * 48;
-  const [px, py] = panelFrame(pw, `FINAL GATE   attempts left: ${f.attempts}`, '#f1c40f');
+  const [px, py] = panelFrame(pw, `FINAL GATE   attempts left: ${f.attempts}`, '#f1c40f', 116);
   drawKeyBoxes(f.seq, f.idx, px, py, pw);
   const tw = pw - 56, frac = Math.max(0, f.timer / CFG.finale.keyTime);
   ctx.fillStyle = '#333'; ctx.fillRect(px + 28, py + 96, tw, 6);
@@ -6334,9 +6826,20 @@ function devSolve() {
 
 
 if (qs.has('start')) {
-  S.mode = 'play';
+  // startRun(), not `S.mode = 'play'`. reset() leaves doorOpen at 0 and nothing in play
+  // mode ever raises it, so every ?start frame ever taken showed a hundred people running
+  // out through SHUT doors -- including the ones handed to the reviewers as evidence about
+  // the handover. startRun is the one place that state is defined; the comment on it
+  // already claimed the skip went through here, and now it does.
+  startRun();
   const n = +(qs.get('skip') || 0) * 60, solve = qs.has('solve');
   for (let i = 0; i < n; i++) { update(1 / 60); if (solve) devSolve(); }
+  // ?cleared marks every room behind the camera as solved, for screenshots of what a
+  // crossing looks like AFTER it is fixed. Those states are otherwise nearly impossible
+  // to photograph -- the bot has to actually beat the room on the frame you want -- and
+  // they are half the art: the plank over the ditch, the gap in the thorn, the breach in
+  // the wall. Nothing outside this dev branch reads it.
+  if (qs.has('cleared')) for (const room of S.rooms) if (room.x < S.cam + CFG.packFront) { room.state = 'solved'; room.bridge = 1; }
 }
 // ?intro=N holds the opening at N seconds, for headless screenshots of it
 if (qs.has('intro')) {
