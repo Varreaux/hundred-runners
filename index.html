@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '76 engines beyond the bank';
+const BUILD = '77 fewer, smaller, deeper';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2644,7 +2644,9 @@ function drawMountain() {
     // Only the wide cuts. A vertical one is a shaft, and a shaft with a fossil in it is a
     // hole with a fossil in it.
     if (!vert && hash(seg * 13.9 + j * 5.3) < FIND_RATE) {
-      drawFind(xx + w / 2, yy + hgt / 2, Math.max(20, Math.min(34, hgt * 0.72)),
+      // r 20..34 clipped at 1.06r is 42 to 70 units wide against a 45-unit body: 1.6m to 2.7m,
+      // which is the largest ammonite ever found, six times a screen. 14..22 is 0.55m to 0.86m.
+      drawFind(xx + w / 2, yy + hgt / 2, Math.max(14, Math.min(22, hgt * 0.5)),
                FIND_KINDS[Math.floor(hash(seg * 3.7 + j * 11.1) * FIND_KINDS.length)], seg + j * 3.1);
       continue;
     }
@@ -2800,7 +2802,10 @@ function working(x, y, w, h, salt, lit, vert) {
 // Share of the WIDE cuts that come out as a find rather than a hole. Not a share of wall
 // area: the thing that decides whether a wall reads as rock or as a museum case is finds per
 // screen, and at 0.135 of the nodule grid that was about twenty-five of them at once.
-const FIND_RATE = 0.40;
+// 0.40 put five to seven finds against six to eleven holes on a screen: a wall with as many
+// fossils in it as holes is a museum diorama, and because a find consumes a working the rock
+// also lost a third of what made it read as honeycombed. About two per screen.
+const FIND_RATE = 0.12;
 // One crystal in six, not two in seven. A glowing pocket is the loudest object in act two and
 // they were 29% of all finds, which put ten pulsing highlights in the periphery while the
 // player is meant to be watching a gate.
@@ -2819,10 +2824,13 @@ const FIND_KINDS = ['ribs', 'skull', 'spine', 'ammonite', 'femur', 'crystal'];
 function findSocket(x, y, rx, ry) {
   ctx.fillStyle = 'rgba(26,18,34,0.40)';
   ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, 6.28); ctx.fill();
-  ctx.fillStyle = 'rgba(0,0,0,0.30)';                                   // overhang, under the top lip
-  ctx.beginPath(); ctx.ellipse(x, y + ry * 0.13, rx * 0.97, ry * 0.92, 0, 3.34, 6.06); ctx.fill();
-  ctx.fillStyle = 'rgba(255,240,214,0.10)';                             // lit lower inner wall
-  ctx.beginPath(); ctx.ellipse(x, y - ry * 0.13, rx * 0.97, ry * 0.92, 0, 0.14, 3.00); ctx.fill();
+  // These offsets have to survive the zoom the cave is actually played at, about 0.44. At
+  // 0.13 of ry the whole recess cue was 1.0 to 1.7 SCREEN pixels and the lit wall was 10%
+  // alpha: correct shading, drawn below the resolution of the screen, which is worth nothing.
+  ctx.fillStyle = 'rgba(0,0,0,0.38)';                                   // overhang, under the top lip
+  ctx.beginPath(); ctx.ellipse(x, y + ry * 0.34, rx * 0.97, ry * 0.94, 0, 3.34, 6.06); ctx.fill();
+  ctx.fillStyle = 'rgba(255,240,214,0.26)';                             // lit lower inner wall
+  ctx.beginPath(); ctx.ellipse(x, y - ry * 0.32, rx * 0.97, ry * 0.94, 0, 0.14, 3.00); ctx.fill();
 }
 const BONE = '#d6cbae', BONE_D = '#a1957a';
 function boneStroke(w) { ctx.strokeStyle = INK; ctx.lineWidth = w + 1.5; ctx.lineCap = 'round'; }
@@ -2838,7 +2846,11 @@ function drawFind(x, y, r, kind, seed) {
     const gl = ctx.createRadialGradient(x, y, 0, x, y, G);
     gl.addColorStop(0, warm ? 'rgba(232,189,122,0.30)' : 'rgba(198,169,239,0.30)');
     gl.addColorStop(1, 'rgba(0,0,0,0)');
+    // 'lighter', the same as the workings' lamps two hundred lines away. Source-over washes
+    // the rock with a violet stain; only an additive pass reads as light coming off a thing.
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(x, y, G, 0, 6.28); ctx.fill();
+    ctx.restore();
   }
   ctx.save();
   ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, 6.28); ctx.clip();
@@ -2852,9 +2864,9 @@ function drawFind(x, y, r, kind, seed) {
   else drawFemur(r, seed);
   ctx.restore();
   // the socket's own lip, over the top of whatever is in it, so the find is BELOW the surface
-  ctx.strokeStyle = 'rgba(0,0,0,0.30)'; ctx.lineWidth = 1.6;            // the lip casts down
+  ctx.strokeStyle = 'rgba(0,0,0,0.42)'; ctx.lineWidth = 2.6;            // the lip casts down
   ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 3.34, 6.06); ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,240,214,0.13)'; ctx.lineWidth = 1.2;      // the lower edge catches
+  ctx.strokeStyle = 'rgba(255,240,214,0.30)'; ctx.lineWidth = 2.0;      // the lower edge catches
   ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0.14, 3.00); ctx.stroke();
 }
 // A ribcage seen side on: a spine across the socket and ribs hanging off it, shortening
@@ -9471,13 +9483,11 @@ function drawHud() {
     hintBar(VERBS[S.drill.room.verb].hint, note, longest + '    ' + note);
   }
   // while he talks, the bottom line is the way past him
-  if (S.mode === 'intro' && S.boss && !S.boss.gone && !S.boss.auto && !S.drill) {
-    const cur = S.boss.script[S.boss.line];
-    hintBar(!cur ? 'the drill is starting'
-          : S.boss.ch < cur.t.length ? 'SPACE fills the line'
-          : S.boss.line === BOSS_SCRIPT.length - 1 ? 'SPACE to begin the drill'
-          : 'SPACE to continue');
-  }
+  // No hint bar for the proprietor. The band already prints the same words, in gold, beside
+  // him, pulsing when the line is ready, and two copies of one instruction 373px apart in two
+  // sizes and two colours is one copy too many. The one next to him is the better one. (It
+  // also read BOSS_SCRIPT.length here against b.script.length everywhere else, which was
+  // harmless only while the cave script happened to be the auto one.)
 }
 // The line across the bottom that explains the controls. Shrink to fit rather than run
 // off both ends: the longest combination -- a verb hint plus "(ESC to close)" plus the
