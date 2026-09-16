@@ -15,10 +15,10 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = 'lastroom pass7 - fullscreen art + smooth cursor';
+const BUILD = 'lastroom pass8 - subtle diffs + intro + 20';
 const CFG = {
   scroll: 110,            // camera speed, px/s
-  runnerCount: 50,
+  runnerCount: 20,
   packBack: 120, packFront: 540,   // the pack holds slots in this band ahead of the camera anchor
   jitter: 30,
   tire: 0.15,             // how much the pack stretches by the end of the run
@@ -173,6 +173,13 @@ function saveBest(n) { try { if (n > loadBest()) localStorage.setItem('hr_best',
 // ================================================================ LastRoom finale (Document.xlsx / LastRoom)
 const HELD = Object.create(null);
 const FINALE_BLACKOUT = 1.55; // 3 flicker beats before generator restarts
+const FINALE_INTRO_WALL = 1.7;   // red flicker + FINAL WALL
+const FINALE_INTRO_SPEECH = 3.4; // boss monologue after wall beat
+const FINALE_BOSS_LINES = [
+  'Ten discrepancies. Find them.',
+  'Correct the ledgers - or forfeit a body.',
+  'The canvas lies in ten places. Prove you can see.',
+];
 // Six dark capitalism tableaux - inked, muted gold / rust / mill soot, same art language as the run.
 const FINALE_SCENES = [
   {
@@ -241,7 +248,9 @@ function startFinale() {
   const scene = pickFinaleScene();
   const n = line.length;
   S.finale = {
-    phase: 'charge',
+    phase: 'intro',
+    introT: 0,
+    bossLine: pick(FINALE_BOSS_LINES),
     chargeT: 0,
     chargeNeed: CFG.finale.genTime(n),
     light: 0,
@@ -415,60 +424,86 @@ function paintSil(x, y, sc = 1, a = 0.35) {
   ctx.fillRect(x - 5 * sc, y + 3 * sc, 3.2 * sc, 8 * sc);
   ctx.fillRect(x + 1.5 * sc, y + 3 * sc, 3.2 * sc, 8 * sc);
 }
-// Differences are painted INTO the tableau (same ink language) -- never UI icons.
+// Differences are painted INTO the tableau - muted, scene-native, never UI overlays.
 function drawDiffMark(d, x, y, on) {
   if (!on) return;
   const dx = x + d.x, dy = y + d.y, k = d.kind;
   ctx.save();
-  if (k === 'extraSmoke' || k === 'stackSmoke') paintSmoke(dx, dy, 9, 2.4, 0.7);
-  else if (k === 'goldClock' || k === 'goldBar' || k === 'diamond' || k === 'sunMoney' || k === 'coinStack') {
-    inkFill('#b8923a', dx - 6, dy - 4, 12, 9, 2);
-    inkFill('#d4a84b', dx - 5, dy - 3, 10, 7, 1);
-    ctx.fillStyle = 'rgba(255,245,200,0.35)'; ctx.fillRect(dx - 3, dy - 1, 4, 3);
+  ctx.globalAlpha = 0.82;
+  if (k === 'extraSmoke' || k === 'stackSmoke') {
+    paintSmoke(dx, dy + 4, 6, 1.9, 0.35);
+  } else if (k === 'goldClock' || k === 'goldBar' || k === 'diamond' || k === 'sunMoney' || k === 'coinStack') {
+    // nested brick of gold, same palette as vault bars - easy to miss
+    inkFill('#8a6a28', dx - 5, dy - 3, 10, 7, 1);
+    ctx.fillStyle = 'rgba(255,230,160,0.22)'; ctx.fillRect(dx - 3, dy - 1, 4, 2);
   } else if (k === 'bossHat' || k === 'cigar' || k === 'tie' || k === 'bull') {
-    inkFill('#1b1519', dx - 8, dy - 2, 16, 5, 1);
-    inkFill('#8e2a2a', dx - 2, dy - 7, 5, 5, 1);
+    inkFill('#1a1210', dx - 6, dy - 1, 12, 3, 1);
+    ctx.fillStyle = 'rgba(90,30,30,0.55)'; ctx.fillRect(dx - 1, dy - 5, 3, 4);
   } else if (k === 'missingWorker' || k === 'fallen' || k === 'kneel' || k === 'cough') {
-    // painted absence: faint shoe print / scuff, not an X
-    ctx.fillStyle = 'rgba(20,12,10,0.45)';
-    ctx.beginPath(); ctx.ellipse(dx, dy + 4, 7, 2.5, 0.2, 0, 6.28); ctx.fill();
+    ctx.fillStyle = 'rgba(12,8,8,0.35)';
+    ctx.beginPath(); ctx.ellipse(dx, dy + 3, 5, 1.8, 0.15, 0, 6.28); ctx.fill();
   } else if (k === 'redBanner' || k === 'priceTag' || k === 'bill' || k === 'receipt') {
-    inkFill('#6a1e1e', dx - 9, dy - 6, 18, 12, 2);
-    ctx.fillStyle = 'rgba(212,168,75,0.5)'; ctx.fillRect(dx - 5, dy - 2, 10, 2);
+    inkFill('#4a2420', dx - 7, dy - 4, 14, 8, 1);
+    ctx.fillStyle = 'rgba(180,140,60,0.28)'; ctx.fillRect(dx - 4, dy - 1, 8, 1.5);
   } else if (k === 'bloodSpot' || k === 'inkblot' || k === 'puddle') {
-    ctx.fillStyle = k === 'bloodSpot' ? '#4a1214' : '#121820';
-    ctx.beginPath(); ctx.ellipse(dx, dy, 10, 5, 0.3, 0, 6.28); ctx.fill();
-    ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.ellipse(dx + 4, dy + 2, 4, 2, -0.4, 0, 6.28); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.fillStyle = k === 'bloodSpot' ? 'rgba(60,18,20,0.55)' : 'rgba(18,22,28,0.5)';
+    ctx.beginPath(); ctx.ellipse(dx, dy, 7, 3.5, 0.35, 0, 6.28); ctx.fill();
   } else if (k === 'cage' || k === 'chain' || k === 'shackle') {
-    ctx.strokeStyle = '#6a7078'; ctx.lineWidth = 1.6;
-    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(dx - 8 + i * 8, dy, 4, 0, 6.28); ctx.stroke(); }
+    ctx.strokeStyle = 'rgba(90,95,100,0.55)'; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.arc(dx - 4, dy, 3.2, 0, 6.28); ctx.stroke();
+    ctx.beginPath(); ctx.arc(dx + 3, dy + 1, 3.2, 0, 6.28); ctx.stroke();
   } else if (k === 'brokenGear' || k === 'filter' || k === 'pipe' || k === 'chimney' || k === 'percent') {
-    ctx.strokeStyle = '#8a7860'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(dx, dy, 8, 0.2, 5.2); ctx.stroke();
-    inkFill('#5a4a38', dx + 4, dy - 10, 3, 10, 1);
+    ctx.strokeStyle = 'rgba(110,95,75,0.55)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(dx, dy, 5.5, 0.4, 5.0); ctx.stroke();
   } else if (k === 'arrowUp' || k === 'arrowDown' || k === 'crash' || k === 'chart') {
-    // painted chalk stroke on the board, not a UI chevron
-    ctx.strokeStyle = k === 'arrowDown' || k === 'crash' ? '#8e2a2a' : '#2a6a45';
-    ctx.lineWidth = 2.2; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(dx - 8, dy + 5); ctx.quadraticCurveTo(dx, dy - 8, dx + 9, dy + 2); ctx.stroke();
-  } else if (k === 'ledger' || k === 'fineprint' || k === 'receipt') {
-    inkFill('#d7c4a0', dx - 8, dy - 6, 16, 12, 1);
-    ctx.fillStyle = 'rgba(60,40,30,0.5)';
-    for (let i = 0; i < 3; i++) ctx.fillRect(dx - 5, dy - 3 + i * 3, 10 - i, 1.2);
+    ctx.strokeStyle = k === 'arrowDown' || k === 'crash' ? 'rgba(100,40,40,0.55)' : 'rgba(40,80,55,0.5)';
+    ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(dx - 6, dy + 3); ctx.quadraticCurveTo(dx, dy - 5, dx + 6, dy + 2); ctx.stroke();
+  } else if (k === 'ledger' || k === 'fineprint') {
+    inkFill('#cbb89a', dx - 6, dy - 4, 12, 9, 1);
+    ctx.fillStyle = 'rgba(50,35,25,0.4)';
+    for (let i = 0; i < 3; i++) ctx.fillRect(dx - 4, dy - 2 + i * 2.5, 8 - i, 1);
   } else if (k === 'chandelier' || k === 'wine' || k === 'roast' || k === 'mask') {
-    inkFill('#d4a84b', dx - 5, dy - 5, 10, 10, 5);
-    ctx.fillStyle = 'rgba(255,220,140,0.4)'; ctx.beginPath(); ctx.arc(dx, dy, 3, 0, 6.28); ctx.fill();
+    // candle drip / glass glint, not a gold disc
+    ctx.fillStyle = 'rgba(200,170,90,0.35)';
+    ctx.beginPath(); ctx.ellipse(dx, dy, 3, 5, 0, 0, 6.28); ctx.fill();
+    ctx.fillStyle = 'rgba(255,240,180,0.25)'; ctx.fillRect(dx - 1, dy - 3, 2, 3);
   } else if (k === 'servant' || k === 'crumb' || k === 'rat' || k === 'boot' || k === 'tinCup') {
-    inkFill('#3a2a22', dx - 5, dy - 3, 10, 7, 2);
-  } else if (k === 'stamp' || k === 'seal' || k === 'quill' || k === 'thumb' || k === 'X' || k === 'tear' || k === 'hourglass' || k === 'inkblot') {
-    inkFill('#8e2a2a', dx - 6, dy - 6, 12, 12, 6);
-    ctx.fillStyle = 'rgba(212,168,75,0.45)'; ctx.beginPath(); ctx.arc(dx, dy, 3, 0, 6.28); ctx.fill();
-  } else if (k === 'mansion' || k === 'bird' || k === 'maskGas' || k === 'safeCrack' || k === 'emptyPocket' || k === 'headset' || k === 'screen' || k === 'briefcase') {
-    inkFill('#2a2420', dx - 7, dy - 6, 14, 12, 2);
-    ctx.fillStyle = 'rgba(255,200,100,0.25)'; ctx.fillRect(dx - 3, dy - 2, 6, 5);
+    ctx.fillStyle = 'rgba(40,28,22,0.45)';
+    ctx.beginPath(); ctx.ellipse(dx, dy, 4, 2.5, 0.2, 0, 6.28); ctx.fill();
+  } else if (k === 'stamp') {
+    // faint rectangular ink pad on parchment
+    ctx.strokeStyle = 'rgba(100,30,30,0.4)'; ctx.lineWidth = 1.2;
+    ctx.strokeRect(dx - 7, dy - 5, 14, 10);
+    ctx.fillStyle = 'rgba(100,30,30,0.18)'; ctx.fillRect(dx - 6, dy - 4, 12, 8);
+  } else if (k === 'seal') {
+    // cracked wax drip - not a bright UI disc
+    ctx.fillStyle = 'rgba(90,25,28,0.5)';
+    ctx.beginPath(); ctx.ellipse(dx, dy, 5, 4, 0.3, 0, 6.28); ctx.fill();
+    ctx.fillStyle = 'rgba(90,25,28,0.35)';
+    ctx.beginPath(); ctx.ellipse(dx + 3, dy + 5, 2, 3, 0.2, 0, 6.28); ctx.fill();
+  } else if (k === 'quill') {
+    inkFill('#2a2018', dx - 1, dy - 8, 2, 14, 1);
+    inkFill('#8a7040', dx - 2, dy - 10, 5, 3, 1);
+  } else if (k === 'thumb' || k === 'tear') {
+    ctx.fillStyle = 'rgba(40,30,25,0.35)';
+    ctx.beginPath(); ctx.ellipse(dx, dy, 4, 5, 0.1, 0, 6.28); ctx.fill();
+  } else if (k === 'X') {
+    // scratched cancel mark in ink, thin
+    ctx.strokeStyle = 'rgba(50,25,25,0.45)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(dx - 5, dy - 5); ctx.lineTo(dx + 5, dy + 5);
+    ctx.moveTo(dx + 5, dy - 5); ctx.lineTo(dx - 5, dy + 5); ctx.stroke();
+  } else if (k === 'hourglass') {
+    ctx.strokeStyle = 'rgba(90,70,40,0.45)'; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.moveTo(dx - 4, dy - 6); ctx.lineTo(dx + 4, dy - 6);
+    ctx.lineTo(dx, dy); ctx.lineTo(dx + 4, dy + 6); ctx.lineTo(dx - 4, dy + 6); ctx.lineTo(dx, dy); ctx.stroke();
+  } else if (k === 'mansion' || k === 'safeCrack' || k === 'screen' || k === 'briefcase' || k === 'headset' || k === 'emptyPocket' || k === 'bird' || k === 'maskGas') {
+    inkFill('#2a221c', dx - 5, dy - 4, 10, 8, 1);
+    ctx.fillStyle = 'rgba(180,140,70,0.2)'; ctx.fillRect(dx - 2, dy - 1, 4, 3);
   } else {
-    // small painted fleck that belongs in the scene
-    inkFill('#8a7040', dx - 4, dy - 3, 8, 6, 2);
+    // default: soft soot fleck
+    ctx.fillStyle = 'rgba(20,14,12,0.4)';
+    ctx.beginPath(); ctx.ellipse(dx, dy, 4, 2.5, 0.25, 0, 6.28); ctx.fill();
   }
   ctx.restore();
 }
@@ -710,15 +745,8 @@ function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
     }
   }
 
-  if (altered) for (const d of diffs) if (!found.has(d.id)) drawDiffMark(d, x, y, true);
-  for (const d of diffs) {
-    if (!found.has(d.id)) continue;
-    // Diegetic brass tack in the canvas -- never a green UI ring
-    inkFill('#6a5020', d.x - 3, d.y - 3, 6, 6, 3);
-    inkFill('#d4a84b', d.x - 2, d.y - 2, 4, 4, 2);
-    ctx.fillStyle = 'rgba(255,240,200,0.45)';
-    ctx.beginPath(); ctx.arc(d.x - 0.5, d.y - 0.5, 1.2, 0, 6.28); ctx.fill();
-  }
+  // Always paint differences into the altered canvas; finding them does not peel them off as UI.
+  if (altered) for (const d of diffs) drawDiffMark(d, x, y, true);
   paintVignette(x, y, w, h, 0.72);
   ctx.fillStyle = 'rgba(255,240,200,0.045)';
   ctx.beginPath(); ctx.ellipse(x + w * 0.35, y + h * 0.2, w * 0.3, h * 0.12, -0.3, 0, 6.28); ctx.fill();
@@ -736,6 +764,13 @@ function updateFinale(dt) {
   const L = finaleLayout();
   f.flashWrong = Math.max(0, f.flashWrong - dt);
   f.genPulse = Math.max(0, f.genPulse - dt);
+
+  // Intro: red wall flash, then boss speech, then charge
+  if (f.phase === 'intro') {
+    f.introT += dt;
+    if (f.introT >= FINALE_INTRO_WALL + FINALE_INTRO_SPEECH) beginFinaleCharge(f);
+    return;
+  }
 
   // screen-space FX
   for (const p of f.fx) { p.life -= dt; p.vy += (p.k === 'drop' ? 520 : 40) * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
@@ -800,13 +835,15 @@ function updateFinale(dt) {
     }
   }
 
-  // Smooth cursor: accelerate into held keys, friction when released (no digital stutter)
+  // Smooth cursor only during search
   if (!f.cursorVel) f.cursorVel = { x: 0, y: 0 };
   let mx = 0, my = 0;
-  if (HELD.ARROWLEFT || HELD.A) mx -= 1;
-  if (HELD.ARROWRIGHT || HELD.D) mx += 1;
-  if (HELD.ARROWUP || HELD.W) my -= 1;
-  if (HELD.ARROWDOWN || HELD.S) my += 1;
+  if (f.phase === 'search') {
+    if (HELD.ARROWLEFT || HELD.A) mx -= 1;
+    if (HELD.ARROWRIGHT || HELD.D) mx += 1;
+    if (HELD.ARROWUP || HELD.W) my -= 1;
+    if (HELD.ARROWDOWN || HELD.S) my += 1;
+  }
   const accel = CFG.finale.cursorAccel || 1400;
   const maxSpd = CFG.finale.cursorSpeed || 260;
   const fric = CFG.finale.cursorFriction || 10;
@@ -4873,8 +4910,74 @@ function drawPanel(room) {
   const [px, py] = panelFrame(pw, `ROOM ${room.hot}   ${room.title}`, '#5ce1ff');
   v.draw(room.mg, px, py, pw);
 }
+function drawFinaleIntro(f) {
+  const t = f.introT;
+  const wall = t < FINALE_INTRO_WALL;
+  // black stage
+  ctx.fillStyle = '#050208'; ctx.fillRect(0, 0, W, H);
+  if (wall) {
+    // red flicker alarm
+    const beat = Math.sin(t * 28) > 0 ? 1 : 0;
+    const flash = 0.15 + beat * 0.45 + Math.sin(t * 40) * 0.08;
+    ctx.fillStyle = `rgba(140,10,18,${flash})`; ctx.fillRect(0, 0, W, H);
+    // edge scrapes
+    ctx.save(); ctx.globalCompositeOperation = 'screen';
+    for (let i = 0; i < 8; i++) {
+      ctx.fillStyle = `rgba(255,40,40,${0.08 + beat * 0.12})`;
+      ctx.fillRect(0, 20 + i * 60 + Math.sin(t * 15 + i) * 8, W, 3);
+    }
+    ctx.restore();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = `rgba(0,0,0,${0.5 + beat * 0.2})`;
+    ctx.font = 'bold 52px monospace';
+    ctx.fillText('FINAL WALL', W / 2 + 3, H / 2 + 3);
+    ctx.fillStyle = beat ? '#ff6b6b' : '#e8c96a';
+    ctx.fillText('FINAL WALL', W / 2, H / 2);
+    ctx.fillStyle = 'rgba(255,200,200,0.55)'; ctx.font = '14px monospace';
+    ctx.fillText('THE LEDGERS AWAIT', W / 2, H / 2 + 36);
+  } else {
+    // boss address
+    const u = clamp01((t - FINALE_INTRO_WALL) / FINALE_INTRO_SPEECH);
+    ctx.fillStyle = 'rgba(90,12,18,0.35)'; ctx.fillRect(0, 0, W, H);
+    // spotlight
+    const spot = ctx.createRadialGradient(W / 2, H * 0.42, 20, W / 2, H * 0.5, 220);
+    spot.addColorStop(0, 'rgba(255,200,120,0.18)'); spot.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = spot; ctx.fillRect(0, 0, W, H);
+    // boss figure (oversized)
+    const bx = W / 2, by = H * 0.55;
+    paintActor(bx, by, {
+      skin: '#e8c8a2', shirt: '#101010', pants: '#050505', hair: '#2a1a10',
+      phase: 0, scale: 2.4, jit: 99,
+    });
+    // top hat
+    inkFill('#0a0a0a', bx - 22, by - 58, 44, 8, 1);
+    inkFill('#0a0a0a', bx - 14, by - 78, 28, 22, 2);
+    // gold chain
+    ctx.strokeStyle = '#d4a84b'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(bx, by - 28, 10, 0.2, Math.PI - 0.2); ctx.stroke();
+    // speech
+    const line = f.bossLine || FINALE_BOSS_LINES[0];
+    const shown = Math.floor(line.length * Math.min(1, u * 1.4));
+    const text = line.slice(0, shown);
+    ctx.fillStyle = 'rgba(8,4,10,0.82)';
+    roundRect(W / 2 - 280, H * 0.18, 560, 70, 8); ctx.fill();
+    ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.5;
+    roundRect(W / 2 - 280, H * 0.18, 560, 70, 8); ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 13px monospace';
+    ctx.fillText('THE PROPRIETOR', W / 2, H * 0.18 + 22);
+    ctx.fillStyle = '#f0e6d0'; ctx.font = '16px monospace';
+    ctx.fillText(text, W / 2, H * 0.18 + 48);
+    if (u > 0.85) {
+      ctx.fillStyle = 'rgba(200,180,140,0.5)'; ctx.font = '12px monospace';
+      ctx.fillText('the generator will light the chamber', W / 2, H * 0.18 + 64);
+    }
+  }
+  ctx.textAlign = 'left';
+}
 function drawFinalePanel() {
   const f = S.finale;
+  if (f.phase === 'intro') { drawFinaleIntro(f); return; }
   const L = finaleLayout();
   const light = finaleLightLevel(f);
   const t = S.t;
