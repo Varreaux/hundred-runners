@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '29 daylight reaches the mill';
+const BUILD = 'lastroom spot-the-difference playtest';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -25,7 +25,7 @@ const CFG = {
   armDist: 240,           // room unlocks when the front runner is this close
   baseY: 400,             // floor of tunnel 0; each tunnel above is laneGap higher
   laneGap: 190,
-  laneCount: 6,
+  laneCount: 1,           // LastRoom playtest: no branches
   tunnelH: 130,
   entrance: 760,
   riverY: 470,
@@ -34,7 +34,7 @@ const CFG = {
   // null for "the mouths", which is the same thing while the whole course is cave. If a
   // stretch of the run ever has something else overhead, move roofFrom past it and the
   // ramp follows, instead of darkening water that has a roof of its own.
-  roofFrom: 5950,          // the seam: act one has a mill overhead, not rock
+  roofFrom: null,
   roofTo: null,
   worldBottom: 540,
   rampLen: 200,
@@ -49,46 +49,21 @@ const CFG = {
   },
   crusherPeriod: 1.6,
   spikeCooldown: 3,      // real seconds before another death-spike slow-motion can fire
-  // a fork sends `split` of the runners on tunnel `from` up a ramp into tunnel `to`; they come back at `merge`.
-  // nested forks must merge before the fork they branched from.
-  forks: [
-    { x: 2700,  from: 0, to: 1, merge: 5600,  split: 0.5 },
-    { x: 3800,  from: 1, to: 2, merge: 5200,  split: 0.5 },
-    { x: 6600,  from: 0, to: 1, merge: 11000, split: 0.55 },
-    { x: 7000,  from: 1, to: 2, merge: 10700, split: 0.6 },
-    { x: 7400,  from: 2, to: 3, merge: 10400, split: 0.6 },
-    { x: 7800,  from: 3, to: 4, merge: 10100, split: 0.6 },
-    { x: 8200,  from: 4, to: 5, merge: 9800,  split: 0.6 },
-  ],
-  gates: [3150, 8150],
+  // LastRoom playtest: no forks — straight corridor to the final chamber
+  forks: [],
+  gates: [],
   gateArm: 140, holdMax: 8,
   keepOnScreen: 10,       // a live runner is never pushed closer than this to the left edge; the camera waits instead
   // everyone in the crew runs every time; who they end up being is shuffled each run
   names: ['Amish', 'Atthiyya', 'Onur', 'Ferran', 'Frankie', 'Hasan', 'Isabela', 'Linh', 'Long',
           'Morgan', 'Rohan', 'Sara', 'Skodo', 'Dave', 'Gigo', 'Mariam', 'Maria-Paz', 'Matou\u0161',
           'Nikita', 'Paula', 'Hoda', 'Sithe', 'Valeria', 'Violeta\u{1F49C}', 'Wilson', 'BOOM\u{1F4A3}'],
-  rooms: [
-    { x: 1300,  lane: 0, type: 'bridge',  diff: 1 },
-    { x: 2200,  lane: 0, type: 'rope',    diff: 1 },
-    { x: 3300,  lane: 0, type: 'winch',   diff: 2 },
-    { x: 3450,  lane: 1, type: 'bridge',  diff: 2 },
-    { x: 4400,  lane: 2, type: 'rope',    diff: 2 },
-    { x: 4600,  lane: 0, type: 'crusher', diff: 2 },
-    { x: 4900,  lane: 1, type: 'rickety', diff: 2 },
-    { x: 6200,  lane: 0, type: 'winch',   diff: 3 },
-    { x: 8300,  lane: 0, type: 'rickety', diff: 3 },
-    { x: 8500,  lane: 1, type: 'bridge',  diff: 3 },
-    { x: 8700,  lane: 2, type: 'crusher', diff: 3 },
-    { x: 8900,  lane: 3, type: 'rope',    diff: 3 },
-    { x: 9100,  lane: 4, type: 'winch',   diff: 3 },
-    { x: 9300,  lane: 5, type: 'bridge',  diff: 3 },
-    { x: 9600,  lane: 0, type: 'winch',   diff: 4 },
-    { x: 9900,  lane: 1, type: 'crusher', diff: 4 },
-    { x: 10200, lane: 2, type: 'rope',    diff: 4 },
-    { x: 11600, lane: 0, type: 'bridge',  diff: 5 },
-  ],
-  finale: { x: 12300, baseLen: 6, keyTime: 0.9 },
+  rooms: [],              // no mid-run puzzles — start, then Final only
+  // Document.xlsx / LastRoom: sealed capitalism chamber, spot-the-difference finale
+  finale: { x: 2100, findCount: 10, searchTime: 90, hitRadius: 24, cursorSpeed: 320 },
 };
+// Generator charge time from Document LastRoom sheet: workers 1..100 → 10.9s .. 1.0s
+CFG.finale.genTime = n => Math.max(1, 11 - 0.1 * Math.max(1, n));
 CFG.exit = CFG.finale.x - 10;
 const laneY = k => CFG.baseY - CFG.laneGap * k;
 // where each tunnel exists: tunnel 0 runs the whole mountain, others exist between their fork and merge
@@ -193,6 +168,188 @@ function grain() {
 }
 function loadBest() { try { return +localStorage.getItem('hr_best') || 0; } catch (e) { return 0; } }
 function saveBest(n) { try { if (n > loadBest()) localStorage.setItem('hr_best', String(n)); } catch (e) {} }
+
+// ================================================================ LastRoom finale (Document.xlsx / LastRoom)
+const HELD = Object.create(null);
+const FINALE_DIFF_KINDS = ['coin', 'sign', 'smoke', 'window', 'bag', 'clock', 'crane', 'worker', 'barcode', 'dollar'];
+function makeFinaleDiffs() {
+  const spots = [
+    { x: 48, y: 42 }, { x: 150, y: 38 }, { x: 248, y: 48 }, { x: 72, y: 98 }, { x: 168, y: 108 },
+    { x: 252, y: 118 }, { x: 54, y: 162 }, { x: 140, y: 158 }, { x: 220, y: 168 }, { x: 268, y: 88 },
+  ];
+  const kinds = FINALE_DIFF_KINDS.slice();
+  for (let i = kinds.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [kinds[i], kinds[j]] = [kinds[j], kinds[i]]; }
+  return spots.map((p, i) => ({ ...p, kind: kinds[i], id: i }));
+}
+function startFinale() {
+  const line = S.runners.filter(r => r.state === 'arrived');
+  const n = line.length;
+  S.finale = {
+    phase: 'charge',
+    chargeT: 0,
+    chargeNeed: CFG.finale.genTime(n),
+    light: 0,
+    searchT: CFG.finale.searchTime,
+    found: new Set(),
+    diffs: makeFinaleDiffs(),
+    cursor: { x: 470, y: 250 },
+    line,
+    leaving: [],
+    flashWrong: 0,
+    whirl: 0,
+  };
+  S.mode = 'finale';
+}
+function finaleLightLevel(f) {
+  if (f.phase === 'search') return 1;
+  // dim flicker while charging the generator
+  const progress = clamp01(f.chargeT / f.chargeNeed);
+  return 0.08 + progress * 0.55 + Math.sin(S.t * 18) * 0.06 * (0.3 + progress);
+}
+function beginFinaleCharge(f) {
+  f.phase = 'charge';
+  f.chargeT = 0;
+  f.chargeNeed = CFG.finale.genTime(Math.max(1, f.line.length));
+  f.light = 0;
+}
+function finaleWrong() {
+  const f = S.finale;
+  f.flashWrong = 0.55; f.whirl = 1; S.wrongFlash = 0.45; S.shake = 8; AU.fail();
+  const r = f.line.pop();
+  if (r) {
+    r.state = 'gone'; r.doom = 'final'; r.deathT = S.t;
+    f.leaving.push({ r, t: 0 });
+    S.floaters.push({ sx: W / 2, sy: H / 2 - 50, txt: r.name ? `${r.name} FALLS` : 'ONE IS LOST', life: 1.3, color: '#ff5555', big: true });
+  }
+  if (f.line.length <= 0) { S.mode = 'lose'; return; }
+  beginFinaleCharge(f);
+}
+function finaleConfirm() {
+  const f = S.finale;
+  if (f.phase !== 'search') return;
+  const layout = finaleLayout();
+  // Accept a hit on either painting (same relative spot).
+  const targets = [];
+  for (const side of [layout.left, layout.right]) {
+    for (const d of f.diffs) {
+      if (f.found.has(d.id)) continue;
+      targets.push({ d, x: side.x + d.x, y: side.y + d.y });
+    }
+  }
+  let hit = null, best = CFG.finale.hitRadius;
+  for (const t of targets) {
+    const dist = Math.hypot(f.cursor.x - t.x, f.cursor.y - t.y);
+    if (dist < best) { best = dist; hit = t.d; }
+  }
+  if (hit) {
+    f.found.add(hit.id); AU.tick(f.found.size / CFG.finale.findCount);
+    S.floaters.push({ sx: f.cursor.x, sy: f.cursor.y - 18, txt: 'FOUND', life: 0.7, color: '#2ecc71' });
+    if (f.found.size >= CFG.finale.findCount) { S.mode = 'win'; saveBest(f.line.length); }
+  } else {
+    finaleWrong();
+  }
+}
+function finaleLayout() {
+  const pw = 900, ph = 460;
+  const px = (W - pw) / 2, py = (H - ph) / 2;
+  const paintW = 300, paintH = 210;
+  const gap = 36;
+  const left = { x: px + 70, y: py + 78, w: paintW, h: paintH };
+  const right = { x: left.x + paintW + gap, y: left.y, w: paintW, h: paintH };
+  return { pw, ph, px, py, left, right };
+}
+function drawCapitalismPainting(x, y, w, h, diffs, found, altered) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  // sealed room / factory capitalism tableau
+  ctx.fillStyle = '#1a1520'; ctx.fillRect(x, y, w, h);
+  const sky = ctx.createLinearGradient(x, y, x, y + h * 0.45);
+  sky.addColorStop(0, '#3a2a22'); sky.addColorStop(1, '#6b4a2e');
+  ctx.fillStyle = sky; ctx.fillRect(x, y, w, h * 0.42);
+  ctx.fillStyle = '#2c3e50'; ctx.fillRect(x + 18, y + 70, 90, 70);
+  ctx.fillStyle = '#34495e'; ctx.fillRect(x + 120, y + 55, 110, 85);
+  ctx.fillStyle = '#1b2838'; ctx.fillRect(x + 210, y + 48, 70, 92);
+  // smokestacks
+  ctx.fillStyle = '#222'; ctx.fillRect(x + 40, y + 40, 10, 30); ctx.fillRect(x + 160, y + 28, 12, 28);
+  // money rain / ledgers
+  ctx.fillStyle = '#27ae60';
+  for (let i = 0; i < 8; i++) ctx.fillRect(x + 20 + i * 34, y + 150, 18, 10);
+  ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 16px monospace'; ctx.fillText('$', x + 250, y + 40);
+  ctx.fillStyle = '#bdc3c7'; ctx.font = '10px monospace'; ctx.fillText('PROFIT', x + 18, y + 28);
+  ctx.fillText('LABOR', x + 200, y + 195);
+  // conveyor
+  ctx.fillStyle = '#7f8c8d'; ctx.fillRect(x + 10, y + 175, w - 20, 8);
+  // people silhouettes
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = '#946b4a';
+    ctx.beginPath(); ctx.arc(x + 40 + i * 48, y + 168, 5, 0, 6.28); ctx.fill();
+    ctx.fillRect(x + 37 + i * 48, y + 172, 6, 10);
+  }
+  // apply differences on the altered painting only
+  if (altered) {
+    for (const d of diffs) {
+      if (found.has(d.id)) continue;
+      const dx = x + d.x, dy = y + d.y;
+      if (d.kind === 'coin') { ctx.fillStyle = '#f1c40f'; ctx.beginPath(); ctx.arc(dx, dy, 7, 0, 6.28); ctx.fill(); ctx.fillStyle = '#000'; ctx.font = '9px monospace'; ctx.fillText('$', dx - 3, dy + 3); }
+      else if (d.kind === 'sign') { ctx.fillStyle = '#c0392b'; ctx.fillRect(dx - 16, dy - 8, 32, 14); ctx.fillStyle = '#fff'; ctx.font = '8px monospace'; ctx.fillText('SALE', dx - 12, dy + 2); }
+      else if (d.kind === 'smoke') { ctx.fillStyle = 'rgba(180,180,180,0.7)'; ctx.beginPath(); ctx.arc(dx, dy, 10, 0, 6.28); ctx.fill(); ctx.beginPath(); ctx.arc(dx + 8, dy - 6, 7, 0, 6.28); ctx.fill(); }
+      else if (d.kind === 'window') { ctx.fillStyle = '#3498db'; ctx.fillRect(dx - 8, dy - 8, 16, 16); ctx.strokeStyle = '#fff'; ctx.strokeRect(dx - 8, dy - 8, 16, 16); }
+      else if (d.kind === 'bag') { ctx.fillStyle = '#8e5a2b'; ctx.fillRect(dx - 8, dy - 6, 16, 12); ctx.fillStyle = '#f1c40f'; ctx.fillRect(dx - 3, dy - 2, 6, 4); }
+      else if (d.kind === 'clock') { ctx.fillStyle = '#ecf0f1'; ctx.beginPath(); ctx.arc(dx, dy, 9, 0, 6.28); ctx.fill(); ctx.strokeStyle = '#c0392b'; ctx.beginPath(); ctx.moveTo(dx, dy); ctx.lineTo(dx + 5, dy - 4); ctx.stroke(); }
+      else if (d.kind === 'crane') { ctx.strokeStyle = '#e67e22'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(dx - 10, dy + 8); ctx.lineTo(dx, dy - 10); ctx.lineTo(dx + 12, dy + 4); ctx.stroke(); }
+      else if (d.kind === 'worker') { ctx.fillStyle = '#e74c3c'; ctx.beginPath(); ctx.arc(dx, dy - 4, 5, 0, 6.28); ctx.fill(); ctx.fillRect(dx - 3, dy, 6, 10); }
+      else if (d.kind === 'barcode') { ctx.fillStyle = '#111'; for (let i = 0; i < 6; i++) ctx.fillRect(dx - 10 + i * 4, dy - 8, 2, 16); }
+      else if (d.kind === 'dollar') { ctx.fillStyle = '#2ecc71'; ctx.font = 'bold 18px monospace'; ctx.fillText('¥', dx - 6, dy + 6); }
+    }
+  }
+  // mark found diffs on both paintings
+  for (const d of diffs) {
+    if (!found.has(d.id)) continue;
+    ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x + d.x, y + d.y, 12, 0, 6.28); ctx.stroke();
+  }
+  ctx.restore();
+  ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 3; ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
+}
+function updateFinale(dt) {
+  const f = S.finale;
+  f.flashWrong = Math.max(0, f.flashWrong - dt);
+  f.whirl = Math.max(0, f.whirl - dt);
+  for (const l of f.leaving) l.t += dt;
+  f.leaving = f.leaving.filter(l => l.t < 1.4);
+
+  // cursor movement (held arrows)
+  let mx = 0, my = 0;
+  if (HELD.ARROWLEFT || HELD.A) mx -= 1;
+  if (HELD.ARROWRIGHT || HELD.D) mx += 1;
+  if (HELD.ARROWUP || HELD.W) my -= 1;
+  if (HELD.ARROWDOWN || HELD.S) my += 1;
+  if (mx || my) {
+    const len = Math.hypot(mx, my) || 1;
+    const L = finaleLayout();
+    f.cursor.x += (mx / len) * CFG.finale.cursorSpeed * dt;
+    f.cursor.y += (my / len) * CFG.finale.cursorSpeed * dt;
+    f.cursor.x = Math.max(L.px + 20, Math.min(L.px + L.pw - 20, f.cursor.x));
+    f.cursor.y = Math.max(L.py + 50, Math.min(L.py + L.ph - 30, f.cursor.y));
+  }
+
+  if (f.phase === 'charge') {
+    f.chargeT += dt;
+    f.light = finaleLightLevel(f);
+    if (f.chargeT >= f.chargeNeed) {
+      f.phase = 'search';
+      f.light = 1;
+      AU.thud();
+    }
+  } else if (f.phase === 'search') {
+    f.light = 1;
+    f.searchT -= dt;
+    if (f.searchT <= 0) {
+      // time up: lose remaining attempts one-by-one feel → hard lose
+      S.mode = 'lose';
+    }
+  }
+}
 
 // ================================================================ view: camera anchor, zoom, world <-> screen
 // The world is drawn scaled by V.zoom with the river pinned to the bottom of the screen.
@@ -545,10 +702,12 @@ function killRunner(r, how) {
 }
 
 // ================================================================ input
+window.addEventListener('keyup', e => { HELD[e.key.toUpperCase()] = false; });
 window.addEventListener('keydown', e => {
+  HELD[e.key.toUpperCase()] = true;
   if (e.repeat) return;
   const k = e.key.toUpperCase();
-  if (k === ' ' || k === 'ENTER') e.preventDefault();
+  if (k === ' ' || k === 'ENTER' || k.startsWith('ARROW')) e.preventDefault();
   AU.init();
   if (k === 'M' && !S.active) { AU.muted = !AU.muted; return; }
   if (S.mode === 'title') { if (k === ' ') S.mode = 'play'; return; }
@@ -574,12 +733,7 @@ window.addEventListener('keydown', e => {
     else if (res === 'ok') AU.tick(VERBS[room.verb].progress(room.mg));
   }
   if (S.mode === 'finale') {
-    const f = S.finale;
-    if (!CFG.keyPool.includes(k)) return;
-    if (k === f.seq[f.idx]) {
-      f.idx++; f.timer = CFG.finale.keyTime; AU.tick(f.idx / f.len);
-      if (f.idx >= f.len) { S.mode = 'win'; saveBest(f.attempts); }
-    } else finaleFail();
+    if (k === ' ') finaleConfirm();
   }
 });
 function toggleGate() {
@@ -615,13 +769,8 @@ function releaseGate(g, spread) {
   }
 }
 function finaleFail() {
-  const f = S.finale;
-  f.attempts--; f.idx = 0; f.timer = CFG.finale.keyTime; S.wrongFlash = 0.4; S.shake = 6; AU.fail();
-  f.seq = makeSeq(f.len);
-  const r = f.line.pop();
-  if (r) { r.state = 'gone'; r.doom = 'final'; r.deathT = S.t; f.leaving.push({ r, t: 0 }); }
-  S.floaters.push({ sx: W / 2, sy: H / 2 - 40, txt: r && r.name ? `${r.name} IS LOST` : 'ATTEMPT LOST', life: 1.2, color: '#ff5555', big: true });
-  if (f.attempts <= 0) S.mode = 'lose';
+  // legacy name kept for any remaining references — LastRoom uses finaleWrong()
+  finaleWrong();
 }
 
 // ================================================================ update
@@ -633,10 +782,7 @@ function update(dt) {
   updateFx(dt);
   for (const r of S.runners) { r.phase += dt * 14; r.hop = Math.max(0, r.hop - dt); r.squash = Math.max(0, r.squash - dt * 7); }
   if (S.mode === 'finale') {
-    const f = S.finale;
-    f.timer -= dt;
-    for (const l of f.leaving) l.t += dt;
-    if (f.timer <= 0) finaleFail();
+    updateFinale(dt);
     updateView(dt);
     return;
   }
@@ -758,10 +904,7 @@ function update(dt) {
   const settled = S.runners.every(r => r.state !== 'run' && r.state !== 'fall');
   if (settled) {
     if (S.stats.arrived === 0) { S.mode = 'lose'; return; }
-    const len = Math.min(11, CFG.finale.baseLen + Math.floor(S.stats.arrived / 20));
-    S.finale = { len, seq: makeSeq(len), idx: 0, attempts: S.stats.arrived, timer: CFG.finale.keyTime,
-                 line: S.runners.filter(r => r.state === 'arrived'), leaving: [] };
-    S.mode = 'finale';
+    startFinale();
   }
 }
 // forks: branch up into a new tunnel; merges: come back down. Nested branches unwind in order.
@@ -889,7 +1032,7 @@ const PLACE = { bridge: 'drawbridge', winch: 'winch plank', rope: 'rope bridge',
 function doomOf(r) {
   const d = r.doom;
   if (d && d.type) return { key: 'r' + d.ord, order: d.ord, label: `${ordinal(d.ord)} crossing · ${PLACE[d.type]}`, short: `the ${ordinal(d.ord)} crossing` };
-  if (d === 'final') return { key: 'final', order: 95, label: 'spent at the final gate', short: 'the final gate' };
+  if (d === 'final') return { key: 'final', order: 95, label: 'lost in the final chamber', short: 'the final chamber' };
   return { key: 'dark', order: 92, label: 'somewhere in the dark', short: 'the dark' };
 }
 const readableCache = {};
@@ -4227,12 +4370,89 @@ function drawPanel(room) {
   v.draw(room.mg, px, py, pw);
 }
 function drawFinalePanel() {
-  const f = S.finale, pw = 80 + f.len * 48;
-  const [px, py] = panelFrame(pw, `FINAL GATE   attempts left: ${f.attempts}`, '#f1c40f');
-  drawKeyBoxes(f.seq, f.idx, px, py, pw);
-  const tw = pw - 56, frac = Math.max(0, f.timer / CFG.finale.keyTime);
-  ctx.fillStyle = '#333'; ctx.fillRect(px + 28, py + 96, tw, 6);
-  ctx.fillStyle = frac < 0.3 ? '#ff4646' : '#f1c40f'; ctx.fillRect(px + 28, py + 96, tw * frac, 6);
+  const f = S.finale;
+  const L = finaleLayout();
+  const light = finaleLightLevel(f);
+  // sealed dark chamber backdrop
+  ctx.fillStyle = `rgba(4,2,8,${0.72 + (1 - light) * 0.2})`; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#120e16'; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+  ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 2; ctx.strokeRect(L.px + 1, L.py + 1, L.pw - 2, L.ph - 2);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 18px monospace';
+  ctx.fillText('FINAL CHAMBER  ·  CAPITALISM', W / 2, L.py + 28);
+  ctx.fillStyle = '#ccc'; ctx.font = '12px monospace';
+  const mm = Math.floor(Math.max(0, f.searchT) / 60), ss = Math.floor(Math.max(0, f.searchT) % 60);
+  ctx.fillText(`found ${f.found.size}/${CFG.finale.findCount}   time ${mm}:${String(ss).padStart(2, '0')}   crew ${f.line.length}`, W / 2, L.py + 48);
+  ctx.textAlign = 'left';
+
+  // paintings
+  drawCapitalismPainting(L.left.x, L.left.y, L.left.w, L.left.h, f.diffs, f.found, false);
+  drawCapitalismPainting(L.right.x, L.right.y, L.right.w, L.right.h, f.diffs, f.found, true);
+  ctx.fillStyle = '#888'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 16);
+  ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 16);
+
+  // darkness overlay on paintings while charging / dim
+  if (light < 0.95) {
+    ctx.fillStyle = `rgba(0,0,0,${1 - light})`;
+    ctx.fillRect(L.left.x, L.left.y, L.left.w, L.left.h);
+    ctx.fillRect(L.right.x, L.right.y, L.right.w, L.right.h);
+    if (f.phase === 'charge') {
+      ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 14px monospace';
+      ctx.globalAlpha = 0.5 + 0.5 * Math.sin(S.t * 10);
+      ctx.fillText('RUNNING THE GENERATOR…', W / 2, L.left.y + L.left.h / 2);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // generator bar + workers
+  const gx = L.px + 60, gy = L.py + L.ph - 70, gw = L.pw - 120;
+  ctx.fillStyle = '#2a2430'; ctx.fillRect(gx, gy, gw, 16);
+  const chargeFrac = f.phase === 'charge' ? clamp01(f.chargeT / f.chargeNeed) : 1;
+  ctx.fillStyle = f.phase === 'charge' ? '#e67e22' : '#2ecc71';
+  ctx.fillRect(gx, gy, gw * chargeFrac, 16);
+  ctx.strokeStyle = '#888'; ctx.strokeRect(gx, gy, gw, 16);
+  ctx.fillStyle = '#bbb'; ctx.font = '11px monospace'; ctx.textAlign = 'left';
+  const need = f.chargeNeed.toFixed(1);
+  ctx.fillText(f.phase === 'charge'
+    ? `generator  ${f.line.length} workers  ·  ${need}s to full light`
+    : 'lights steady — find 10 differences  ·  arrows move cursor  ·  SPACE confirm', gx, gy - 8);
+
+  // tiny running figures on the generator
+  const shown = Math.min(24, f.line.length);
+  for (let i = 0; i < shown; i++) {
+    const r = f.line[i];
+    const fx = gx + 10 + (i / Math.max(1, shown - 1)) * (gw - 20);
+    const bob = f.phase === 'charge' ? Math.sin(S.t * 14 + i) * 2 : 0;
+    drawFigure(r, fx, gy + 36 + bob, S.t * 14 + i, 0.85, 1);
+  }
+
+  // whirlpool punishment hint
+  if (f.whirl > 0) {
+    ctx.save();
+    ctx.globalAlpha = f.whirl;
+    ctx.strokeStyle = '#5dade2'; ctx.lineWidth = 3;
+    const wx = W / 2, wy = L.py + L.ph - 20;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath(); ctx.ellipse(wx, wy, 30 + i * 18, 10 + i * 5, S.t * 4, 0, 6.28); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  for (const l of f.leaving) {
+    const fallY = L.py + L.ph - 30 + l.t * 40;
+    drawFigure(l.r, W / 2 + Math.sin(l.t * 10) * 20, fallY, l.t * 12, 1, Math.max(0, 1 - l.t / 1.4));
+  }
+
+  // cursor
+  const cx = f.cursor.x, cy = f.cursor.y;
+  ctx.strokeStyle = f.flashWrong > 0 ? '#ff4646' : '#5ce1ff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cx - 12, cy); ctx.lineTo(cx + 12, cy); ctx.moveTo(cx, cy - 12); ctx.lineTo(cx, cy + 12); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, 8, 0, 6.28); ctx.stroke();
+  if (f.flashWrong > 0) {
+    ctx.fillStyle = `rgba(255,40,40,${f.flashWrong * 0.35})`; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+  }
+  ctx.textAlign = 'left';
 }
 function drawTitle() {
   ctx.fillStyle = 'rgba(0,0,0,0.62)'; ctx.fillRect(0, 0, W, H);
@@ -4241,15 +4461,14 @@ function drawTitle() {
   ctx.fillStyle = '#f1c40f'; ctx.fillText('HUNDRED RUNNERS', W / 2, 110);
   ctx.fillStyle = '#eee'; ctx.font = '15px monospace';
   const lines = [
-    '100 people are running into the works. You cannot stop them.',
-    'Broken crossings swallow whoever reaches them before you fix them.',
-    'Red rooms take everyone. Orange take half. Yellow crushers take some.',
-    'The tunnels branch, and branch again. The view pulls back to show them all.',
+    'LAST ROOM PLAYTEST — no mid-run puzzles.',
+    'Everyone runs straight to the sealed capitalism chamber.',
+    'The room is dark: the crew must run a generator to light it.',
+    'More survivors = faster charge. Then spot 10 differences in 90 seconds.',
     '',
-    'NUMBER opens a flashing room. Then: hit keys in order, time the winch, or type the word.',
-    'ENTER holds the crowd at a gate to buy yourself a moment. Each gate works once.',
-    'M mutes. Clear rooms with nobody lost to build a streak.',
-    'Everyone who makes it out is one attempt at the final gate.',
+    'ARROWS move the cursor. SPACE confirms a difference.',
+    'A wrong mark costs one person and kills the lights — recharge from scratch.',
+    'M mutes. R restarts after a run ends.',
   ];
   lines.forEach((l, i) => ctx.fillText(l, W / 2, 156 + i * 22));
   ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 20px monospace';
@@ -4415,7 +4634,7 @@ function drawEnd() {
 
   // the rank is stamped into the corner so the report keeps the middle of the screen
   if (win) {
-    const left = S.finale.attempts;
+    const left = (S.finale && S.finale.line) ? S.finale.line.length : S.stats.arrived;
     const rank = left >= 50 ? 'S' : left >= 30 ? 'A' : left >= 15 ? 'B' : left >= 5 ? 'C' : 'D';
     const line = { S: 'the mountain never touched them', A: 'a good day under the rock', B: 'they will talk about this', C: 'the mountain remembers', D: 'barely' }[rank];
     const sp = clamp01((T - 0.75) / 0.42), k = easeBack(sp);
@@ -4475,9 +4694,9 @@ if (qs.has('start')) {
   for (let i = 0; i < n; i++) { update(1 / 60); if (solve) devSolve(); }
 }
 if (qs.has('finale')) {
-  S.runners.slice(0, 12).forEach(r => { r.state = 'arrived'; });
-  S.stats.arrived = 12; S.cam = S.camMax; updateView(1);
-  S.finale = { len: 6, seq: makeSeq(6), idx: 2, attempts: 12, timer: 0.9, line: S.runners.slice(0, 12), leaving: [] }; S.mode = 'finale';
+  S.runners.forEach(r => { r.state = 'arrived'; });
+  S.stats.arrived = S.runners.length; S.cam = S.camMax; updateView(1);
+  startFinale();
 }
 requestAnimationFrame(frame);
 </script>
