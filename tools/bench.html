@@ -41,9 +41,14 @@ const bench = `
   const bsx = bgx - V.left;
   ctx.fillStyle = '#131118'; ctx.beginPath(); ctx.arc(bsx, bcy + 52, 9.4, 0, 6.28); ctx.fill();
   ctx.fillStyle = '#343742'; ctx.beginPath(); ctx.arc(bsx, bcy + 52, 8, 0, 6.28); ctx.fill();
-  // by - 2, because that is what millCorridor hands a feature. Drawn at `by` the bench gave
-  // every machine two units of headroom the hall does not have, so a cylinder that was
+  // by - 2, because that is what millCorridor hands a feature. Drawn at by itself, the
+  // bench gave every machine two units of headroom the hall does not have, so a cylinder
   // flush with the truss in play showed a gap here.
+  //
+  // NO BACKTICKS ANYWHERE IN THIS STRING. Every line of it lives inside a template
+  // literal, so one backtick in a comment ends the literal and the whole page becomes a
+  // syntax error. That is not hypothetical: it is what sent six blank frames to the art
+  // critic, who reviewed three machines without ever having seen one.
   millFeature(bgx, by - 2, 0, bfeat, bcy + 52);
   // and the roof truss, which hides everything above the floor less 106 and is the reason
   // a machine drawn taller than that is drawing into solid girder
@@ -57,5 +62,23 @@ const bench = `
   millFeatureSmoke(bgx, by - 2, 0, bfeat);
   ctx.restore();
 `;
-(0, eval)(game + bench);
+// A failure has to PAINT itself. The game's own bootstrap calls draw() inside this same
+// eval whenever the query carries `shot`, so anything that throws -- the game, the bench,
+// or a syntax error in either -- aborts before the bench half runs and leaves a frame that
+// is merely empty. An empty frame is indistinguishable from a composition problem, and a
+// reviewer handed six of them reviewed three machines without ever seeing one.
+try {
+  (0, eval)(game + bench);
+} catch (e) {
+  const cv = document.getElementById('c'), g = cv.getContext('2d');
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.fillStyle = '#2a0d12'; g.fillRect(0, 0, cv.width, cv.height);
+  g.fillStyle = '#ff6b6b'; g.font = 'bold 20px ui-monospace, Menlo, monospace';
+  g.fillText('BENCH FAILED', 24, 48);
+  g.font = '14px ui-monospace, Menlo, monospace';
+  String(e && e.stack || e).split('\n').slice(0, 12).forEach((line, i) => {
+    g.fillText(line.slice(0, 96), 24, 84 + i * 20);
+  });
+  document.title = 'BENCH FAILED: ' + (e && e.message || e);
+}
 </script></body></html>
