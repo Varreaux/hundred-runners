@@ -188,9 +188,13 @@ for (const b of bays) {
 say(hi && hi.ext.y0 >= CEIL,
   `no paint escapes the room  highest ${(-hi.ext.y0).toFixed(1)} above the floor ` +
   `(${NAMES[hi.bay.feat]} at ${hi.gx | 0}); the truss covers from ${CFG.tunnelH - 24}, the clip is ${-CEIL}`);
-say(lo && lo.ext.y1 <= 9,
-  `nothing is drawn through the floor  lowest ${lo.ext.y1.toFixed(1)} below it ` +
-  `(${NAMES[lo.bay.feat]} at ${lo.gx | 0}); 9 is the contact shadow`);
+// Same rule as the ceiling and for the same reason: the limit is the clip, not the deck.
+// A heat gradient has to run PAST the floor or its ramp is cut off with a tenth of its
+// alpha still on it, which in 'lighter' is a hard edge and a fire that throws no pool on
+// the boards under it. 20 below is where millCorridor stops drawing.
+say(lo && lo.ext.y1 <= 20,
+  `no paint escapes below the deck  lowest ${lo.ext.y1.toFixed(1)} under it ` +
+  `(${NAMES[lo.bay.feat]} at ${lo.gx | 0}); the clip ends at 20`);
 
 // 3. the belt lands on the machine it drives
 let bad = [];
