@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '90 both edges, then subtract';
+const BUILD = '91 and then sweep for the rest of them';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -11455,7 +11455,13 @@ const TRAPS = {
     // 64 wide and 34 deep, not 92 by 22: at the flatter proportion the block read as a shelf
     // on the wall rather than as a weight that had just come down, and the guides it runs in
     // were invisible either side of it.
-    const GAP = 9, BH = 34, UP = -48;
+    // BH 26, so the block's TOP at rest (-74) is flush with the beam's underside instead of
+    // eight units above it. At 34 the raised block telescoped into its own beam, and the rod
+    // between them came out at height -8 -- the very fault the comment below this one warns
+    // about, in the line that comment was written on, found by tools/rect-check.js and NOT by
+    // reading. It landed harmlessly because the beam covers those eight units, which is the
+    // worse kind: nothing ever points at it.
+    const GAP = 9, BH = 26, UP = -48;
     const d = clamp01((t - 0.3) / 0.26), drop = d * d;
     const by = UP + (-GAP - UP) * drop;                            // the block's underside
     ctx.fillStyle = '#2f2c38'; ctx.fillRect(-74, -84, 148, 10);    // the beam it hangs from
