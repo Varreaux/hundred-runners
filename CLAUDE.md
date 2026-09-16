@@ -97,7 +97,15 @@ sound for hours and the one question that mattered took him ten seconds.
    once bumped from 18 at the same moment and both shipped a `19`.
 3. Rebase onto `origin/Morgan`, push, then **message the other sessions** (see
    below) with the commit hash, the new BUILD, and what changed.
-4. **Never write "mine" or "I" into a commit message.** Every commit on this
+4. **Stage by explicit path, never `-A` and never `.`** The main checkout is
+   shared and somebody else's half-finished work is usually sitting in it. `git add
+   -A index.html` is NOT narrow: `-A` with a pathspec still stages every change under
+   that path, and on a file we are all in that is the whole file. Naming a file is not
+   the same as naming a change. A whole feature once shipped inside a commit titled
+   for a steam hammer this way, its own message saying nothing about it. Run
+   `git diff --cached --stat` before every commit; a file hundreds of lines larger
+   than you expected is the tell.
+5. **Never write "mine" or "I" into a commit message.** Every commit on this
    branch carries Varreaux as author, so a first-person pronoun identifies
    nobody and actively misleads: "same fault as the sweeper, mine" meant the
    author claiming the ROOM, and was read by two sessions as a session claiming
@@ -105,7 +113,7 @@ sound for hours and the one question that mattered took him ten seconds.
    `Claude-Session` trailer in the body; if your commits do not carry one, add
    it, and then `git log -1 --format='%b' HASH | grep Claude-Session` answers
    "who wrote this" without anyone having to ask.
-5. If you resolved a conflict in someone else's code, say exactly what you kept.
+6. If you resolved a conflict in someone else's code, say exactly what you kept.
    Conflicts land most often in the `reset()` state literal and the runner
    object, because everyone adds fields there.
 
@@ -402,6 +410,14 @@ from `index.html` with the `'use strict'` line removed.
   console.log([...new Set([...s.matchAll(/AU\.(\w+)\s*\(/g)].map(m=>m[1]))].filter(c=>!d.has(c)))"
   ```
 
+- **Feed a gradient and its fill from ONE variable, always.** This has now shipped
+  three times, which is why it is written as an instruction before it is written as
+  an explanation. Hoist the top coordinate into a single variable and have both the
+  gradient and the rect read it, so they cannot disagree. The third one passed
+  `CFG.worldBottom` as a HEIGHT to a rect that started at -610, so the hill's light
+  was painted over 47% of its own span and every terrace the crowd runs on had no
+  light on it at all. Nothing in a still shows that: an unlit terrace just looks
+  like a terrace.
 - **A gradient's extent and its fill's extent are two numbers that drift apart.**
   Both halves of this shipped within an hour of each other. `createLinearGradient`
   holds its END COLOUR beyond its endpoints, so a fill wider than its gradient
@@ -421,10 +437,26 @@ from `index.html` with the `'use strict'` line removed.
 
 ## Art changes
 
-There is an adversarial art reviewer at `.claude/agents/art-critic.md`. The loop
-is: screenshot eight to ten fixed moments, hand it the paths plus the relevant
-drawing function names, fix everything it finds, re-shoot, repeat until it comes
-back dry. Four passes found fifty-nine issues, including a lantern glow clipped
+**Both reviewers, every time, and neither is optional.** Morgan's rule. There are
+two, they ask different questions, and passing one says nothing about the other:
+
+- `.claude/agents/art-critic.md` asks whether it LOOKS right.
+- `.claude/agents/logic-checker.md` asks whether it IS right: things held up by
+  nothing, paths a body cannot walk, objects drawn over openings, and numbers in
+  one function that disagree with numbers in another.
+
+**When to call them: when the art is done, before you push, on the same
+screenshots.** Not at the start, not "next pass", and not only when something
+looks off -- the whole point is that these find what looking does not. Run them
+together rather than choosing, because the failures they catch do not overlap. The
+logic checker is the one people forget, so if you have only run one, it is that one
+you are missing. It earned itself on a steam hammer driving 12.6 units up inside
+its own crown casting twice a second, which no still could ever show: a tup half
+inside a casting just reads as a tall tup.
+
+The loop is: screenshot eight to ten fixed moments, hand them the paths plus the
+relevant drawing function names, fix everything they find, re-shoot, repeat until
+they come back dry. Four passes found fifty-nine issues, including a lantern glow clipped
 to a rect smaller than its own radius, which was flattening the light in every
 frame. Do not ship an art change without a pass.
 
@@ -516,6 +548,13 @@ nobody challenges it, and it sends a reviewer after a bug that does not exist.
 If a claim is "X is not being drawn", sample the pixels where X should be and
 say what colour came back.
 
+
+**A tool that measures drawing must honour the transform stack.** If it ignores
+`save`, `scale` and `translate`, it does not merely under-report -- it invents a
+number, and then it accuses the game of the fault. One read a contact shadow as 65
+units deep into the floor because the shadow is an arc of radius 64 drawn under
+`ctx.scale(1, 7/64)`. If you build anything that measures what was drawn rather
+than looking at it, start with the transform and not with the geometry.
 
 Three sessions spent an afternoon trading luminance numbers at each other and
 produced six wrong ones between them. Not one was a defect in the game; every
