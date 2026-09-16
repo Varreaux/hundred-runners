@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '56 the hall, second pass';
+const BUILD = '57 read it, do not skip it';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1355,7 +1355,9 @@ window.addEventListener('keydown', e => {
   // ESC moves past the kind on screen; see drillKey for why it is one and not all eleven.
   if (S.mode === 'intro') {
     if (S.drill && !S.drill.done) { drillKey(k); return; }
-    if (S.boss && !S.boss.gone) { bossSkip(); return; }
+    // Only SPACE and ENTER, and never an auto-repeat: holding a key down would otherwise
+    // walk the whole speech at the keyboard's repeat rate, which is the skip by another name.
+    if (S.boss && !S.boss.gone) { if (!e.repeat && (k === ' ' || k === 'ENTER')) bossAdvance(); return; }
     if (!S.boss) { const c = I(); S.introT = c.deliver + c.settle; startBoss(); return; }
     startRun(); return;
   }
@@ -8040,7 +8042,11 @@ function drawHud() {
   }
   // while he talks, the bottom line is the way past him
   if (S.mode === 'intro' && S.boss && !S.boss.gone && !S.drill) {
-    hintBar('press any key to begin the drill');
+    const cur = BOSS_SCRIPT[S.boss.line];
+    hintBar(!cur ? 'the drill is starting'
+          : S.boss.ch < cur.t.length ? 'SPACE fills the line'
+          : S.boss.line === BOSS_SCRIPT.length - 1 ? 'SPACE to begin the drill'
+          : 'SPACE to continue');
   }
 }
 // The line across the bottom that explains the controls. Shrink to fit rather than run
@@ -8248,7 +8254,10 @@ function drawPanel(room) {
 // He speaks FIRST rather than over the drill. Talking across a puzzle asks the player to
 // read two things at once and they will do neither: you cannot take in a joke about your
 // own body while working out what a keypad wants. Said first, he is read; said over, he is
-// wallpaper. Any key cuts him short, because nobody wants him twice.
+// wallpaper. He CANNOT be skipped, which is Morgan's decision: the point of him is that
+// he is read. SPACE fills the line being typed, SPACE again moves on, and the drill starts
+// only after the last one. That still serves the replayer -- two presses a line is quick --
+// without letting one keypress off the title carry someone past the whole thing unseen.
 //
 // He sits UNDER the HUD, not over it. The HUD carries "DRILL n of 11" and its eleven pips,
 // which is the only reading the player has of how much practice is left, so the band starts
@@ -8261,7 +8270,9 @@ const BOSS = {
   h: 122,           // tall enough for hat, globe and shoulders at a readable size
   slide: 0.55,      // seconds to drop in and to lift out
   cps: 30,          // characters a second, about reading pace
-  hold: 1.15,       // seconds a finished line sits before the next one starts
+  dwell: 0.30,      // a filled line must sit this long before SPACE will move on, so that
+                    // a held key or a mashed one cannot carry the reader past a line they
+                    // have not seen. Short enough to be invisible to anyone reading.
   bustX: 106,       // his centre; the drill panel never reaches left of 270
   textX: 214,       // where his words start
 };
@@ -8288,7 +8299,7 @@ const BOSS_LAND = [
 ];
 function startBoss() {
   S.boss = {
-    line: 0, ch: 0, hold: 0, t: 0, inK: 0, outK: 0, gone: false,
+    line: 0, ch: 0, dwell: 0, t: 0, inK: 0, outK: 0, gone: false,
     laugh: 0, blink: 0, nextBlink: 1.4 + Math.random() * 2.6, spin: 0,
     leaving: false, wrapFor: -1, wrap: [],
   };
@@ -8311,22 +8322,29 @@ function updateBoss(dt) {
     b.outK = Math.min(1, b.outK + dt / BOSS.slide);
     if (b.outK >= 1 && !b.gone) { b.gone = true; startDrill(); }
   }
-  // the script
+  // The script does not advance itself. A line types out and then waits, however long
+  // that takes; nothing here is on a timer the player cannot see.
   const line = BOSS_SCRIPT[b.line];
   if (line) {
     if (b.ch < line.t.length) b.ch = Math.min(line.t.length, b.ch + BOSS.cps * dt);
-    else {
-      b.hold += dt;
-      if (b.hold >= BOSS.hold) {
-        if (line.laugh) b.laugh = 1.05;
-        b.line++; b.ch = 0; b.hold = 0;
-      }
-    }
+    else b.dwell += dt;
   } else b.leaving = true;                              // said his piece
 }
-// Any key cuts him short. He still lifts away over BOSS.slide rather than vanishing, so a
-// skip reads as him being waved off rather than as a dropped frame.
-function bossSkip() { if (S.boss && !S.boss.gone) S.boss.leaving = true; }
+// SPACE does one of two things depending on where the line is, which is the whole of the
+// interaction: it fills a line still typing, and it moves past a line already filled. It
+// never leaves the speech. The dwell guard is what stops a held key doing both in the same
+// tenth of a second and taking a line away before it has been seen.
+function bossAdvance() {
+  const b = S.boss;
+  if (!b || b.leaving) return;
+  const line = BOSS_SCRIPT[b.line];
+  if (!line) { b.leaving = true; return; }
+  if (b.ch < line.t.length) { b.ch = line.t.length; b.dwell = 0; return; }
+  if (b.dwell < BOSS.dwell) return;
+  if (line.laugh) b.laugh = 1.05;
+  b.line++; b.ch = 0; b.dwell = 0;
+  if (b.line >= BOSS_SCRIPT.length) b.leaving = true;
+}
 // Wrap the WHOLE line once and reveal characters across the wrapped result. Wrapping the
 // revealed substring instead makes the text reflow as it types, which throws a word down
 // to the next row mid-keystroke.
@@ -8402,6 +8420,21 @@ function drawBoss() {
   ctx.font = 'bold 9px monospace'; ctx.textAlign = 'left';
   ctx.fillStyle = 'rgba(206,168,92,0.72)';
   ctx.fillText('THE PROPRIETOR', tx, BOSS.y + BOSS.h - 12);
+
+  // ---- the prompt. It pulses only once the line is actually ready to be moved past, so
+  // the pulse is a signal rather than decoration, and it names the last line as the last.
+  const cur = BOSS_SCRIPT[b.line];
+  if (cur && !b.leaving) {
+    const filled = b.ch >= cur.t.length;
+    const ready = filled && b.dwell >= BOSS.dwell;
+    const last = b.line === BOSS_SCRIPT.length - 1;
+    const msg = !filled ? 'SPACE fills the line' : last ? 'SPACE to begin the drill' : 'SPACE to continue';
+    ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right';
+    const a = ready ? 0.55 + 0.45 * Math.abs(Math.sin(b.t * 3.2)) : 0.28;
+    ctx.fillStyle = 'rgba(206,168,92,' + a.toFixed(3) + ')';
+    ctx.fillText(msg, W - 34, BOSS.y + BOSS.h - 12);
+    ctx.textAlign = 'left';
+  }
 
   ctx.restore();
   ctx.restore();
@@ -8932,7 +8965,7 @@ if (qs.has('drill')) {
   const c = I(); S.introT = c.deliver + c.settle;
   // The proprietor speaks before the drill, so waiting for S.drill means waiting through
   // him. Wave him off each frame and the drill arrives in about a second, as it used to.
-  for (let i = 0; i < 60 * 40 && !S.drill; i++) { update(1 / 60); if (S.boss) bossSkip(); }
+  for (let i = 0; i < 60 * 40 && !S.drill; i++) { update(1 / 60); if (S.boss) bossAdvance(); }
   const n = Math.max(1, Math.min(+(qs.get('drill') || 1), S.drill.order.length));
   // walk it forward by shoving each panel straight to the end of its exit
   for (let g = 0; S.drill.idx < n - 1 && g < 4000; g++) { S.drill.phase = 'out'; S.drill.pos = -1; update(1 / 60); }

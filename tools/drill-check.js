@@ -50,6 +50,11 @@ eval(src + `
   let t = 0, nextPress = 0, seen = null, startedAt = 0;
   try {
     for (let i = 0; i < 60 * 400; i++) {
+      // The proprietor speaks before the drill and CANNOT be skipped: SPACE fills the
+      // line being typed, SPACE again moves past a filled one, and the drill starts after
+      // the last. Pressing every frame walks him at his own dwell, so this waits exactly
+      // as long as he makes a player wait and no longer.
+      if (S.boss && !S.boss.gone) press(' ');
       const d = S.drill;
       if (d && !d.done && d.room) {
         at = d.room.verb;
