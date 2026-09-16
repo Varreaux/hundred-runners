@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '51 one round on the sweeper';
+const BUILD = '52 both reviewers on the hall';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -8849,6 +8849,12 @@ if (qs.has('drill')) {
   for (let g = 0; S.drill.idx < n - 1 && g < 4000; g++) { S.drill.phase = 'out'; S.drill.pos = -1; update(1 / 60); }
   S.drill.phase = 'play'; S.drill.pos = 0;
   for (let i = 0; i < 30; i++) update(1 / 60);     // let the verb's own animation settle
+}
+// Scrub the proprietor's speech for screenshots: ?drill=6&bosst=7.9&shot puts him mid-line
+// without touching the panel the drill param just set up.
+if (qs.has('bosst') && S.boss) {
+  const n = Math.round(+(qs.get('bosst') || 0) * 60);
+  for (let i = 0; i < n; i++) updateBoss(1 / 60);
 }
 if (qs.has('finale')) {
   S.runners.slice(0, 12).forEach(r => { r.state = 'arrived'; });
