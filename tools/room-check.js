@@ -160,6 +160,14 @@ for (const m of typesBlock.matchAll(/^\s*(\w+):\s*\{\s*verb:\s*'(\w+)'/gm)) verb
 // that rate. Scoring them all against one ceiling made four shipped rooms look impossible
 // and one of mine look fine, both wrong.
 const WORDLEN = [3, 4, 5, 6, 6];
+// The sweeper's demo clock, read out of index.html rather than written down here. Throws
+// rather than falling back to a default: a cost model that cannot find the numbers it
+// prices should stop, not quietly price the room off a guess.
+const SWEEP = (() => {
+  const m = src.match(/const SWEEP = (\{[^}]*\})/);
+  if (!m) throw new Error('room-check: no `const SWEEP = {...}` in index.html -- the sweeper was retimed or renamed, and this tool cannot price it until it is pointed at the new numbers.');
+  return eval('(' + m[1] + ')');
+})();
 const cost = {
   gears:  d => ({ keys: 6, kind: 'same' }),               // up to 6 steps round a 12-tooth circle
   levers: d => ({ keys: 6, kind: 'distinct' }),           // n = 5..6, one arrow each
@@ -170,9 +178,15 @@ const cost = {
   wires:  d => ({ keys: 14, kind: 'distinct' }),
   // Forced watching is a duration you cannot hurry; the keys on top are a rate. lights has
   // BOTH, so it needs both, and it used to declare only the first -- at the MINIMUM, which
-  // priced a third of the room. Worst measured: 8.4s of watching across two rounds, then
-  // 10 keys.
-  lights: d => ({ secs: 8.4, keys: 10, kind: 'distinct', note: 'two rounds watched, then typed' }),
+  // priced a third of the room.
+  //
+  // It is now DERIVED, not restated. The old line said 8.4s and 10 keys, measured off a
+  // two-round sweeper; when Morgan cut it to one round of three it went on reporting the
+  // old cost against the new room and called it IMPOSSIBLE. That is the failure mode this
+  // file's header warns about -- a constant encoding a fact about the thing under test
+  // goes stale by ACCUSING the game. Reading SWEEP means a retime cannot do that again.
+  lights: d => ({ secs: SWEEP.lead + SWEEP.len * SWEEP.flash, keys: SWEEP.len, kind: 'distinct',
+                  note: `one round of ${SWEEP.len} watched, then typed` }),
   // --- act three ---
   dig:    d => { const rate = 0.19 + 0.005 * d, decay = 0.40 + 0.03 * d;
                  // presses to cut through, assuming the player alternates at 5/s

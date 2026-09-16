@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '50 the hall runs';
+const BUILD = '51 one round on the sweeper';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -454,36 +454,35 @@ const VERBS = {
     takesDigits: true,
     hint: 'watch the sweeper, then repeat the order with 1-9',
     solveKey: m => (m.watch || m.won ? null : m.seq[m.idx]),
-    start() { const m = { round: 0, minimum: 3, inputLight: null, inputT: 0, won: false }; lightRound(m); return m; },
+    start() { const m = { inputLight: null, inputT: 0, won: false }; lightRound(m); return m; },
     key(m, k) {
       // ignore input while the demo is playing, and after the win is banked
       if (!/^[1-9]$/.test(k) || m.watch || m.won) return null;
       m.inputLight = k; m.inputT = 0.28;
       if (k !== m.seq[m.idx]) { m.idx = 0; m.watch = true; m.clock = 0; return 'wrong'; }
       if (++m.idx < m.seq.length) return 'ok';
-      // Round won. On the second, DO NOT return 'done': the final key has to stay
-      // lit for its 0.28s, so the win is banked here and completed from the update
-      // loop. m.won is what stops auto-close overtaking it (see room.pendingClear).
-      if (++m.round === 2) { m.won = true; return 'ok'; }
-      lightRound(m); return 'ok';
+      // Won. DO NOT return 'done': the final key has to stay lit for its 0.28s, so the
+      // win is banked here and completed from the update loop. m.won is what stops
+      // auto-close overtaking it (see room.pendingClear).
+      m.won = true; return 'ok';
     },
     // Only ever called for the room the player has open, which is exactly why
     // closing the panel PAUSES the demo clock instead of resetting it. Do not
     // "fix" that by updating every armed room: it would silently break the pause.
     update(m, dt) {
       m.inputT = Math.max(0, m.inputT - dt);
-      if (m.watch) { m.clock += dt; if (m.clock >= 0.7 + m.seq.length * 0.7) { m.watch = false; m.idx = 0; } }
+      if (m.watch) { m.clock += dt; if (m.clock >= SWEEP.lead + m.seq.length * SWEEP.flash) { m.watch = false; m.idx = 0; } }
     },
-    progress(m) { return (m.round + (m.seq.length ? m.idx / m.seq.length : 0)) / 2; },
+    progress(m) { return m.seq.length ? m.idx / m.seq.length : 0; },
     draw(m, px, py, pw) {
       const cx = px + pw / 2;
-      const tick = (m.clock - 0.7) / 0.7;
+      const tick = (m.clock - SWEEP.lead) / SWEEP.flash;
       const lit = m.inputT > 0 ? m.inputLight
-        : m.watch && tick >= 0 && tick % 1 < 0.65 ? m.seq[Math.floor(tick)] : null;
+        : m.watch && tick >= 0 && tick % 1 < SWEEP.lit ? m.seq[Math.floor(tick)] : null;
       const own = m.inputT > 0;
       ctx.textAlign = 'center';
       ctx.fillStyle = m.watch ? '#ffc64d' : '#5ce1ff'; ctx.font = 'bold 12px monospace';
-      ctx.fillText(`ROUND ${Math.min(2, m.round + 1)} OF 2   ${m.watch ? 'WATCH' : 'YOUR TURN'}   ${m.seq.length} FLASHES`, cx, py + 44);
+      ctx.fillText(`${m.watch ? 'WATCH' : 'YOUR TURN'}   ${m.seq.length} FLASHES`, cx, py + 44);
       for (let i = 0; i < 9; i++) {
         const isLit = lit === String(i + 1);
         const x = cx - 72 + (i % 3) * 50, y = py + 54 + Math.floor(i / 3) * 38;
@@ -970,10 +969,18 @@ const VERBS = {
 
 // One round of the sweeper's demo. Each round is at least as long as the last,
 // so round two never feels easier than round one.
+// The sweeper's demo: one lead-in, then one beat per flash. `lead` and `flash` are read by
+// lights.update (how long the demo lasts) and lights.draw (which lamp is lit right now) --
+// the two halves of the same clock, and they were two hardcoded 0.7s sitting in different
+// functions. Change one of a pair like that and the lamps go on drifting out of step with
+// the demo's own end while every check still passes.
+const SWEEP = { lead: 0.55, flash: 0.45, lit: 0.66, len: 3 };
 function lightRound(m) {
-  const len = Math.floor(rand(m.minimum, 6));
-  m.seq = Array.from({ length: len }, () => String(Math.floor(rand(1, 10))));
-  m.minimum = len; m.idx = 0; m.watch = true; m.clock = 0;
+  // Morgan, 2026-09-16: one round, three numbers, flashing a little faster. It was two
+  // rounds of three-to-five at 0.7s a flash, which measured 8.6s of the drill's 29s on
+  // the one puzzle -- and on the road, the reason its warn had to be 1350.
+  m.seq = Array.from({ length: SWEEP.len }, () => String(Math.floor(rand(1, 10))));
+  m.idx = 0; m.watch = true; m.clock = 0;
 }
 const ARROWS = ['ARROWLEFT', 'ARROWUP', 'ARROWRIGHT', 'ARROWDOWN'];
 // ================================================================ sound (all synthesised in code, no audio files)
