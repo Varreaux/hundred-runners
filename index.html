@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '88 the doors open on music';
+const BUILD = '89 one card each, all the way up';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1353,7 +1353,7 @@ function reset() {
       name: null,
       phase: Math.random() * 6.28,
       state: 'run', vy: 0, fy: 0, rot: 0, fallLimit: 70, hop: 0, rolled: null, fs: false, squash: 0, catchUp: 0,
-      doom: null, endX: 0, deathT: 0,
+      doom: null, endX: 0, deathT: 0, how: null,
       lane: 0, lastForkX: -1, route: [], ramp: null, held: false,
       // when this one steps off the belt, spread across the delivery window
       bornAt: (i / CFG.runnerCount) * CFG.intro.deliver,
@@ -1423,7 +1423,7 @@ function say(r, pool, life = 2.2, pinned = false) {
   S.bubbles.push({ r, wx: r.x, wy: footY(r) - (r.name ? 36 : 33), txt: pick(fresh.length ? fresh : LINES[pool]), life, max: life, pinned });
 }
 function killRunner(r, how) {
-  r.state = 'dead'; r.endX = r.x; r.deathT = S.t; S.stats.dead++; S.shake = Math.min(5, S.shake + 1.2);
+  r.state = 'dead'; r.endX = r.x; r.deathT = S.t; r.how = how; S.stats.dead++; S.shake = Math.min(5, S.shake + 1.2);
   S.recent.push(S.t); if (S.spike) S.spike.n++;
   S.lastKill = { x: r.x, y: laneY(r.lane) };      // so the death plate can point at where it happened
   if (S.streak > 0) { S.streak = 0; S.floaters.push({ sx: W / 2, sy: 200, txt: 'STREAK LOST', life: 1, color: '#ff9a3c' }); }
@@ -1461,7 +1461,13 @@ window.addEventListener('keydown', e => {
     if (!S.boss) { const c = I(); S.introT = c.deliver + c.settle; startBoss(BOSS_SCRIPT, false, startDrill); return; }
     startRun(); return;
   }
-  if (S.mode === 'win' || S.mode === 'lose') { if (k === 'R') { reset(); S.mode = 'intro'; S.introT = 0; } return; }
+  if (S.mode === 'win' || S.mode === 'lose') {
+    if (k === 'R') { reset(); S.mode = 'intro'; S.introT = 0; }
+    // Every beat of the end screen is a function of S.endT, so skipping the reel is winding
+    // that one clock forward rather than setting a flag the drawing then has to consult.
+    else if (k === ' ' && S.endRoll && S.endT < S.endRoll.end) S.endT = S.endRoll.end;
+    return;
+  }
   if (S.paused) { if (k === 'P') S.paused = false; else if (k === 'R') { reset(); S.mode = 'intro'; S.introT = 0; } return; }
   if (k === 'P' && !S.active) { S.paused = true; return; }
   if (S.mode === 'play') {
@@ -2104,7 +2110,14 @@ function ordinal(n) {
   const suf = ['th', 'st', 'nd', 'rd'], v = n % 100;
   return n + (suf[(v - 20) % 10] || suf[v] || suf[0]);
 }
-const PLACE = { bridge: 'drawbridge', winch: 'winch plank', rope: 'rope bridge', rickety: 'rickety bridge', crusher: 'crusher' };
+// EVERY type in CFG.types needs an entry. Five of the fourteen were here and the other
+// nine came out as the literal word "undefined" -- invisible while this label was 11px
+// inside a wrapped list, and unmissable now the reel prints it under a 50px name.
+const PLACE = { bridge: 'drawbridge', winch: 'winch plank', rope: 'rope bridge',
+  rickety: 'rickety bridge', crusher: 'crusher', gears: 'the drive train',
+  conveyor: 'the conveyor', sweeper: 'the sweeper', presses: 'the presses',
+  wiring: 'live wiring', ditch: 'ditch and bank', thorn: 'thorn hedge',
+  mantrap: 'a mantrap', wall: 'the wall' };
 // where a runner's run ended, as a phrase and as a sort key along the course
 function doomOf(r) {
   const d = r.doom;
@@ -2114,17 +2127,22 @@ function doomOf(r) {
 }
 const readableCache = {};
 // lift a shirt colour until the name is legible on the dark report, keeping its hue
-function readable(hex) {
+// `strong` is for the reel's 50px name, which sits on a painted card rather than on the old
+// end screen's flat black: 155 was enough for 13px on nothing and gives mid-grey on mid-brown
+// at fifty. Two cache keys, because the same shirt has to give two different answers.
+function readable(hex, strong) {
   if (typeof hex !== 'string' || hex[0] !== '#' || hex.length !== 7) return '#eee';
-  if (readableCache[hex]) return readableCache[hex];
+  const key = strong ? hex + '!' : hex;
+  if (readableCache[key]) return readableCache[key];
   const n = parseInt(hex.slice(1), 16);
   let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const floor = strong ? 196 : 155;
   const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-  if (lum < 155) {
-    const k = 155 / Math.max(1, lum);
+  if (lum < floor) {
+    const k = floor / Math.max(1, lum);
     r = Math.min(255, r * k); g = Math.min(255, g * k); b = Math.min(255, b * k);
   }
-  return readableCache[hex] = `rgb(${r | 0},${g | 0},${b | 0})`;
+  return readableCache[key] = `rgb(${r | 0},${g | 0},${b | 0})`;
 }
 // one name, in that runner's own shirt colour, fading up into place on its own beat
 function nameAt(r, x, y, at, dim) {
@@ -2238,7 +2256,7 @@ function draw() {
     ctx.fillStyle = '#fff'; ctx.font = 'bold 13px monospace'; ctx.fillText('LOST HERE', x, y + 18);
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
   }
-  drawHud();
+  if (S.mode !== 'win' && S.mode !== 'lose') drawHud();
   if (S.mode === 'play' && S.active) drawPanel(S.active);
   if (S.boss && S.mode !== 'title') drawBoss();
   if (S.mode === 'intro' && S.drill && !S.drill.done) drawDrill();
@@ -10941,176 +10959,1329 @@ function rollCall(label, names, colour, y) {
   for (const l of lines) { ctx.fillText(l, W / 2, y); y += 17; }
   return y + 1;
 }
+// ================================================================ the closing reel
+// The end screen is a climb, not a list. One full-screen card per named runner who did not
+// make it, stacked BOTTOM TO TOP IN THE ORDER THEIR RUN ENDED ALONG THE ROAD, and the reel
+// scrolls up through them: so scrolling is travelling, the rail down the right edge is a
+// real position on the course rather than a progress bar, and the three who got furthest
+// are at the top because they ARE furthest. Each card is that person's own body at about
+// three and a half times its play size, and the thing that took them drawn big enough to
+// recognise -- the whole point of the screen is seeing who it was and what it was.
+//
+// Ordered by distance and not by time of death on purpose. Time of death sorts the crowd by
+// which lane happened to be slowest and reads as noise; distance is what the run was about.
+//
+// THE VERTICAL BUDGET, because it is arithmetic and every trap has to respect it. A card is
+// 540 tall. The name block owns 0..118 and the two lines at the foot own 478..540, so a
+// vignette has 118..500 to itself. Each trap names its own floor (`gy`) and everything it
+// draws above that floor must fit in (gy - 118) / REEL.fig units -- 54 for a crossing, 78
+// for a machine, 89 for a gantry. tools/reel-check.js measures this through the transform
+// stack and fails the trap that breaks it, because a gantry drawn through a 50px name is
+// invisible in the source and obvious on the screen.
+const REEL = {
+  fig: 4.0,          // times play size. A named body is 45px in play, so 145..180px here.
+  anim: 0.72,        // every vignette is authored on t = 0..1 over this, and then HOLDS
+  lead: 0.55,        // fraction of the incoming travel the vignette starts before landing
+  depth: 32,         // where the water is, in figure units. Bounded by the card, see below.
+  below: 58,         // how far a crossing's stone and its hole BOTH reach under the lip
+  cardH: H,          // one card fills the screen; the strip is (deaths + 1) of them
+  at: 1.35,          // when the reel takes the screen from the headline
+};
+// The three floors. GAP is high because everything below it is fall; GANTRY is low because
+// everything above it is machine. A body rotating about its middle reaches about 33 units
+// from that pivot, so GAP + (depth - 15) * fig + 33 * fig has to stay inside the card: at
+// 330 and 32 that is 530 of 540, which is why `depth` is not a rounder number.
+const GY = { gap: 330, machine: 420, gantry: 460 };
+// How far along the road a run ended. An arrival is the whole distance; the final gate is
+// the whole distance less a step, so the people spent AT the gate rank above everyone who
+// never reached it and below anyone who walked out.
+function endReach(r) {
+  if (r.state === 'arrived') return CFG.finale.x;
+  if (r.doom === 'final') return CFG.finale.x - 8;
+  return r.endX;
+}
+// Which vignette a runner gets. An unknown doom falls through to the dark rather than
+// throwing: a room type added later shows a plain fall instead of killing the end screen.
+function reelKind(r) {
+  const d = r.doom;
+  if (d === 'final') return 'final';
+  if (d && d.type && TRAPS[d.type]) return d.type;
+  return 'dark';
+}
+function buildRoll() {
+  const named = S.runners.filter(r => r.name);
+  const cards = named.filter(r => r.state !== 'arrived')
+    .map(r => ({ r, at: endReach(r), doom: doomOf(r), kind: reelKind(r), wet: r.how === 'splash' }))
+    .sort((a, b) => a.at - b.at || a.r.deathT - b.r.deathT);
+  const out = named.filter(r => r.state === 'arrived');
+  // Tie-broken on time. Everybody dying at one room is a common run, and without this the
+  // podium is three arbitrary names at the same distance in whatever order the roster shuffled.
+  const podium = named.slice().sort((a, b) => endReach(b) - endReach(a) || b.deathT - a.deathT).slice(0, 3);
+  const n = cards.length;
+  // Quick, because he asked for quick, but not so quick that a name cannot be read. The
+  // whole reel is budgeted and divided, with a floor and a ceiling, so that three cards are
+  // not a luxury and twenty-six are not a sit-down.
+  const step = Math.max(0.72, Math.min(1.6, 20 / Math.max(1, n)));
+  const travel = Math.min(0.28, step * 0.34), dwell = step - travel;
+  // The death has to FINISH while the card is on screen. Scored against the step it did not:
+  // at 26 cards the animation was still at 0.92 when the reel scrolled away, so the last beat
+  // of every death -- the splash, the dust, the jaws shutting -- happened off the bottom of
+  // the screen. Derived from the window the card actually has, which is the dwell plus the
+  // part of the incoming travel the clock already covers.
+  const anim = Math.min(REEL.anim, dwell * 0.88 + travel * REEL.lead);
+  return { cards, podium, out, n, step, travel, dwell, anim, end: REEL.at + n * step };
+}
+// Where the strip is, in cards. Still through the dwell, then up hard into the next one.
+function reelPos(R, u) {
+  const i = Math.floor(u / R.step);
+  if (i >= R.n) return R.n;
+  const local = u - i * R.step;
+  if (local <= R.dwell) return i;
+  const k = clamp01((local - R.dwell) / R.travel);
+  return i + (k < 0.5 ? 2 * k * k : 1 - 2 * (1 - k) * (1 - k));
+}
+
+// ---------------------------------------------------------------- pieces the vignettes share
+// All of these draw in FIGURE UNITS with the floor at y = 0 and the body at x = 0, inside a
+// transform the card has already set up. Nothing here reads the camera or the world.
+//
+// The body is drawn at 1.1 * height, which is what drawRunners uses for a named runner, so
+// the shortest of them is still the shortest of them here. Passing a flat 1 would have made
+// twenty-six people the same size on the one screen whose whole job is telling them apart.
+//
+// A body also rotates about its MIDDLE, not about its feet. Spinning a falling figure around
+// the soles swings the head through an arc the width of the card and reads as a compass
+// needle rather than as a person going over.
+// Flattened to `h` units and spread sideways to keep its area, drawn from the feet up. The
+// block has to STOP short of the floor for this to have anywhere to be, which is why the
+// crusher and the press both land with a gap rather than flush.
+function reelSquashed(r, x, y, h) {
+  // Divided by the CROWN OF THIS BODY, not by 45. At 45 the flattened crown landed 8.4 units
+  // up against a block that stopped at 11, so the crusher came to rest ten pixels clear of the
+  // thing it had just crushed -- and its own comment claimed that could not happen.
+  const sc = reelScale(r), k = h / (REEL_CROWN * sc), w = 1 + (1 - k) * 0.7;
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(w, k); ctx.translate(-x, -y);
+  // The same REEL_SOLE lift reelFigure applies. Without it the two squashes were the only
+  // bodies on the reel still anchored at the ankle, so the flattened shoe went through the
+  // bed plate while everything standing sat on top of its surface.
+  drawFigure(r, x, y - REEL_SOLE * sc, 0, sc, 1);
+  ctx.restore();
+}
+// The head's INK disc tops 31.1 units above drawFigure's anchor at scale 1, and the shoe
+// ellipse bottoms 4.1 below it: the anchor is an ANKLE, not a sole. In play that 4.1 is 4.5px
+// of sink and reads as contact; at the reel's 4.0 it is eighteen pixels of foot inside the
+// floor, and it is worst where a surface is thin -- the conveyor stands its rider on a band
+// six units deep, so three quarters of the belt's thickness was shoe. 3.2 lifts the sole onto
+// the surface and leaves about four pixels of overlap, which is what play's own read is.
+const REEL_CROWN = 31.1, REEL_SOLE = 3.2;
+const reelScale = r => 1.1 * (r.height || 1);
+// how far above its own surface a standing body reaches, for this runner
+const reelTop = r => (REEL_CROWN + REEL_SOLE) * reelScale(r);
+function reelFigure(r, x, y, phase, rot, alpha) {
+  const sc = reelScale(r), fy = y - REEL_SOLE * sc;
+  if (!rot) { drawFigure(r, x, fy, phase, sc, alpha == null ? 1 : alpha); return; }
+  ctx.save();
+  ctx.translate(x, fy - 15); ctx.rotate(rot); ctx.translate(-x, -(fy - 15));
+  drawFigure(r, x, fy, phase, sc, alpha == null ? 1 : alpha);
+  ctx.restore();
+}
+// A body pitching forward, landing flat. The sinking is not a fudge: drawFigure anchors at
+// the FEET and reelFigure rotates about a point 15 units above them, so a figure turned to
+// horizontal comes to rest centred on that pivot -- lying in the air, a body's width above
+// the grass. Dropping the anchor by 11 * sin(rot) puts the body down on the ground at the
+// end of the fall, and leaves it exactly where it was at the start of it.
+function reelTrip(r, t, x0, x1, rot1, from, span) {
+  const k = clamp01((t - from) / span), rot = rot1 * k * (2 - k);
+  reelFigure(r, x0 + (x1 - x0) * k, 11 * Math.sin(rot), S.t * 5, rot, 1);
+}
+// Deterministic, not random. A card is redrawn every frame from its own t, so a puff seeded
+// on Math.random() boils: the same dust cloud is a different dust cloud sixty times a second.
+function reelPuffs(x, y, t, col, n, spread, rise) {
+  if (t <= 0) return;
+  ctx.save(); ctx.globalAlpha *= clamp01(1.5 - t * 1.5); ctx.fillStyle = col;
+  for (let i = 0; i < n; i++) {
+    const a = hash(i * 3.13) * 6.28, s = 0.45 + hash(i * 7.71) * 0.65, d = t * spread * s;
+    ctx.beginPath();
+    ctx.arc(x + Math.cos(a) * d, y - Math.abs(Math.sin(a)) * d * rise - t * 5, 1.6 + t * 6 * s, 0, 6.28);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+function reelSparks(x, y, t, col, n, spread) {
+  if (t <= 0) return;
+  ctx.save(); ctx.globalAlpha *= clamp01(1.4 - t * 1.4);
+  ctx.strokeStyle = col; ctx.lineWidth = 0.9;
+  for (let i = 0; i < n; i++) {
+    const a = -0.3 - hash(i * 5.7) * 2.5, s = 0.4 + hash(i * 2.9) * 0.8, d = t * spread * s;
+    const px = x + Math.cos(a) * d, py = y + Math.sin(a) * d + t * t * 26;
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px - Math.cos(a) * 4, py - Math.sin(a) * 4); ctx.stroke();
+  }
+  ctx.restore();
+}
+function reelSplash(x, y, t) {
+  if (t <= 0) return;
+  ctx.save(); ctx.globalAlpha *= clamp01(1.5 - t * 1.5); ctx.fillStyle = 'rgba(168,214,236,0.85)';
+  for (let i = 0; i < 9; i++) {
+    const a = -0.35 - hash(i * 4.4) * 2.4, s = 0.5 + hash(i * 8.2) * 0.7, d = t * 30 * s;
+    ctx.beginPath(); ctx.arc(x + Math.cos(a) * d, y + Math.sin(a) * d + t * t * 22, 1.4 + 1.6 * s, 0, 6.28); ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(190,226,244,0.6)'; ctx.lineWidth = 1;
+  const rr = 4 + t * 30;
+  ctx.beginPath(); ctx.ellipse(x, y + 1, rr, rr * 0.22, 0, 0, 6.28); ctx.stroke();
+  ctx.restore();
+}
+// a block of stone or iron: a front face, a lit top, and an edge between them
+function reelSlab(x0, y0, w, h, top, face) {
+  ctx.fillStyle = face; ctx.fillRect(x0, y0, w, h);
+  ctx.fillStyle = top; ctx.fillRect(x0, y0, w, Math.min(3, h));
+  ctx.strokeStyle = 'rgba(0,0,0,0.42)'; ctx.lineWidth = 0.7; ctx.strokeRect(x0, y0, w, h);
+}
+// Turf, at the size turf is. Blades were drawn up to ten units long, which at four times
+// play size is a forty-pixel spike and made a field read as a comb lying on its back.
+function reelTurf(from, to) {
+  ctx.strokeStyle = '#6d8a3e'; ctx.lineWidth = 0.55;
+  for (let x = (from == null ? -150 : from); x < (to == null ? 150 : to); x += 2.2) {
+    ctx.globalAlpha *= 1;
+    ctx.beginPath(); ctx.moveTo(x, 0.5);
+    ctx.lineTo(x + (hash(x * 3.1) - 0.5) * 1.6, -1.1 - hash(x * 0.7) * 2.1); ctx.stroke();
+  }
+}
+// the floor a ground-level trap stands on. 150 either side, which is wider than the card at
+// every scale the reel uses, so no trap can leave a hole at the edge of its own frame.
+function reelFloor(col, top, turf) {
+  ctx.fillStyle = col || '#33303c'; ctx.fillRect(-150, 0, 300, 44);
+  ctx.fillStyle = top || '#474352'; ctx.fillRect(-150, 0, 300, 3);
+  // Joints are flagstones. Act three's floor took the green colours and kept the joints, so
+  // every field in the enclosure was paved.
+  if (turf) return;
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.7;
+  for (let x = -146; x < 150; x += 17) { ctx.beginPath(); ctx.moveTo(x, 3); ctx.lineTo(x + 3, 44); ctx.stroke(); }
+}
+// what is under a gap: water you can land in, or a shaft you cannot
+function reelChasm(x0, x1, wet) {
+  const bot = REEL.below;                      // ONE number for the gradient, the fill AND the
+  const g = ctx.createLinearGradient(0, 0, 0, bot);   // stone either side of it, in reelDecks
+  g.addColorStop(0, 'rgba(7,6,11,0.97)');
+  g.addColorStop(0.62, wet ? 'rgba(14,30,42,0.97)' : 'rgba(5,4,9,1)');
+  g.addColorStop(1, wet ? 'rgba(26,58,76,0.97)' : 'rgba(3,2,6,1)');
+  ctx.fillStyle = g; ctx.fillRect(x0, 0, x1 - x0, bot);
+  if (!wet) return;
+  ctx.fillStyle = 'rgba(96,158,184,0.5)'; ctx.fillRect(x0, REEL.depth, x1 - x0, 1.6);
+  ctx.strokeStyle = 'rgba(126,186,210,0.32)'; ctx.lineWidth = 0.8;
+  for (let i = 0; i < 5; i++) {
+    const y = REEL.depth + 5 + i * 4.6;
+    ctx.beginPath();
+    for (let x = x0 + 2; x < x1; x += 6) ctx.lineTo(x, y + Math.sin(x * 0.28 + i * 1.7 + S.t * 1.4) * 1.1);
+    ctx.stroke();
+  }
+}
+// the two lips of a crossing, and the hole between them
+function reelDecks(gap, wet) {
+  reelChasm(-gap, gap, wet);
+  for (const side of [-1, 1]) {
+    const x0 = side < 0 ? -150 : gap, x1 = side < 0 ? -gap : 150;
+    reelSlab(x0, 0, x1 - x0, REEL.below, '#5b6072', '#3a3e4f');
+    // coursed, and broken-bonded, so the two lips read as masonry rather than as a bar of
+    // grey. The joints stop 2 units short of the lip: a course line running off the broken
+    // edge makes the stone look sawn rather than fallen away.
+    ctx.strokeStyle = 'rgba(0,0,0,0.38)'; ctx.lineWidth = 0.7;
+    for (let y = 9; y < REEL.below; y += 11) {
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+      for (let x = x0 + ((y / 11) % 2 ? 11 : 0); x < x1 - 2; x += 22) {
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 11); ctx.stroke();
+      }
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(x0, 3, x1 - x0, 5);
+    // the broken lip itself: a ragged edge rather than a saw cut
+    ctx.fillStyle = '#3a3e4f'; ctx.beginPath();
+    const lip = side < 0 ? -gap : gap;
+    ctx.moveTo(lip, 0);
+    for (let y = 4; y <= REEL.below; y += 7) ctx.lineTo(lip + side * (1.5 + hash(y * 1.7 + side) * 4), y);
+    ctx.lineTo(lip - side * 6, REEL.below); ctx.lineTo(lip - side * 6, 0); ctx.fill();
+  }
+}
+// Two strides, and then the deck is not there. Six crossings end in this shape, so the
+// timing of it lives in ONE place; what differs between them is the apparatus above the lip
+// and what each one does on the way down.
+//
+// It LANDS, at 0.62, and then it stays landed for the rest of the card. The first version
+// faded the body out as it fell, so six cards in a row held on an empty hole -- and a hole
+// is not what anybody came to look at.
+//
+// BOTTOM is the feet anchor at rest, and it is depth + 15 rather than depth because
+// reelFigure turns a body about a point 15 units above its soles: at `depth` the body came
+// to rest lying twelve pixels ABOVE the water it had just fallen into.
+const FALL = { run: 0.3, land: 0.62 };
+// +19 rather than +15: at +15 the body's middle came to rest exactly ON the waterline and
+// read as floating on top of it. Four units under puts the lower half of them in the water,
+// which is the difference between drowned and afloat.
+const BOTTOM = () => REEL.depth + 19;
+function reelFallAt(t, edge) {
+  if (t < FALL.run) return { fell: false, f: 0, x: edge, y: 0, rot: 0 };
+  const f = clamp01((t - FALL.run) / (FALL.land - FALL.run));
+  return { fell: true, f, x: edge + 26 * f, y: BOTTOM() * f * f, rot: f * f * 1.5 };
+}
+function reelPitch(r, t, edge, wet, span, fade) {
+  const d = reelFallAt(t, edge);
+  if (!d.fell) { reelFigure(r, edge - 36 + 36 * (t / FALL.run), 0, S.t * 13, 0, 1); return; }
+  const alpha = fade ? 1 - fade * clamp01((d.f - 0.5) / 0.5) : 1;
+  reelFigure(r, d.x, d.y, d.f >= 1 ? 0 : S.t * 5, d.rot, alpha);
+  if (d.f > 0.78) {
+    const s = clamp01((d.f - 0.78) / 0.22);
+    if (wet) reelSplash(d.x, REEL.depth, s);
+    else reelPuffs(d.x, REEL.depth + 10, s, 'rgba(42,36,50,0.85)', 8, 16, 0.5);
+  }
+  // The water closes OVER them, drawn after the body rather than before it, which is the
+  // difference between drowned and floating.
+  if (wet && span && d.f > 0.55) {
+    ctx.save(); ctx.globalAlpha *= clamp01((d.f - 0.55) / 0.45) * 0.66;
+    // ONE extent for the gradient and the rect it fills, so the top of the water cannot stop
+    // in a hard line across a body's chest.
+    const wg = ctx.createLinearGradient(0, REEL.depth, 0, REEL.below);
+    wg.addColorStop(0, 'rgba(26,58,76,0.15)'); wg.addColorStop(0.3, 'rgba(26,58,76,1)'); wg.addColorStop(1, 'rgba(20,46,62,1)');
+    ctx.fillStyle = wg; ctx.fillRect(span[0], REEL.depth, span[1] - span[0], REEL.below - REEL.depth);
+    ctx.strokeStyle = 'rgba(126,186,210,0.4)'; ctx.lineWidth = 0.8;
+    for (let i = 0; i < 3; i++) {
+      const y = REEL.depth + 4 + i * 5;
+      ctx.beginPath();
+      for (let x = span[0] + 2; x < span[1]; x += 6) ctx.lineTo(x, y + Math.sin(x * 0.28 + i * 1.7 + S.t * 1.4) * 1.1);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// ---------------------------------------------------------------- the traps
+// t runs 0..1 and then HOLDS. The hold is the point, and it is what the first version of
+// this got wrong: every trap finished its kill by t = 0.44 and spent the rest of the card
+// on an aftermath, with the thing that did it in one part of the frame and the body in
+// another. Sixteen cards showed what was left over. A card mostly sits at t = 1, so the
+// shape every entry now follows is:
+//
+//   0.00 .. 0.30   they are still running, and the trap is armed
+//   0.30 .. 0.58   the trap does the thing
+//   0.58 .. 1.00   CONTACT, held: jaws on the leg, rim on the chest, slab on the body,
+//                  bars in the face, water over the head. Whatever killed them is still
+//                  touching them when the card leaves.
+//
+// If you change a trap, check what it looks like at t = 1 before anything else.
+const TRAPS = {
+  // ---- the crossings. All end in the same fall, so each one has to differ in what it does
+  // on the way down, not only in what stands above the lip: six identical falls at 0.77s
+  // each read as one card shown six times.
+  bridge: { gy: GY.gap, draw(r, t, c) {
+    reelDecks(46, c.wet);
+    // A DOUBLE leaf, because the opening is 92 units and one 52-unit leaf cannot span it
+    // however it is angled: lowered it stopped 40 units short of the far lip, which is a
+    // drawbridge that could never have been a bridge. A single 92-unit leaf does not fit
+    // either -- raised steeply its tip stands 74 units up and the card's ceiling here is 53.
+    // Two 46-unit leaves, hinged at both lips, is what a 92-unit opening actually is.
+    // -2.1 rather than -2.3: at 2.3 the two tips came within 31 units of each other and the
+    // pair read as a bridge half CLOSED, which is the opposite of what the card is about.
+    const LEAN = -2.1, LEN = 46;
+    for (const side of [-1, 1]) {
+      ctx.save(); ctx.translate(side * 46, 0); ctx.scale(side, 1); ctx.rotate(LEAN);
+      ctx.fillStyle = '#5b4a35'; ctx.fillRect(0, -8, LEN, 8);
+      ctx.fillStyle = '#705c43'; ctx.fillRect(0, -8, LEN, 2);
+      ctx.strokeStyle = 'rgba(0,0,0,0.42)'; ctx.lineWidth = 0.7;
+      for (let i = 9; i < LEN; i += 10) { ctx.beginPath(); ctx.moveTo(i, -8); ctx.lineTo(i, 0); ctx.stroke(); }
+      ctx.fillStyle = '#3f4450'; ctx.fillRect(-3, -9, 5, 10);      // the hinge it turns on
+      ctx.restore();
+    }
+    const tipX = 46 + Math.cos(LEAN) * LEN, tipY = Math.sin(LEAN) * LEN - 4;
+    // a gallows over each deck, and a chain that PULLS: it has to come off the leaf from
+    // ABOVE, or the drawing says the leaf is being held up by something pushing it
+    for (const side of [-1, 1]) {
+      const px = side * 96, dx = side * 91;
+      ctx.fillStyle = '#4b4f5c'; ctx.fillRect(px - 4.5, -48, 9, 48);
+      ctx.fillStyle = '#565b6a'; ctx.fillRect(Math.min(px + 4.5, px - side * 44), -52, 48, 5);
+      ctx.fillStyle = '#6b6152'; ctx.beginPath(); ctx.arc(dx, -34, 7, 0, 6.28); ctx.fill();
+      ctx.strokeStyle = INK; ctx.lineWidth = 0.9; ctx.stroke();
+      ctx.strokeStyle = '#2b2622'; ctx.lineWidth = 0.8;            // spokes, so it is a drum
+      for (let i = 0; i < 5; i++) { const a = i * 1.25 + S.t * 0.4; ctx.beginPath(); ctx.moveTo(dx, -34); ctx.lineTo(dx + Math.cos(a) * 7, -34 + Math.sin(a) * 7); ctx.stroke(); }
+      ctx.strokeStyle = '#8e8b84'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(side * 58, -47); ctx.lineTo(side * tipX, tipY); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(dx, -41); ctx.lineTo(side * 58, -47); ctx.stroke();
+      // A sheave where the chain changes direction. Without one the turn is a kink, and a
+      // chain with a kink in it is drawn wire rather than a chain under load.
+      ctx.fillStyle = '#6b6152'; ctx.beginPath(); ctx.arc(side * 58, -47, 3.6, 0, 6.28); ctx.fill();
+      ctx.strokeStyle = INK; ctx.lineWidth = 0.7; ctx.stroke();
+    }
+    reelPitch(r, t, -46, c.wet, [-46, 46]);
+  } },
+  winch: { gy: GY.gap, draw(r, t, c) {
+    reelDecks(46, c.wet);
+    ctx.fillStyle = '#4b4f5c'; ctx.fillRect(66, -46, 10, 46);       // the frame
+    ctx.fillStyle = '#565b6a'; ctx.fillRect(58, -50, 26, 5);
+    ctx.fillStyle = '#6b6152'; ctx.beginPath(); ctx.arc(71, -38, 9, 0, 6.28); ctx.fill();   // the drum
+    ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke();
+    ctx.strokeStyle = '#2b2622'; ctx.lineWidth = 0.9;
+    for (let i = 0; i < 5; i++) { const a = i * 1.25 + 0.4; ctx.beginPath(); ctx.moveTo(71, -38); ctx.lineTo(71 + Math.cos(a) * 9, -38 + Math.sin(a) * 9); ctx.stroke(); }
+    ctx.strokeStyle = '#3f3a33'; ctx.lineWidth = 1.4;              // the crank handle, unmanned
+    ctx.beginPath(); ctx.moveTo(71, -38); ctx.lineTo(80, -30); ctx.stroke();
+    // A load on a rope hangs UNDER the rope. Slung out to one side it was held sideways by a
+    // string: 42 units left of the drum and 32 below it, with nothing else touching it.
+    ctx.strokeStyle = '#9a9186'; ctx.lineWidth = 1.1;              // the plank, hanging where it was left
+    ctx.beginPath(); ctx.moveTo(71, -38); ctx.lineTo(71, -20); ctx.stroke();
+    ctx.save(); ctx.translate(71, -20); ctx.rotate(1.42);
+    ctx.fillStyle = '#5b4a35'; ctx.fillRect(-28, -4, 56, 8);
+    ctx.fillStyle = '#705c43'; ctx.fillRect(-28, -4, 56, 2);
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 0.7;
+    for (let i = -20; i < 28; i += 11) { ctx.beginPath(); ctx.moveTo(i, -4); ctx.lineTo(i, 4); ctx.stroke(); }
+    ctx.restore();
+    reelPitch(r, t, -46, c.wet, [-46, 46]);
+  } },
+  rope: { gy: GY.gap, draw(r, t, c) {
+    reelDecks(50, c.wet);
+    for (const sx of [-50, 50]) { ctx.fillStyle = '#5b4a35'; ctx.fillRect(sx < 0 ? sx - 8 : sx, -42, 8, 42); }
+    ctx.strokeStyle = '#a0906f'; ctx.lineWidth = 1.5;              // the hand rope, still strung
+    ctx.beginPath(); ctx.moveTo(-50, -38); ctx.quadraticCurveTo(0, -16, 50, -38); ctx.stroke();
+    // The walking rope has parted, and the near end goes down WITH THEM -- one hand still on
+    // it, which is what makes this fall a rope bridge's fall and not the other five.
+    const d = reelFallAt(t, -50), grip = d.fell ? { x: d.x - 4, y: d.y - 20 } : { x: -34, y: 6 };
+    ctx.strokeStyle = '#8d7d5e'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(-50, -14); ctx.quadraticCurveTo((grip.x - 50) / 2 - 8, (grip.y - 14) / 2 + 4, grip.x, grip.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(50, -14); ctx.quadraticCurveTo(40, 12, 30, 30); ctx.stroke();
+    ctx.strokeStyle = 'rgba(160,144,111,0.6)'; ctx.lineWidth = 0.7;   // frayed ends
+    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(30, 30); ctx.lineTo(33 - i * 2, 36 + i); ctx.stroke(); }
+    reelPitch(r, t, -50, c.wet, [-50, 50]);
+  } },
+  rickety: { gy: GY.gap, draw(r, t, c) {
+    reelDecks(50, c.wet);
+    // ONE sag, feeding the rope and the planks that hang off it. Written as two numbers they
+    // disagreed by 23 units: the rope dipped to +3 at mid-span and the walkway to +26, so the
+    // deck hung 92 pixels below its own carrying rope with nothing at all between them.
+    const SAG = 18, sag = k => -6 + 2 * k * (1 - k) * SAG;
+    ctx.strokeStyle = '#8d7d5e'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-50, -6); ctx.quadraticCurveTo(0, -6 + SAG, 50, -6); ctx.stroke();
+    for (let i = 0; i < 9; i++) {                                  // the planks it still has
+      if (i === 1 || i === 4 || i === 5) continue;
+      const k = (i + 0.5) / 9, x = -50 + k * 100, y = sag(k);
+      ctx.save(); ctx.translate(x, y); ctx.rotate((k - 0.5) * 0.5);
+      ctx.fillStyle = '#5b4a35'; ctx.fillRect(-5, -2.4, 10, 4.4);
+      ctx.fillStyle = '#6d5a42'; ctx.fillRect(-5, -2.4, 10, 1.2);
+      ctx.restore();
+    }
+    // and the three that go down with them, which is this crossing's own fall
+    const d = reelFallAt(t, -50);
+    if (d.fell) {
+      for (let i = 0; i < 3; i++) {
+        const lag = 1 - i * 0.16, px = d.x - 16 + i * 15, py = d.y * lag * lag - 4 + i * 3;
+        ctx.save(); ctx.translate(px, py); ctx.rotate(d.f * (2.4 + i * 0.8) * (i === 1 ? -1 : 1));
+        ctx.fillStyle = '#5b4a35'; ctx.fillRect(-6, -2.2, 12, 4.4);
+        ctx.fillStyle = '#6d5a42'; ctx.fillRect(-6, -2.2, 12, 1.1);
+        ctx.restore();
+      }
+    }
+    reelPitch(r, t, -50, c.wet, [-50, 50]);
+  } },
+  ditch: { gy: GY.gap, draw(r, t) {
+    // A ditch-and-bank, which is the shape enclosure was actually dug as: a SLOPED cut with
+    // every spadeful of it piled on the owner's side.
+    const lip = 42, bot = 26, D = REEL.depth;
+    const g = ctx.createLinearGradient(0, 0, 0, REEL.below);         // ONE extent, ONE fill
+    g.addColorStop(0, 'rgba(38,34,24,0.98)'); g.addColorStop(0.62, 'rgba(20,26,30,0.98)');
+    g.addColorStop(1, 'rgba(24,46,58,0.98)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(-lip, 0); ctx.lineTo(-bot, D + 8); ctx.lineTo(bot, D + 8); ctx.lineTo(lip, 0);
+    ctx.lineTo(lip + 4, REEL.below); ctx.lineTo(-lip - 4, REEL.below); ctx.fill();
+    reelSlab(-150, 0, 150 - lip, REEL.below, '#6d6a4e', '#3f3c2b');
+    reelSlab(lip, 0, 150 - lip, REEL.below, '#6d6a4e', '#3f3c2b');
+    // the bank: one heap of turned earth on the far lip, with clods in it
+    const bank = x => -24 * Math.sin((x - lip) / 76 * 3.14) - hash(x) * 4;
+    ctx.fillStyle = '#54502f'; ctx.beginPath(); ctx.moveTo(lip - 2, 0);
+    for (let x = lip; x <= 118; x += 6) ctx.lineTo(x, bank(x));
+    ctx.lineTo(118, 0); ctx.fill();
+    ctx.fillStyle = 'rgba(112,126,66,0.5)'; ctx.beginPath(); ctx.moveTo(lip - 2, -1);
+    for (let x = lip; x <= 118; x += 6) ctx.lineTo(x, bank(x) - 1.8);
+    ctx.lineTo(118, -1); ctx.fill();
+    ctx.fillStyle = 'rgba(30,26,16,0.45)';
+    for (let i = 0; i < 16; i++) {
+      const x = lip + 4 + hash(i * 2.9) * 70;
+      ctx.beginPath(); ctx.arc(x, bank(x) + 3 + hash(i * 6.1) * 13, 1 + hash(i * 4.4) * 1.6, 0, 6.28); ctx.fill();
+    }
+    reelTurf(-150, -lip); reelTurf(lip, 118);
+    reelPitch(r, t, -lip, true, [-lip, lip]);
+    // Stakes AFTER the body and after the water, so what is in the bottom of the ditch is in
+    // front of what landed on it. Drawn first they were behind both and read as tent pegs.
+    for (const sx of [-17, 3, 20]) {
+      ctx.fillStyle = '#4a3c2a'; ctx.beginPath();
+      ctx.moveTo(sx - 2.4, D + 6); ctx.lineTo(sx + 2.4, D + 6); ctx.lineTo(sx + 0.6, D - 26); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.09)'; ctx.beginPath();
+      ctx.moveTo(sx - 2.4, D + 6); ctx.lineTo(sx - 0.9, D + 6); ctx.lineTo(sx, D - 26); ctx.fill();
+    }
+  } },
+  dark: { gy: GY.gap, draw(r, t, c) {
+    // No room and no apparatus: the floor runs out, and all anybody saw was the last of the
+    // lamp behind them. Rough rock rather than the mill's cut masonry -- act two's floor is
+    // broken away, not sawn.
+    reelChasm(-40, 150, c.wet);
+    reelSlab(-150, 0, 110, REEL.below, '#4a4756', '#31303e');
+    ctx.fillStyle = '#31303e'; ctx.beginPath();                     // the broken lip
+    ctx.moveTo(-40, 0);
+    for (let y = 4; y <= REEL.below; y += 8) ctx.lineTo(-40 + 2 + hash(y * 1.9) * 7, y);
+    ctx.lineTo(-52, REEL.below); ctx.lineTo(-52, 0); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.8;       // bedding, not coursing
+    for (let i = 0; i < 5; i++) {
+      const y = 7 + i * 11;
+      ctx.beginPath();
+      for (let x = -150; x < -40; x += 14) ctx.lineTo(x, y + Math.sin(x * 0.07 + i) * 2.2);
+      ctx.stroke();
+    }
+    // The SOURCE is off the card, at -150, so only the tail of the pool shows. Centred at -100
+    // its brightest point was eighty pixels inside the frame with no fitting, bracket or stem
+    // anywhere near it -- a pool of lamplight with no lamp, on the same card as a real wall
+    // lamp with a bracket and a bulb.
+    // 46, because a light obeys the vertical budget like anything else: at 70 the glow stood
+    // 72 units up, which on the GAP floor is 42px of card -- inside the name.
+    const lg = ctx.createRadialGradient(-150, -6, 2, -150, -6, 46);  // the last of the lamp
+    lg.addColorStop(0, 'rgba(255,196,120,0.26)'); lg.addColorStop(1, 'rgba(255,196,120,0)');
+    ctx.fillStyle = lg; ctx.beginPath(); ctx.arc(-150, -6, 46, 0, 6.28); ctx.fill();
+    reelPitch(r, t, -40, c.wet, [-40, 150], 0.42);                              // and the dark takes them
+  } },
+  // ---- the machines
+  crusher: { gy: GY.gantry, draw(r, t) {
+    reelFloor();
+    // GAP is what is left of them, and it is the ONE number that decides both where the
+    // block stops and how flat the body is -- so the block cannot come to rest short of the
+    // thing it crushed, which is a crusher that missed.
+    // 64 wide and 34 deep, not 92 by 22: at the flatter proportion the block read as a shelf
+    // on the wall rather than as a weight that had just come down, and the guides it runs in
+    // were invisible either side of it.
+    const GAP = 9, BH = 34, UP = -48;
+    const d = clamp01((t - 0.3) / 0.26), drop = d * d;
+    const by = UP + (-GAP - UP) * drop;                            // the block's underside
+    ctx.fillStyle = '#2f2c38'; ctx.fillRect(-74, -84, 148, 10);    // the beam it hangs from
+    ctx.fillStyle = '#4a4656';
+    for (const gx of [-44, 36]) ctx.fillRect(gx, -74, 8, 74);      // guides
+    // THE SPAN, NOT A HEIGHT. This has now been got wrong twice in this file, here and on the
+    // gears' hangers, and it fails the same way both times: the height expression comes out
+    // NEGATIVE, the rect grows upward out of the card instead of down, and nothing in the
+    // source says so -- it took a tool measuring through the transform stack to find 52px of
+    // ironwork standing off the top of the screen. Write the two y values and subtract.
+    ctx.fillStyle = '#39343f'; ctx.fillRect(-4, -74, 8, (by - BH) - -74);
+    // The body FIRST, then the block over it -- the same order the press uses. Drawn the other
+    // way round, and with the swap to the squash on a hand-picked 0.8 rather than on the
+    // geometry, there were three frames of a full-height standing figure painted on the face of
+    // a slab whose underside was already below its chin.
+    if (t < 0.3) reelFigure(r, -78 + 78 * (t / 0.3), 0, S.t * 13, 0, 1);
+    else if (-by > reelTop(r)) reelFigure(r, 0, 0, 0, 0, 1);       // the block is still clear
+    else {
+      reelSquashed(r, 0, 0, GAP);
+      const s = clamp01((drop - 0.82) / 0.18 + (t - 0.56) * 1.6);
+      reelPuffs(0, -3, s, 'rgba(122,110,126,0.75)', 11, 44, 0.35);
+      // In their own trousers' colour with an ink edge. Filled flat INK on a dark mill floor it
+      // was an unexplained dark ellipse, and two passes in a row read it as a mark on the lens.
+      const shx = -34 - s * 20, shy = -8 - Math.sin(s * 3.14) * 22;
+      ctx.fillStyle = shade(r.pants, 0.55); ctx.beginPath();
+      ctx.ellipse(shx, shy, 3.6, 2.1, s * 5, 0, 6.28); ctx.fill();
+      ctx.strokeStyle = INK; ctx.lineWidth = 0.7; ctx.stroke();
+    }
+    reelSlab(-32, by - BH, 64, BH, '#6e6779', '#494455');
+    // A flat panel with a pale patch on it reads as a window in a wall. Cast iron has an edge,
+    // a shadowed side and bolts, and those are what say "this is a weight".
+    ctx.fillStyle = 'rgba(255,255,255,0.09)'; ctx.fillRect(-32, by - BH + 3, 3, BH - 6);
+    ctx.fillStyle = 'rgba(0,0,0,0.26)'; ctx.fillRect(22, by - BH + 3, 10, BH - 6);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    for (const bx of [-22, 0, 22]) for (const byy of [by - BH + 8, by - 9]) {
+      ctx.beginPath(); ctx.arc(bx, byy, 2.2, 0, 6.28); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(-32, by - 6, 64, 6);   // the face that lands
+  } },
+  presses: { gy: GY.gantry, draw(r, t) {
+    reelFloor();
+    // The bed plate is the height the body stands at, so ONE expression decides both and
+    // nobody walks five units above their own floor on the way in.
+    // A RAMP on and off the bed plate, not a step. A step is one expression too, and it moved
+    // the body twenty pixels in a single frame as it crossed the plate's edge.
+    const bed = x => -5 * clamp01((32 - Math.abs(x)) / 6);
+    const GAP = 9, RH = 18, UP = -70;
+    reelSlab(-32, -5, 64, 5, '#6a6474', '#474253');
+    ctx.fillStyle = '#2f2c38'; ctx.fillRect(-42, -84, 84, 10);
+    // 74, so the columns stand on the FLOOR. At 69 they ended at -5, five units up and one
+    // unit outboard of the bed plate they appeared to stand on, holding an entablature and a
+    // ram on twenty pixels of nothing.
+    ctx.fillStyle = '#4a4656'; ctx.fillRect(-40, -74, 7, 74); ctx.fillRect(33, -74, 7, 74);
+    const d = clamp01((t - 0.3) / 0.24);
+    // The ram's TOP is what travels, so its height belongs in the sum. Left out, the ram's
+    // underside finished 4 units below the floor and 9 below the bed the body stands on:
+    // the block came to rest inside its own machine with the corpse painted on its face.
+    const ry = UP + ((bed(0) - GAP - RH) - UP) * d * d;
+    ctx.strokeStyle = '#5d5769'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(0, -76); ctx.lineTo(0, ry + 4); ctx.stroke();
+    // The flywheel now stands on a bearing pedestal and drives something. It was a 34-unit
+    // wheel spinning in mid-air 21 units off the floor, touching nothing at all: no shaft, no
+    // bearing, no belt, no rod between it and the ram it is there to work.
+    const FW = { x: 64, y: -38, r: 17 }, PY = { x: 40, y: -70, r: 7 };
+    ctx.fillStyle = '#3f3a48'; ctx.fillRect(FW.x - 7, FW.y + FW.r - 1, 14, -(FW.y + FW.r - 1));
+    ctx.fillStyle = '#4a4656'; ctx.fillRect(FW.x - 10, FW.y + FW.r - 4, 20, 5);
+    ctx.strokeStyle = '#52483c'; ctx.lineWidth = 1.5;               // and the belt up to the crown
+    ctx.beginPath(); ctx.moveTo(FW.x - FW.r, FW.y); ctx.lineTo(PY.x - PY.r, PY.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(FW.x + FW.r, FW.y); ctx.lineTo(PY.x + PY.r, PY.y); ctx.stroke();
+    ctx.fillStyle = '#5d5769'; ctx.beginPath(); ctx.arc(PY.x, PY.y, PY.r, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = 0.9; ctx.stroke();
+    ctx.fillStyle = '#6b6152'; ctx.beginPath(); ctx.arc(FW.x, FW.y, FW.r, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.1; ctx.stroke();
+    ctx.strokeStyle = '#463f36'; ctx.lineWidth = 1.4;
+    for (let i = 0; i < 4; i++) {
+      const a = i * 0.785 + S.t * 3;
+      ctx.beginPath(); ctx.moveTo(FW.x - Math.cos(a) * 16, FW.y - Math.sin(a) * 16); ctx.lineTo(FW.x + Math.cos(a) * 16, FW.y + Math.sin(a) * 16); ctx.stroke();
+    }
+    if (t < 0.3) { const x = -72 + 72 * (t / 0.3); reelFigure(r, x, bed(x), S.t * 13, 0, 1); }
+    else if (bed(0) - (ry + RH) > reelTop(r)) reelFigure(r, 0, bed(0), 0, 0, 1);
+    else {
+      reelSquashed(r, 0, bed(0), GAP);
+      const s = clamp01((d * d - 0.8) / 0.2 + (t - 0.54) * 1.6);
+      reelPuffs(0, -9, s, 'rgba(136,124,140,0.75)', 9, 34, 0.4);
+      reelSparks(0, -9, s, '#ffd27a', 7, 30);
+    }
+    reelSlab(-26, ry, 52, RH, '#8b8396', '#5d5769');               // the ram, over everything
+  } },
+  gears: { gy: GY.machine, draw(r, t) {
+    reelFloor('#2f2b38', '#413c4e');
+    const wheel = (cx, cy, rad, teeth, a, col) => {
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(a);
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, 0, rad, 0, 6.28); ctx.fill();
+      ctx.strokeStyle = INK; ctx.lineWidth = 1.1; ctx.stroke();
+      for (let i = 0; i < teeth; i++) {
+        ctx.save(); ctx.rotate(i / teeth * 6.28);
+        ctx.fillStyle = col; ctx.fillRect(-2.6, -rad - 4.2, 5.2, 5.2);
+        ctx.strokeStyle = INK; ctx.lineWidth = 0.9; ctx.strokeRect(-2.6, -rad - 4.2, 5.2, 5.2);
+        ctx.restore();
+      }
+      ctx.strokeStyle = '#2b2733'; ctx.lineWidth = 2.6;
+      for (let i = 0; i < 4; i++) {
+        const th = i * 1.57;
+        ctx.beginPath(); ctx.moveTo(Math.cos(th) * rad * 0.24, Math.sin(th) * rad * 0.24); ctx.lineTo(Math.cos(th) * rad * 0.82, Math.sin(th) * rad * 0.82); ctx.stroke();
+      }
+      ctx.fillStyle = '#2b2733'; ctx.beginPath(); ctx.arc(0, 0, rad * 0.26, 0, 6.28); ctx.fill();
+      ctx.restore();
+    };
+    // R1 + R2 IS the centre distance. Two gears drawn at any other spacing are two wheels
+    // near each other, and there is no nip between them for anyone to be caught in.
+    const R1 = 26, R2 = 19, CY = -40, AX = 22, BX = AX - (R1 + R2);
+    ctx.fillStyle = '#3c3848'; ctx.fillRect(-150, -74, 300, 9);     // the line shaft, overhead
+    // The bearing hangs OUTBOARD of its wheel, not behind it. Behind it, a 26-unit gear hides
+    // the whole thing and both wheels read as floating -- the support was drawn and could not
+    // be seen, which is the same as not drawing it.
+    for (const [hx, rad] of [[AX, R1], [BX, R2]]) {
+      const ox = hx + (hx > 0 ? rad + 9 : -(rad + 9));
+      ctx.fillStyle = '#4a4656'; ctx.fillRect(ox - 3, -65, 6, (CY - 8) - -65);
+      ctx.fillStyle = '#5a5566'; ctx.fillRect(ox - 8, CY - 8, 16, 16);
+      ctx.strokeStyle = INK; ctx.lineWidth = 0.7; ctx.strokeRect(ox - 8, CY - 8, 16, 16);
+      ctx.fillStyle = '#3f3a48'; ctx.fillRect(Math.min(ox, hx), CY - 3, Math.abs(ox - hx), 6);
+    }
+    // Two externally tangent circles touch ON THE LINE OF CENTRES. The midpoint-plus-eleven
+    // used before is 25 units from both hubs -- inside the big wheel's disc and outside the
+    // small one's -- so the sparks were struck on a gear face eleven units below the mesh.
+    const spin = S.t * 2.2, NIP = { x: AX - R1, y: CY };
+    wheel(AX, CY, R1, 15, spin, '#6b6152');
+    wheel(BX, CY, R2, 11, -spin * (R1 / R2) + 0.21, '#7a7062');
+    // Taken INTO the nip and held there. The first version threw them 66 units clear, so the
+    // gears turned in one corner of the card and the body lay in another.
+    if (t < 0.3) reelFigure(r, -44 + (NIP.x - 16 + 44) * (t / 0.3), 0, S.t * 13, 0, 1);
+    else {
+      const k = clamp01((t - 0.3) / 0.28);
+      // -6, not -18. At -18 the resolved head centre landed 10.3 units from the small wheel's
+      // hub against its 19-unit radius, and the soles 24.2 from the big one's against 26: the
+      // body was not AT the mesh, it was inside both wheels and painted on their faces.
+      reelFigure(r, NIP.x - 16 + 10 * k, -6 * k, S.t * 7, -0.85 * k, 1);
+      reelSparks(NIP.x, NIP.y, clamp01((t - 0.34) * 1.3), '#ffb45c', 9, 24);
+      reelPuffs(NIP.x - 6, NIP.y + 4, clamp01((t - 0.38) * 1.1), 'rgba(120,104,84,0.4)', 5, 14, 0.5);
+    }
+  } },
+  conveyor: { gy: GY.machine, draw(r, t) {
+    reelFloor('#2f2b38', '#413c4e');
+    // The band ENDS AT -16, a third of the way left of centre, and everything downstream is
+    // measured off it. At 40 the tip-off happened against the right edge of the card with the
+    // hopper half off it, and the body -- which is the whole subject of the screen -- was a
+    // sliver of shirt between a roller and a rim.
+    const by = -26, tip = -16, head = -150;
+    ctx.fillStyle = '#3a3544'; ctx.fillRect(tip, by - 5, 12, 31);
+    const RY = by - 3 + 7.5;                                       // tangent UNDER the band's top face
+    for (const cx of [head + 10, -100, -58, tip - 4]) {
+      ctx.fillStyle = '#4e463c'; ctx.beginPath(); ctx.arc(cx, RY, 7.5, 0, 6.28); ctx.fill();
+      ctx.strokeStyle = INK; ctx.lineWidth = 0.9; ctx.stroke();
+      ctx.strokeStyle = '#6b6152'; ctx.lineWidth = 1.4;
+      const a = S.t * 4;
+      ctx.beginPath(); ctx.moveTo(cx - Math.cos(a) * 6, RY - Math.sin(a) * 6); ctx.lineTo(cx + Math.cos(a) * 6, RY + Math.sin(a) * 6); ctx.stroke();
+    }
+    ctx.fillStyle = '#4a4453'; ctx.fillRect(head, by - 3, tip - head, 6);
+    ctx.fillStyle = '#5a5464'; ctx.fillRect(head, by - 3, tip - head, 1.6);
+    ctx.strokeStyle = 'rgba(0,0,0,0.42)'; ctx.lineWidth = 0.8;     // hatching, travelling with the band
+    for (let i = 0; i < 22; i++) {
+      const x = head + ((i * 9 + S.t * 62) % (tip - head));
+      ctx.beginPath(); ctx.moveTo(x, by - 3); ctx.lineTo(x - 3, by + 3); ctx.stroke();
+    }
+    // The hopper is a TROUGH drawn in two halves: the far wall behind the body and the near rim
+    // in front of it. Drawn as one box over the top it swallowed the body whole, which is the
+    // one thing a card on this screen cannot do.
+    const H0 = tip + 14, H1 = tip + 96, RIM = -14;
+    ctx.fillStyle = '#231f2a'; ctx.beginPath();
+    ctx.moveTo(H0 - 4, RIM); ctx.lineTo(H1 + 4, RIM); ctx.lineTo(H1 - 4, 0); ctx.lineTo(H0 + 4, 0); ctx.fill();
+    ctx.fillStyle = '#3a3544'; ctx.fillRect(H0 - 6, RIM - 4, H1 - H0 + 12, 4);
+    // carried to the end and tipped in, and then HELD half inside it
+    if (t < 0.5) reelFigure(r, head + 58 + (tip - head - 58) * (t / 0.5), by - 3, 0, 0.06 * Math.sin(S.t * 5), 1);
+    else {
+      const f = clamp01((t - 0.5) / 0.26);
+      reelFigure(r, tip + 30 * f, by - 3 + 26 * f * f, S.t * 4, f * 1.75, 1);
+    }
+    ctx.fillStyle = '#4f4a5c'; ctx.beginPath();                    // the near rim, over the body
+    ctx.moveTo(H0 - 6, RIM); ctx.lineTo(H1 + 6, RIM); ctx.lineTo(H1 - 4, 0); ctx.lineTo(H0 + 4, 0); ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = 0.8; ctx.stroke();
+    ctx.fillStyle = '#5d5769'; ctx.fillRect(H0 - 8, RIM - 3, H1 - H0 + 16, 4);
+    if (t > 0.66) reelPuffs((H0 + H1) / 2, RIM - 2, clamp01((t - 0.66) * 1.6), 'rgba(58,50,62,0.55)', 6, 13, 0.7);
+  } },
+  sweeper: { gy: GY.machine, draw(r, t) {
+    reelFloor('#2f2b38', '#413c4e');
+    // A BRUSH, not a sunburst: the drum's centre is set so the tips reach 2 units BELOW the
+    // floor line, the bristles curve back against the rotation, and a shroud hides the top
+    // half. A brush drawn clear of the floor is not sweeping anything.
+    const BR = 22, cy = 2 - BR, a = S.t * 5.2;
+    // it travels with the body it has knocked down, which is what keeps them in contact
+    const k = clamp01((t - 0.3) / 0.3);
+    const bodyX = 22 - 62 * k, cx = bodyX + 34;
+    ctx.fillStyle = '#3c3848'; ctx.fillRect(cx - 34, cy - 30, 68, 18);   // the carriage
+    ctx.fillStyle = '#4a4656'; ctx.fillRect(cx - 36, cy - 32, 72, 5);
+    ctx.fillStyle = '#332f3c';                                            // the shroud over the drum
+    ctx.beginPath(); ctx.arc(cx, cy, BR + 5, 3.34, 6.28, false); ctx.lineTo(cx + BR + 5, cy); ctx.fill();
+    const STD = -56;
+    ctx.fillStyle = '#4a4656'; ctx.fillRect(cx + 34, STD, 8, -STD);
+    ctx.fillStyle = '#39343f'; ctx.fillRect(cx + 30, STD - 4, 16, 6);
+    ctx.fillStyle = t > 0.3 ? '#c9463a' : '#5c322d';
+    ctx.beginPath(); ctx.arc(cx + 38, STD - 8, 3.4, 0, 6.28); ctx.fill();
+    if (t > 0.3) {
+      ctx.fillStyle = 'rgba(255,90,74,0.07)';                             // dim: the lamp is not
+      ctx.beginPath(); ctx.arc(cx + 38, STD - 8, 9, 0, 6.28); ctx.fill(); // the subject of the card
+    }
+    if (t < 0.3) reelFigure(r, 22 * (t / 0.3), 0, S.t * 13, 0, 1);
+    else reelFigure(r, bodyX, -16 * Math.sin(k * 3.14) - 2, S.t * 4, -k * 2.3 - 0.2, 1);
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(a);                     // bristles, over the body
+    ctx.strokeStyle = '#7a6a4c'; ctx.lineWidth = 1.3; ctx.lineCap = 'round';
+    for (let i = 0; i < 22; i++) {
+      const th = i / 22 * 6.28, sw = 0.34;
+      ctx.beginPath(); ctx.moveTo(Math.cos(th) * 8, Math.sin(th) * 8);
+      ctx.quadraticCurveTo(Math.cos(th - sw * 0.5) * 16, Math.sin(th - sw * 0.5) * 16,
+                           Math.cos(th - sw) * BR, Math.sin(th - sw) * BR);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#5d5769'; ctx.beginPath(); ctx.arc(0, 0, 8, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
+    if (t > 0.3) reelPuffs(bodyX - 8, 1, clamp01((t - 0.34) * 1.1), 'rgba(120,108,88,0.4)', 6, 15, 0.3);
+  } },
+  wiring: { gy: GY.machine, draw(r, t) {
+    reelFloor('#2f2b38', '#413c4e');
+    ctx.fillStyle = '#26232c'; ctx.fillRect(-150, -74, 224, 7);     // the conduit run
+    ctx.fillStyle = '#3d3844';
+    for (let x = -144; x < 74; x += 26) ctx.fillRect(x, -75.5, 5, 10);
+    ctx.fillStyle = '#26232c'; ctx.fillRect(66, -74, 8, 12);
+    ctx.fillStyle = '#39343f'; ctx.fillRect(44, -70, 52, 44);
+    reelSlab(48, -68, 44, 38, '#5d5769', '#403b4c');               // the junction box
+    ctx.fillStyle = '#2a2633'; ctx.fillRect(54, -62, 32, 26);
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = ['#e74c3c', '#f1c40f', '#3498db'][i];
+      ctx.beginPath(); ctx.arc(62 + i * 10, -49, 3.2, 0, 6.28); ctx.fill();
+    }
+    // The cable REACHES them and stays on them. The first version's flash decayed to 0.16 by
+    // the time the card settled, and the pose underneath was a walk cycle -- so the hold was
+    // a man out for a stroll beside a junction box.
+    const live = t >= 0.3;
+    // phase 0, which is drawFigure's STANDING pose: feet apart, arms down, no stride. At 1.6
+    // the body was mid-walk-cycle, so a man with the current in him was out for a stroll.
+    const POSE = 0, jolt = -2 - Math.abs(Math.sin(S.t * 30)) * 2.5, tilt = 0.09 * Math.sin(S.t * 41);
+    const reach = live ? clamp01((t - 0.3) / 0.18) : 0;
+    ctx.strokeStyle = '#2e2a36'; ctx.lineWidth = 2.4;
+    ctx.beginPath(); ctx.moveTo(52, -50);
+    ctx.quadraticCurveTo(34 - reach * 10, -40 + reach * 6, 24 - reach * 16, -44 + reach * 10);
+    ctx.stroke();
+    if (!live) { reelFigure(r, -50 + 50 * (t / 0.3), 0, S.t * 13, 0, 1); return; }
+    reelFigure(r, 0, jolt, POSE, tilt, 1);
+    // The same body again in white. A bolt drawn OVER a figure reads as a bolt in front of
+    // them; the figure redrawn white is what reads as the current being IN them. It does not
+    // decay any more -- it pulses, because the current has not stopped.
+    const flash = (0.42 + 0.44 * Math.sin(S.t * 44)) * (0.55 + 0.45 * reach);
+    // Their OWN shirt, lifted, not white. The card's second job is telling you who it was,
+    // and at full white the hold was a paper cut-out: the one colour that says which of the
+    // twenty-six this is had been painted out at exactly the frame that stays on screen.
+    const lit = { ...r, skin: '#fffaf0', shirt: readable(r.shirt, true), pants: '#b9d6ee', hair: '#dff0ff' };
+    reelFigure(lit, 0, jolt, POSE, tilt, flash);
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.28 + flash * 0.4;
+    ctx.strokeStyle = '#bfe6ff'; ctx.lineWidth = 1.5;
+    const seed = Math.floor(S.t * 22), ex = 24 - reach * 16, ey = -44 + reach * 10;
+    for (let b = 0; b < 3; b++) {
+      ctx.beginPath(); ctx.moveTo(ex, ey);
+      for (let i = 1; i <= 4; i++) {
+        const q = i / 4;
+        ctx.lineTo(ex - (ex - 4) * q + (hash(b * 3.3 + i + seed) - 0.5) * 8, ey + (-14 - ey) * q + (hash(b * 7.1 + i + seed) - 0.5) * 8);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+    reelSparks(10, -34, clamp01((t - 0.3) * 0.9), '#cfeaff', 10, 30);
+  } },
+  // ---- act three: property rather than machinery
+  thorn: { gy: GY.machine, draw(r, t) {
+    reelFloor('#2c3a22', '#40532f', true);
+    reelTurf();
+    // A LAID hedge: the stems are cut most of the way through and bent over along the line,
+    // which is why they all lean one way instead of standing up like a fence. It starts LEFT
+    // of centre so the card is not all hedge on the right and all sky on the left.
+    // the mass at the bottom, which is what you cannot see through and what makes it a hedge
+    ctx.fillStyle = 'rgba(28,30,18,0.9)'; ctx.beginPath(); ctx.moveTo(-150, 2);
+    for (let x = -150; x <= 150; x += 9) ctx.lineTo(x, -7 - hash(x * 0.37) * 6);
+    ctx.lineTo(150, 2); ctx.fill();
+    const stem = (i, front) => {
+      const x0 = -138 + i * 17, rise = 30 + hash(i * 2.2) * 9, run = 30 + hash(i * 6.1) * 12;
+      ctx.strokeStyle = front ? (i % 3 ? '#5d4d36' : '#6b5940') : (i % 3 ? '#3a3020' : '#463a26');
+      ctx.lineWidth = 2.1 + hash(i * 5.5) * 1.6;
+      // Pegged over at an angle and pinned down along the line, which is what LAYING a hedge
+      // is: an arch that comes back to the ground at both ends is a croquet hoop.
+      ctx.beginPath(); ctx.moveTo(x0, 1); ctx.quadraticCurveTo(x0 + run * 0.55, -rise * 0.92, x0 + run, -rise);
+      ctx.stroke();
+      ctx.strokeStyle = front ? 'rgba(122,100,68,0.95)' : 'rgba(70,58,40,0.95)'; ctx.lineWidth = 0.8;
+      for (let sp = 0; sp < 5; sp++) {
+        const q = 0.2 + sp * 0.17, m = 1 - q;
+        const px = m * m * x0 + 2 * m * q * (x0 + run * 0.55) + q * q * (x0 + run);
+        const py = m * m * 1 + 2 * m * q * -rise * 0.92 + q * q * -rise;
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + 3.6 - hash(sp + i) * 7.2, py - 4.6 - hash(sp * 3 + i) * 3.6); ctx.stroke();
+      }
+    };
+    for (let i = 0; i < 18; i++) if (i % 2) stem(i, false);          // the back of the hedge
+    ctx.fillStyle = '#4a3d29';                                       // the stakes it is laid against
+    for (let x = -132; x < 150; x += 34) ctx.fillRect(x, -40 - hash(x) * 5, 3.4, 42 + hash(x) * 5);
+    ctx.strokeStyle = '#6b5940'; ctx.lineWidth = 1.6;                // and the binder along the top
+    ctx.beginPath();
+    for (let x = -140; x <= 150; x += 17) ctx.lineTo(x, -36 - Math.sin(x * 0.09) * 3 - hash(x * 0.5) * 3);
+    ctx.stroke();
+    const k = clamp01((t - 0.3) / 0.28);
+    if (t < 0.3) reelFigure(r, -104 + 62 * (t / 0.3), 0, S.t * 13, 0, 1);
+    // Caught IN the hedge and held by it, which is what a laid hedge is for -- so this one
+    // does not go to the ground, and half the stems are drawn IN FRONT of the body. Drawn
+    // entirely behind it, a man thrown into a hedge reads as a man lying on a fence.
+    else reelFigure(r, -34 + 26 * k, -16 * Math.sin(k * 1.9), S.t * 5, k * 1.1, 1);
+    for (let i = 0; i < 18; i++) if (!(i % 2)) stem(i, true);        // and the front of it
+  } },
+  mantrap: { gy: GY.machine, draw(r, t) {
+    reelFloor('#2c3a22', '#40532f', true);
+    reelTurf();
+    const shut = clamp01((t - 0.3) / 0.14);
+    ctx.fillStyle = '#3f3a33'; ctx.fillRect(-30, -2, 60, 4);        // the spring bar, set in the turf
+    ctx.fillStyle = '#5a5245'; ctx.fillRect(-32, -4, 9, 7); ctx.fillRect(23, -4, 9, 7);
+    ctx.fillStyle = '#4b4338'; ctx.fillRect(-7, -4, 14, 7);         // the pressure plate
+    ctx.strokeStyle = '#4b463c'; ctx.lineWidth = 1.6;               // the chain to its stake
+    ctx.beginPath(); ctx.moveTo(9, -1); ctx.lineTo(56, 2); ctx.stroke();
+    ctx.fillStyle = '#4a3c2a'; ctx.fillRect(55, -10, 4, 13);
+    // the body first, so the jaws close OVER the leg rather than behind it
+    if (t < 0.3) reelFigure(r, -52 + 52 * (t / 0.3), 0, S.t * 13, 0, 1);
+    // 10, not 20: reelTrip moves the ANCHOR, and a body turned to horizontal puts its feet 15
+    // units left of that, so an anchor of 20 left the ankles five units clear of the jaws and
+    // the trap shut on grass.
+    else reelTrip(r, t, 0, 10, 1.45, 0.34, 0.34);
+    const jaw = d => {
+      // 1.62, not 2.3. A blade starting a few degrees below horizontal and swung 132 degrees
+      // finishes PAST vertical, so the two tips crossed like scissors instead of meeting.
+      ctx.save(); ctx.translate(d * 7, -3); ctx.scale(d, 1); ctx.rotate(-shut * 1.44);
+      ctx.fillStyle = '#6d6455';                                    // the jaw, a blade from its hinge
+      ctx.beginPath(); ctx.moveTo(0, -3); ctx.quadraticCurveTo(12, -6, 21, -1.6);
+      ctx.lineTo(21, 2); ctx.quadraticCurveTo(12, -1, 0, 3); ctx.fill();
+      ctx.strokeStyle = INK; ctx.lineWidth = 0.6; ctx.stroke();
+      ctx.fillStyle = '#8b8170';                                    // teeth, on the biting edge only
+      for (let i = 0; i < 6; i++) {
+        const x = 2.4 + i * 3.1, y = -3.6 - Math.sin((i + 0.5) / 6 * 3.14) * 1.6;
+        ctx.beginPath(); ctx.moveTo(x - 1.3, y + 1.4); ctx.lineTo(x + 1.3, y + 1.4); ctx.lineTo(x, y - 3); ctx.fill();
+      }
+      ctx.restore();
+    };
+    jaw(-1); jaw(1);
+    ctx.fillStyle = '#5a5245'; ctx.beginPath(); ctx.arc(0, -3, 4.4, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = 0.7; ctx.stroke();
+  } },
+  wall: { gy: GY.gantry, draw(r, t) {
+    reelFloor('#2c3a22', '#40532f', true);
+    // The wall runs from -6, not from 34: it is the thing the whole act walks into, and at 34
+    // it occupied the right third of the card with the name floating over empty field.
+    const wx = -6;
+    reelTurf(-150, wx);
+    // 3f3a33 against the old 6a6355. At luminance 99 the brick was 2.2 times brighter than the
+    // sky above it -- daylit masonry composited into a night shot, and lit by nothing.
+    ctx.fillStyle = '#3f3a33'; ctx.fillRect(wx, -84, 150 - wx, 84);
+    ctx.fillStyle = '#4c4640'; ctx.fillRect(wx, -84, 150 - wx, 4);
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.8;
+    for (let y = -80; y < 0; y += 10) {
+      ctx.beginPath(); ctx.moveTo(wx, y); ctx.lineTo(150, y); ctx.stroke();
+      for (let x = wx + ((y / 10) % 2 ? 9 : 0); x < 150; x += 18) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 10); ctx.stroke(); }
+    }
+    // the charge that did not take: a crater with a lip and rubble, not a soft brown oval,
+    // which read as dirt on the brickwork
+    // SOOT, not a hole. At 0.72 alpha over 19 units this read as a cave mouth punched clean
+    // through the wall -- and an open wall is the one thing this card must not show, because
+    // the room is the charge that did NOT go off.
+    const sg = ctx.createRadialGradient(wx + 22, -34, 2, wx + 22, -34, 22);
+    sg.addColorStop(0, 'rgba(26,20,16,0.5)'); sg.addColorStop(0.55, 'rgba(26,20,16,0.28)');
+    sg.addColorStop(1, 'rgba(26,20,16,0)');
+    ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(wx + 22, -34, 22, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = 'rgba(24,18,14,0.35)'; ctx.lineWidth = 1.1;   // streaks off the charge
+    for (let i = 0; i < 10; i++) {
+      const a = hash(i * 3.7) * 6.28, d0 = 5 + hash(i * 2.1) * 4, d1 = 14 + hash(i * 8.1) * 11;
+      ctx.beginPath();
+      ctx.moveTo(wx + 22 + Math.cos(a) * d0, -34 + Math.sin(a) * d0);
+      ctx.lineTo(wx + 22 + Math.cos(a) * d1, -34 + Math.sin(a) * d1); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(58,52,44,0.9)';
+    for (let i = 0; i < 9; i++) {                                   // spalled brick at its foot
+      const x = wx + 4 + hash(i * 5.3) * 30;
+      ctx.beginPath(); ctx.ellipse(x, -1.6 - hash(i * 2.2) * 2, 1.4 + hash(i * 9) * 2, 1 + hash(i * 4) * 1.1, hash(i) * 3, 0, 6.28); ctx.fill();
+    }
+    ctx.strokeStyle = '#4a4238'; ctx.lineWidth = 0.55;               // its fuse, burnt back to the wall
+    ctx.beginPath(); ctx.moveTo(wx + 12, -24); ctx.quadraticCurveTo(wx + 2, -14, wx - 4, -6); ctx.stroke();
+    const hit = 0.34;
+    if (t < hit) reelFigure(r, -108 + (wx - 14 + 108) * (t / hit), 0, S.t * 13, 0, 1);
+    // hits it and comes to rest AGAINST it, rather than lying on the grass clear of the brick
+    else reelTrip(r, t, wx - 14, wx - 19, 1.5, hit, 0.32);
+    reelPuffs(wx + 2, -30, clamp01((t - hit) * 2), 'rgba(150,140,120,0.35)', 6, 15, 0.6);
+  } },
+  final: { gy: GY.gantry, draw(r, t) {
+    // The last gate stands in open country, so its ground is the enclosure's, not a grey
+    // road: a stone floor under a field backdrop is two materials claiming one place.
+    reelFloor('#2c3a22', '#40532f', true);
+    reelTurf(-150, -54); reelTurf(86, 150);
+    ctx.fillStyle = 'rgba(58,50,34,0.85)'; ctx.fillRect(-54, 0, 140, 12);   // the trodden approach
+    // ONE opening, and every part of the gate measured off it.
+    const O0 = -22, O1 = 54, PT = -76, PW = 24;
+    ctx.fillStyle = '#4b443a'; ctx.fillRect(O0 - PW, PT, PW, -PT); ctx.fillRect(O1, PT, PW, -PT);
+    ctx.fillStyle = '#5a5246'; ctx.fillRect(O0 - PW - 4, PT - 8, (O1 + PW) - (O0 - PW) + 8, 8);
+    // Daylight is brightest at the GROUND on the far side and falls off upward into the
+    // gate's own shadow. Brightest at the lintel, it lit the underside of the arch and left
+    // the doorway black where somebody would be standing.
+    const g = ctx.createLinearGradient(0, PT, 0, 0);
+    // The strong end at 0.74 of the way down, not at the very bottom: at the bottom it lands
+    // exactly where the bottom rail, the spikes and the trodden apron then cover it, and the
+    // gateway comes out unlit either way.
+    g.addColorStop(0, 'rgba(255,190,110,0.04)'); g.addColorStop(0.74, 'rgba(255,206,132,0.3)');
+    g.addColorStop(1, 'rgba(255,196,116,0.12)');
+    ctx.fillStyle = g; ctx.fillRect(O0, PT, O1 - O0, -PT);
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.7;       // coursing on the piers
+    for (const pxs of [O0 - PW, O1]) {
+      for (let y = PT + 9; y < 0; y += 11) { ctx.beginPath(); ctx.moveTo(pxs, y); ctx.lineTo(pxs + PW, y); ctx.stroke(); }
+    }
+    // ORDER. The shadow behind the grid, then the man, then the bars. Drawn man-first the
+    // 88%-black panel went straight over him and the last card of the reel had no person on
+    // it at all: "the trap over the body" had become "the trap instead of the body".
+    const shut = clamp01((t - 0.32) / 0.26);                        // the portcullis, coming down
+    const bot = PT - PT * shut * shut;
+    ctx.fillStyle = 'rgba(24,21,16,0.7)'; ctx.fillRect(O0, PT, O1 - O0, bot - PT);
+    // They do not fall. They walk UP to it and it comes down in their face, and that is the
+    // whole of that ending -- so they finish in the gateway, not retreating into empty frame.
+    const walk = clamp01(t / 0.32);
+    reelFigure(r, -96 + 88 * walk, 0, walk < 1 ? S.t * 13 : 0, 0, 1);
+    ctx.fillStyle = '#4a4438';
+    for (let x = O0 + 2; x < O1 - 2; x += 10) ctx.fillRect(x, PT, 4, bot - PT);
+    for (let y = PT + 2; y < bot; y += 16) ctx.fillRect(O0, y, O1 - O0, 3);
+    ctx.fillStyle = '#39342b'; ctx.fillRect(O0, bot - 5, O1 - O0, 6);
+    ctx.fillStyle = '#2a2620';                                      // the spikes on its bottom rail
+    for (let x = O0 + 2; x < O1 - 2; x += 10) { ctx.beginPath(); ctx.moveTo(x - 1, bot + 1); ctx.lineTo(x + 5, bot + 1); ctx.lineTo(x + 2, bot + 6); ctx.fill(); }
+    if (shut >= 1) reelPuffs((O0 + O1) / 2, 1, clamp01((t - 0.58) * 1.8), 'rgba(120,108,92,0.22)', 9, 16, 0.3);
+  } },
+};
+
+// ---------------------------------------------------------------- the rail
+// WHERE, not how far through the reel. The reel is ordered by distance, so this marker only
+// ever climbs, and the three bands say which act of the run you are looking at.
+const ACTS = [
+  { to: CFG.roofFrom, c: '#8a6a3c', deep: 'rgba(32,22,15,1)', n: 'THE MILL' },
+  { to: CFG.exit, c: '#5a5570', deep: 'rgba(21,18,32,1)', n: 'THE MOUNTAIN' },
+  { to: CFG.finale.x, c: '#5f7a42', deep: 'rgba(15,26,17,1)', n: 'THE ENCLOSURE' },
+];
+const actAt = at => ACTS.find(z => at <= z.to) || ACTS[2];
+// Each card paints its own ground AND the place it happened in. Two reasons, and the second
+// is the one that matters. A card is TRANSPARENT above its own floor, so without this what
+// sits behind the name is whatever the camera happened to be pointing at when the run ended
+// -- a different backdrop every run, and the mill showing through a death in the enclosure.
+// And a vignette on a plain wash is 300px of nothing above every body: the apparatus floats,
+// and the whole screen reads as clip art rather than as somewhere.
+//
+// Keyed to the act, so a card agrees with the rail beside it: brick in the mill, rock under
+// the mountain, open country past the mouth.
+function reelBack(at, gy, solid) {
+  const g = ctx.createLinearGradient(0, 0, 0, REEL.cardH);   // ONE extent for the gradient
+  g.addColorStop(0, 'rgba(6,5,10,1)');
+  g.addColorStop(0.58, actAt(at).deep);
+  g.addColorStop(1, 'rgba(4,3,7,1)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, REEL.cardH);      // and for the fill it feeds
+  const act = ACTS.indexOf(actAt(at));
+  if (act === 0) reelMillBack(gy, solid); else if (act === 1) reelRockBack(gy, solid); else reelFieldBack(gy, solid);
+}
+// act one: the inside of a weaving shed. Brick to the floor, one lit window, iron above.
+function reelMillBack(gy, solid) {
+  const top = gy - 300;                                      // ONE top for wall and courses
+  ctx.fillStyle = 'rgba(46,30,24,0.62)'; ctx.fillRect(0, top, W, gy - top);
+  ctx.strokeStyle = 'rgba(0,0,0,0.22)'; ctx.lineWidth = 1;
+  for (let y = top + 10; y < gy; y += 13) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    for (let x = ((y - top) / 13) % 2 ? 14 : 0; x < W; x += 28) {
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 13); ctx.stroke();
+    }
+  }
+  // the window, and the light it throws down the wall
+  const wx = 132, wy = top + 26, ww = 104, wh = 128;
+  ctx.fillStyle = 'rgba(22,14,11,0.8)'; ctx.fillRect(wx - 7, wy - 7, ww + 14, wh + 14);
+  const lg = ctx.createLinearGradient(0, wy, 0, wy + wh);
+  lg.addColorStop(0, 'rgba(255,214,150,0.30)'); lg.addColorStop(1, 'rgba(255,190,120,0.13)');
+  ctx.fillStyle = lg; ctx.fillRect(wx, wy, ww, wh);
+  ctx.strokeStyle = 'rgba(18,12,9,0.85)'; ctx.lineWidth = 2.4;
+  for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(wx + i * ww / 4, wy); ctx.lineTo(wx + i * ww / 4, wy + wh); ctx.stroke(); }
+  for (let i = 1; i < 5; i++) { ctx.beginPath(); ctx.moveTo(wx, wy + i * wh / 5); ctx.lineTo(wx + ww, wy + i * wh / 5); ctx.stroke(); }
+  // No guard. A backdrop is drawn BEFORE the trap, so the hole a crossing cuts covers
+  // whatever light falls across it, and the cone stops at the floor line in any case. Guarded
+  // on `solid` it was dropped entirely from all four crossings to avoid 19% of itself -- and
+  // those are the first cards of most reels, so act one's commonest cards were its only unlit
+  // ones.
+  const cast = ctx.createLinearGradient(0, wy + wh, 0, gy);      // ONE extent for both
+  cast.addColorStop(0, 'rgba(255,200,130,0.075)'); cast.addColorStop(1, 'rgba(255,200,130,0)');
+  ctx.fillStyle = cast;
+  ctx.beginPath(); ctx.moveTo(wx, wy + wh); ctx.lineTo(wx + ww, wy + wh); ctx.lineTo(wx + ww + 120, gy); ctx.lineTo(wx - 90, gy); ctx.fill();
+  // line shafting under the ceiling, which is what drives every machine in this act
+  ctx.fillStyle = 'rgba(28,22,18,0.75)'; ctx.fillRect(0, top - 16, W, 16);
+  ctx.fillStyle = 'rgba(52,44,34,0.7)'; ctx.fillRect(0, top + 2, W, 7);
+  for (let x = 60; x < W; x += 150) ctx.fillRect(x, top - 14, 9, 22);
+}
+// act two: the tunnel. Rough rock either side, a low roof, and one lamp doing all the work.
+function reelRockBack(gy, solid) {
+  const top = gy - 320;                                      // ONE top for the rock and its roof
+  ctx.fillStyle = 'rgba(34,29,44,0.72)'; ctx.fillRect(0, top, W, gy - top);
+  // the roof, sagging across the card
+  ctx.fillStyle = 'rgba(17,14,24,0.92)';
+  ctx.beginPath(); ctx.moveTo(0, top - 40);
+  for (let x = 0; x <= W; x += 40) ctx.lineTo(x, top + 22 * Math.sin(x * 0.0055 + 1.1) + 10 * hash(x));
+  ctx.lineTo(W, top - 40); ctx.fill();
+  ctx.strokeStyle = 'rgba(62,54,74,0.5)'; ctx.lineWidth = 1;    // bedding in the rock
+  for (let i = 0; i < 9; i++) {
+    const y = top + 40 + i * 28;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 34) ctx.lineTo(x, y + Math.sin(x * 0.011 + i) * 7);
+    ctx.stroke();
+  }
+  // a wall lamp and its pool. The pool is an ellipse on the floor, not a glow in the air:
+  // a light with nothing lit by it is the thing that makes a tunnel read as a painted flat.
+  const lx = W - 168, ly = top + 96;
+  ctx.fillStyle = 'rgba(38,32,26,0.9)'; ctx.fillRect(lx - 3, ly - 22, 6, 22);
+  ctx.fillStyle = 'rgba(255,196,110,0.85)'; ctx.beginPath(); ctx.arc(lx, ly + 4, 5.5, 0, 6.28); ctx.fill();
+  const pg = ctx.createRadialGradient(lx, ly + 4, 2, lx, ly + 4, 210);
+  pg.addColorStop(0, 'rgba(255,196,110,0.20)'); pg.addColorStop(1, 'rgba(255,196,110,0)');
+  ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(lx, ly + 4, 210, 0, 6.28); ctx.fill();
+  ctx.fillStyle = 'rgba(255,196,110,0.06)';
+  ctx.beginPath(); ctx.ellipse(lx, gy - 3, 150, 22, 0, 0, 6.28); ctx.fill();
+}
+// act three: out of the rock, and the land already being fenced.
+function reelFieldBack(gy, solid) {
+  const hz = gy - 118;                                       // ONE horizon for sky and land
+  const sg = ctx.createLinearGradient(0, hz - 260, 0, hz);
+  sg.addColorStop(0, 'rgba(14,20,36,0.9)'); sg.addColorStop(1, 'rgba(46,44,58,0.9)');
+  ctx.fillStyle = sg; ctx.fillRect(0, hz - 260, W, 260);
+  for (let i = 0; i < 34; i++) {                             // stars, fixed to the card
+    const x = hash(i * 2.7) * W, y = hz - 260 + hash(i * 5.1) * 200;
+    ctx.fillStyle = `rgba(226,230,255,${0.16 + hash(i * 9.3) * 0.34})`;
+    ctx.fillRect(x, y, 1.6, 1.6);
+  }
+  // two ranges, the far one paler, so the land has depth rather than one cut-out ridge
+  for (const [off, col, amp] of [[48, 'rgba(34,38,48,0.9)', 26], [0, 'rgba(24,32,26,0.95)', 16]]) {
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, hz + 40);
+    for (let x = 0; x <= W; x += 30) ctx.lineTo(x, hz - off + Math.sin(x * 0.007 + off) * amp + hash(x + off) * 8);
+    ctx.lineTo(W, hz + 40); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(26,36,24,0.9)'; ctx.fillRect(0, hz, W, gy - hz);
+  // a post-and-rail fence marching away, because this act is about the land being enclosed
+  // FLAT, because everything else in this game is a strict side elevation. Posts that grew
+  // 36% taller toward the right and rails that dropped fourteen pixels across the frame gave
+  // the fence a vanishing direction, on a card whose wall, hedge and gate have none.
+  ctx.strokeStyle = 'rgba(52,44,34,0.75)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, hz + 16); ctx.lineTo(W, hz + 16); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, hz + 28); ctx.lineTo(W, hz + 28); ctx.stroke();
+  ctx.fillStyle = 'rgba(46,38,28,0.8)';
+  for (let x = 24; x < W; x += 96) ctx.fillRect(x, hz + 6, 4, 38);
+}
+function drawCourseRail(at, alpha) {
+  if (alpha <= 0) return;
+  const x = W - 42, y0 = H - 46, y1 = 62;
+  const py = d => y0 + (y1 - y0) * clamp01(d / CFG.finale.x);
+  ctx.save(); ctx.globalAlpha *= alpha;
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'; roundRect(x - 7, y1 - 8, 14, y0 - y1 + 16, 7); ctx.fill();
+  let from = 0;
+  for (const a of ACTS) {
+    ctx.globalAlpha = alpha * 0.6; ctx.fillStyle = a.c;
+    ctx.fillRect(x - 3, py(a.to), 6, py(from) - py(a.to));
+    ctx.globalAlpha = alpha * 0.8;
+    // Labels go to the RIGHT of the rail. On the left they sit at each band's midpoint, which
+    // is precisely where the marker lands for any death in the middle of an act -- five of the
+    // sixteen cards had the arrow drawn through its own caption.
+    ctx.save();
+    ctx.translate(x + 13, (py(from) + py(a.to)) / 2); ctx.rotate(-1.5708);
+    ctx.textAlign = 'center'; ctx.font = '9px monospace'; ctx.fillStyle = 'rgba(226,218,208,0.8)';
+    ctx.fillText(a.n, 0, 0);
+    ctx.restore();
+    from = a.to;
+  }
+  ctx.globalAlpha = alpha;
+  const my = py(at);
+  ctx.fillStyle = 'rgba(255,210,122,0.25)'; ctx.beginPath(); ctx.arc(x, my, 9, 0, 6.28); ctx.fill();
+  ctx.fillStyle = '#ffd27a';
+  ctx.beginPath(); ctx.moveTo(x - 15, my - 5); ctx.lineTo(x - 6, my); ctx.lineTo(x - 15, my + 5); ctx.fill();
+  ctx.beginPath(); ctx.arc(x, my, 4.2, 0, 6.28); ctx.fill();
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- one card
+// A canvas shadow rather than an offset copy, because an emoji ignores fillStyle and a
+// "shadow" drawn as a second fillText comes out in full colour.
+function reelNameShadow() {
+  ctx.shadowColor = 'rgba(0,0,0,0.85)'; ctx.shadowBlur = 7; ctx.shadowOffsetY = 3;
+}
+function reelWhen(s) {
+  const m = Math.floor(s / 60), r = Math.round(s % 60);
+  return m ? `${m}m ${r}s in` : `${Math.round(s)}s in`;
+}
+// The scrims are not decoration. A vignette is a drawing with its own light in it, and a
+// name in a shirt colour laid straight over one is legible on some cards and not on others;
+// a card that reads differently depending on whose trousers are behind it is not a design.
+function reelScrim(top, h, a0, a1) {
+  const g = ctx.createLinearGradient(0, top, 0, top + h);
+  g.addColorStop(0, `rgba(6,4,10,${a0})`); g.addColorStop(1, `rgba(6,4,10,${a1})`);
+  ctx.fillStyle = g; ctx.fillRect(top === 0 ? 0 : 0, top, W, h);
+}
+function drawDeathCard(card, sy, at, R) {
+  const r = card.r, trap = TRAPS[card.kind], t = clamp01(at / R.anim);
+  ctx.save(); ctx.translate(0, sy);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, W, REEL.cardH); ctx.clip();
+  reelBack(card.at, trap.gy, trap.gy !== GY.gap);
+  ctx.translate(W / 2, trap.gy); ctx.scale(REEL.fig, REEL.fig);
+  trap.draw(r, t, card);
+  ctx.restore();
+  // 0.72 and 0.76, and the foot band starts at 486 rather than 470. At 0.84 against 0.88 the
+  // two scrims met during every scroll and put a bar of near-black across the middle of the
+  // screen for a third of the reel's running time; starting at 470 the lower one also sat
+  // below GY.gantry and washed out the foot of every machine that stands on that floor.
+  reelScrim(0, 132, 0.72, 0);
+  reelScrim(486, 54, 0, 0.76);
+  ctx.textAlign = 'center';
+  // the name, as big as the card will carry it
+  const pop = clamp01(at / 0.2);
+  ctx.save(); ctx.globalAlpha *= Math.min(1, pop * 1.8); ctx.translate(0, (1 - easeOut(pop)) * -9);
+  ctx.font = 'bold 50px monospace';
+  // A real shadow, not a second copy of the glyph. An emoji ignores fillStyle, so the offset
+  // black pass drew a full-colour bomb at +3,+3 behind the real one and two of the names
+  // arrived with a ghost attached.
+  reelNameShadow();
+  ctx.fillStyle = readable(r.shirt, true); ctx.fillText(r.name, W / 2, 84);
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.font = '14px monospace'; ctx.fillStyle = 'rgba(216,190,190,0.85)';
+  ctx.fillText(card.doom.label, W / 2, 110);
+  ctx.restore();
+  ctx.globalAlpha *= clamp01((at - 0.12) / 0.25);
+  ctx.font = '15px monospace'; ctx.fillStyle = '#ffd27a';
+  ctx.fillText(`${Math.round(card.at / CFG.finale.x * 100)}% of the way`, W / 2, 506);
+  ctx.font = '12px monospace'; ctx.fillStyle = 'rgba(200,186,186,0.75)';
+  ctx.fillText(reelWhen(r.deathT), W / 2, 526);
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- the top of the climb
+function drawPodiumCard(sy, at) {
+  const R = S.endRoll;
+  ctx.save(); ctx.translate(0, sy);
+  const base = 458, px = [W / 2, W / 2 - 198, W / 2 + 198], ph = [104, 74, 54];
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, REEL.cardH); ctx.clip();
+  reelBack(CFG.finale.x, base, true);
+  // the ground the plinths stand on. Three blocks and three people balanced on them, with
+  // nothing underneath, is the exact fault the logic checker exists to catch.
+  ctx.fillStyle = 'rgba(24,30,22,0.95)'; ctx.fillRect(0, base, W, REEL.cardH - base);
+  ctx.fillStyle = 'rgba(46,58,40,0.9)'; ctx.fillRect(0, base, W, 3);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.ellipse(px[k], base + 5, 74, 7, 0, 0, 6.28); ctx.fill(); }
+  ctx.restore();
+  ctx.textAlign = 'center';
+  const survived = R.out.length > 0;
+  const head = clamp01(at / 0.3);
+  ctx.save(); ctx.globalAlpha *= Math.min(1, head * 1.8);
+  ctx.font = 'bold 34px monospace';
+  const title = survived ? 'THEY GOT OUT' : 'WHO GOT FURTHEST';
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(title, W / 2 + 2, 62);
+  ctx.fillStyle = survived ? '#7ee6a2' : '#ffd27a'; ctx.fillText(title, W / 2, 60);
+  ctx.font = '13px monospace'; ctx.fillStyle = 'rgba(214,206,206,0.75)';
+  ctx.fillText(`${S.stats.arrived} of ${CFG.runnerCount} reached the exit · best streak x${S.bestStreak}`, W / 2, 86);
+  ctx.restore();
+  // 1st in the middle on the tallest block, 2nd to its left, 3rd to its right
+  // Muted toward the night the rest of the screen is painted in. At full chroma the three
+  // blocks were the most saturated objects on the whole reel, under a sky with no light in it,
+  // and read as UI chrome dropped onto the art.
+  const cols = [['#b99733', '#8d6d1c'], ['#a3a8b2', '#757b86'], ['#9c7046', '#755034']];
+  for (let k = 2; k >= 0; k--) {
+    const r = R.podium[k]; if (!r) continue;
+    const p = clamp01((at - 0.34 - (2 - k) * 0.22) / 0.34);
+    if (p <= 0) continue;
+    // SOLE, not shoe-bottom. drawFigure anchors at the sole line and its shoe ellipse hangs
+    // about 2.6 units under that, which at this scale is nine pixels of foot inside the block.
+    const kick = easeBack(p), top = base - ph[k] - REEL_SOLE * (3.0 * 1.1 * (r.height || 1)), arrived = r.state === 'arrived';
+    // The SAME expression that scales the body decides where the name goes, so a short
+    // runner cannot end up with their name floating a body's width above their head. 36.5
+    // units is the figure's own height at scale 1, measured off the 45px a named runner
+    // draws at 1.1 * 1.12 in play.
+    // A DANCER reaches higher than a standing body. drawDancer's raised hand tops out 45.3
+    // units above the soles at the top of its bounce, against the 36.5 a standing figure
+    // reaches -- so the winner's hands swept straight through their own name, on the last and
+    // longest-held thing on the screen.
+    const sc = 3.0 * 1.1 * (r.height || 1), bh = (r.state === 'arrived' ? 48 : 36.5) * sc;
+    ctx.save(); ctx.globalAlpha *= Math.min(1, p * 2);
+    ctx.translate(0, (1 - kick) * 34);
+    reelSlab(px[k] - 62, top, 124, ph[k], cols[k][0], cols[k][1]);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.font = 'bold 28px monospace';
+    ctx.fillText(ordinal(k + 1), px[k], base - ph[k] / 2 + 11);
+    // Someone who walked out dances. Someone who did not is not standing to attention on a
+    // podium: they are shown the way they were last seen, going over, and dimmer than the
+    // people beside them who are alive.
+    if (arrived) drawDancer(r, px[k], top, S.t, sc, 1);
+    else {
+      ctx.save();
+      ctx.translate(px[k], top - 15 * sc); ctx.rotate(-0.15); ctx.translate(-px[k], -(top - 15 * sc));
+      drawFigure(r, px[k], top, 0, sc, 0.74);
+      ctx.restore();
+    }
+    ctx.font = 'bold 19px monospace';
+    reelNameShadow();
+    ctx.fillStyle = readable(r.shirt, true); ctx.fillText(r.name, px[k], top - bh - 14);
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    ctx.font = '12px monospace';
+    ctx.fillStyle = arrived ? 'rgba(150,240,190,0.92)' : 'rgba(216,190,190,0.82)';
+    // TWO lines. The plinths are 198px apart and one line carrying the distance, the place and
+    // the time is 209px wide, so all three ran into each other and none of them could be read.
+    // The time is on it because a run where everyone dies at one room gives three identical
+    // distances, and three identical captions carry no information at all.
+    if (arrived) ctx.fillText('walked out', px[k], base + 19);
+    else {
+      ctx.fillText(`${Math.round(endReach(r) / CFG.finale.x * 100)}% · ${reelWhen(r.deathT)}`, px[k], base + 19);
+      ctx.fillStyle = 'rgba(190,168,168,0.7)'; ctx.font = '11px monospace';
+      ctx.fillText(doomOf(r).short, px[k], base + 33);
+    }
+    ctx.restore();
+  }
+  // everyone else who made it, because a podium of three is not a roll of survivors
+  const rest = R.out.filter(r => R.podium.indexOf(r) < 0);
+  if (rest.length) {
+    ctx.globalAlpha = clamp01((at - 1.0) / 0.4);
+    ctx.font = 'bold 12px monospace';
+    // Laid out from the BOTTOM up, so a long roll grows away from the footer instead of down
+    // into it. Two rows, and a count for whoever is left over: the podium is the point here,
+    // and twenty-three names stacked under it is a wall, not a roll.
+    const rows = nameRows(rest, W - 300, 14), shown = rows.slice(0, 2);
+    let y = 506 - (shown.length - 1) * 15;
+    for (const row of shown) {
+      let x = W / 2 - row.w / 2;
+      ctx.textAlign = 'left';
+      for (const it of row.items) { nameAt(it.r, x, y, 0, false); x += it.w + 14; }
+      ctx.textAlign = 'center';
+      y += 15;
+    }
+    const over = rows.slice(2).reduce((n, row) => n + row.items.length, 0);
+    if (over) {
+      ctx.fillStyle = 'rgba(150,240,190,0.7)'; ctx.font = '11px monospace';
+      ctx.fillText(`and ${over} more`, W / 2, y);
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
 function drawEnd() {
   const T = S.endT, win = S.mode === 'win';
+  if (!S.endRoll) S.endRoll = buildRoll();
+  const R = S.endRoll;
   ctx.fillStyle = `rgba(6,4,10,${0.5 + 0.34 * clamp01(T / 0.7)})`; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+
+  // The headline lands hard: overshoot, a kick of shake, and a ring off the impact. It has
+  // the middle of the screen to itself, and then hands it to the reel.
+  const fade = 1 - clamp01((T - REEL.at) / 0.34);
+  if (fade > 0) {
+    const tp = clamp01(T / 0.44), tk = easeBack(tp), tsc = 1.75 - 0.75 * tk;
+    const shake = Math.max(0, 1 - T / 0.3) * 7;
+    ctx.save();
+    ctx.translate(W / 2 + rand(-shake, shake), 236 + rand(-shake, shake)); ctx.scale(tsc, tsc);
+    ctx.globalAlpha = Math.min(1, tp * 2.2) * fade;
+    ctx.font = 'bold 46px monospace';
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillText(win ? 'THEY MADE IT' : 'NOBODY MADE IT', 3, 4);
+    ctx.fillStyle = win ? '#2ecc71' : '#ff4646';
+    ctx.fillText(win ? 'THEY MADE IT' : 'NOBODY MADE IT', 0, 0);
+    ctx.restore();
+    if (tp < 1) {
+      const rr = 40 + 420 * easeOut(tp);
+      ctx.strokeStyle = win ? `rgba(46,204,113,${(1 - tp) * 0.45 * fade})` : `rgba(255,70,70,${(1 - tp) * 0.45 * fade})`;
+      ctx.lineWidth = 6 * (1 - tp);
+      ctx.beginPath(); ctx.ellipse(W / 2, 228, rr, rr * 0.34, 0, 0, 6.28); ctx.stroke();
+    }
+    // the tallies climb instead of simply being there
+    const cp = easeOut(clamp01((T - 0.45) / 0.8));
+    ctx.globalAlpha = clamp01((T - 0.4) / 0.3) * fade;
+    ctx.fillStyle = '#eee'; ctx.font = '16px monospace';
+    ctx.fillText(`Lost ${Math.round(S.stats.dead * cp)}   Reached the exit ${Math.round(S.stats.arrived * cp)}   best streak x${S.bestStreak}`, W / 2, 278);
+    ctx.globalAlpha = 1;
+  }
+
+  if (T > REEL.at) {
+    const u = T - REEL.at, p = reelPos(R, u);
+    const lo = Math.max(0, Math.ceil(p) - 1), hi = Math.min(R.n, Math.floor(p) + 1);
+    for (let i = lo; i <= hi; i++) {
+      const sy = (i - p) * REEL.cardH;
+      if (sy >= H || sy <= -H) continue;
+      if (i === R.n) drawPodiumCard(sy, u - R.n * R.step);
+      else drawDeathCard(R.cards[i], sy, u - (i * R.step - R.travel * REEL.lead), R);
+    }
+    // where on the road the card in front of you happened
+    const cur = Math.min(R.n, Math.round(p));
+    // On the podium the marker sits at what the WINNER reached, not at the end of the road.
+    const railAt = cur >= R.n ? (R.podium[0] ? endReach(R.podium[0]) : CFG.finale.x) : R.cards[cur].at;
+    drawCourseRail(railAt, clamp01((u - 0.2) / 0.5));
+  }
+
+  // the embers belong to the screen rather than to a card, so they carry across the scroll
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
   for (const e of S.endEmb) {
     ctx.globalAlpha = Math.min(1, e.life / e.max) * Math.min(1, (e.max - e.life) * 2) * 0.75;
     ctx.fillStyle = e.c; ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, 6.28); ctx.fill();
   }
   ctx.restore();
-  ctx.textAlign = 'center';
 
-  // the title lands hard: overshoot, a kick of shake, and a ring off the impact
-  const tp = clamp01(T / 0.44), tk = easeBack(tp), tsc = 1.75 - 0.75 * tk;
-  const shake = Math.max(0, 1 - T / 0.3) * 7;
-  ctx.save();
-  ctx.translate(W / 2 + rand(-shake, shake), 104 + rand(-shake, shake)); ctx.scale(tsc, tsc);
-  ctx.globalAlpha = Math.min(1, tp * 2.2);
-  ctx.font = 'bold 46px monospace';
-  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillText(win ? 'THEY MADE IT' : 'NOBODY MADE IT', 3, 4);
-  ctx.fillStyle = win ? '#2ecc71' : '#ff4646';
-  ctx.fillText(win ? 'THEY MADE IT' : 'NOBODY MADE IT', 0, 0);
-  ctx.restore();
-  if (tp < 1) {
-    const rr = 40 + 420 * easeOut(tp);
-    ctx.strokeStyle = win ? `rgba(46,204,113,${(1 - tp) * 0.45})` : `rgba(255,70,70,${(1 - tp) * 0.45})`;
-    ctx.lineWidth = 6 * (1 - tp);
-    ctx.beginPath(); ctx.ellipse(W / 2, 96, rr, rr * 0.34, 0, 0, 6.28); ctx.stroke();
-  }
-
-  // the tallies climb instead of simply being there
-  const cp = easeOut(clamp01((T - 0.45) / 0.8));
-  ctx.globalAlpha = clamp01((T - 0.4) / 0.3);
-  ctx.fillStyle = '#eee'; ctx.font = '16px monospace';
-  ctx.fillText(`Lost ${Math.round(S.stats.dead * cp)}   Reached the exit ${Math.round(S.stats.arrived * cp)}   best streak x${S.bestStreak}`, W / 2, 142);
-  ctx.globalAlpha = 1;
-
-  const named = S.runners.filter(r => r.name);
-  const out = named.filter(r => r.state === 'arrived');
-  const gone = named.filter(r => r.state !== 'arrived');
-  let y = 176, at = 1.0;
-
-  // who walked out
-  ctx.font = 'bold 11px monospace';
-  ctx.globalAlpha = clamp01((T - 0.88) / 0.3);
-  ctx.fillStyle = 'rgba(150,240,190,0.9)';
-  ctx.fillText(out.length ? `MADE IT OUT — ${out.length}` : 'NOT ONE OF THEM MADE IT OUT', W / 2, y);
-  ctx.globalAlpha = 1;
-  y += out.length ? 20 : 10;
-  ctx.font = 'bold 13px monospace';
-  for (const row of nameRows(out, W - 90, 16)) {
-    let x = W / 2 - row.w / 2;
-    ctx.textAlign = 'left';
-    for (const it of row.items) { nameAt(it.r, x, y, at, false); x += it.w + 16; at += 0.035; }
-    ctx.textAlign = 'center';
-    y += 19;
-  }
-
-  // and where everyone else stopped, in the order they hit it
-  y += 14; at += 0.15;
-  ctx.font = 'bold 11px monospace';
-  ctx.globalAlpha = clamp01((T - (at - 0.1)) / 0.3);
-  ctx.fillStyle = 'rgba(255,160,160,0.9)';
-  ctx.fillText(gone.length ? 'WHERE THE REST FELL' : 'EVERY ONE OF THEM WALKED OUT', W / 2, y);
-  ctx.globalAlpha = 1;
-  y += 18;
-
-  if (gone.length) {
-    const places = new Map();
-    for (const r of gone) {
-      const d = doomOf(r);
-      if (!places.has(d.key)) places.set(d.key, { ...d, list: [] });
-      places.get(d.key).list.push(r);
-    }
-    let rows = [...places.values()].sort((a, b) => a.order - b.order);
-    // keep the report short enough to read: fold any tail into one last line
-    const CAP = 12;
-    if (rows.length > CAP) {
-      const tail = rows.slice(CAP - 1);
-      rows = rows.slice(0, CAP - 1);
-      rows.push({ label: 'deeper in', list: tail.flatMap(t => t.list) });
-    }
-    const labelR = W / 2 - 132, namesL = W / 2 - 120, maxX = W - 40, LINES_CAP = 15;
-    let lines = 0, spilled = 0;
-    for (const row of rows) {
-      let i = 0, firstLine = true;
-      while (i < row.list.length) {
-        if (lines >= LINES_CAP) { spilled += row.list.length - i; break; }
-        if (firstLine) {
-          const lp = clamp01((S.endT - at) / 0.3);
-          if (lp > 0) {
-            ctx.save();
-            ctx.globalAlpha = Math.min(1, lp * 1.6);
-            ctx.textAlign = 'right'; ctx.font = '11px monospace'; ctx.fillStyle = 'rgba(210,180,180,0.75)';
-            ctx.fillText(row.label, labelR, y);
-            ctx.restore();
-          }
-        }
-        // names wrap onto continuation lines rather than being cut off
-        ctx.textAlign = 'left'; ctx.font = 'bold 12px monospace';
-        let x = namesL, shown = 0;
-        while (i < row.list.length) {
-          const r = row.list[i], nw = ctx.measureText(r.name).width;
-          if (shown && x + nw > maxX) break;
-          nameAt(r, x, y, at + shown * 0.026, true);
-          x += nw + 13; shown++; i++;
-        }
-        ctx.textAlign = 'center';
-        at += 0.07 + shown * 0.024;
-        y += 15; lines++; firstLine = false;
-      }
-      if (lines >= LINES_CAP && i < row.list.length) continue;
-      at += 0.04;
-    }
-    if (spilled) {
-      ctx.textAlign = 'left'; ctx.font = '11px monospace'; ctx.fillStyle = 'rgba(200,150,150,0.7)';
-      ctx.fillText(`and ${spilled} more, further in`, namesL, y);
-      ctx.textAlign = 'center'; y += 15;
-    }
-
-    // the two facts they will actually argue about
-    const furthest = gone.reduce((a, b) => b.endX > a.endX ? b : a);
-    const first = gone.reduce((a, b) => b.deathT < a.deathT ? b : a);
-    y += 12;
-    ctx.font = '13px monospace';
-    const l1 = clamp01((S.endT - at) / 0.35), l2 = clamp01((S.endT - at - 0.3) / 0.35);
-    if (l1 > 0) {
-      ctx.globalAlpha = Math.min(1, l1 * 1.6);
-      ctx.fillStyle = '#ffd27a';
-      ctx.fillText(`Got furthest: ${furthest.name} — ${Math.round(furthest.endX / CFG.finale.x * 100)}% of the way, at ${doomOf(furthest).short}`, W / 2, y);
-      ctx.globalAlpha = 1;
-    }
-    if (l2 > 0) {
-      ctx.globalAlpha = Math.min(1, l2 * 1.6);
-      ctx.fillStyle = 'rgba(255,150,150,0.85)';
-      ctx.fillText(`First to go: ${first.name} — ${doomOf(first).short}, ${first.deathT.toFixed(0)}s in`, W / 2, y + 18);
-      ctx.globalAlpha = 1;
-    }
-    at += 0.7;
-  }
-
-  // the rank is stamped into the corner so the report keeps the middle of the screen
-  if (win) {
+  // the rank is stamped into the corner once the climb is over
+  if (win && S.finale && T > R.end + 0.5) {
     const left = S.finale.attempts;
     const rank = left >= 50 ? 'S' : left >= 30 ? 'A' : left >= 15 ? 'B' : left >= 5 ? 'C' : 'D';
     const line = { S: 'the mountain never touched them', A: 'a good day under the rock', B: 'they will talk about this', C: 'the mountain remembers', D: 'barely' }[rank];
-    const sp = clamp01((T - 0.75) / 0.42), k = easeBack(sp);
-    if (sp > 0) {
-      ctx.save();
-      ctx.translate(W - 112, 96); ctx.rotate(-0.16 + (1 - k) * -0.3); ctx.scale(2.1 - 1.1 * k, 2.1 - 1.1 * k);
-      ctx.globalAlpha = Math.min(1, sp * 2.4);
-      ctx.strokeStyle = 'rgba(241,196,15,0.5)'; ctx.lineWidth = 2; roundRect(-58, -26, 116, 52, 8); ctx.stroke();
-      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.font = 'bold 30px monospace'; ctx.fillText(`RANK ${rank}`, 2, 12);
-      ctx.fillStyle = '#f1c40f'; ctx.fillText(`RANK ${rank}`, 0, 10);
-      ctx.restore();
-      if (sp < 1) {
-        const rr = 20 + 190 * easeOut(sp);
-        ctx.strokeStyle = `rgba(241,196,15,${(1 - sp) * 0.5})`; ctx.lineWidth = 5 * (1 - sp);
-        ctx.beginPath(); ctx.arc(W - 112, 96, rr, 0, 6.28); ctx.stroke();
-      }
-    }
-    ctx.fillStyle = '#aaa'; ctx.font = '14px monospace';
-    typeLine(`${left} survivor${left === 1 ? '' : 's'} — ${line}`, W / 2, H - 52, at);
+    const sp = clamp01((T - R.end - 0.5) / 0.42), k = easeBack(sp);
+    ctx.save();
+    ctx.translate(106, 64); ctx.rotate(-0.16 + (1 - k) * -0.3); ctx.scale(2.1 - 1.1 * k, 2.1 - 1.1 * k);
+    ctx.globalAlpha = Math.min(1, sp * 2.4);
+    ctx.strokeStyle = 'rgba(241,196,15,0.5)'; ctx.lineWidth = 2; roundRect(-58, -26, 116, 52, 8); ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.font = 'bold 30px monospace'; ctx.fillText(`RANK ${rank}`, 2, 12);
+    ctx.fillStyle = '#f1c40f'; ctx.fillText(`RANK ${rank}`, 0, 10);
+    ctx.restore();
+    ctx.fillStyle = '#d8cfae'; ctx.font = '13px monospace';
+    typeLine(`${left} survivor${left === 1 ? '' : 's'} — ${line}`, W / 2, 108, R.end + 0.6);
   }
 
-  ctx.globalAlpha = 0.55 + 0.45 * Math.sin(S.t * 3.4);
-  ctx.fillStyle = '#eee'; ctx.font = '17px monospace';
-  ctx.fillText('R to run it again', W / 2, H - 24);
-  ctx.globalAlpha = 1; ctx.textAlign = 'left';
+  // the footer: skippable while the reel runs, the way out once it has stopped
+  if (T > REEL.at && T < R.end) {
+    ctx.globalAlpha = 0.42; ctx.fillStyle = '#ddd'; ctx.font = '11px monospace';
+    ctx.textAlign = 'left'; ctx.fillText('SPACE skips', 16, H - 14); ctx.textAlign = 'center';
+    ctx.globalAlpha = 1;
+  } else if (T >= R.end) {
+    ctx.globalAlpha = 0.55 + 0.45 * Math.sin(S.t * 3.4);
+    ctx.fillStyle = '#eee'; ctx.font = '15px monospace';
+    ctx.fillText('R to run it again', W / 2, H - 16);
+    ctx.globalAlpha = 1;
+  }
+  ctx.textAlign = 'left';
 }
-
 // ================================================================ loop
 let last = performance.now();
 function frame(now) {
@@ -11245,6 +12416,46 @@ if (qs.has('boss')) {
 if (qs.has('bosst') && S.boss) {
   const n = Math.round(+(qs.get('bosst') || 0) * 60);
   for (let i = 0; i < n; i++) updateBoss(1 / 60);
+}
+// ?end=T holds the closing reel T seconds in: a whole run played out headlessly and then
+// the end clock wound to T. Without it, a screenshot of the ninth card costs a whole run,
+// and the reel is the one screen that cannot be photographed any other way.
+//   ?end=6            nobody saved: every named runner gets a card
+//   ?end=6&solve      a bot clears rooms on the way, so fewer cards and a longer climb
+//   ?end=6&solve&win  and the final gate settled in the crowd's favour, for the podium
+if (qs.has('end')) {
+  startRun();
+  const solve = qs.has('solve');
+  for (let i = 0; i < 60 * 400 && S.mode === 'play'; i++) { update(1 / 60); if (solve) devSolve(); }
+  if (S.mode === 'finale') {
+    if (qs.has('win')) { S.mode = 'win'; saveBest(S.finale.attempts); }
+    else for (let i = 0; i < 60 * 400 && S.mode === 'finale'; i++) update(1 / 60);
+  }
+  S.endT = 0; S.endEmb = []; S.endRoll = null;
+  const n = Math.round(+(qs.get('end') || 0) * 60);
+  for (let i = 0; i < n; i++) update(1 / 60);
+}
+// ?trap=NAME holds ONE card of the closing reel still, for the art pass. tt=0..1 picks the
+// point in that death's animation, wet=1 puts water under the fall, who=NAME chooses whose
+// body it is, and st=N freezes the ambient clock so a flicker cannot move between shots.
+// Without it, photographing the mantrap means playing a run in which somebody happens to
+// die in a mantrap, and photographing all sixteen means sixteen such runs.
+if (qs.has('trap')) {
+  const kind = qs.get('trap');
+  const room = S.rooms.find(m => m.type === kind);
+  const r = S.runners.find(q => q.name === (qs.get('who') || 'Morgan')) || S.runners.find(q => q.name);
+  r.state = 'dead'; r.doom = kind === 'final' ? 'final' : (room || null);
+  r.endX = room ? room.x : CFG.finale.x * 0.5; r.deathT = 74;
+  r.how = qs.has('wet') ? 'splash' : 'dark';
+  S.stats.dead = 100; S.stats.arrived = 0; S.bestStreak = 3; S.mode = 'lose';
+  const roll = buildRoll();
+  roll.cards = [{ r, at: endReach(r), doom: doomOf(r), kind, wet: qs.has('wet') }];
+  // travel 0 so the one card is centred from the moment the reel starts: otherwise a low
+  // tt is photographed halfway through sliding in, which is not the frame that was asked for.
+  roll.n = 1; roll.travel = 0; roll.dwell = roll.step; roll.end = REEL.at + roll.step;
+  S.endRoll = roll;
+  S.endT = REEL.at + (+(qs.get('tt') || 0.8)) * roll.anim;
+  S.t = +(qs.get('st') || 3.1);
 }
 if (qs.has('finale')) {
   S.runners.slice(0, 12).forEach(r => { r.state = 'arrived'; });
