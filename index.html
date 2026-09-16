@@ -1289,7 +1289,7 @@ function reset() {
     stats: { dead: 0, arrived: 0 },
     finale: null, best: loadBest(), rollBottom: 254,
     endT: 0, endEmb: [], endSpawn: 0, endRoll: null,
-    introT: 0, doorOpen: 0, drill: null, boss: null, bossCave: false,
+    introT: 0, doorOpen: 0, drill: null, boss: null, bossCave: false, bossOpen: false,
     recent: [], spike: null, spikeCool: 0, streak: 0, bestStreak: 0, lastScream: 0,
   };
   for (let i = 0; i < CFG.runnerCount; i++) {
@@ -1547,6 +1547,16 @@ function update(dt) {
     if (lead >= FAC.seam && !S.rooms.some(m => m.state === 'armed' || m.state === 'open')) {
       S.bossCave = true;
       startBoss(BOSS_CAVE, true, null);
+    }
+  }
+  // and again where the rock ends. Same two rules as the seam: off the lead runner, not
+  // the camera, and never across an armed room.
+  if (S.bossCave && !S.bossOpen) {
+    let lead = -Infinity;
+    for (const r of S.runners) if (r.state === 'run') lead = Math.max(lead, r.x);
+    if (lead >= CFG.exit + 260 && !S.rooms.some(m => m.state === 'armed' || m.state === 'open')) {
+      S.bossOpen = true;
+      startBoss(BOSS_OPEN, true, null);
     }
   }
   if (S.boss && !S.boss.gone) updateBoss(dt);
@@ -9575,6 +9585,14 @@ const BOSS_SCRIPT = [
 const BOSS_CAVE = [
   { t: "Wait a second, you guys can't leave the factory! Come back.", mood: 'alarm' },
 ];
+// And once more where the rock ends. The arc is smug, then panicked, then furious -- and
+// the fury collapses back into smugness on the second line, which is the joke and is also
+// the whole of act three stated before it starts. He is not chasing them any more. He is
+// already there, because he bought it.
+const BOSS_OPEN = [
+  { t: 'FINE! Run! Run into the hills, go on, run!', mood: 'rage' },
+  { t: '...I own the hills.' },
+];
 
 // Longitude in radians, latitude as a fraction of the radius, and a blob outline in the
 // same fractional units. Land is placed by longitude so it can be spun; nothing here is
@@ -9710,10 +9728,23 @@ function drawBoss() {
   drawBossBody(cx, cy, R);
   drawBossGlobe(cx, cy, R, b);
   drawBossFace(cx, cy, R, b);
-  // it comes off his head when the shift walks out, and lands back on it
-  const startled = (b.script[b.line] || {}).mood === 'alarm';
+  // The hat carries the mood too. It comes off his head when the shift walks out and
+  // lands back on it; in temper it stays jammed on and the steam comes out from under it,
+  // which is the same joke the mill's own machines make one act earlier.
+  const m = (b.script[b.line] || {}).mood;
+  const startled = m === 'alarm', furious = m === 'rage';
   const hop = startled ? R * 0.46 * (0.72 + 0.28 * Math.abs(Math.sin(b.t * 4.1))) : 0;
-  drawBossHat(cx, cy, R, hop, startled ? Math.sin(b.t * 3.3) * 0.16 : 0);
+  const ragehop = furious ? R * 0.26 * (0.86 + 0.14 * Math.abs(Math.sin(b.t * 11))) : 0;
+  drawBossHat(cx, cy, R, hop + ragehop,
+              startled ? Math.sin(b.t * 3.3) * 0.16 : furious ? 0.07 : 0);
+  if (furious) {
+    for (const d of [-1, 1]) {
+      millSmoke(cx + d * R * 0.62, cy - R * 0.86, {
+        n: 8, rise: R * 1.5, rate: 1.05, r0: R * 0.12, r1: R * 0.42,
+        drift: d * R * 0.62, a: 0.5, salt: 77 + d, tint: '250,236,214',
+      });
+    }
+  }
   // the lower rule, now over his shoulders: the band's edge belongs in front of the man
   // leaning out of it, and drawn under him he simply rubbed it out
   ctx.fillStyle = 'rgba(206,168,92,0.75)'; ctx.fillRect(0, BOSS.y + BOSS.h - 1.5, W, 1.5);
@@ -9848,13 +9879,27 @@ function drawBossFace(cx, cy, R, b) {
   const laughing = b.laugh > 0;
   // The mood is carried by the LINE, not by the appearance, so a script can turn on him
   // part way through without a second set of state to keep in step.
-  const alarm = (b.script[b.line] || {}).mood === 'alarm';
+  const mood = (b.script[b.line] || {}).mood;
+  const alarm = mood === 'alarm', rage = mood === 'rage';
+  const shout = alarm || rage;
   const open = laughing ? 0.62 + Math.sin(b.laugh * 30) * 0.22
+             : rage ? 0.80 + Math.abs(Math.sin(b.t * 19)) * 0.36
              : alarm ? 0.72 + Math.abs(Math.sin(b.t * 15)) * 0.34
              : talking ? 0.30 + Math.abs(Math.sin(b.t * 17)) * 0.48
              : 0.06;
-  // eyes narrow when he laughs and go wide when the shift walks out
-  const lid = b.blink > 0 ? 0.12 : (laughing ? 0.45 : alarm ? 1.24 : 1);
+  // narrow when he laughs, WIDE when the shift walks out, NARROW again when that turns to
+  // temper. Alarm and rage pulling the lids opposite ways is most of what separates them.
+  const lid = b.blink > 0 ? 0.12 : (laughing ? 0.45 : rage ? 0.5 : alarm ? 1.24 : 1);
+  // The head is the world, so when he loses it the world goes red. Clipped to the globe,
+  // under everything the face draws, so it colours the planet and not his moustache.
+  if (rage) {
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.28); ctx.clip();
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.fillStyle = 'rgba(214,38,26,' + (0.32 + 0.11 * Math.abs(Math.sin(b.t * 9))).toFixed(3) + ')';
+    ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
+    ctx.restore();
+  }
   const ey = cy - R * 0.20, eo = R * 0.36;
   // eyes
   for (const s of [-1, 1]) {
@@ -9864,8 +9909,9 @@ function drawBossFace(cx, cy, R, b) {
     if (lid > 0.3) {
       ctx.fillStyle = INK;
       ctx.beginPath();
-      ctx.arc(cx + s * eo + R * (alarm ? 0.02 : 0.05), ey + R * (alarm ? -0.06 : 0.02),
-              R * (alarm ? 0.062 : 0.085), 0, 6.28);
+      ctx.arc(cx + s * eo + R * (alarm ? 0.02 : rage ? 0.03 : 0.05),
+              ey + R * (alarm ? -0.06 : rage ? 0.05 : 0.02),
+              R * (alarm ? 0.062 : rage ? 0.072 : 0.085), 0, 6.28);
       ctx.fill();
     }
   }
@@ -9873,7 +9919,11 @@ function drawBossFace(cx, cy, R, b) {
   ctx.strokeStyle = INK; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
   for (const s of [-1, 1]) {
     ctx.beginPath();
-    if (alarm) {                                  // inner end HIGH: alarm, not anger
+    if (rage) {                                   // inner end low and driven down
+      ctx.lineWidth = 3.2;
+      ctx.moveTo(cx + s * (eo + R * 0.32), ey - R * 0.44);
+      ctx.lineTo(cx + s * (eo - R * 0.18), ey - R * 0.16);
+    } else if (alarm) {                           // inner end HIGH: alarm, not anger
       ctx.moveTo(cx + s * (eo + R * 0.26), ey - R * 0.40);
       ctx.lineTo(cx + s * (eo - R * 0.14), ey - R * 0.56);
     } else if (BOSS.turn > 0) {                   // outer end low: pleased with himself
@@ -9889,6 +9939,7 @@ function drawBossFace(cx, cy, R, b) {
   // hangs swinging on that chain, which says more than the mouth does: the glass he looks
   // down at people through is off his eye.
   const swing = alarm ? Math.sin(b.t * 5.2) * R * 0.16 : 0;
+  void rage;
   const mx2 = alarm ? cx + R * 0.86 + swing : cx + eo;
   const my2 = alarm ? cy + R * 0.86 : ey;
   ctx.strokeStyle = 'rgba(214,178,96,0.55)'; ctx.lineWidth = 1.2;
@@ -9915,17 +9966,23 @@ function drawBossFace(cx, cy, R, b) {
   const curlL = turn * (R * 0.13 + R * 0.05 * open), curlR = turn * (R * 0.24 + R * 0.09 * open);
   const belly = turn > 0 ? my + Math.max(1.2, mh) : my - R * 0.10 + Math.max(1.2, mh) * 0.5;
   ctx.fillStyle = '#3a1d22';
-  if (alarm) {
-    const ah = R * 0.34 * open;
-    ctx.beginPath(); ctx.ellipse(cx, my + R * 0.04, mw * 0.78, Math.max(3, ah), 0, 0, 6.28); ctx.fill();
+  if (shout) {
+    const ah = R * (rage ? 0.30 : 0.34) * open, ay2 = my + R * 0.04;
+    const drop = rage ? R * 0.16 : 0;             // corners pulled down: a snarl, not a gasp
+    ctx.beginPath();
+    ctx.moveTo(cx - mw * 0.78, ay2 - drop);
+    ctx.quadraticCurveTo(cx, ay2 - ah - drop * 0.4, cx + mw * 0.78, ay2 - drop);
+    ctx.quadraticCurveTo(cx, ay2 + ah, cx - mw * 0.78, ay2 - drop);
+    ctx.closePath(); ctx.fill();
     ctx.strokeStyle = INK; ctx.lineWidth = 1.3; ctx.stroke();
     ctx.save(); ctx.clip();
     ctx.fillStyle = 'rgba(244,238,224,0.94)';
-    ctx.fillRect(cx - mw, my + R * 0.04 - ah, mw * 2, ah * 0.42);
+    ctx.fillRect(cx - mw, ay2 - ah - drop, mw * 2, ah * 0.46);
+    // lower teeth as well when it is a snarl: bared, not merely open
+    if (rage) ctx.fillRect(cx - mw, ay2 + ah * 0.52, mw * 2, ah * 0.5);
     ctx.restore();
-    // the tongue, which is what stops an open mouth reading as a printed hole
     ctx.fillStyle = 'rgba(150,62,66,0.85)';
-    ctx.beginPath(); ctx.ellipse(cx, my + R * 0.04 + ah * 0.52, mw * 0.46, ah * 0.36, 0, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx, ay2 + ah * 0.36, mw * 0.46, ah * 0.32, 0, 0, 6.28); ctx.fill();
   } else {
   ctx.beginPath();
   ctx.moveTo(cx - mw, my - curlL);
