@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '57 read it, do not skip it';
+const BUILD = '58 weather on the hill';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1173,8 +1173,39 @@ const PK = {
   chip:  { g: 800, drag: 0.15, r0: 2.8, r1: 2.4, add: false, shape: 'chip' },
   mote:  { g: -2,  drag: 0.3,  r0: 1.0, r1: 1.0, add: true,  shape: 'dot' },
   grit:  { g: 520, drag: 0.1,  r0: 1.5, r1: 0.9, add: false, shape: 'dot' },
+  // Act three. Thistle and willowherb seed: it does not fall and it does not glow, it
+  // hangs and drifts, so it needs its own near-zero gravity and high drag rather than
+  // being faked with a mote, which is additive and reads as a spark in daylight.
+  seed:  { g: -1.4, drag: 0.5, r0: 1.4, r1: 1.1, add: false, shape: 'dot' },
 };
 const PCAP = 420;
+// Open country, one frame's worth. Called from ambient() at its own 0.06s cadence.
+//
+// The density is keyed to the act's argument rather than being uniform: out of the
+// mountain the ground is loud with seed and insects, and by the wall almost nothing is
+// living in it. That is the parcelling of the land said in particles instead of in a
+// caption, and it costs one multiplier.
+function encAmbient() {
+  const wx = rand(V.left - 40, V.left + V.vw + 40);
+  const gy = encSurfaceY(wx);
+  const fenced = clamp01((wx - ENC.free) / Math.max(1, ENC.wall - ENC.free));
+  const alive = 1 - fenced * 0.78;
+  const gust = windAt(wx, S.t);
+  // seed heads carried downwind, faster inside a gust
+  if (Math.random() < 0.6 * alive)
+    emit('seed', 1, wx, gy + rand(-30, 96), { sx: 12, vx: [8 + gust * 22, 30 + gust * 30], vy: [-10, 4],
+      life: [2.6, 5.4], c: `rgba(238,244,${212 + Math.round(hash(wx) * 26)},0.72)`, sz: 0.75 + hash(wx * 3) * 0.5 });
+  // midges over the warm ground, which barely travel
+  if (Math.random() < 0.34 * alive)
+    emit('mote', 1, wx, gy + rand(6, 74), { sx: 16, sy: 8, vx: [-9, 16], vy: [-8, 8], life: [1.2, 2.8], c: 'rgba(255,238,176,0.42)' });
+  // Dust off the trodden path, under the crowd rather than anywhere on screen -- a track
+  // only smokes where feet are hitting it.
+  if (Math.random() < 0.5) {
+    const r = pick(S.runners.filter(q => q.state === 'run' && inView(q.x, 30)));
+    if (r) emit('dust', 1, r.x + rand(-40, 40), footY(r) + 2,
+      { sx: 6, vx: [-14 + gust * 26, 10 + gust * 30], vy: [-16, -3], life: [0.5, 1.1], c: 'rgba(188,176,150,0.34)', sz: 0.9 });
+  }
+}
 function emit(k, n, x, y, o = {}) {
   n = Math.min(n, PCAP - S.particles.length);
   if (n <= 0) return;
@@ -1212,6 +1243,11 @@ function ambient(dt) {
   S.ambT -= dt;
   if (S.ambT > 0) return;
   S.ambT = 0.06;
+  // Act three has its own weather, and needs its own branch because the lamp loop below is
+  // gated to lx < CFG.exit. Everything past the mountain's mouth therefore had no ambient
+  // anything -- no seed, no insects, no dust off the track, not one particle in the whole
+  // act. That is most of what "there are no effects out there" meant.
+  if (ENC.inside(S.cam + CFG.packFront)) { encAmbient(); return; }
   const lit = [];
   for (let wx = Math.ceil((V.left - 100) / 240) * 240; wx < V.left + V.vw + 100; wx += 240) {
     for (let k = 0; k < CFG.laneCount; k++) {
@@ -2028,6 +2064,9 @@ function draw() {
   drawOutside();
   drawMountain();
   drawEncLand();
+  // After the land and before the boundaries: trees stand ON the hill and BEHIND the
+  // fences, which is the order they exist in.
+  encFlora();
   drawEncBounds();
   drawRiver();
   carveTunnels();
@@ -5385,6 +5424,23 @@ function encSurfaceY(wx) {
     + Math.abs(Math.sin(wx * 0.0094 + 3.1)) * 5;
   return Math.min(base - roll, laneY(encTopLane(wx)) - 20);
 }
+// ---------------------------------------------------------------- weather in act three
+// ONE wind field, read by everything outdoors that should move together: the turf, the
+// seed heads, the hedge, the drifting seed. Two travelling waves, not one -- a single
+// sine makes the whole hillside rise and fall in unison, which reads as the ground
+// breathing rather than as wind crossing it. The second wave is slower and longer, so
+// gusts arrive at different places at different times.
+//
+// It returns roughly -1..1 and is a LEAN, not a displacement: callers scale it by how tall
+// the thing is, because a 3-unit tuft and a 40-unit sapling do not move by the same number
+// of units, they move by the same fraction of their height.
+const windAt = (wx, t) => Math.sin(wx * 0.0042 - t * 1.7) * 0.66 + Math.sin(wx * 0.0013 - t * 0.62) * 0.34;
+// Cloud shadows crossing the land. Slower than the wind and much wider, so the two do not
+// beat against each other. Returns 0 (full sun) to 1 (under a cloud).
+const cloudShadeAt = (wx, t) => {
+  const s = Math.sin(wx * 0.00085 - t * 0.085) + 0.62 * Math.sin(wx * 0.00037 + t * 0.052 + 1.9);
+  return clamp01((s - 0.45) * 1.25);
+};
 function drawEncLand() {
   // x1 is NOT clamped to the course's end. Clamped to finale.x + 300 the hill stopped at
   // world 15900 while drawOutside's lake had already been painted across the whole frame,
@@ -5420,14 +5476,120 @@ function drawEncLand() {
   g.addColorStop(0.5, 'rgba(120,160,100,0.10)');
   g.addColorStop(1, 'rgba(24,40,28,0.45)');
   ctx.fillStyle = g; ctx.fillRect(-60, laneY(CFG.laneCount - 1) - 60, V.vw + 120, CFG.worldBottom);
-  // tufts, thicker low down where the light does not reach
-  for (let wx = Math.floor(x0 / 17) * 17; wx < x1; wx += 17) {
-    const hv = hash(wx * 1.3);
-    if (hv < 0.42) continue;
+  // Cloud shadows, inside the hill's clip so they land on the land and not on the sky.
+  // Drawn before the grass so the blades still catch their own gust highlight on top.
+  // ONE gradient sampled across the view, not a strip per band. Filling each band at its
+  // own flat alpha put a hard vertical seam every 90 units -- a striped curtain hanging
+  // over the hillside, which is worse than the flat green it was meant to break up. A
+  // gradient interpolates between the samples, so the edge of a cloud is a soft front.
+  {
+    const g2 = ctx.createLinearGradient(x0 - V.left, 0, x1 - V.left, 0);
+    const span = Math.max(1, x1 - x0);
+    for (let wx = x0; wx <= x1; wx += 48) {
+      g2.addColorStop(clamp01((wx - x0) / span), `rgba(24,42,52,${(cloudShadeAt(wx, S.t) * 0.22).toFixed(3)})`);
+    }
+    ctx.fillStyle = g2;
+    ctx.fillRect(x0 - V.left, laneY(CFG.laneCount - 1) - 200, x1 - x0, CFG.worldBottom + 200);
+  }
+  // Mottling. At play zoom (0.39 to 0.45) a blade of grass is under a pixel, so the blades
+  // below do almost nothing for the thing Morgan actually complained about -- a terrace
+  // reading as one flat slab of #5c8b52. What survives at that distance is BROAD tonal
+  // variation, which is what real turf looks like from far off: patches grazed short,
+  // patches rank, damp hollows, thin ground over stone. Two octaves of soft blobs, no
+  // outline, low alpha, so it never becomes pattern.
+  // Fine octaves only. A 118-radius blob at 0.17 is a smooth pale ellipse sitting ON the
+  // grass -- a soap bubble, not a patch of it -- because nothing in real turf is that
+  // large AND that regular in outline. Smaller and denser reads as ground; bigger reads as
+  // a shape laid over the ground. If this ever looks flat again, add octaves, not size.
+  for (const [spacing, rad, amp] of [[58, 40, 0.10], [26, 17, 0.075]]) {
+    for (let wx = Math.floor(x0 / spacing) * spacing - spacing; wx < x1 + spacing; wx += spacing) {
+      const hv = hash(wx * 0.73 + spacing), hv2 = hash(wx * 1.91 + spacing), hv3 = hash(wx * 3.3 + spacing);
+      const top = encSurfaceY(wx + (hv - 0.5) * spacing);
+      const cy = top + 18 + hv2 * Math.max(30, CFG.worldBottom - top - 30);
+      // warmer and paler where the ground is thin, cooler and deeper in the hollows
+      const warm = hv3 > 0.5;
+      ctx.fillStyle = warm ? `rgba(196,208,132,${amp * (0.6 + hv3)})` : `rgba(44,84,58,${amp * (0.6 + hv3)})`;
+      ctx.beginPath();
+      ctx.ellipse(wx - V.left + (hv2 - 0.5) * spacing, cy, rad * (0.55 + hv * 0.8), rad * (0.2 + hv2 * 0.3), (hv - 0.5) * 0.5, 0, 6.28);
+      ctx.fill();
+    }
+  }
+  // Sheep tracks. Grazed hillsides are covered in these -- thin worn contours running
+  // across the slope, roughly level, wandering. They are almost free to draw and they do
+  // more for "this is a real hillside" than anything else here, because they describe the
+  // SHAPE of the ground: a contour that dips tells you the land dips, on a green face that
+  // otherwise gives the eye nothing to read the form by.
+  ctx.lineWidth = 1;
+  for (let band = 0; band < 8; band++) {
+    const hv = hash(band * 7.7 + 3);
+    ctx.strokeStyle = `rgba(190,182,144,${0.16 + hv * 0.16})`;
+    ctx.beginPath();
+    let first = true;
+    for (let wx = x0; wx <= x1; wx += 26) {
+      const top = encSurfaceY(wx);
+      const y = top + 22 + (band + hv) * 25 + Math.sin(wx * 0.0043 + band * 1.7) * 6;
+      // a track fades out where it would run off the bottom, rather than pooling on the edge
+      if (y > CFG.worldBottom - 6 || hash(wx * 0.31 + band) < 0.22) { first = true; continue; }
+      if (first) { ctx.moveTo(wx - V.left, y); first = false; } else ctx.lineTo(wx - V.left, y);
+    }
+    ctx.stroke();
+  }
+  // Gorse and thorn on the slope, and stone breaking through where the soil is thin. Both
+  // thin out toward the wall with everything else that was growing here.
+  for (let wx = Math.floor(x0 / 52) * 52; wx < x1; wx += 52) {
+    const hv = hash(wx * 4.1), hv2 = hash(wx * 6.3), hv3 = hash(wx * 8.9);
+    const fenced = clamp01((wx - ENC.free) / Math.max(1, ENC.wall - ENC.free));
     const top = encSurfaceY(wx);
-    const ty = top + 10 + hash(wx * 2.9) * (CFG.worldBottom - top - 20);
-    ctx.fillStyle = `rgba(${Math.round(70 + hv * 40)},${Math.round(110 + hv * 44)},${Math.round(58 + hv * 30)},0.65)`;
-    ctx.fillRect(wx - V.left, ty, 2 + hv * 3, 3 + hv * 5);
+    const y = top + 18 + hv2 * Math.max(24, CFG.worldBottom - top - 34);
+    const px = wx - V.left + (hv3 - 0.5) * 30;
+    if (hv > 0.46 + fenced * 0.3) {
+      // gorse: a dark mound with a few flowers, leaning on the same wind as the grass
+      const rr = 4 + hv3 * 7, lean = windAt(wx, S.t) * rr * 0.3;
+      ctx.fillStyle = `rgba(${Math.round(38 + hv3 * 14)},${Math.round(62 + hv3 * 22)},${Math.round(36 + hv3 * 12)},0.9)`;
+      ctx.beginPath(); ctx.ellipse(px + lean, y, rr, rr * 0.72, 0, 0, 6.28); ctx.fill();
+      if (hv2 > 0.5 && fenced < 0.7) {
+        ctx.fillStyle = 'rgba(230,196,70,0.75)';
+        for (let f = 0; f < 3; f++) {
+          const a = hash(wx + f * 13) * 6.28;
+          ctx.beginPath(); ctx.arc(px + lean + Math.cos(a) * rr * 0.6, y + Math.sin(a) * rr * 0.4, 1.1, 0, 6.28); ctx.fill();
+        }
+      }
+    } else if (hv < 0.16) {
+      // stone breaking through the turf
+      ctx.fillStyle = `rgba(${Math.round(128 + hv3 * 30)},${Math.round(126 + hv3 * 28)},${Math.round(116 + hv3 * 26)},0.7)`;
+      ctx.beginPath(); ctx.ellipse(px, y, 3 + hv3 * 6, 1.6 + hv3 * 2.6, (hv2 - 0.5) * 0.7, 0, 6.28); ctx.fill();
+      ctx.fillStyle = 'rgba(248,250,236,0.20)';
+      ctx.beginPath(); ctx.ellipse(px - 1, y - 0.8, 2 + hv3 * 3.4, 0.9 + hv3 * 1.2, (hv2 - 0.5) * 0.7, 0, 6.28); ctx.fill();
+    }
+  }
+  // The turf. Blades, not rectangles, and they LEAN: a field of upright 3x5 blocks is the
+  // single biggest reason this read as flat next to the mill, because nothing in it moved
+  // and nothing in it had a direction. Each blade leans by a fraction of its own height,
+  // so short grass stirs and long grass sweeps, which is what a hillside actually does.
+  //
+  // The gust also LIGHTENS as it passes. Grass shows its pale underside when it is pushed
+  // over, and that travelling band of lighter green is what makes wind legible at all --
+  // without it the motion is there and cannot be seen at this scale.
+  const step2 = V.zoom < 0.5 ? 11 : 8;
+  for (let wx = Math.floor(x0 / step2) * step2; wx < x1; wx += step2) {
+    const hv = hash(wx * 1.3), hv2 = hash(wx * 2.9), hv3 = hash(wx * 5.1);
+    if (hv < 0.12) continue;
+    const top = encSurfaceY(wx);
+    const ty = top + 4 + hv2 * (CFG.worldBottom - top - 12);
+    const depth = clamp01((ty - top) / Math.max(40, CFG.worldBottom - top));
+    const gust = windAt(wx, S.t);
+    const h = (3 + hv * 7) * (1 - depth * 0.3);
+    const lean = gust * h * 0.55;
+    // pale underside on the push, and darker in the hollows the light does not reach
+    const up = clamp01(Math.abs(gust) * 0.9 - 0.15);
+    const r = 70 + hv3 * 34 + up * 52, g = 112 + hv3 * 40 + up * 46, b = 58 + hv3 * 24 + up * 40;
+    ctx.fillStyle = `rgba(${Math.round(r)},${Math.round(g - depth * 34)},${Math.round(b)},${0.5 + hv3 * 0.3})`;
+    const px = wx - V.left;
+    ctx.beginPath();
+    ctx.moveTo(px - 0.8, ty + h);
+    ctx.lineTo(px + 0.8, ty + h);
+    ctx.lineTo(px + lean, ty);
+    ctx.closePath(); ctx.fill();
   }
   ctx.restore();
   // A rim on the SUNWARD side only, and thin. A 2.6-unit bright line traced along the whole
@@ -5440,6 +5602,74 @@ function drawEncLand() {
     if (b <= a) continue;                       // only the slopes that face the sun
     ctx.strokeStyle = `rgba(190,222,150,${Math.min(0.5, (b - a) / step * 0.9)})`;
     ctx.beginPath(); ctx.moveTo(wx - V.left, a - 0.6); ctx.lineTo(wx + step - V.left, b - 0.6); ctx.stroke();
+  }
+}
+// Trees, thorn scrub and hedge along the skyline and down the hillside.
+//
+// This is the single biggest thing act three was missing. Without it the terraces stack
+// into a symmetrical green pyramid -- a silhouette no landscape has, and the macro-scale
+// version of the stacked-cardboard problem the ridges were already fixed for. Anything
+// standing ON the crest breaks that outline, and a tree does it while also giving the hill
+// a scale: a 45-unit runner against a 60-unit tree says how big the hill is, where an
+// unbroken green face says nothing.
+//
+// Density is keyed to the fencing, and that is the act's argument rather than decoration:
+// out of the mountain the ground is wooded and scrubby, and as the boundaries close in the
+// land has been cleared, until by the wall there is almost nothing left standing on it.
+// Enclosure grubbed out the commons' trees; this is that, drawn.
+function encTree(px, baseY, h, hv, sway, bare) {
+  const lean = sway * h * 0.12;
+  // trunk, tapering, leaning with the canopy so the whole thing bends as one
+  ctx.strokeStyle = bare ? '#5a4a3c' : '#4a3d2f';
+  ctx.lineWidth = Math.max(1, h * 0.075);
+  ctx.beginPath();
+  ctx.moveTo(px, baseY);
+  ctx.quadraticCurveTo(px + lean * 0.3, baseY - h * 0.5, px + lean, baseY - h * 0.72);
+  ctx.stroke();
+  if (bare) {
+    // a grubbed-out stump or a dead thorn: three bare limbs, no canopy
+    ctx.lineWidth = Math.max(0.8, h * 0.045);
+    for (const d of [-1, 0.4, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(px + lean * 0.7, baseY - h * 0.55);
+      ctx.lineTo(px + lean + d * h * 0.26, baseY - h * 0.9);
+      ctx.stroke();
+    }
+    return;
+  }
+  // canopy: overlapping blobs, darker underneath, a warm rim on the sunward (left) top
+  const cx = px + lean, cy = baseY - h * 0.78, r = h * 0.34;
+  const blobs = [[0, 0, 1], [-r * 0.66, r * 0.28, 0.76], [r * 0.62, r * 0.22, 0.72], [-r * 0.2, -r * 0.42, 0.66], [r * 0.3, -r * 0.34, 0.6]];
+  ctx.fillStyle = `rgb(${Math.round(38 + hv * 16)},${Math.round(70 + hv * 26)},${Math.round(40 + hv * 16)})`;
+  for (const [dx, dy, s] of blobs) { ctx.beginPath(); ctx.ellipse(cx + dx, cy + dy, r * s, r * s * 0.82, 0, 0, 6.28); ctx.fill(); }
+  ctx.fillStyle = `rgba(${Math.round(120 + hv * 40)},${Math.round(166 + hv * 34)},${Math.round(92 + hv * 30)},0.85)`;
+  for (const [dx, dy, s] of blobs.slice(0, 3)) {
+    ctx.beginPath(); ctx.ellipse(cx + dx - r * 0.18, cy + dy - r * 0.2, r * s * 0.62, r * s * 0.48, 0, 0, 6.28); ctx.fill();
+  }
+}
+function encFlora() {
+  const x0 = Math.max(ENC.x0 - 200, V.left - 240), x1 = V.left + V.vw + 240;
+  if (x1 <= x0) return;
+  // A far treeline on the back ridges first, hazed toward the sky, so the crest trees have
+  // something behind them and the hill has depth instead of one green plane.
+  ctx.fillStyle = 'rgba(108,142,104,0.5)';
+  for (let wx = Math.floor(x0 / 26) * 26; wx < x1; wx += 26) {
+    const hv = hash(wx * 0.91);
+    if (hv < 0.35) continue;
+    const by = encSurfaceY(wx) - 74 + Math.sin(wx * 0.0013 + 0.4) * 18;
+    const h = 10 + hv * 14;
+    ctx.beginPath();
+    ctx.ellipse(wx - V.left, by, 5 + hv * 5, h * 0.5, 0, 0, 6.28); ctx.fill();
+  }
+  for (let wx = Math.floor(x0 / 46) * 46; wx < x1; wx += 46) {
+    const hv = hash(wx * 0.37), hv2 = hash(wx * 1.13), hv3 = hash(wx * 2.71);
+    const fenced = clamp01((wx - ENC.free) / Math.max(1, ENC.wall - ENC.free));
+    // cleared as the boundaries arrive; a few dead stumps left where woods used to be
+    if (hv > 0.62 - fenced * 0.46) continue;
+    const jx = wx + (hv2 - 0.5) * 34;
+    const base = encSurfaceY(jx);
+    const h = (26 + hv3 * 40) * (1 - fenced * 0.25);
+    encTree(jx - V.left, base + 3, h, hv3, windAt(jx, S.t), fenced > 0.55 && hv2 > 0.62);
   }
 }
 // The fences. This is the act's argument, so it is drawn rather than implied: for the
