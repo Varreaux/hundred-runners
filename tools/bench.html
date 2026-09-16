@@ -41,7 +41,10 @@ const bench = `
   const bsx = bgx - V.left;
   ctx.fillStyle = '#131118'; ctx.beginPath(); ctx.arc(bsx, bcy + 52, 9.4, 0, 6.28); ctx.fill();
   ctx.fillStyle = '#343742'; ctx.beginPath(); ctx.arc(bsx, bcy + 52, 8, 0, 6.28); ctx.fill();
-  millFeature(bgx, by, 0, bfeat, bcy + 52);
+  // by - 2, because that is what millCorridor hands a feature. Drawn at `by` the bench gave
+  // every machine two units of headroom the hall does not have, so a cylinder that was
+  // flush with the truss in play showed a gap here.
+  millFeature(bgx, by - 2, 0, bfeat, bcy + 52);
   // and the roof truss, which hides everything above the floor less 106 and is the reason
   // a machine drawn taller than that is drawing into solid girder
   ctx.fillStyle = '#1a1721'; ctx.fillRect(-20, bcy - 8, bvw + 40, 28);
@@ -51,7 +54,7 @@ const bench = `
   const g2 = ctx.createLinearGradient(0, bcy + 18, 0, bcy + 66);
   g2.addColorStop(0, 'rgba(0,0,0,0.5)'); g2.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g2; ctx.fillRect(-20, bcy + 18, bvw + 40, 48);
-  millFeatureSmoke(bgx, by, 0, bfeat);
+  millFeatureSmoke(bgx, by - 2, 0, bfeat);
   ctx.restore();
 `;
 (0, eval)(game + bench);
