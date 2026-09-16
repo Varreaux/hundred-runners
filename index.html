@@ -250,7 +250,7 @@ function startFinale() {
     diffs: makeFinaleDiffs(scene),
     cursor: { x: 470, y: 220 },
     line,
-    deck: line.slice(0, 18).map((r, i) => ({ r, i, enter: -i * 0.05, x: 0, arrived: false, track: 0, speed: 75 + (i % 5) * 12 })),
+    deck: line.slice(0, 12).map((r, i) => ({ r, i, enter: -i * 0.06, x: 0, arrived: false, track: 0, speed: 95 + (i % 4) * 18 })),
     falling: [],
     fx: [],
     ripples: [],
@@ -279,7 +279,7 @@ function beginFinaleCharge(f) {
   f.chargeT = 0;
   f.chargeNeed = CFG.finale.genTime(Math.max(1, f.line.length));
   f.light = 0;
-  f.deck = f.line.slice(0, 18).map((r, i) => ({ r, i, enter: -i * 0.045, x: 0, arrived: false, track: 0, speed: 75 + (i % 5) * 12 }));
+  f.deck = f.line.slice(0, 12).map((r, i) => ({ r, i, enter: -i * 0.05, x: 0, arrived: false, track: 0, speed: 95 + (i % 4) * 18 }));
 }
 function finaleWrong() {
   const f = S.finale;
@@ -4942,13 +4942,16 @@ function drawFinalePanel() {
     if (d.enter < 0 && d.x <= L.deck.x - 40) continue;
     const sprinting = d.arrived && f.phase !== 'blackout';
     const entering = !d.arrived && d.enter >= 0;
-    const phase = (sprinting || entering) ? (t * 22 + d.i * 1.9) : (t * 2 + d.i);
-    const bob = (sprinting || entering) ? -Math.abs(Math.sin(phase)) * 3.1 : 0;
-    const leanBoost = sprinting ? 1 : 1;
+    const phase = (sprinting || entering) ? (t * 24 + d.i * 2.1) : (t * 2 + d.i);
+    const bob = (sprinting || entering) ? -Math.abs(Math.sin(phase)) * 3.6 : 0;
     const alpha = d.enter < 0 ? 0.35 : 1;
-    ctx.fillStyle = `rgba(0,0,0,${0.35 * alpha})`;
-    ctx.beginPath(); ctx.ellipse(d.x + 4, L.deck.y + L.deck.h - 1, 9, 2.6, 0, 0, 6.28); ctx.fill();
-    drawFigure(d.r, d.x, L.deck.y + L.deck.h - 6 + bob, phase * leanBoost, 1.12, alpha);
+    ctx.fillStyle = `rgba(0,0,0,${0.38 * alpha})`;
+    ctx.beginPath(); ctx.ellipse(d.x + 5, L.deck.y + L.deck.h - 1, 10, 2.8, 0, 0, 6.28); ctx.fill();
+    ctx.save();
+    ctx.translate(d.x, L.deck.y + L.deck.h - 6 + bob);
+    if (sprinting || entering) ctx.rotate(0.12);
+    drawFigure(d.r, 0, 0, phase, 1.18, alpha);
+    ctx.restore();
   }
 
   // falling bodies
