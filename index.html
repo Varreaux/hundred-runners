@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '45 the wall stops at the gate';
+const BUILD = '46 one datum for the opening, doors that slide';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -33,7 +33,15 @@ const CFG = {
   // clear span is doors +/- (half + jamb). drawGateWall, drawYardDoors, drawDoorSpill
   // and millYard all read these two, the last to decide where NOT to build its wall
   // -- if a copy of them ever drifts, the threshold grows a sill and nothing says so.
-  intro: { belt: -220, drop: 300, doors: 640, half: 44, jamb: 13, lift: 104, deliver: 2.8, settle: 1.1, open: 1.3, hold: 0.45 },
+  // `ride` lives here rather than inside updateIntro because drawBelt needs it too: the
+  // band's hatching and the riders standing on it have to travel at ONE speed or the
+  // people read as sliding along a stationary belt. They did: the hatching crawled at 46
+  // units/s under riders moving at 558.
+  // The timeline has to close: the last person born at `deliver` still has ride + step +
+  // cross to walk, so `settle` must be at least that or the run starts with people still
+  // on the stair. settle = 1.15 against a 3.6s walk was why stragglers were teleported.
+  intro: { belt: -300, drop: 230, doors: 640, half: 44, jamb: 13, lift: 126,
+           deliver: 2.2, ride: 1.8, step: 1.0, cross: 0.8, settle: 3.6, open: 1.2, hold: 0.4 },
   riverY: 470,
   // Where rock stands over the water. The river darkens because there is rock above it,
   // not because it has crossed the entrance, so the darkening is keyed to these. They are
@@ -57,6 +65,12 @@ const CFG = {
     rope:    { verb: 'word', title: 'pull the rope bridge',   hazard: 'all',   color: '#ff4646' },
     rickety: { verb: 'word', title: 'tie the rickety bridge', hazard: 'half',  color: '#ff9a3c' },
     crusher: { verb: 'keys', title: 'jam the crusher',        hazard: 'burst', color: '#ffd23c' },
+    // Act three. Property, not machinery: the ditch-and-bank that enclosure was actually
+    // dug as, a laid thorn hedge, and the mantraps landowners set for trespassers.
+    ditch:   { verb: 'dig',   title: 'cut through the bank',   hazard: 'all',   color: '#ff4646' },
+    thorn:   { verb: 'word',  title: 'tear a gap in the thorn', hazard: 'half',  color: '#ff9a3c' },
+    mantrap: { verb: 'lift',  title: 'force the jaws open',    hazard: 'burst', color: '#ffd23c' },
+    wall:    { verb: 'blast', title: 'blow the wall open',     hazard: 'all',   color: '#ff4646' },
   },
   crusherPeriod: 1.6,
   // hazard -> how far into the room it starts killing; canReach asks this
@@ -73,8 +87,17 @@ const CFG = {
     { x: 7400,  from: 2, to: 3, merge: 10400, split: 0.6 },
     { x: 7800,  from: 3, to: 4, merge: 10100, split: 0.6 },
     { x: 8200,  from: 4, to: 5, merge: 9800,  split: 0.6 },
+    // Act three. Out of the mountain the land opens and the paths climb away from one
+    // another -- this is the stretch that is meant to read as freedom. Every one of them
+    // is then funnelled back down to the valley floor before the wall, which is the point:
+    // the choices were real and they all arrive at the same fence. Nested forks merge
+    // before their parent, as the rule above requires: 14700 > 14400 > 14100 > 13800.
+    { x: 12520, from: 0, to: 1, merge: 14700, split: 0.5 },
+    { x: 12820, from: 1, to: 2, merge: 14400, split: 0.5 },
+    { x: 13120, from: 2, to: 3, merge: 14100, split: 0.5 },
+    { x: 13420, from: 3, to: 4, merge: 13800, split: 0.5 },
   ],
-  gates: [3150, 8150],
+  gates: [3150, 8150, 13260],
   gateArm: 140, holdMax: 8,
   keepOnScreen: 10,       // a live runner is never pushed closer than this to the left edge; the camera waits instead
   // everyone in the crew runs every time; who they end up being is shuffled each run
@@ -117,14 +140,49 @@ const CFG = {
     { x: 9900,  lane: 1, type: 'crusher', diff: 4 },
     { x: 10200, lane: 2, type: 'rope',    diff: 4 },
     { x: 11600, lane: 0, type: 'bridge',  diff: 5 },
+    // ---- act three -------------------------------------------------------------
+    // Nothing between the mouth at 12290 and 13500: the crowd comes out into open country
+    // and runs through it unthreatened, because the stretch has to be worth losing.
+    { x: 13560, lane: 0, type: 'ditch',   diff: 3 },
+    { x: 13640, lane: 2, type: 'thorn',   diff: 3 },
+    { x: 13720, lane: 4, type: 'ditch',   diff: 3 },
+    { x: 13980, lane: 1, type: 'mantrap', diff: 4 },
+    { x: 14180, lane: 3, type: 'thorn',   diff: 4 },
+    { x: 14320, lane: 0, type: 'mantrap', diff: 4 },
+    { x: 14560, lane: 2, type: 'ditch',   diff: 4 },
+    { x: 14860, lane: 1, type: 'thorn',   diff: 5 },
+    { x: 15020, lane: 0, type: 'ditch',   diff: 5 },
+    // the wall across everything. Its warning is long because it is the one room the
+    // whole act has been walking toward and a player should see it coming.
+    { x: 15180, lane: 0, type: 'wall',    diff: 5, warn: 1000 },
   ],
-  finale: { x: 12300, baseLen: 6, keyTime: 0.9 },
+  finale: { x: 15600, baseLen: 6, keyTime: 0.9 },
 };
-CFG.exit = CFG.finale.x - 10;
+// The mountain's MOUTH, which is no longer the end of the course. These were one number
+// until act three existed; everything that means "where the rock stops" reads CFG.exit,
+// and everything that means "where the run ends" reads CFG.finale.x. Act three -- the
+// enclosure -- is the ground between them.
+CFG.exit = 12290;
+CFG.roofTo = CFG.exit;
 const laneY = k => CFG.baseY - CFG.laneGap * k;
+// ---------------------------------------------------------------- act three: the enclosure
+// Open country past the mountain's mouth. It reads as freedom for the first stretch --
+// sky, grass, hills, paths climbing away from each other -- and is then fenced in front of
+// you, until the only way on is through a wall.
+//
+// Federici's argument is that the land being taken is the engine, not a disaster: the
+// hundred cannot stop because there is nowhere to stop. So the hazards here are property
+// rather than machinery -- a ditch, a laid thorn hedge, a mantrap -- and the last room is
+// an attempt to blast a hole in the wall that has just been built across the world.
+const ENC = {
+  x0: CFG.exit + 48,      // where the rock ends and the grass starts
+  free: 13500,            // up to here it is open country and nothing is fenced
+  wall: 15180,            // the wall across everything; the last room stands at it
+  inside: wx => wx > CFG.exit + 48,
+};
 // where each tunnel exists: tunnel 0 runs the whole mountain, others exist between their fork and merge
 const LANE_SPANS = [];
-for (let k = 0; k < CFG.laneCount; k++) LANE_SPANS.push(k === 0 ? [[CFG.entrance - 20, CFG.exit + 20]] : CFG.forks.filter(f => f.to === k).map(f => [f.x + CFG.rampLen, f.merge]));
+for (let k = 0; k < CFG.laneCount; k++) LANE_SPANS.push(k === 0 ? [[CFG.entrance - 20, CFG.finale.x + 20]] : CFG.forks.filter(f => f.to === k).map(f => [f.x + CFG.rampLen, f.merge]));
 const laneAt = (k, x) => LANE_SPANS[k].some(([a, b]) => x >= a && x <= b);
 
 const LINES = {
@@ -542,6 +600,238 @@ const VERBS = {
       }
     },
   },
+  // ---- act three ------------------------------------------------------------------
+  // Three verbs for the enclosure. Each is built so the picture says what to do before
+  // the hint line does: a spade that swings when you alternate, jaws that open while you
+  // hold, a fuse that burns toward a charge.
+  //
+  // None of them repeats a mechanic the mill already uses. The eight before this are:
+  // align (gears), match a shown sequence (levers), watch-then-repeat (lights), deduce an
+  // order (code), a multi-step route (wires), hit-in-order (keys), a moving marker (bar)
+  // and typing (word). What none of them has is a key you HOLD, or a rhythm you keep, so
+  // that is what these two are; blast is a three-beat sequence because it is a finale and
+  // wants a shape of its own.
+  dig: {
+    hint: 'left, right, left, right \u2014 keep the rhythm and the spade keeps cutting',
+    // alternating, so the next key is always the one you did not just press
+    solveKey: m => (m.last === 'ARROWLEFT' ? 'ARROWRIGHT' : 'ARROWLEFT'),
+    start(diff) {
+      return { cut: 0, need: 1, last: null, swing: 0, slip: 0, rate: 0.30 + 0.03 * diff, decay: 0.16 + 0.02 * diff };
+    },
+    key(m, k) {
+      if (k !== 'ARROWLEFT' && k !== 'ARROWRIGHT') return null;
+      // pressing the same side twice is a shovel that never leaves the ground: no cut,
+      // but no punishment either. A rhythm game that resets is a rhythm game nobody finishes.
+      if (k === m.last) { m.slip = 1; return 'ok'; }
+      m.last = k; m.swing = 1;
+      m.cut = Math.min(1, m.cut + m.rate);
+      return m.cut >= 1 ? 'done' : 'ok';
+    },
+    update(m, dt) {
+      // the bank slumps back in, so stopping loses ground and the rhythm has to be kept
+      m.cut = Math.max(0, m.cut - m.decay * dt);
+      m.swing = Math.max(0, m.swing - dt * 3.4);
+      m.slip = Math.max(0, m.slip - dt * 2.2);
+    },
+    progress(m) { return m.cut; },
+    draw(m, px, py, pw) {
+      const cx = px + pw / 2, gy = py + 84, halfW = Math.min(150, pw / 2 - 40);
+      // the bank, with a notch cut into it that deepens as you dig
+      ctx.fillStyle = '#4a3b2a';
+      ctx.beginPath();
+      ctx.moveTo(cx - halfW, gy);
+      ctx.lineTo(cx - halfW, py + 40);
+      ctx.lineTo(cx + halfW, py + 40);
+      ctx.lineTo(cx + halfW, gy);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#3f5a2e'; ctx.fillRect(cx - halfW, py + 40, halfW * 2, 4);   // turf on top
+      // the notch: a V that reaches the far side when the cut is complete
+      const w = 16 + m.cut * 54, d = 6 + m.cut * 42;
+      ctx.fillStyle = m.cut >= 1 ? '#7fd6a0' : '#161a20';
+      ctx.beginPath();
+      ctx.moveTo(cx - w, py + 38); ctx.lineTo(cx + w, py + 38);
+      ctx.lineTo(cx + w * 0.45, py + 38 + d); ctx.lineTo(cx - w * 0.45, py + 38 + d);
+      ctx.closePath(); ctx.fill();
+      // the spade, swinging to whichever side was last pressed
+      const side = m.last === 'ARROWRIGHT' ? 1 : -1;
+      const lift = Math.sin(m.swing * Math.PI) * 16;
+      const hx = cx + side * (30 + lift * 0.5), hy = py + 34 - lift;
+      ctx.strokeStyle = '#8a6a44'; ctx.lineWidth = 3.4;
+      ctx.beginPath(); ctx.moveTo(hx, hy - 20); ctx.lineTo(cx + side * 12, py + 40); ctx.stroke();
+      ctx.fillStyle = m.slip > 0 ? '#ff7a7a' : '#c8d0dc';
+      ctx.beginPath();
+      ctx.moveTo(cx + side * 12 - 7, py + 38); ctx.lineTo(cx + side * 12 + 7, py + 38);
+      ctx.lineTo(cx + side * 12, py + 52); ctx.closePath(); ctx.fill();
+      // which side to press next, shown ON the thing rather than in a legend
+      const next = m.last === 'ARROWLEFT' ? 1 : -1;
+      ctx.textAlign = 'center'; ctx.font = 'bold 26px monospace';
+      ctx.fillStyle = 'rgba(92,225,255,0.95)';
+      ctx.fillText(next < 0 ? '\u2190' : '\u2192', cx + next * (halfW + 22), py + 60);
+      ctx.fillStyle = 'rgba(120,132,150,0.4)';
+      ctx.fillText(next < 0 ? '\u2192' : '\u2190', cx - next * (halfW + 22), py + 60);
+      ctx.textAlign = 'left';
+    },
+  },
+  lift: {
+    hint: 'hold SPACE to force the jaws \u2014 let go before the spring bites, then take hold again',
+    // Hold until the strain is nearly up, let go, take hold again. The numbers matter:
+    // strain fills in 1/0.62 = 1.61s and the jaws open in 1/0.42 = 2.38s, so holding
+    // straight through ALWAYS bites before it succeeds. If that ordering ever inverts,
+    // the puzzle solves itself by leaning on the key and there is no puzzle.
+    solveKey: m => (m.holding ? (m.strain > 0.72 ? ' ' : null) : m.strain < 0.2 ? ' ' : null),
+    takesHold: true,
+    start(diff) {
+      // inputT is NOT optional for a verb that banks m.won: the deferred-win branch in
+      // update() does Math.max(0, m.inputT - dt) and then tests <= 0, so leaving it
+      // undefined makes that NaN, NaN <= 0 is false, and the room never clears at all.
+      return { open: 0, strain: 0, holding: false, snapped: 0, inputT: 0.3,
+               gain: 0.46 - 0.01 * diff, build: 0.56 + 0.03 * diff, ease: 1.6, slip: 0.26 };
+    },
+    key(m, k) {
+      if (k !== ' ') return null;
+      // A press TOGGLES the grip, and keyup releases it too. Both, deliberately: holding
+      // the key is the natural way to play it, but the test bot can only dispatch
+      // keydown -- it has no way to let go -- so a release-only design is one the bot can
+      // never solve, and the room would read as impossible in every harness run.
+      m.holding = !m.holding;
+      return m.open >= 1 ? 'done' : 'ok';
+    },
+    release(m, k) { if (k === ' ') m.holding = false; },
+    update(m, dt) {
+      if (m.holding) {
+        m.open = Math.min(1, m.open + m.gain * dt);
+        m.strain = Math.min(1.35, m.strain + m.build * dt);
+        // held too long: the spring bites back and takes some of the opening with it
+        if (m.strain >= 1) { m.holding = false; m.snapped = 1; m.open = Math.max(0, m.open - m.slip); }
+      } else {
+        m.strain = Math.max(0, m.strain - m.ease * dt);
+        m.open = Math.max(0, m.open - 0.06 * dt);       // barely creeps shut: progress is kept
+      }
+      m.snapped = Math.max(0, m.snapped - dt * 2);
+      // The jaws come apart while a key is DOWN, so the moment of winning is not a
+      // keypress. Bank it here or the win waits for a press that may never come.
+      if (m.open >= 1) m.won = true;
+    },
+    progress(m) { return m.open; },
+    draw(m, px, py, pw) {
+      const cx = px + pw / 2, cy = py + 74;
+      const gap = 6 + m.open * 46;
+      // the jaws, hinged at the centre and opening upward and downward
+      for (const dir of [-1, 1]) {
+        ctx.save(); ctx.translate(cx, cy); ctx.scale(1, dir);
+        ctx.strokeStyle = m.snapped > 0 ? '#ff7a7a' : '#aab4c4'; ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.arc(0, 0, 44, Math.PI * 1.06, Math.PI * 1.94); ctx.stroke();
+        // teeth along the jaw, meeting when it is shut
+        ctx.fillStyle = m.snapped > 0 ? '#ff7a7a' : '#cdd6e2';
+        for (let i = -3; i <= 3; i++) {
+          const a = Math.PI * 1.5 + i * 0.17;
+          const jx = Math.cos(a) * 44, jy = Math.sin(a) * 44;
+          ctx.beginPath(); ctx.moveTo(jx - 4, jy); ctx.lineTo(jx + 4, jy); ctx.lineTo(jx, jy + gap * 0.22); ctx.closePath(); ctx.fill();
+        }
+        ctx.restore();
+      }
+      // the spring at the hinge, compressing as the jaws come apart
+      ctx.strokeStyle = '#6e7a8e'; ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      for (let i = 0; i <= 8; i++) ctx.lineTo(cx - 62 + i * 5, cy + (i % 2 ? -1 : 1) * (7 - m.open * 4));
+      ctx.stroke();
+      // strain gauge: green while it is safe to keep holding, red once the spring is about
+      // to bite. This is the whole puzzle, so it is the biggest thing in the panel.
+      const bw = Math.min(190, pw - 90), bx = cx - bw / 2, by = py + 22;
+      ctx.fillStyle = '#242c37'; roundRect(bx, by, bw, 13, 6); ctx.fill();
+      const danger = Math.min(1, m.strain);
+      ctx.fillStyle = danger > 0.78 ? '#ff5a5a' : danger > 0.55 ? '#f1c40f' : '#6ee7a0';
+      roundRect(bx, by, bw * danger, 13, 6); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(bx + bw * 0.78, by - 3, 2, 19);   // the line to stay under
+      // how far open, against how far it must go
+      ctx.fillStyle = '#242c37'; ctx.fillRect(bx, py + 100, bw, 5);
+      ctx.fillStyle = '#5ce1ff'; ctx.fillRect(bx, py + 100, bw * m.open, 5);
+    },
+  },
+  blast: {
+    hint: 'press the lit holes to charge them \u2014 then hold SPACE to pay out the fuse \u2014 then SPACE to fire',
+    solveKey(m) {
+      if (m.stage === 0) return m.holes[m.idx].k;
+      if (m.stage === 1) return ' ';
+      return m.arm > 0 ? null : ' ';
+    },
+    start(diff) {
+      const n = 3 + Math.min(2, Math.floor(diff / 2));
+      const ks = makeSeq(n);
+      return { stage: 0, idx: 0, holes: ks.map((k, i) => ({ k, charged: false })),
+               fuse: 0, pays: 0, need: 5, arm: 0, lit: 0, fired: 0 };
+    },
+    key(m, k) {
+      // beat one: charge every borehole, in order along the wall
+      if (m.stage === 0) {
+        if (k !== m.holes[m.idx].k) return CFG.keyPool.includes(k) ? 'wrong' : null;
+        m.holes[m.idx].charged = true;
+        if (++m.idx >= m.holes.length) { m.stage = 1; m.idx = 0; }
+        return 'ok';
+      }
+      // beat two: pay the fuse out back to where you are standing, a length per press
+      if (m.stage === 1) {
+        if (k !== ' ') return null;
+        if (++m.pays >= m.need) { m.stage = 2; m.arm = 0.45; }
+        return 'ok';
+      }
+      // beat three: fire. The arm delay exists so the last fuse press cannot roll
+      // straight into the plunger -- both beats are SPACE, and without it the puzzle
+      // would end on a key the player had already pressed for something else.
+      if (k !== ' ' || m.arm > 0) return null;
+      m.fired = 1;
+      return 'done';
+    },
+    update(m, dt) {
+      m.fuse += (Math.min(1, m.pays / m.need) - m.fuse) * Math.min(1, dt * 9);
+      if (m.arm > 0) m.arm -= dt;
+      if (m.stage === 2 && m.arm <= 0) m.lit = Math.min(1, m.lit + dt * 3);
+    },
+    progress(m) { return (m.stage + (m.stage === 0 ? m.idx / m.holes.length : m.stage === 1 ? m.pays / m.need : m.lit)) / 3; },
+    draw(m, px, py, pw) {
+      const cx = px + pw / 2;
+      // the wall face, with boreholes drilled in it
+      ctx.fillStyle = '#4a4048'; ctx.fillRect(cx - 150, py + 30, 300, 58);
+      ctx.fillStyle = 'rgba(0,0,0,0.30)';
+      for (let r = 0; r < 3; r++) ctx.fillRect(cx - 150, py + 30 + r * 20, 300, 1.6);
+      const n = m.holes.length, step = Math.min(58, 260 / n);
+      m.holes.forEach((h, i) => {
+        const hx = cx + (i - (n - 1) / 2) * step, hy = py + 60;
+        ctx.fillStyle = '#14121a'; ctx.beginPath(); ctx.arc(hx, hy, 12, 0, 6.28); ctx.fill();
+        if (h.charged) {
+          ctx.fillStyle = '#c4762e'; ctx.beginPath(); ctx.arc(hx, hy, 8.5, 0, 6.28); ctx.fill();
+          ctx.fillStyle = '#e8a04a'; ctx.beginPath(); ctx.arc(hx - 2, hy - 2, 3.4, 0, 6.28); ctx.fill();
+        }
+        ctx.textAlign = 'center'; ctx.font = 'bold 15px monospace';
+        ctx.fillStyle = h.charged ? '#6ee7a0' : (m.stage === 0 && i === m.idx) ? '#5ce1ff' : '#6e7a8e';
+        ctx.fillText(h.k, hx, hy + 30);
+      });
+      // the fuse, paid out from the charges back to where you are standing
+      if (m.stage >= 1) {
+        const fx0 = cx - 150, fx1 = cx + 150;
+        ctx.strokeStyle = '#6e5a3e'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(fx1, py + 96);
+        ctx.lineTo(fx1 - (fx1 - fx0) * m.fuse, py + 96); ctx.stroke();
+        if (m.stage === 1) {
+          const hx = fx1 - (fx1 - fx0) * m.fuse;
+          ctx.fillStyle = '#ffd23c';
+          ctx.beginPath(); ctx.arc(hx, py + 96, 4.4, 0, 6.28); ctx.fill();
+          ctx.textAlign = 'center'; ctx.font = 'bold 12px monospace';
+          ctx.fillStyle = '#5ce1ff';
+          ctx.fillText('SPACE \u00d7 ' + (m.need - m.pays), cx, py + 112);
+        }
+      }
+      // the plunger, live once the fuse is run out and the arm delay has passed
+      if (m.stage === 2) {
+        const live = m.arm <= 0;
+        ctx.fillStyle = m.fired ? '#6ee7a0' : live ? '#ff5a5a' : '#5a4148';
+        roundRect(cx - 34, py + 88, 68, 18, 5); ctx.fill();
+        ctx.fillStyle = '#12161c'; ctx.textAlign = 'center'; ctx.font = 'bold 13px monospace';
+        ctx.fillText(live ? 'SPACE' : '\u2022 \u2022 \u2022', cx, py + 101);
+      }
+      ctx.textAlign = 'left';
+    },
+  },
   word: {
     hint: 'type the word',
     solveKey: m => m.word[m.idx],
@@ -798,7 +1088,7 @@ function ambient(dt) {
   for (let wx = Math.ceil((V.left - 100) / 240) * 240; wx < V.left + V.vw + 100; wx += 240) {
     for (let k = 0; k < CFG.laneCount; k++) {
       const lx = wx + k * 40;
-      if (laneAt(k, lx) && Math.abs(lx - CFG.entrance) > 80 && Math.abs(lx - CFG.exit) > 80) lit.push([lx, laneY(k) - CFG.tunnelH + 2]);
+      if (lx < CFG.exit && laneAt(k, lx) && Math.abs(lx - CFG.entrance) > 80 && Math.abs(lx - CFG.exit) > 80) lit.push([lx, laneY(k) - CFG.tunnelH + 2]);
     }
   }
   if (!lit.length) return;
@@ -957,6 +1247,17 @@ window.addEventListener('keydown', e => {
       if (f.idx >= f.len) { S.mode = 'win'; saveBest(f.attempts); }
     } else finaleFail();
   }
+});
+// The other half of a held key. `e.repeat` is dropped at the top of keydown, so a held key
+// delivers exactly one keydown; verbs that are ABOUT holding (lift, blast) need to be told
+// when it ends rather than being hammered. Only verbs declaring takesHold see this, so
+// nothing else has to know keyup exists. A verb whose panel closes mid-hold never gets its
+// release, which is why every hold verb also decays its own state in update().
+window.addEventListener('keyup', e => {
+  const room = S.active;
+  if (S.mode !== 'play' || !room) return;
+  const v = VERBS[room.verb];
+  if (v.takesHold && v.release) v.release(room.mg, e.key.toUpperCase());
 });
 function toggleGate() {
   const holding = S.gates.find(g => g.state === 'holding');
@@ -1197,34 +1498,54 @@ function update(dt) {
 const I = () => CFG.intro;
 // One stair, two consumers: updateIntro walks it and drawBelt draws it. Separate
 // numbers here is how you get people descending past the treads.
-const STAIR_N = 10, STAIR_TREAD = 9;
+// ---------------------------------------------------------------- the opening's datum
+// Two lines: the band a rider stands on, and the yard everyone ends up on. Every
+// other number in the opening is derived from them here and nowhere else.
+//
+// They used to be recomputed in four places and disagreed in all four -- riders hung
+// 22 below the band, walkers 20 below the treads, and the flight covered 82 of a 126
+// drop so it met neither the belt at the top nor the yard at the bottom. All four were
+// the same datum computed four ways, so all four are fixed by having only one.
+//
+// CFG.intro.lift is the band's WALKING SURFACE above the yard, not the underside of the
+// frame. That distinction is the whole bug: the frame hangs BELOW the surface you stand on.
+const BELT_H = 22;                                    // frame depth, hanging below the band
+const introBeltY = () => laneY(0) - CFG.intro.lift;   // the surface a rider's feet are on
+const introGroundY = () => laneY(0);
+const STAIR_RISE = 7, STAIR_TREAD = 11;               // a 45-unit body wants a 7 riser, not a 13
+const STAIR_N = Math.round(CFG.intro.lift / STAIR_RISE);
+const STAIR_RISER = CFG.intro.lift / STAIR_N;         // exact, so the flight lands ON the yard
+const STAIR_RUN = STAIR_N * STAIR_TREAD;
+// The surface underfoot at fraction k along the flight. Stepped, because it is a stair:
+// a walker is on tread i for the whole of tread i, and drops a riser between them.
+const stairY = k => introBeltY() + Math.min(STAIR_N, Math.floor(k * STAIR_N + 0.0001)) * STAIR_RISER;
+const stairFootX = () => CFG.intro.drop + STAIR_RUN;
 function updateIntro(dt) {
   const c = I();
   S.introT += dt;
   const gather = c.deliver + c.settle;
-  const floor = laneY(0);
   for (const r of S.runners) {
-    if (S.introT < r.bornAt) { r.x = c.belt - 260 - (r.bornAt / c.deliver) * 900; r.y = floor - c.lift; r.onBelt = true; r.offLine = false; r.held = true; continue; }
+    if (S.introT < r.bornAt) { r.x = c.belt - 260 - (r.bornAt / c.deliver) * 900; r.y = introBeltY(); r.onBelt = true; r.offLine = false; r.held = true; continue; }
     const since = S.introT - r.bornAt;
-    const ride = 0.85, step = 0.5;                 // along the line, then down the stair
+    const ride = c.ride, step = c.step;            // along the line, then down the stair
     // (a)8: a rider is carried, and someone standing in the queue is standing. r.held
     // is what drawRunners already reads to stop the legs cycling.
     if (since < ride) {                            // carried along, feet still
       r.onBelt = true; r.offLine = false; r.held = true;
       r.x = c.belt + (since / ride) * (c.drop - c.belt);
-      r.y = floor - c.lift;                        // feet ON the band surface (drawBelt puts it here)
+      r.y = introBeltY();                          // the band's surface, the same line drawBelt draws
     } else if (since < ride + step) {              // down the stair, walking
       const k = (since - ride) / step;
       r.onBelt = false; r.offLine = true; r.held = false;
-      r.x = c.drop + k * (STAIR_N * STAIR_TREAD);  // travel the stair's own width, so feet land on treads
-      r.y = floor - c.lift * (1 - k);              // LINEAR: walking down is not falling
+      r.x = c.drop + k * STAIR_RUN;                // the flight's own run, so feet land on treads
+      r.y = stairY(k);                             // the tread they are actually over
     } else {                                       // across the yard to the gate
       r.onBelt = false; r.offLine = false;
-      r.y = floor;
+      r.y = introGroundY();
       // press the pack up against the leaves instead of re-forming it 100-500 units back
       const target = c.doors - 46 - (CFG.packFront - r.slot) * 0.30 - Math.abs(r.dy) * 0.9;
-      const from = c.drop + STAIR_N * STAIR_TREAD;
-      const k = Math.min(1, (since - ride - step) / 0.9);
+      const from = stairFootX();
+      const k = Math.min(1, (since - ride - step) / c.cross);
       r.x = from + k * (target - from);
       r.held = k >= 1;                             // arrived: stand still
     }
@@ -1240,7 +1561,14 @@ function updateIntro(dt) {
 // in exactly the same state rather than two states that drift apart.
 function startRun() {
   S.mode = 'play'; S.doorOpen = 1; S.introT = 0;
-  for (const r of S.runners) { r.onBelt = false; r.x = r.slot; }
+  // Do NOT snap anyone to their slot. The crowd has just spent four seconds pressing up
+  // against the doors, between world 448 and 594; the slots run 120 to 540, so assigning
+  // them teleported the whole hundred backwards by up to 328 units on the single frame
+  // the doors finished opening -- away from the gateway, at the exact moment the player
+  // was watching it. update() already walks a runner toward its slot at a capped rate,
+  // so leaving the positions alone turns that pop into what it should be: a compressed
+  // crowd bursting through the gate and spreading out over the first stretch of road.
+  for (const r of S.runners) { r.onBelt = false; r.offLine = false; r.held = false; }
   S.bubbles.length = 0;
   AU.clank();
 }
@@ -1426,12 +1754,15 @@ function draw() {
   ctx.translate(0, H - CFG.worldBottom * V.zoom); ctx.scale(V.zoom, V.zoom);
   drawOutside();
   drawMountain();
+  drawEncLand();
   drawRiver();
   carveTunnels();
   // the bars go on after the bodies: a closed gate that people are drawn over is not a barrier
   drawIntro();
-  for (let k = CFG.laneCount - 1; k >= 0; k--) { drawLane(k); drawRunners(k); drawRoomProps(k); for (const g of S.gates) drawGate(g, k, true); }
-  drawDoorSpill();   // after the ground, or the cinder apron buries it
+  // The door spill goes on after lane 0's ground (or the cinder apron buries it) and
+  // BEFORE its runners (or it washes a pale film over the faces of the crowd standing
+  // in it, which is what it did: light in front of the people it is lighting).
+  for (let k = CFG.laneCount - 1; k >= 0; k--) { drawLane(k); if (k === 0) drawDoorSpill(); drawRunners(k); if (k === 0) drawStairRail(); drawRoomProps(k); for (const g of S.gates) drawGate(g, k, true); }
   drawFinish();
   if (S.mode === 'play' || S.mode === 'finale') drawFx();
   ctx.restore();
@@ -1997,8 +2328,17 @@ function strataBand(y, h, k) {
 function carveTunnels() {
   const th = CFG.tunnelH;
   ctx.fillStyle = '#17121c';
-  for (let k = 0; k < CFG.laneCount; k++) for (const [a, b] of LANE_SPANS[k]) corridor(a, b, laneY(k), k);
+  // A corridor is a hole cut in rock, so it cannot exist where there is no rock. Act three
+  // is open country: drawn unclipped, every enclosure lane painted a black tunnel interior
+  // across the sky. Clip each span to the mountain instead of skipping the lane, because
+  // lane 0 runs the whole world and only part of it is underground.
+  const rock = (a, b) => [Math.max(a, CFG.entrance - 60), Math.min(b, CFG.exit + 60)];
+  for (let k = 0; k < CFG.laneCount; k++) for (const [a0, b0] of LANE_SPANS[k]) {
+    const [a, b] = rock(a0, b0);
+    if (b > a) corridor(a, b, laneY(k), k);
+  }
   for (const f of CFG.forks) {
+    if (f.x > CFG.exit) continue;                 // an enclosure fork is a path up a hill
     slantCorridor(f.x, laneY(f.from), f.x + CFG.rampLen, laneY(f.to));
     slantCorridor(f.merge, laneY(f.to), f.merge + CFG.rampLen, laneY(f.from));
   }
@@ -2029,7 +2369,7 @@ function carveTunnels() {
     ctx.fillStyle = '#7a5a20'; ctx.fillRect(sx - 5, y + 7, 10, 2); ctx.fillRect(sx - 5, y + 18, 10, 2);
   };
   for (let wx = Math.ceil((V.left - 200) / 240) * 240; wx < V.left + V.vw + 200; wx += 240) {
-    for (let k = 0; k < CFG.laneCount; k++) { const lx = wx + k * 40; if (laneAt(k, lx) && Math.abs(lx - CFG.entrance) > 80 && Math.abs(lx - CFG.exit) > 80) lamp(lx, laneY(k) - th + 2); }
+    for (let k = 0; k < CFG.laneCount; k++) { const lx = wx + k * 40; if (lx < CFG.exit && laneAt(k, lx) && Math.abs(lx - CFG.entrance) > 80 && Math.abs(lx - CFG.exit) > 80) lamp(lx, laneY(k) - th + 2); }
   }
   ctx.fillStyle = '#231b28';
   for (const wx of [CFG.entrance, CFG.exit]) { if (!inView(wx, 100) || inMill(wx)) continue; const ax = wx - V.left, cy = laneY(0) - th; ctx.fillRect(ax - 36, cy - 3, 72, 22); ctx.beginPath(); ctx.arc(ax, cy - 2, 36, Math.PI, 0); ctx.fill(); }
@@ -3585,7 +3925,12 @@ function millShutterBars(g, sx, y, th, holding) {
 // the mill yard: cinder underfoot, a boundary wall and the stuff that piles up
 // against it, so the approach reads as a works and not a meadow
 function millYard() {
-  const x0 = FAC.x0 - 300, x1 = FAC.x0;
+  // The yard starts clear of the stair, not under it. At FAC.x0 - 300 = 412 the boundary
+  // wall's butt end and its gate pier (403..423, 62 tall) stood exactly on stairFootX()
+  // = 428, burying the bottom 44 units of the flight, its whole bottom newel and its
+  // landing shadow -- and millYard is drawn from drawLane(0), which runs after drawIntro,
+  // so the yard won every time. Derived from the flight's own foot so it cannot drift.
+  const x0 = Math.max(FAC.x0 - 300, stairFootX() + 34), x1 = FAC.x0;
   if (!inView(x0, 200) && !inView(x1, 200)) return;
   const base = laneY(0);
   const sx0 = Math.max(-40, x0 - V.left), sx1 = Math.min(V.vw + 40, x1 - V.left);
@@ -3635,8 +3980,15 @@ function millYard() {
   // crates and a barrel stacked against it
   // all four sit left of the gateway: at the old offsets the handcart stood at world
   // 626 to 660, which is the middle of the opening, and the last crate crossed its jamb
-  for (const [off, kind] of [[18, 2], [70, 0], [110, 1], [134, 0]]) {
-    const cx = x0 + off - V.left;
+  // Props have two things to stay out of: the foot of the stair, which they stood on, and
+  // the gateway, which the first attempt at moving them put them INSIDE. x0 already
+  // clears the flight, and the guard below clears the opening, so both are structural
+  // rather than four offsets that happen to work at today's numbers.
+  const gateL = gc.doors - clear - 14, gateR = gc.doors + clear + 14;
+  for (const [off, kind] of [[8, 2], [38, 0], [66, 1], [88, 0]]) {
+    const wxp = x0 + off;
+    if (wxp + 40 > gateL && wxp < gateR) continue;     // never in the doorway everyone uses
+    const cx = wxp - V.left;
     if (cx < sx0 - 40 || cx > sx1 + 10) continue;
     if (kind === 0) {
       const cw = 22 + hash(off) * 8;
@@ -3855,6 +4207,70 @@ function drawForeground() {
   band(true, 0); band(false, 91);
   ctx.restore();
 }
+// ---------------------------------------------------------------- act three: the land
+// The paths in the enclosure are not tunnels, they are tracks terraced into a hillside,
+// so the ground under and between them has to be a hill. encSurfaceY finds the highest
+// lane in use at a given x and puts the turf just under it; the smoothing is what turns
+// a staircase of lane heights into something that rolls.
+function encTopLane(wx) {
+  let top = 0;
+  for (let k = CFG.laneCount - 1; k > 0; k--) if (laneAt(k, wx)) { top = k; break; }
+  return top;
+}
+function encSurfaceY(wx) {
+  // average the lane height over a window, so the hill swells up to a fork and settles
+  // after a merge instead of stepping 190 units in one column
+  let sum = 0, n = 0;
+  for (let d = -300; d <= 300; d += 60) { sum += laneY(encTopLane(wx + d)); n++; }
+  const base = sum / n;
+  // two long waves so the crest is never a flat average
+  return base + 16 + Math.sin(wx * 0.0016) * 26 + Math.sin(wx * 0.0043 + 1.7) * 11;
+}
+function drawEncLand() {
+  const x0 = Math.max(ENC.x0, V.left - 80), x1 = Math.min(CFG.finale.x + 300, V.left + V.vw + 80);
+  if (x1 <= x0) return;
+  const step = 24;
+  const ridge = (off, col, alpha) => {
+    ctx.fillStyle = col; ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.moveTo(x0 - V.left, CFG.worldBottom + 200);
+    for (let wx = x0; wx <= x1 + step; wx += step) ctx.lineTo(wx - V.left, encSurfaceY(wx) + off);
+    ctx.lineTo(x1 + step - V.left, CFG.worldBottom + 200);
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+  };
+  // a pale ridge set back and above, then the hill the paths are cut into
+  ridge(-96, '#8fb08a', 0.55);
+  ridge(-40, '#6f9a6a', 0.75);
+  ridge(0, '#5c8b52', 1);
+  // the sunlit face of the turf, and the shade under each terrace
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x0 - V.left, CFG.worldBottom + 200);
+  for (let wx = x0; wx <= x1 + step; wx += step) ctx.lineTo(wx - V.left, encSurfaceY(wx));
+  ctx.lineTo(x1 + step - V.left, CFG.worldBottom + 200);
+  ctx.closePath(); ctx.clip();
+  const g = ctx.createLinearGradient(0, laneY(CFG.laneCount - 1) - 60, 0, CFG.worldBottom);
+  g.addColorStop(0, 'rgba(190,214,150,0.30)');
+  g.addColorStop(0.5, 'rgba(120,160,100,0.10)');
+  g.addColorStop(1, 'rgba(24,40,28,0.45)');
+  ctx.fillStyle = g; ctx.fillRect(-60, laneY(CFG.laneCount - 1) - 60, V.vw + 120, CFG.worldBottom);
+  // tufts, thicker low down where the light does not reach
+  for (let wx = Math.floor(x0 / 17) * 17; wx < x1; wx += 17) {
+    const hv = hash(wx * 1.3);
+    if (hv < 0.42) continue;
+    const top = encSurfaceY(wx);
+    const ty = top + 10 + hash(wx * 2.9) * (CFG.worldBottom - top - 20);
+    ctx.fillStyle = `rgba(${Math.round(70 + hv * 40)},${Math.round(110 + hv * 44)},${Math.round(58 + hv * 30)},0.65)`;
+    ctx.fillRect(wx - V.left, ty, 2 + hv * 3, 3 + hv * 5);
+  }
+  ctx.restore();
+  // the turf lip along the crest, lit from the upper left like everything else
+  ctx.strokeStyle = '#9ec97e'; ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  for (let wx = x0; wx <= x1 + step; wx += step) ctx.lineTo(wx - V.left, encSurfaceY(wx) - 1);
+  ctx.stroke();
+}
 function drawVignette() {
   const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, H * 0.95);
   v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.45)');
@@ -3865,7 +4281,10 @@ function drawLane(lane) {
   const view0 = V.left - 60, view1 = V.left + V.vw + 60;
   const spans = lane === 0
     ? [[-1e9, CFG.entrance - 48, 'out'], [CFG.entrance - 48, CFG.exit + 48, 'in'], [CFG.exit + 48, 1e9, 'out']]
-    : LANE_SPANS[lane].map(([a, b]) => [a, b, 'in']);
+    // An upper lane inside the mountain is a tunnel floor; the same lane out in act three
+    // is a track cut into a hillside, so it takes the outdoor ground rather than the
+    // rock one. Keyed off the mountain's mouth, which is the only thing that decides it.
+    : LANE_SPANS[lane].map(([a, b]) => [a, b, a >= CFG.exit ? 'out' : 'in']);
   // Only the chasms are holes in the floor. A machine stands ON the deck, so
   // cutting a gap under one would drop the mill's tailrace through the middle
   // of a working machine.
@@ -4204,6 +4623,7 @@ function drawRoomProps(lane) {
 function drawRoom(room, y) {
   if (!inView(room.x, 240)) return;
   if (room.hazard === 'machine' || room.hazard === 'press') { drawMachineRoom(room, y); return; }
+  if (ENC.inside(room.x)) { drawEncRoom(room, y); return; }
   const sx = room.x - V.left, gw = CFG.gapWidth;
   const b = room.bridge, prog = room.mg && room.state === 'armed' ? VERBS[room.verb].progress(room.mg) : 0;
   // in the mill the crossings are steel plate and wire rope; in the rock, timber and hemp
@@ -4357,6 +4777,123 @@ function drawRoom(room, y) {
 // for each is being built elsewhere by promoting the plant millCorridor already
 // draws in the background, rather than importing a second visual language for
 // the same objects. This placeholder keeps the room readable until then.
+// Act three's crossings. The mill kills you with machinery and the mountain with the
+// drop; out here it is property. A ditch-and-bank is what enclosure was physically DUG
+// as, a laid thorn hedge is a boundary grown to be impassable, and mantraps were set for
+// people who crossed land that had stopped being theirs.
+//
+// These cannot reuse the cave's pit: it fills the gap with near-black, which is right for
+// a shaft through rock and reads as a rectangular hole punched in a sunlit hillside.
+function drawEncRoom(room, y) {
+  const sx = room.x - V.left, gw = CFG.gapWidth;
+  const prog = room.mg && room.state === 'armed' ? VERBS[room.verb].progress(room.mg) : 0;
+  const solved = room.state === 'solved';
+  if (room.type === 'mantrap') {
+    // no gap: the ground is whole, and the thing on it shuts on a cycle
+    const t = (S.t % CFG.crusherPeriod) / CFG.crusherPeriod;
+    const shut = solved ? 1 : t < 0.72 ? 0 : Math.sin((t - 0.72) / 0.28 * Math.PI);
+    const open = solved ? 46 : 46 * (1 - shut);
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.fillRect(sx + 8, y + 1, gw - 16, 4);
+    for (const dir of [-1, 1]) {
+      ctx.save(); ctx.translate(sx + gw / 2, y + 2); ctx.scale(1, 1);
+      ctx.strokeStyle = solved ? '#5d7a52' : '#8e99a8'; ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(dir * 44, 0);
+      ctx.quadraticCurveTo(dir * 30, -open * 0.9, dir * 4, -open);
+      ctx.stroke();
+      ctx.fillStyle = solved ? '#5d7a52' : '#c3ccd8';
+      for (let i = 1; i <= 4; i++) {
+        const k = i / 5;
+        const jx = dir * (44 + (4 - 44) * k), jy = -open * k * 0.96;
+        ctx.beginPath(); ctx.moveTo(jx - 3, jy); ctx.lineTo(jx + 3, jy); ctx.lineTo(jx, jy - 7); ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+    }
+    // the plate and its chain to a stake, so it is anchored to somebody's land
+    ctx.fillStyle = '#6b5a48'; ctx.fillRect(sx + gw / 2 - 16, y - 2, 32, 6);
+    ctx.strokeStyle = '#7d7266'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(sx + gw / 2 + 14, y); ctx.lineTo(sx + gw - 4, y - 3); ctx.stroke();
+    ctx.fillStyle = '#4a3b2a'; ctx.fillRect(sx + gw - 7, y - 10, 5, 12);
+    if (solved) { ctx.fillStyle = 'rgba(110,231,160,0.16)'; ctx.fillRect(sx, y - 30, gw, 32); }
+    return;
+  }
+  if (room.type === 'thorn') {
+    // a laid hedge: stems cut part through and bent along the line, which is how a
+    // stockproof boundary was actually made. Cutting a gap opens the middle of it.
+    const gap = solved ? 1 : prog;
+    const h = 52;
+    for (let i = 0; i < 16; i++) {
+      const t = i / 15, bx = sx + t * gw;
+      const mid = Math.abs(t - 0.5) * 2;
+      if (gap > mid) continue;                       // cut away from the middle outward
+      const hv = hash(room.x + i * 7.3);
+      const lean = 12 + hv * 10;
+      ctx.strokeStyle = '#3f3324'; ctx.lineWidth = 3.4;
+      ctx.beginPath(); ctx.moveTo(bx, y + 2); ctx.quadraticCurveTo(bx + lean * 0.4, y - h * 0.6, bx + lean, y - h * (0.7 + hv * 0.4)); ctx.stroke();
+      ctx.strokeStyle = '#4e6b3a'; ctx.lineWidth = 1.6;
+      for (let j = 0; j < 3; j++) {
+        const k = 0.35 + j * 0.22, tx = bx + lean * k, ty = y + 2 - h * (0.7 + hv * 0.4) * k;
+        ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx + (j % 2 ? 7 : -7), ty - 6); ctx.stroke();
+      }
+      ctx.fillStyle = hv > 0.6 ? '#7d2b3a' : '#2f5d3a';     // sloes and haws
+      ctx.beginPath(); ctx.arc(bx + lean, y + 2 - h * (0.7 + hv * 0.4), 2.2, 0, 6.28); ctx.fill();
+    }
+    // the stakes the laid stems are woven between
+    for (let i = 0; i <= 4; i++) {
+      const bx = sx + (i / 4) * gw;
+      ctx.strokeStyle = '#5c4a32'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(bx, y + 3); ctx.lineTo(bx, y - h * 0.85); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(sx, y + 1, gw, 4);
+    return;
+  }
+  // ditch and wall both cut the ground. An earth section, not a black one.
+  const depth = room.lane === 0 ? Math.max(70, CFG.riverY - y) : 74;
+  ctx.fillStyle = '#4a3b2a'; ctx.fillRect(sx, y, gw, depth);
+  const soil = ctx.createLinearGradient(0, y, 0, y + depth);
+  soil.addColorStop(0, 'rgba(92,74,50,1)');
+  soil.addColorStop(0.35, 'rgba(58,45,32,1)');
+  soil.addColorStop(1, 'rgba(22,18,14,1)');
+  ctx.fillStyle = soil; ctx.fillRect(sx, y, gw, depth);
+  // stones and roots in the cut face
+  for (let i = 0; i < 14; i++) {
+    const hv = hash(room.x * 1.7 + i * 3.1), hv2 = hash(room.x * 0.9 + i * 5.7);
+    ctx.fillStyle = `rgba(${Math.round(120 + hv * 40)},${Math.round(104 + hv * 34)},${Math.round(86 + hv * 26)},0.5)`;
+    ctx.beginPath(); ctx.ellipse(sx + 8 + hv * (gw - 16), y + 10 + hv2 * (depth - 18), 2 + hv * 3, 1.4 + hv * 2, hv * 3, 0, 6.28); ctx.fill();
+  }
+  // the turf lip overhanging both cut edges, so it is dug rather than punched
+  ctx.fillStyle = '#3f5a2e'; ctx.fillRect(sx - 4, y - 2, 8, 6); ctx.fillRect(sx + gw - 4, y - 2, 8, 6);
+  ctx.fillStyle = '#6b8e4e'; ctx.fillRect(sx - 4, y - 3, 8, 2); ctx.fillRect(sx + gw - 4, y - 3, 8, 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(sx, y, 6, depth);
+  // standing water in the bottom, which is what made a ditch worth being afraid of
+  const wy = y + depth - 14;
+  ctx.fillStyle = 'rgba(56,72,68,0.85)'; ctx.fillRect(sx + 3, wy, gw - 6, 14);
+  ctx.fillStyle = 'rgba(150,180,176,0.18)';
+  for (let i = 0; i < 4; i++) ctx.fillRect(sx + 10 + hash(room.x + i) * (gw - 30), wy + 3 + i * 3, 12, 1.2);
+  if (room.type === 'ditch') {
+    // the spoil thrown up on the far side: a ditch AND a bank, which is the whole point
+    ctx.fillStyle = '#54432f';
+    ctx.beginPath();
+    ctx.moveTo(sx + gw, y + 2);
+    ctx.quadraticCurveTo(sx + gw + 24, y - 30, sx + gw + 54, y + 2);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#5c8b52';
+    ctx.beginPath();
+    ctx.moveTo(sx + gw, y + 1);
+    ctx.quadraticCurveTo(sx + gw + 24, y - 31, sx + gw + 54, y + 1);
+    ctx.lineTo(sx + gw + 50, y + 1);
+    ctx.quadraticCurveTo(sx + gw + 24, y - 26, sx + gw + 4, y + 1);
+    ctx.closePath(); ctx.fill();
+    // a plank laid across once it is cut through
+    if (solved) {
+      ctx.fillStyle = INK; ctx.fillRect(sx - 6, y - 8, gw + 12, 9);
+      ctx.fillStyle = '#8b5a2b'; ctx.fillRect(sx - 5, y - 7, gw + 10, 7);
+      ctx.fillStyle = 'rgba(255,240,206,0.18)'; ctx.fillRect(sx - 5, y - 7, gw + 10, 1.6);
+    }
+  }
+  if (room.type === 'wall') drawEncWall(room, y, sx, gw, solved, prog);
+}
 function drawMachineRoom(room, y) {
   const sx = room.x - V.left, gw = CFG.gapWidth;
   ctx.fillStyle = '#121018'; ctx.fillRect(sx + 6, y - 74, gw - 12, 74);
@@ -4387,59 +4924,174 @@ function drawMachineRoom(room, y) {
 // A belt bringing the shift out, a drop plate, and the yard doors. Drawn in world
 // space, so it sits in the same geometry as everything else and needs no special
 // camera. Only ever visible during the opening and the first seconds of the run.
+// Used only by the things that genuinely belong to the OPENING rather than to the yard --
+// the light out of the doorway and the stair's near handrail. The structures themselves no
+// longer fade; they leave the frame by being behind you.
 function introAlpha() {
   if (S.mode === 'intro') return 1;
   if (S.mode !== 'play') return 0;
-  // fade out over the first stretch of road rather than vanishing on the handover
   return Math.max(0, 1 - S.cam / 260);
 }
-function drawBelt(yFloor) {
-  const c = I(), y = yFloor - c.lift, x0 = c.belt - 90 - V.left, x1 = c.drop + 30 - V.left, h = 22;
-  const top = y - h;
-  // gantry legs down to the yard, behind everything else the belt draws
-  ctx.fillStyle = '#2f2830';
-  for (let lx = x0 + 40; lx < x1 - 20; lx += 96) {
-    ctx.fillRect(lx, y + 2, 9, c.lift - 2);              // leg, all the way to the ground
-    ctx.fillRect(lx - 12, y + 2, 33, 6);                 // bracket under the frame
-    ctx.fillStyle = '#241f26'; ctx.fillRect(lx - 9, yFloor - 5, 27, 6); ctx.fillStyle = '#2f2830';  // base plate
+// The conveyor. Everything measures off introBeltY(): the band's top IS the surface a
+// rider stands on, and the frame hangs below it. yFloor is no longer a parameter because
+// a second opinion about where the ground is was the whole problem.
+function drawBelt() {
+  const c = I();
+  const band = introBeltY(), ground = introGroundY(), bot = band + BELT_H;
+  // the surface moves at exactly the speed it carries a rider at
+  const BELT_SPEED = (c.drop - c.belt) / c.ride;
+  const x0 = c.belt - 90 - V.left, x1 = c.drop - V.left;   // the band ENDS where the flight begins
+  if (x1 < -80 || x0 > V.vw + 80) return;
+  // shadow the trestle throws on the yard, so it stands on the ground rather than near it
+  ctx.fillStyle = 'rgba(0,0,0,0.13)';
+  ctx.fillRect(x0 + 14, ground - 2, x1 - x0 + 10, 5);
+  // The head house. The belt used to emerge from the left frame edge over a meadow with
+  // 93 units of open sky between its tail roller and the nearest masonry, which says the
+  // shift is being carried IN from the countryside rather than out of a mill. It now comes
+  // out of a dark opening in brick that runs off the top of the frame.
+  const hh0 = x0 - 96, hhTop = band - 104;
+  if (hh0 < V.vw && x0 > -120) {
+    ctx.fillStyle = '#3a2f36'; ctx.fillRect(hh0, hhTop, x0 + 34 - hh0, ground - hhTop);
+    ctx.save(); ctx.beginPath(); ctx.rect(hh0, hhTop, x0 + 34 - hh0, ground - hhTop); ctx.clip();
+    brickFill(hh0, hhTop, x0 + 34 - hh0, ground - hhTop, 0.85);
+    ctx.fillStyle = 'rgba(26,20,26,0.34)'; ctx.fillRect(hh0, hhTop, x0 + 34 - hh0, ground - hhTop);
+    ctx.restore();
+    // the mouth the band runs out of, and the shadow it throws on the band
+    ctx.fillStyle = '#14101a'; ctx.fillRect(x0 - 6, band - 26, 40, 26 + BELT_H + 4);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x0 + 34, band, 26, BELT_H);
+    // a sill over the opening and coping on the parapet
+    ctx.fillStyle = '#4c4157'; ctx.fillRect(x0 - 10, band - 30, 48, 6);
+    ctx.fillStyle = '#524657'; ctx.fillRect(hh0 - 4, hhTop - 7, x0 + 42 - hh0, 8);
+    ctx.fillStyle = 'rgba(255,244,222,0.16)'; ctx.fillRect(hh0 - 4, hhTop - 7, x0 + 42 - hh0, 1.8);
+    ctx.fillStyle = 'rgba(255,238,206,0.10)'; ctx.fillRect(hh0, hhTop, 4, ground - hhTop);
   }
-  // the stair down at the delivery end
-  const sx = c.drop - V.left, riser = c.lift / STAIR_N;
-  for (let i = 0; i < STAIR_N; i++) {
-    const sy = y + (i + 1) * riser;
-    ctx.fillStyle = i % 2 ? '#564c53' : '#4c4249';
-    ctx.fillRect(sx + i * STAIR_TREAD, sy, STAIR_TREAD + 2, riser + 2);
-    ctx.fillStyle = 'rgba(214,204,210,0.22)';            // a lit nosing on each tread, or it is a ramp
-    ctx.fillRect(sx + i * STAIR_TREAD, sy, STAIR_TREAD + 2, 1.6);
+  // trestles: a pair of splayed legs with a brace between them, every 110
+  for (let lx = x0 + 46; lx < x1 - 14; lx += 110) {
+    const spread = 13, footL = lx - spread, footR = lx + spread;
+    ctx.strokeStyle = '#2b242c'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(lx - 3, bot); ctx.lineTo(footL, ground); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(lx + 3, bot); ctx.lineTo(footR, ground); ctx.stroke();
+    // X brace across the bay, at two thirds height
+    ctx.strokeStyle = '#3a323c'; ctx.lineWidth = 2.6;
+    const by = bot + (ground - bot) * 0.62, sp = spread * 0.62;
+    ctx.beginPath(); ctx.moveTo(lx - sp, by - 13); ctx.lineTo(lx + sp, by + 13); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(lx + sp, by - 13); ctx.lineTo(lx - sp, by + 13); ctx.stroke();
+    // lit left edge on each leg, one sun for the whole scene
+    ctx.strokeStyle = 'rgba(255,240,214,0.13)'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(lx - 4.6, bot); ctx.lineTo(footL - 1.6, ground); ctx.stroke();
+    // base plates
+    ctx.fillStyle = '#231e26';
+    ctx.fillRect(footL - 7, ground - 3, 15, 5); ctx.fillRect(footR - 8, ground - 3, 15, 5);
   }
-  // handrail on posts, so it is not a guy-wire in the frames where the stair is empty
-  ctx.strokeStyle = '#6a5f66'; ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.moveTo(sx, y - 16); ctx.lineTo(sx + STAIR_N * STAIR_TREAD, y + c.lift - 16); ctx.stroke();
-  for (let i = 0; i <= STAIR_N; i += 3) {
-    const px = sx + i * STAIR_TREAD;
-    ctx.beginPath(); ctx.moveTo(px, y - 16 + i * riser); ctx.lineTo(px, y + i * riser); ctx.stroke();
+  // frame: a deep side rail under the band, riveted
+  ctx.fillStyle = '#332b34'; ctx.fillRect(x0, band, x1 - x0, BELT_H);
+  ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(x0, bot - 4, x1 - x0, 4);
+  rivets(x0 + 8, x1 - 8, band + BELT_H * 0.62, 13, 1.15, 'rgba(255,244,222,0.16)');
+  // the return strand, running back the other way inside the frame. A conveyor with one
+  // surface is a shelf; the loop is what says it is a belt.
+  ctx.fillStyle = '#241f27'; ctx.fillRect(x0 + 6, bot - 9, x1 - x0 - 12, 4.5);
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 1.4;
+  const back = (-S.t * BELT_SPEED) % 20;
+  for (let bx = x0 + back; bx < x1; bx += 20) {
+    ctx.beginPath(); ctx.moveTo(bx, bot - 9); ctx.lineTo(bx + 4, bot - 4.5); ctx.stroke();
   }
-  // frame and legs
-  ctx.fillStyle = '#3a3038'; ctx.fillRect(x0, top, x1 - x0, h);
-  ctx.fillStyle = '#2a2229';
-  // the running band, hatched so it reads as moving
-  ctx.fillStyle = '#4c4249'; ctx.fillRect(x0, top, x1 - x0, 11);
+  // the carrying band. Its TOP is introBeltY(), which is where the riders' feet are.
+  ctx.fillStyle = '#453b45'; ctx.fillRect(x0, band, x1 - x0, 9);
+  ctx.fillStyle = 'rgba(255,244,222,0.17)'; ctx.fillRect(x0, band, x1 - x0, 1.5);   // lit running edge
   ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2;
-  const crawl = (S.t * 46) % 22;
+  const crawl = (S.t * BELT_SPEED) % 22;
   for (let bx = x0 - 22 + crawl; bx < x1; bx += 22) {
-    ctx.beginPath(); ctx.moveTo(bx, top + 1); ctx.lineTo(bx + 7, top + 10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(bx, band + 1); ctx.lineTo(bx + 6, band + 8); ctx.stroke();
   }
-  // rollers at each end
-  for (const rx of [x0 + 7, x1 - 7]) {
-    ctx.fillStyle = '#6a5f66'; ctx.beginPath(); ctx.arc(rx, top + 6, 8, 0, 6.28); ctx.fill();
-    ctx.strokeStyle = '#8a7e84'; ctx.lineWidth = 1.5;
+  // idler rollers showing under the band between the trestles
+  ctx.fillStyle = '#2a232b';
+  for (let rx = x0 + 24; rx < x1 - 10; rx += 34) { ctx.beginPath(); ctx.arc(rx, band + 11, 3.2, 0, 6.28); ctx.fill(); }
+  // Discharge landing. The band used to stop and the flight start in the same pixel, with
+  // the head roller drawn as a disc sitting on the first nosing and the handrail's newel
+  // planted in the running belt. A person steps off a conveyor onto a plate, then walks.
+  ctx.fillStyle = '#3d3440'; ctx.fillRect(x1 - 4, band, 26, 7);
+  ctx.fillStyle = 'rgba(255,244,222,0.20)'; ctx.fillRect(x1 - 4, band, 26, 1.6);
+  ctx.fillStyle = '#2b242c'; ctx.fillRect(x1 + 14, band + 7, 5, ground - band - 7);
+  // head and tail rollers, turning. Drawn with the band wrapping them rather than as a
+  // disc laid on top, which is what a belt does at its ends.
+  for (const rx of [x0 + 8, x1 - 8]) {
+    ctx.fillStyle = '#5d535f'; ctx.beginPath(); ctx.arc(rx, band + 10, 9.5, 0, 6.28); ctx.fill();
+    ctx.fillStyle = '#39313b'; ctx.beginPath(); ctx.arc(rx, band + 10, 6.4, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = '#8a7e8c'; ctx.lineWidth = 1.5;
     const a = S.t * 5;
-    ctx.beginPath(); ctx.moveTo(rx - Math.cos(a) * 6, top + 6 - Math.sin(a) * 6); ctx.lineTo(rx + Math.cos(a) * 6, top + 6 + Math.sin(a) * 6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rx - Math.cos(a) * 7, band + 10 - Math.sin(a) * 7); ctx.lineTo(rx + Math.cos(a) * 7, band + 10 + Math.sin(a) * 7); ctx.stroke();
   }
 }
-// Two leaves hinged at their outer edges, swinging out toward the yard. Drawn
-// with a horizontal squeeze rather than a real rotation: the leaf keeps its
-// height and loses its width as it turns, which is what a door does from side on.
+// The flight down from the band to the yard. It starts ON the band and finishes ON the
+// yard, because both ends come from the same two numbers the walker uses.
+function drawStair() {
+  const c = I();
+  const top = introBeltY(), ground = introGroundY();
+  const sx = c.drop - V.left, run = STAIR_RUN;
+  if (sx + run < -60 || sx > V.vw + 60) return;
+  const noseX = i => sx + i * STAIR_TREAD, noseY = i => top + i * STAIR_RISER;
+  // far stringer, offset up and behind, so the flight has two sides and a thickness
+  ctx.fillStyle = '#2a232c';
+  ctx.beginPath();
+  ctx.moveTo(sx + 4, top - 3);
+  for (let i = 0; i <= STAIR_N; i++) ctx.lineTo(noseX(i) + 4, noseY(i) - 3);
+  ctx.lineTo(sx + run + 4, ground - 3); ctx.lineTo(sx + run - 14, ground - 3); ctx.closePath(); ctx.fill();
+  // closed risers and treads. Closed, because open risers on a hillside show the
+  // hillside through the stair and it stops reading as a solid object.
+  for (let i = 0; i < STAIR_N; i++) {
+    const ty = noseY(i), tx = noseX(i);
+    ctx.fillStyle = '#39313b';                                     // riser face, in shadow
+    ctx.fillRect(tx + STAIR_TREAD - 0.5, ty, STAIR_TREAD * 0.5 + 0.5, STAIR_RISER + 0.5);
+    ctx.fillStyle = i % 2 ? '#514551' : '#4a3f4a';                 // tread, lit from above
+    ctx.fillRect(tx, ty, STAIR_TREAD + 1, 3.2);
+    ctx.fillStyle = 'rgba(255,244,222,0.24)';                      // nosing catches the sun
+    ctx.fillRect(tx, ty, STAIR_TREAD + 1, 1.3);
+  }
+  // near stringer: a beam under the noses, carrying the flight
+  ctx.fillStyle = '#332b34';
+  ctx.beginPath();
+  ctx.moveTo(sx, top + 2);
+  for (let i = 0; i <= STAIR_N; i++) ctx.lineTo(noseX(i), noseY(i) + 2);
+  for (let i = STAIR_N; i >= 0; i--) ctx.lineTo(noseX(i), noseY(i) + 15);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,244,222,0.12)'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(sx, top + 3); ctx.lineTo(sx + run, ground + 3); ctx.stroke();
+  // where the flight meets the yard
+  ctx.fillStyle = 'rgba(0,0,0,0.16)';
+  ctx.fillRect(sx + run - 16, ground - 2, 30, 4);
+}
+// The NEAR handrail, drawn after the crowd. In a side elevation the rail people are
+// holding passes in front of them; drawn with the rest of the flight it went behind every
+// figure, and for the two seconds the stair was in use it vanished completely along with
+// the treads -- the descent read as a ramp of bodies. RAIL_H is set off the body rather
+// than guessed: a drawn runner is about 45 tall and a rail sits a little under half that.
+const STAIR_RAIL_H = 20;
+function drawStairRail() {
+  if (introAlpha() <= 0) return;
+  const c = I();
+  const top = introBeltY(), ground = introGroundY();
+  const sx = c.drop - V.left, run = STAIR_RUN;
+  if (sx + run < -60 || sx > V.vw + 60) return;
+  const noseX = i => sx + i * STAIR_TREAD, noseY = i => top + i * STAIR_RISER;
+  ctx.save(); ctx.globalAlpha = introAlpha();
+  ctx.strokeStyle = '#6a5f6c'; ctx.lineWidth = 2.4;
+  for (let i = 0; i <= STAIR_N; i += 3) {
+    ctx.beginPath(); ctx.moveTo(noseX(i), noseY(i)); ctx.lineTo(noseX(i), noseY(i) - STAIR_RAIL_H); ctx.stroke();
+  }
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(sx, top - STAIR_RAIL_H); ctx.lineTo(sx + run, ground - STAIR_RAIL_H); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,244,222,0.22)'; ctx.lineWidth = 1.1;
+  ctx.beginPath(); ctx.moveTo(sx, top - STAIR_RAIL_H - 1); ctx.lineTo(sx + run, ground - STAIR_RAIL_H - 1); ctx.stroke();
+  // newel posts. The top one stands on the LANDING, not on the running band -- it used to
+  // be planted in the middle of the conveyor.
+  ctx.fillStyle = '#574b58';
+  ctx.fillRect(sx + 4, top - STAIR_RAIL_H - 3, 5, STAIR_RAIL_H + 5);
+  ctx.fillRect(sx + run - 2.5, ground - STAIR_RAIL_H - 3, 5, STAIR_RAIL_H + 5);
+  ctx.restore();
+}
+// The gateway the shift goes in through: a brick wall with an opening in it, and
+// two leaves that SLIDE apart on a rail overhead. See drawYardDoors for why they
+// slide rather than swing.
 function drawGateWall(y) {
   const c = I(), cx = c.doors - V.left, half = c.half, h = 122;
   const top = y - h - 18, x0 = cx - half - c.jamb, x1 = cx + half + c.jamb;
@@ -4458,12 +5110,65 @@ function drawGateWall(y) {
   brickFill(x0 - 260, top - 150, 260, h + 168, 0.9);
   brickFill(x1, top - 150, 300, h + 168, 0.9);
   brickFill(x0, top - 150, x1 - x0, 150, 0.9);
-  // coping along the top
+  // Windows. The largest surface in every frame was 674 x 290 of blank brick, and a
+  // Victorian mill IS its windows -- that silhouette is the whole building. Pitched off
+  // V.left the way brickFill keys its bond, so the openings stay in step with the courses
+  // instead of crawling across them as the camera moves.
+  const wTop = top - 132, wH = 54, wW = 30, pitch = 58;
+  const first = Math.ceil((x0 - 262 - (x0 - 262) % pitch) / pitch) * pitch;
+  for (let wx = x0 - 258; wx < x1 + 296; wx += pitch) {
+    if (wx + wW > x0 - 14 && wx < x1 + 14) continue;   // not over the gateway
+    ctx.fillStyle = '#241d28'; ctx.fillRect(wx, wTop, wW, wH);
+    // segmental head, which is what a mill window has
+    ctx.beginPath(); ctx.moveTo(wx, wTop); ctx.quadraticCurveTo(wx + wW / 2, wTop - 9, wx + wW, wTop); ctx.closePath(); ctx.fill();
+    const gl = ctx.createLinearGradient(wx, wTop, wx + wW, wTop + wH);
+    gl.addColorStop(0, 'rgba(150,170,186,0.34)'); gl.addColorStop(0.55, 'rgba(60,66,80,0.30)'); gl.addColorStop(1, 'rgba(28,30,40,0.30)');
+    ctx.fillStyle = gl; ctx.fillRect(wx + 2, wTop + 2, wW - 4, wH - 4);
+    ctx.fillStyle = 'rgba(16,14,20,0.8)';               // glazing bars
+    ctx.fillRect(wx + wW / 2 - 0.8, wTop + 2, 1.6, wH - 4);
+    for (let r = 1; r < 4; r++) ctx.fillRect(wx + 2, wTop + (wH / 4) * r, wW - 4, 1.2);
+    ctx.fillStyle = '#5a4e60'; ctx.fillRect(wx - 2, wTop + wH, wW + 4, 4);      // sill
+    ctx.fillStyle = 'rgba(255,244,222,0.18)'; ctx.fillRect(wx - 2, wTop + wH, wW + 4, 1.3);
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(wx - 2, wTop + wH + 4, wW + 4, 3);  // its shadow
+  }
+  // a string course tying the elevation together
+  ctx.fillStyle = '#4a3f4c'; ctx.fillRect(x0 - 262, top - 150 + 58, x1 - x0 + 566, 6);
+  ctx.fillStyle = 'rgba(255,244,222,0.12)'; ctx.fillRect(x0 - 262, top - 150 + 58, x1 - x0 + 566, 1.4);
+  ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(x0 - 262, top - 150 + 64, x1 - x0 + 566, 3);
+  // coping along the top, with the shadow it throws -- it sat on 290 units of brick and
+  // cast nothing, which is most of why the wall read as printed rather than lit
   ctx.fillStyle = '#524657';                          // millYard's coping colour, not a lavender of my own
   ctx.fillRect(x0 - 262, top - 156, x1 - x0 + 566, 9);  // one unbroken coping across the whole wall
-  // a relieving arch over the opening, so the masonry above it is carried rather than floating
-  ctx.strokeStyle = '#3c333c'; ctx.lineWidth = 6;
-  ctx.beginPath(); ctx.arc((x0 + x1) / 2, top, (x1 - x0) / 2 + 4, Math.PI, 0); ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(x0 - 262, top - 147, x1 - x0 + 566, 5);
+  // A relieving arch built out of voussoirs. One 6px stroked semicircle was the clearest
+  // piece of plain geometry in the frame and it sat directly over the scene's focal point:
+  // no wedges, no keystone, no light across the ring, and springing points that died in
+  // the middle of a brick field with nothing to land on.
+  const acx = (x0 + x1) / 2, arr = (x1 - x0) / 2 + 4, aw = 13;
+  const N = 15;
+  for (let i = 0; i < N; i++) {
+    const a0 = Math.PI + (i / N) * Math.PI, a1 = Math.PI + ((i + 1) / N) * Math.PI;
+    const g = Math.abs(i - (N - 1) / 2) / ((N - 1) / 2);            // 0 at the crown
+    const key = i === (N - 1) / 2;
+    const rOut = arr + aw / 2 + (key ? 4 : 0), rIn = arr - aw / 2;
+    ctx.beginPath();
+    ctx.arc(acx, top, rOut, a0 + 0.006, a1 - 0.006);
+    ctx.arc(acx, top, rIn, a1 - 0.006, a0 + 0.006, true);
+    ctx.closePath();
+    // lit on the left half, shaded on the right, one sun for the scene
+    const mid = (a0 + a1) / 2, lit = Math.max(0, -Math.cos(mid - 0.6));
+    const v = Math.round(58 + lit * 26 + (key ? 12 : 0) + hash(i * 3.7) * 8);
+    ctx.fillStyle = `rgb(${v},${Math.round(v * 0.86)},${Math.round(v * 0.93)})`;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(20,16,22,0.45)'; ctx.lineWidth = 0.9; ctx.stroke();
+  }
+  // impost blocks, so the arch springs off something instead of out of the brick
+  ctx.fillStyle = '#53475a';
+  ctx.fillRect(acx - arr - aw / 2 - 3, top - 2, aw + 8, 7);
+  ctx.fillRect(acx + arr - aw / 2 - 5, top - 2, aw + 8, 7);
+  ctx.fillStyle = 'rgba(255,244,222,0.16)';
+  ctx.fillRect(acx - arr - aw / 2 - 3, top - 2, aw + 8, 1.6);
+  ctx.fillRect(acx + arr - aw / 2 - 5, top - 2, aw + 8, 1.6);
   // a lit left return and a dark base, so the wall has a light on it and meets the ground
   ctx.fillStyle = 'rgba(255,238,206,0.10)'; ctx.fillRect(x0 - 260, top - 150, 4, h + 168);
   ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(x0 - 262, y + 10, x1 - x0 + 566, 8);
@@ -4474,54 +5179,133 @@ function drawGateWall(y) {
   const tx = x0 - 104, ty = top - 78;
   ctx.fillStyle = 'rgba(26,20,24,0.50)'; ctx.fillText('NO. 1 MILL', tx + 1.5, ty + 1.5);
   ctx.fillStyle = 'rgba(228,216,208,0.36)'; ctx.fillText('NO. 1 MILL', tx, ty);
-  ctx.fillStyle = 'rgba(74,63,69,0.60)';
-  for (let i = 0; i < 11; i++) ctx.fillRect(tx - 48 + hash(i * 7) * 96, ty - 13 + hash(i * 3) * 17, 3 + hash(i) * 8, 3);
+  // Weathering by thinning the paint, not by cutting rectangles out of it. Eleven
+  // axis-aligned bars the same height as the stroke read as pixel dropout; paint comes
+  // off in irregular patches, so these are small soft ellipses at low alpha.
+  ctx.fillStyle = 'rgba(74,63,69,0.34)';
+  for (let i = 0; i < 26; i++) {
+    const hv = hash(i * 7.3), hv2 = hash(i * 3.1), hv3 = hash(i * 11.7);
+    ctx.beginPath();
+    ctx.ellipse(tx - 52 + hv * 104, ty - 12 + hv2 * 16, 1.4 + hv3 * 3.4, 1 + hv3 * 2, hv * 3, 0, 6.28);
+    ctx.fill();
+  }
   ctx.textAlign = 'left';
 }
+// SLIDING leaves, not swinging ones.
+//
+// This game is a strict side elevation: we look at the world edge-on and the crowd runs
+// left to right across it. A door on a vertical hinge swings TOWARD the viewer, and there
+// is no honest way to draw that here. The old version faked it by squeezing each leaf
+// horizontally, which keeps showing you the leaf's FACE -- so the door read as turning out
+// of the screen while every other object in the scene stayed flat, and Morgan's note was
+// exactly that: it still faces us despite the game moving sideways.
+//
+// A leaf that slides sideways along the wall needs no perspective at all. It is also what
+// a mill yard actually had, and it leaves something on screen at the end: a swinging leaf
+// squeezed to zero width simply vanished, so the doors finished the animation by ceasing
+// to exist. These run out to the piers and stay visible, parked, as the crowd goes through.
 function drawYardDoors(y) {
   const c = I(), cx = c.doors - V.left, h = 122, half = c.half, jamb = c.jamb;
   const open = S.doorOpen;
-  const swing = Math.pow(open, 1.7);                   // accelerating: a heavy leaf starts slow and flies
-  // The hole itself. Without this the opening frames the mill's own window and the
-  // parallax hillside, which says the building has no inside and flattens the facade.
-  // up to the head of the FRAME, not the head of the leaves: the 10 units between them
-  // were leaking the mill's own window through the top of the opening
-  ctx.fillStyle = '#191316'; ctx.fillRect(cx - half, y - h - 10, half * 2, h + 10);
-  // frame
-  ctx.fillStyle = '#4c4455';
-  ctx.fillRect(cx - half - jamb, y - h - 10, jamb, h + 10);
-  ctx.fillRect(cx + half, y - h - 10, jamb, h + 10);
-  ctx.fillRect(cx - half - jamb, y - h - 18, half * 2 + jamb * 2, 9);
+  // heavy: slow to start, then it runs. Same easing the old leaves used.
+  const slide = Math.pow(open, 1.7) * (half * 2 - 6);
+  const headY = y - h - 18, voidTop = y - h - 10;
+  // The hole. Without it the opening frames the mill's own window and the parallax
+  // hillside, which says the building has no inside.
+  ctx.fillStyle = '#191316'; ctx.fillRect(cx - half, voidTop, half * 2, h + 10);
+  // Depth INSIDE the opening. This has to be BRIGHTER than the cinder outside it, or the
+  // doorway is a black rectangle that somehow throws a warm pool onto the yard. There is
+  // a floor running back, a lit back wall, and a reveal down each inner jamb.
+  const o = Math.pow(open, 1.7);
+  const floorY = y - 34;
+  const bg = ctx.createLinearGradient(0, voidTop, 0, floorY);
+  bg.addColorStop(0, `rgba(96,72,54,${0.5 * o})`); bg.addColorStop(1, `rgba(196,150,92,${0.75 * o})`);
+  ctx.fillStyle = bg; ctx.fillRect(cx - half, voidTop, half * 2, floorY - voidTop);
+  const fg = ctx.createLinearGradient(0, floorY, 0, y + 10);
+  fg.addColorStop(0, `rgba(255,214,146,${0.85 * o})`); fg.addColorStop(1, `rgba(255,236,186,${0.95 * o})`);
+  ctx.fillStyle = fg; ctx.fillRect(cx - half, floorY, half * 2, h + 10 - (floorY - voidTop));
+  ctx.fillStyle = `rgba(60,44,34,${0.55 * o})`; ctx.fillRect(cx - half, floorY - 2, half * 2, 2.4);
+  // a silhouette of the shafting inside, so the light has something to be coming past
+  ctx.fillStyle = `rgba(34,26,24,${0.55 * o})`;
+  ctx.fillRect(cx - half + 6, voidTop + 14, half * 2 - 12, 5);
+  for (let i = 0; i < 3; i++) ctx.fillRect(cx - half + 12 + i * 26, voidTop + 19, 4, 26);
+  // reveals on the inner faces of the jambs
+  ctx.fillStyle = `rgba(255,226,168,${0.30 * o})`;
+  ctx.fillRect(cx - half, voidTop, 3, h + 10); ctx.fillRect(cx + half - 3, voidTop, 3, h + 10);
+  // The rail the leaves hang from. It has to reach as far as the leaves travel, or the
+  // parked doors hang from thin air: a leaf runs out to cx +/- 126 and the rail was only
+  // +/- 91, so at full open both hangers on each leaf were past the end of it. Derived
+  // from the same travel the leaves use rather than guessed a second time.
+  const reachOut = 3 + (half * 2 - 6) + (half - 3) + 10;
+  // The head band goes on HERE, before the leaves, so the hangers read continuously from
+  // wheel to leaf. Drawn with the jambs at the end it covered 11 of each hanger's 14
+  // units and the doors appeared to hang from nothing.
+  ctx.fillStyle = '#4c4455'; ctx.fillRect(cx - half - jamb, headY, half * 2 + jamb * 2, 9);
+  ctx.fillStyle = '#2e2731'; ctx.fillRect(cx - reachOut, headY - 7, reachOut * 2, 5);
+  ctx.fillStyle = 'rgba(255,244,222,0.14)'; ctx.fillRect(cx - reachOut, headY - 7, reachOut * 2, 1.4);
+  // brackets carrying the rail back to the wall, every 60 or so. A 272-unit rail held up
+  // by nothing along its whole length was the other half of the doors hanging from air.
+  ctx.fillStyle = '#3d3547';
+  for (let bx = -reachOut + 18; bx <= reachOut - 18; bx += 62) {
+    ctx.fillRect(cx + bx - 2.5, headY - 20, 5, 14);
+    ctx.beginPath();
+    ctx.moveTo(cx + bx - 2.5, headY - 20); ctx.lineTo(cx + bx + 12, headY - 20); ctx.lineTo(cx + bx - 2.5, headY - 8);
+    ctx.closePath(); ctx.fill();
+  }
+  // stops at each end, so the rail terminates rather than just ceasing
+  ctx.fillStyle = '#4a4050';
+  ctx.fillRect(cx - reachOut - 2, headY - 12, 5, 11); ctx.fillRect(cx + reachOut - 3, headY - 12, 5, 11);
+  // No clip here. One was cutting each leaf down to an 8-unit sliver at full open --
+  // the leaves run out to cx +/- 126 and the clip was only +/- 93 wide -- so the doors
+  // finished the animation as two narrow striped posts. Nothing needs clipping: the leaf
+  // is exactly the height of the opening, and the frame is drawn after it.
   for (const dir of [-1, 1]) {
-    const w = half * (1 - swing * 0.92);
-    const hinge = cx + dir * half;
+    const w = half - 3;
+    // closed: the two leaves meet on the centreline. open: each has run out past its jamb.
+    const inner = cx + dir * (3 + slide);
+    const outer = inner + dir * w;
+    const lx = Math.min(inner, outer);
     ctx.save();
-    ctx.translate(hinge, y - h / 2);
-    ctx.scale(dir, 1);
-    // face, and it swings out toward the sun so it catches the light rather than dimming
-    const shade = 1 + swing * 0.25;
-    ctx.fillStyle = `rgb(${Math.round(86 * shade)},${Math.round(74 * shade)},${Math.round(62 * shade)})`;
-    ctx.fillRect(-w, -h / 2, w, h);
-    // planks and two straps
-    // plank pitch is a fraction of the leaf, so boards compress with the door rather
-    // than popping out of existence one at a time as it turns edge-on
-    ctx.strokeStyle = `rgba(0,0,0,${0.35 * Math.min(1, shade)})`; ctx.lineWidth = 1.5;
-    for (let i = 1; i < 7; i++) { const px = -w + (w / 7) * i; ctx.beginPath(); ctx.moveTo(px, -h / 2); ctx.lineTo(px, h / 2); ctx.stroke(); }
-    ctx.fillStyle = `rgba(60,58,70,${shade})`;
-    ctx.fillRect(-w, -h / 2 + 16, w, 7); ctx.fillRect(-w, h / 2 - 25, w, 7);
-    // handle on the leading edge
-    // hand height on a 29-unit person, not chest height on a giant
-    // hand height on a 29-unit person, not chest height on a giant
-    ctx.fillStyle = '#8a7e84'; ctx.fillRect(-w + Math.min(3, w * 0.1), h * 0.12, Math.max(1, Math.min(4, w * 0.12)), 12);
-    // THE LEADING EDGE. A leaf with no thickness reads as a flat panel seen head on;
-    // the edge is what says this object has turned toward you. It widens as the door
-    // opens, because that is the face you see more of the further it swings.
-    const edge = 1.5 + swing * 5;
-    ctx.fillStyle = `rgba(${Math.round(150 * shade)},${Math.round(132 * shade)},${Math.round(112 * shade)},1)`;
-    ctx.fillRect(-w - edge, -h / 2, edge, h);
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-w - edge, -h / 2, edge, 3);
+    // leaf body
+    ctx.fillStyle = '#56493e'; ctx.fillRect(lx, voidTop + 2, w, h + 6);
+    // vertical boards
+    ctx.strokeStyle = 'rgba(0,0,0,0.34)'; ctx.lineWidth = 1.5;
+    for (let i = 1; i < 6; i++) {
+      const px = lx + (w / 6) * i;
+      ctx.beginPath(); ctx.moveTo(px, voidTop + 2); ctx.lineTo(px, voidTop + h + 8); ctx.stroke();
+    }
+    // two straps and a diagonal brace, which is what stops a timber leaf racking
+    ctx.fillStyle = '#3c3a46';
+    ctx.fillRect(lx, voidTop + 16, w, 6.5); ctx.fillRect(lx, voidTop + h - 14, w, 6.5);
+    ctx.strokeStyle = '#3c3a46'; ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(lx + (dir < 0 ? 2 : w - 2), voidTop + 20); ctx.lineTo(lx + (dir < 0 ? w - 2 : 2), voidTop + h - 10);
+    ctx.stroke();
+    // lit top edge and a shaded foot, one sun for the scene
+    ctx.fillStyle = 'rgba(255,240,212,0.13)'; ctx.fillRect(lx, voidTop + 2, w, 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.26)'; ctx.fillRect(lx, voidTop + h, w, 8);
+    // the leading edge, catching the light as the leaf runs back
+    ctx.fillStyle = 'rgba(214,196,168,0.55)';
+    ctx.fillRect(inner - (dir < 0 ? 2 : 0), voidTop + 2, 2, h + 6);
+    // hangers up to the rail, and a wheel on each
+    ctx.strokeStyle = '#6a5f6c'; ctx.lineWidth = 2.2;
+    for (const hxp of [lx + w * 0.22, lx + w * 0.78]) {
+      ctx.beginPath(); ctx.moveTo(hxp, voidTop + 3); ctx.lineTo(hxp, headY - 3); ctx.stroke();
+      ctx.fillStyle = '#7d7080'; ctx.beginPath(); ctx.arc(hxp, headY - 3.5, 2.8, 0, 6.28); ctx.fill();
+    }
+    // a handle, at hand height on a 45-unit body rather than chest height on a giant
+    ctx.fillStyle = '#8a7e84';
+    ctx.fillRect(inner + dir * 7 - 1.5, y - 34, 3, 13);
     ctx.restore();
   }
+  // jambs LAST, so the leaves run behind them. The head is not repeated here; it went on
+  // before the leaves so the hangers stay visible through it.
+  ctx.fillStyle = '#4c4455';
+  ctx.fillRect(cx - half - jamb, voidTop, jamb, h + 10);
+  ctx.fillRect(cx + half, voidTop, jamb, h + 10);
+  ctx.fillStyle = 'rgba(255,244,222,0.14)';
+  ctx.fillRect(cx - half - jamb, voidTop, 2, h + 10);
+  ctx.fillRect(cx - half - jamb, headY, half * 2 + jamb * 2, 1.6);
 }
 // The pool on the ground, drawn AFTER the lanes. Light out of a doorway lands on
 // the threshold, and the threshold is exactly the band millYard's cinder apron
@@ -4530,24 +5314,57 @@ function drawYardDoors(y) {
 // it reads as a hole cut in a flat.
 function drawDoorSpill() {
   if (introAlpha() <= 0 || S.doorOpen <= 0.04) return;
-  const c = I(), y = laneY(0), cx = c.doors - V.left, half = c.half, h = 122;
-  const swing = Math.pow(S.doorOpen, 1.7);
-  const g = ctx.createLinearGradient(cx, y - h, cx, y + 34);
-  g.addColorStop(0, 'rgba(255,228,170,0)');
-  g.addColorStop(1, `rgba(255,228,170,${0.34 * swing * introAlpha()})`);
-  ctx.fillStyle = g; ctx.fillRect(cx - half - c.jamb * 2, y - h, half * 2 + c.jamb * 4, h + 34);
+  const c = I(), y = laneY(0), cx = c.doors - V.left, half = c.half;
+  const swing = Math.pow(S.doorOpen, 1.7) * introAlpha();
+  // Light out of a doorway lands on the GROUND in front of it and fades in every
+  // direction. The old version was an axis-aligned rect 156 tall running up the brick
+  // as well, with hard vertical edges at the jambs, so it read as a pale beige panel
+  // stuck on the wall rather than as light. A pool, splayed outward the way a beam
+  // through an opening actually splays, and ending where the light would.
+  const reach = 30, spread = half + 26;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx - half, y - 3);
+  ctx.lineTo(cx + half, y - 3);
+  ctx.lineTo(cx + spread, y + reach);
+  ctx.lineTo(cx - spread, y + reach);
+  ctx.closePath();
+  ctx.clip();
+  // One radial falls off along the ground AND across it, so the pool has no edge of its
+  // own in either direction. A linear pair cannot do this: the obvious way to fade the
+  // ends is a destination-out pass, which does not dim the light, it erases the GROUND
+  // underneath it and punches the river through the yard.
+  //
+  // The gradient's radius and the clip that bounds it are both `spread`, deliberately from
+  // one constant: a fill wider than its gradient smears the last stop outward and a fill
+  // narrower truncates the ramp into a hard bar, and neither shows up in a syntax check.
+  const g = ctx.createRadialGradient(cx, y - 3, 2, cx, y - 3, spread);
+  g.addColorStop(0, `rgba(255,228,170,${0.34 * swing})`);
+  g.addColorStop(0.55, `rgba(255,228,170,${0.15 * swing})`);
+  g.addColorStop(1, 'rgba(255,228,170,0)');
+  ctx.fillStyle = g; ctx.fillRect(cx - spread, y - 3, spread * 2, reach + 3);
+  ctx.restore();
+  // a warm lick up the inside faces of the jambs, which is the other half of the tell
+  ctx.fillStyle = `rgba(255,228,170,${0.16 * swing})`;
+  ctx.fillRect(cx - half - 2, y - 122, 3, 122);
+  ctx.fillRect(cx + half - 1, y - 122, 3, 122);
 }
 function drawIntro() {
-  const a = introAlpha();
-  if (a <= 0) return;
   const y = laneY(0);
   // A 290-unit brick wall dissolving with hillside showing through it is worse than a
-  // hard cut, so only the machinery fades. The wall and doors leave by scrolling off.
-  drawGateWall(y);
-  drawYardDoors(y);
-  ctx.save(); ctx.globalAlpha = a;
-  drawBelt(y);
-  ctx.restore();
+  // hard cut, so only the machinery fades. The wall and doors leave by scrolling off --
+  // which they could not do while this function returned early on introAlpha() reaching
+  // zero. At CFG.scroll that happened 2.36s into the run, with the wall still centre
+  // screen, so the gateway the crowd had just run through vanished in a single frame
+  // along with the conveyor. They are drawn whenever they are in view; only the belt
+  // and its flight fade, and those are what the comment above was ever about.
+  if (inView(CFG.intro.doors, 420)) { drawGateWall(y); drawYardDoors(y); }
+  // Steel does not fade. These used to dissolve to semi-transparent over the first 260
+  // units of road, with the hillside showing through a trestle the player had watched a
+  // hundred people walk off four seconds earlier -- which reads as an asset being removed,
+  // not as a place being left behind. They scroll off instead, like the wall.
+  drawBelt();
+  drawStair();
 }
 function drawFinish() {
   if (!inView(CFG.finale.x, 120)) return;
@@ -5532,7 +6349,11 @@ if (qs.has('finale')) {
   S.stats.arrived = 12; S.cam = S.camMax; updateView(1);
   S.finale = { len: 6, seq: makeSeq(6), idx: 2, attempts: 12, timer: 0.9, line: S.runners.slice(0, 12), leaving: [] }; S.mode = 'finale';
 }
-requestAnimationFrame(frame);
+// ?shot draws a single frame and never schedules another. Headless Chrome hangs on
+// this page otherwise: --virtual-time-budget never reaches an idle point while
+// requestAnimationFrame keeps rescheduling, so the screenshot never lands. It also
+// makes a shot reproducible, which matters when two of them are being compared.
+if (qs.has('shot')) draw(); else requestAnimationFrame(frame);
 </script>
 </body>
 </html>
