@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '54 the crowd speaks where it stands';
+const BUILD = '55 he speaks first';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1355,7 +1355,8 @@ window.addEventListener('keydown', e => {
   // ESC moves past the kind on screen; see drillKey for why it is one and not all eleven.
   if (S.mode === 'intro') {
     if (S.drill && !S.drill.done) { drillKey(k); return; }
-    if (!S.drill) { const c = I(); S.introT = c.deliver + c.settle; startDrill(); return; }
+    if (S.boss && !S.boss.gone) { bossSkip(); return; }
+    if (!S.boss) { const c = I(); S.introT = c.deliver + c.settle; startBoss(); return; }
     startRun(); return;
   }
   if (S.mode === 'win' || S.mode === 'lose') { if (k === 'R') { reset(); S.mode = 'intro'; S.introT = 0; } return; }
@@ -1714,7 +1715,6 @@ function startDrill() {
     if (!seen[t.verb]) { seen[t.verb] = 1; order.push({ verb: t.verb, title: t.title, color: t.color }); }
   }
   S.drill = { order, idx: -1, room: null, pos: 1, phase: 'in', done: false, flash: 0 };
-  startBoss();
   drillNext();
 }
 function drillNext() {
@@ -1768,7 +1768,9 @@ function updateIntro(dt) {
   // and the doors stay shut. One clock, stopped, rather than a second clock to drift.
   const drilling = S.drill && !S.drill.done;
   if (S.boss) updateBoss(dt);
-  if (!drilling) S.introT += dt;
+  // the doors must not open while he is still speaking, so he stops the clock as the drill does
+  const holding = drilling || (S.boss && !S.boss.gone);
+  if (!holding) S.introT += dt;
   for (const r of S.runners) {
     if (S.introT < r.bornAt) { r.x = c.belt - 56; r.y = introBeltY(); r.onBelt = true; r.offLine = false; r.held = true; r.stagger = 0.06; continue; }
     const since = S.introT - r.bornAt;
@@ -1800,7 +1802,7 @@ function updateIntro(dt) {
     }
   }
   // The shift is assembled and the doors are still shut: run the drill in that gap.
-  if (S.introT >= gather && !S.drill) startDrill();
+  if (S.introT >= gather && !S.drill && !S.boss) startBoss();
   if (drilling) {
     updateDrill(dt);
     if (S.introT > 0.8) chatter(dt);
@@ -7910,11 +7912,18 @@ function drawHud() {
   ctx.fillStyle = '#0a0c14'; ctx.fillRect(0, 0, W, 40);
   ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 40, W, 2);
   const drilling = S.mode === 'intro' && S.drill && !S.drill.done;
+  // The proprietor speaks before the drill exists, which is a second window in which no
+  // run has started. Everything the drill suppresses has to be suppressed here too, or the
+  // bar spends his whole speech reporting RUNNING 100, LOST 0, FINISHED 0 over a yard where
+  // nobody has gone anywhere yet.
+  const speaking = S.mode === 'intro' && S.boss && !S.boss.gone;
   let x = 10;
   // Three tallies of a run that has not started read as a report on nothing: nobody is
   // running, nothing is lost, nothing is finished. During the drill the bar says what is
   // actually happening, and carries the step count so the panel title does not have to.
   if (drilling) x = pill(x, 'DRILL', `${S.drill.idx + 1} of ${S.drill.order.length}`, '#5ce1ff');
+  // no count while he talks: the shift is standing still and a number would be a tally
+  else if (speaking) x = pill(x, 'SHIFT', 'waiting at the doors', '#5ce1ff');
   else {
     x = pill(x, 'RUNNING', alive, '#2ecc71');
     x = pill(x, 'LOST', S.stats.dead, '#ff6b6b');
@@ -7927,7 +7936,9 @@ function drawHud() {
   // down a course the doors have not opened onto. It also competes directly with the
   // thing the player is meant to be reading -- a bright 256x24 progress strip 140px from
   // the drill's own progress row, in the same 40px bar, and the eye goes to the wrong one.
-  if (drilling) {
+  if (speaking) {
+    // nothing at all: there is no run to report and no drill to count through yet
+  } else if (drilling) {
     // The pips take the space the course track has vacated rather than being tucked into a
     // corner of it: eleven of them across 256px is 23px each, which is legible, and it is
     // the only progress reading in the bar so it cannot lose the eye to a brighter one.
@@ -7968,6 +7979,10 @@ function drawHud() {
       const s = VERBS[o.verb].hint; return s.length > a.length ? s : a;
     }, '');
     hintBar(VERBS[S.drill.room.verb].hint, note, longest + '    ' + note);
+  }
+  // while he talks, the bottom line is the way past him
+  if (S.mode === 'intro' && S.boss && !S.boss.gone && !S.drill) {
+    hintBar('press any key to begin the drill');
   }
 }
 // The line across the bottom that explains the controls. Shrink to fit rather than run
@@ -8169,17 +8184,20 @@ function drawPanel(room) {
 // fiction, and the one honest reading here -- how far through the puzzle you are -- is
 // drawn on its own below.
 // ---------------------------------------------------------------- the proprietor
-// A band across the top while the drill runs: a man in a top hat whose head is the globe,
-// welcoming the shift. He talks over the practice and is gone by the time the doors open.
+// Before the drill, a band comes down carrying a man in a top hat whose head is the globe.
+// He says his piece to an empty yard, lifts away, and the practice starts behind him.
+//
+// He speaks FIRST rather than over the drill. Talking across a puzzle asks the player to
+// read two things at once and they will do neither: you cannot take in a joke about your
+// own body while working out what a keypad wants. Said first, he is read; said over, he is
+// wallpaper. Any key cuts him short, because nobody wants him twice.
 //
 // He sits UNDER the HUD, not over it. The HUD carries "DRILL n of 11" and its eleven pips,
 // which is the only reading the player has of how much practice is left, so the band starts
 // at the HUD's lower edge rather than at the top of the canvas.
 //
-// He also pushes the drill panel down. At the drill's own midline of 163 a 210-tall keypad
-// panel starts at y 58, which is inside the band, and the two would be drawn through each
-// other. The push is a flat swap rather than an animation: a panel that slid down while the
-// player was reading it would be worse than one that is simply lower for the whole drill.
+// Because he is gone before the first panel arrives, the drill's own layout is untouched:
+// no midline push, no shared vertical budget, nothing for the two to argue about.
 const BOSS = {
   y: 48,            // the HUD's lower edge
   h: 122,           // tall enough for hat, globe and shoulders at a readable size
@@ -8189,10 +8207,6 @@ const BOSS = {
   bustX: 106,       // his centre; the drill panel never reaches left of 270
   textX: 214,       // where his words start
 };
-const DRILL_MID_BOSS = 288;
-// The drill's midline, pushed down while the band is present. drawDrill asks for this
-// rather than reading DRILL_MID directly, so the drill alone is unchanged.
-function drillMid() { return S.boss && !S.boss.gone ? DRILL_MID_BOSS : DRILL_MID; }
 
 // He fumbles the line and corrects himself, which is the whole joke: the correction is
 // the lie. The last line is the drill's own honesty turned into a threat.
@@ -8218,7 +8232,7 @@ function startBoss() {
   S.boss = {
     line: 0, ch: 0, hold: 0, t: 0, inK: 0, outK: 0, gone: false,
     laugh: 0, blink: 0, nextBlink: 1.4 + Math.random() * 2.6, spin: 0,
-    idleCool: 6 + Math.random() * 4, wrapFor: -1, wrap: [],
+    leaving: false, wrapFor: -1, wrap: [],
   };
 }
 function updateBoss(dt) {
@@ -8231,10 +8245,14 @@ function updateBoss(dt) {
   b.blink = Math.max(0, b.blink - dt);
   b.nextBlink -= dt;
   if (b.nextBlink <= 0) { b.blink = 0.14; b.nextBlink = 1.8 + Math.random() * 3.4; }
-  // the band drops in, and lifts out once the drill is finished with
-  const leaving = !S.drill || S.drill.done;
-  if (!leaving) b.inK = Math.min(1, b.inK + dt / BOSS.slide);
-  else { b.outK = Math.min(1, b.outK + dt / BOSS.slide); if (b.outK >= 1) b.gone = true; }
+  // the band drops in, and lifts away once he has finished or been cut short. The drill
+  // is started from here, at the moment he is fully gone, so the two never share the screen
+  // and panel one is not sliding in underneath a band that is still sliding out.
+  if (!b.leaving) b.inK = Math.min(1, b.inK + dt / BOSS.slide);
+  else {
+    b.outK = Math.min(1, b.outK + dt / BOSS.slide);
+    if (b.outK >= 1 && !b.gone) { b.gone = true; startDrill(); }
+  }
   // the script
   const line = BOSS_SCRIPT[b.line];
   if (line) {
@@ -8246,12 +8264,11 @@ function updateBoss(dt) {
         b.line++; b.ch = 0; b.hold = 0;
       }
     }
-  } else {
-    // out of script: he waits out the rest of the drill, chuckling to himself
-    b.idleCool -= dt;
-    if (b.idleCool <= 0) { b.laugh = 0.95; b.idleCool = 6 + Math.random() * 5; }
-  }
+  } else b.leaving = true;                              // said his piece
 }
+// Any key cuts him short. He still lifts away over BOSS.slide rather than vanishing, so a
+// skip reads as him being waved off rather than as a dropped frame.
+function bossSkip() { if (S.boss && !S.boss.gone) S.boss.leaving = true; }
 // Wrap the WHOLE line once and reveal characters across the wrapped result. Wrapping the
 // revealed substring instead makes the text reflow as it types, which throws a word down
 // to the next row mid-keystroke.
@@ -8507,7 +8524,7 @@ function drawDrill() {
   // and panel 6 and back again. It also clears the HUD hairline properly -- at py 48 the
   // 150-tall panels left a ~10px sliver of sky under the bar, too small to read as
   // separation and too large to read as alignment.
-  const [px, py] = panelFrame(pw, d.room.title, col, ph, Math.round(drillMid() - ph / 2));
+  const [px, py] = panelFrame(pw, d.room.title, col, ph, Math.round(DRILL_MID - ph / 2));
   v.draw(d.room.mg, px, py, pw);
   panelStep(d.room, px, py, pw, ph);
   // Both bars, not just the one. On the road panelGauges draws progress AND an urgency bar
@@ -8855,15 +8872,23 @@ if (qs.has('intro')) {
 if (qs.has('drill')) {
   S.mode = 'intro';
   const c = I(); S.introT = c.deliver + c.settle;
-  for (let i = 0; i < 60 * 8 && !S.drill; i++) update(1 / 60);
+  // The proprietor speaks before the drill, so waiting for S.drill means waiting through
+  // him. Wave him off each frame and the drill arrives in about a second, as it used to.
+  for (let i = 0; i < 60 * 40 && !S.drill; i++) { update(1 / 60); if (S.boss) bossSkip(); }
   const n = Math.max(1, Math.min(+(qs.get('drill') || 1), S.drill.order.length));
   // walk it forward by shoving each panel straight to the end of its exit
   for (let g = 0; S.drill.idx < n - 1 && g < 4000; g++) { S.drill.phase = 'out'; S.drill.pos = -1; update(1 / 60); }
   S.drill.phase = 'play'; S.drill.pos = 0;
   for (let i = 0; i < 30; i++) update(1 / 60);     // let the verb's own animation settle
 }
-// Scrub the proprietor's speech for screenshots: ?drill=6&bosst=7.9&shot puts him mid-line
-// without touching the panel the drill param just set up.
+// ?boss stops on the proprietor, before the drill exists, which is what he looks like in
+// play now that he speaks first. ?boss&bosst=9 puts him a given number of seconds in.
+if (qs.has('boss')) {
+  S.mode = 'intro';
+  const c = I(); S.introT = c.deliver + c.settle;
+  for (let i = 0; i < 60 * 12 && !S.boss; i++) update(1 / 60);
+}
+// Scrub the proprietor's speech for screenshots: ?boss&bosst=7.9&shot puts him mid-line.
 if (qs.has('bosst') && S.boss) {
   const n = Math.round(+(qs.get('bosst') || 0) * 60);
   for (let i = 0; i < n; i++) updateBoss(1 / 60);
