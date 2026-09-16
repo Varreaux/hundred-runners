@@ -1289,7 +1289,7 @@ function reset() {
     stats: { dead: 0, arrived: 0 },
     finale: null, best: loadBest(), rollBottom: 254,
     endT: 0, endEmb: [], endSpawn: 0, endRoll: null,
-    introT: 0, doorOpen: 0, drill: null, boss: null,
+    introT: 0, doorOpen: 0, drill: null, boss: null, bossCave: false,
     recent: [], spike: null, spikeCool: 0, streak: 0, bestStreak: 0, lastScream: 0,
   };
   for (let i = 0; i < CFG.runnerCount; i++) {
@@ -1404,8 +1404,8 @@ window.addEventListener('keydown', e => {
     if (S.drill && !S.drill.done) { drillKey(k); return; }
     // Only SPACE and ENTER, and never an auto-repeat: holding a key down would otherwise
     // walk the whole speech at the keyboard's repeat rate, which is the skip by another name.
-    if (S.boss && !S.boss.gone) { if (!e.repeat && (k === ' ' || k === 'ENTER')) bossAdvance(); return; }
-    if (!S.boss) { const c = I(); S.introT = c.deliver + c.settle; startBoss(); return; }
+    if (S.boss && !S.boss.gone && !S.boss.auto) { if (!e.repeat && (k === ' ' || k === 'ENTER')) bossAdvance(); return; }
+    if (!S.boss) { const c = I(); S.introT = c.deliver + c.settle; startBoss(BOSS_SCRIPT, false, startDrill); return; }
     startRun(); return;
   }
   if (S.mode === 'win' || S.mode === 'lose') { if (k === 'R') { reset(); S.mode = 'intro'; S.introT = 0; } return; }
@@ -1531,6 +1531,25 @@ function update(dt) {
   if (!S.spike && S.spikeCool <= 0 && S.recent.length >= 5) {
     S.spike = { t: 0.9, n: S.recent.length, at: S.lastKill }; S.recent.length = 0; S.spikeCool = CFG.spikeCooldown; S.shake = 8; AU.boom();
   }
+  // ---- Mr. Capitalism, once, when the shift walks out of his mill.
+  //
+  // Fired off the LEAD runner rather than the camera: the camera waits for stragglers, so
+  // on a bad run it can sit a long way behind the people who have actually left, and he
+  // would be shouting at a doorway they went through half a minute ago.
+  //
+  // Held back while a room is armed, which is the one rule the opening's version already
+  // settled: talking across a puzzle asks the player to read two things at once and they
+  // will do neither. The seam is a natural lull, but a room can straddle it, and if one
+  // does he waits rather than competing with it.
+  if (!S.bossCave) {
+    let lead = -Infinity;
+    for (const r of S.runners) if (r.state === 'run') lead = Math.max(lead, r.x);
+    if (lead >= FAC.seam && !S.rooms.some(m => m.state === 'armed' || m.state === 'open')) {
+      S.bossCave = true;
+      startBoss(BOSS_CAVE, true, null);
+    }
+  }
+  if (S.boss && !S.boss.gone) updateBoss(dt);
   const inside = S.cam + CFG.packFront > CFG.entrance && S.cam + CFG.packFront < CFG.exit;
   AU.ambient(inside, S.runners.filter(r => r.state === 'run' && !r.held).length, dt);
   const spread = 1 + CFG.tire * (S.cam / S.camMax);
@@ -1851,7 +1870,7 @@ function updateIntro(dt) {
     }
   }
   // The shift is assembled and the doors are still shut: run the drill in that gap.
-  if (S.introT >= gather && !S.drill && !S.boss) startBoss();
+  if (S.introT >= gather && !S.drill && !S.boss) startBoss(BOSS_SCRIPT, false, startDrill);
   if (drilling) {
     updateDrill(dt);
     if (S.introT > 0.8) chatter(dt);
@@ -2147,7 +2166,7 @@ function draw() {
   }
   drawHud();
   if (S.mode === 'play' && S.active) drawPanel(S.active);
-  if (S.mode === 'intro' && S.boss) drawBoss();
+  if ((S.mode === 'intro' || S.mode === 'play') && S.boss) drawBoss();
   if (S.mode === 'intro' && S.drill && !S.drill.done) drawDrill();
   if (S.mode === 'finale') drawFinalePanel();
   if (S.mode === 'title') drawTitle();
@@ -9300,8 +9319,8 @@ function drawHud() {
     hintBar(VERBS[S.drill.room.verb].hint, note, longest + '    ' + note);
   }
   // while he talks, the bottom line is the way past him
-  if (S.mode === 'intro' && S.boss && !S.boss.gone && !S.drill) {
-    const cur = BOSS_SCRIPT[S.boss.line];
+  if (S.mode === 'intro' && S.boss && !S.boss.gone && !S.boss.auto && !S.drill) {
+    const cur = S.boss.script[S.boss.line];
     hintBar(!cur ? 'the drill is starting'
           : S.boss.ch < cur.t.length ? 'SPACE fills the line'
           : S.boss.line === BOSS_SCRIPT.length - 1 ? 'SPACE to begin the drill'
@@ -9529,6 +9548,8 @@ const BOSS = {
   h: 122,           // tall enough for hat, globe and shoulders at a readable size
   slide: 0.55,      // seconds to drop in and to lift out
   cps: 30,          // characters a second, about reading pace
+  read: 1.5,        // auto-advance only: the beat a filled line is held before he moves on,
+                    // on top of a share of its own typing time
   dwell: 0.30,      // a filled line must sit this long before SPACE will move on, so that
                     // a held key or a mashed one cannot carry the reader past a line they
                     // have not seen. Short enough to be invisible to anyone reading.
@@ -9547,6 +9568,14 @@ const BOSS_SCRIPT = [
   { t: 'Please follow the instructions, and you will work through life most successfully.' },
   { t: 'Do enjoy the practice. It is the last thing here that cannot cost you anything.', laugh: 1 },
 ];
+// He turns up again the moment the shift walks out of his mill, and the joke is that the
+// smugness goes: he is not addressing workers now, he is shouting after them. One line,
+// and it plays on a TIMER rather than on SPACE, because the run is live behind him and a
+// speech that waits for a keypress would hold a hundred people on the road.
+const BOSS_CAVE = [
+  { t: "Wait a second, you guys can't leave the factory! Come back.", mood: 'alarm' },
+];
+
 // Longitude in radians, latitude as a fraction of the radius, and a blob outline in the
 // same fractional units. Land is placed by longitude so it can be spun; nothing here is
 // meant to be a real coastline, only to read as continents going past.
@@ -9558,8 +9587,13 @@ const BOSS_LAND = [
   { lon: 4.2, lat: -0.34, p: [[-0.22, -0.14], [0.14, -0.22], [0.24, 0.06], [-0.06, 0.20], [-0.20, 0.04]] },
   { lon: 5.2, lat: 0.06, p: [[-0.20, -0.20], [0.16, -0.14], [0.22, 0.14], [-0.08, 0.24], [-0.22, 0.02]] },
 ];
-function startBoss() {
+// `auto` is the whole difference between his two appearances. In the opening nothing else
+// is happening and he waits for SPACE, so he cannot be walked past unread. At the seam the
+// run is live: a hundred people are on the road behind him and a puzzle may be a second
+// away, so he says his piece on a clock and leaves, and never takes a key from the player.
+function startBoss(script, auto, onGone) {
   S.boss = {
+    script: script || BOSS_SCRIPT, auto: !!auto, onGone: onGone || null,
     line: 0, ch: 0, dwell: 0, t: 0, inK: 0, outK: 0, gone: false,
     laugh: 0, blink: 0, nextBlink: 1.4 + Math.random() * 2.6, spin: 0,
     leaving: false, wrapFor: -1, wrap: [],
@@ -9581,14 +9615,22 @@ function updateBoss(dt) {
   if (!b.leaving) b.inK = Math.min(1, b.inK + dt / BOSS.slide);
   else {
     b.outK = Math.min(1, b.outK + dt / BOSS.slide);
-    if (b.outK >= 1 && !b.gone) { b.gone = true; startDrill(); }
+    if (b.outK >= 1 && !b.gone) { b.gone = true; if (b.onGone) b.onGone(); }
   }
   // The script does not advance itself. A line types out and then waits, however long
   // that takes; nothing here is on a timer the player cannot see.
-  const line = BOSS_SCRIPT[b.line];
+  const line = b.script[b.line];
   if (line) {
     if (b.ch < line.t.length) b.ch = Math.min(line.t.length, b.ch + BOSS.cps * dt);
-    else b.dwell += dt;
+    else {
+      b.dwell += dt;
+      // read at about the speed it was typed, plus a beat, so a line that is twice as long
+      // is held twice as long rather than every line getting the same arbitrary pause
+      if (b.auto && b.dwell >= BOSS.read + line.t.length / BOSS.cps * 0.45) {
+        b.line++; b.ch = 0; b.dwell = 0;
+        if (b.line >= b.script.length) b.leaving = true;
+      }
+    }
   } else b.leaving = true;                              // said his piece
 }
 // SPACE does one of two things depending on where the line is, which is the whole of the
@@ -9598,13 +9640,14 @@ function updateBoss(dt) {
 function bossAdvance() {
   const b = S.boss;
   if (!b || b.leaving) return;
-  const line = BOSS_SCRIPT[b.line];
+  if (b.auto) return;                                   // his own clock; SPACE is the player's
+  const line = b.script[b.line];
   if (!line) { b.leaving = true; return; }
   if (b.ch < line.t.length) { b.ch = line.t.length; b.dwell = 0; return; }
   if (b.dwell < BOSS.dwell) return;
   if (line.laugh) b.laugh = 1.05;
   b.line++; b.ch = 0; b.dwell = 0;
-  if (b.line >= BOSS_SCRIPT.length) b.leaving = true;
+  if (b.line >= b.script.length) b.leaving = true;
 }
 // Wrap the WHOLE line once and reveal characters across the wrapped result. Wrapping the
 // revealed substring instead makes the text reflow as it types, which throws a word down
@@ -9667,7 +9710,10 @@ function drawBoss() {
   drawBossBody(cx, cy, R);
   drawBossGlobe(cx, cy, R, b);
   drawBossFace(cx, cy, R, b);
-  drawBossHat(cx, cy, R);
+  // it comes off his head when the shift walks out, and lands back on it
+  const startled = (b.script[b.line] || {}).mood === 'alarm';
+  const hop = startled ? R * 0.46 * (0.72 + 0.28 * Math.abs(Math.sin(b.t * 4.1))) : 0;
+  drawBossHat(cx, cy, R, hop, startled ? Math.sin(b.t * 3.3) * 0.16 : 0);
   // the lower rule, now over his shoulders: the band's edge belongs in front of the man
   // leaning out of it, and drawn under him he simply rubbed it out
   ctx.fillStyle = 'rgba(206,168,92,0.75)'; ctx.fillRect(0, BOSS.y + BOSS.h - 1.5, W, 1.5);
@@ -9675,9 +9721,9 @@ function drawBoss() {
   // ---- his words
   const tx = BOSS.textX, tw = W - tx - 34;
   ctx.font = '16px monospace';
-  const line = BOSS_SCRIPT[b.line] || BOSS_SCRIPT[BOSS_SCRIPT.length - 1];
+  const line = b.script[b.line] || b.script[b.script.length - 1];
   if (b.wrapFor !== b.line) { b.wrap = bossWrap(line.t, tw); b.wrapFor = b.line; }
-  const shown = BOSS_SCRIPT[b.line] ? Math.floor(b.ch) : line.t.length;
+  const shown = b.script[b.line] ? Math.floor(b.ch) : line.t.length;
   let used = 0;
   const rows = b.wrap.length;
   const ty = BOSS.y + BOSS.h / 2 - (rows - 1) * 11 + 2;
@@ -9703,11 +9749,13 @@ function drawBoss() {
 
   // ---- the prompt. It pulses only once the line is actually ready to be moved past, so
   // the pulse is a signal rather than decoration, and it names the last line as the last.
-  const cur = BOSS_SCRIPT[b.line];
+  // no prompt when he is on his own clock: there is nothing for the player to press, and
+  // a SPACE prompt over a live run would be asking them to do something that does nothing
+  const cur = b.auto ? null : b.script[b.line];
   if (cur && !b.leaving) {
     const filled = b.ch >= cur.t.length;
     const ready = filled && b.dwell >= BOSS.dwell;
-    const last = b.line === BOSS_SCRIPT.length - 1;
+    const last = b.line === b.script.length - 1;
     const msg = !filled ? 'SPACE fills the line' : last ? 'SPACE to begin the drill' : 'SPACE to continue';
     ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right';
     const a = ready ? 0.55 + 0.45 * Math.abs(Math.sin(b.t * 3.2)) : 0.28;
@@ -9796,12 +9844,17 @@ function drawBossGlobe(cx, cy, R, b) {
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.28); ctx.stroke();
 }
 function drawBossFace(cx, cy, R, b) {
-  const talking = !!BOSS_SCRIPT[b.line] && b.ch < BOSS_SCRIPT[b.line].t.length;
+  const talking = !!b.script[b.line] && b.ch < b.script[b.line].t.length;
   const laughing = b.laugh > 0;
+  // The mood is carried by the LINE, not by the appearance, so a script can turn on him
+  // part way through without a second set of state to keep in step.
+  const alarm = (b.script[b.line] || {}).mood === 'alarm';
   const open = laughing ? 0.62 + Math.sin(b.laugh * 30) * 0.22
+             : alarm ? 0.72 + Math.abs(Math.sin(b.t * 15)) * 0.34
              : talking ? 0.30 + Math.abs(Math.sin(b.t * 17)) * 0.48
              : 0.06;
-  const lid = b.blink > 0 ? 0.12 : (laughing ? 0.45 : 1);   // eyes narrow when he laughs
+  // eyes narrow when he laughs and go wide when the shift walks out
+  const lid = b.blink > 0 ? 0.12 : (laughing ? 0.45 : alarm ? 1.24 : 1);
   const ey = cy - R * 0.20, eo = R * 0.36;
   // eyes
   for (const s of [-1, 1]) {
@@ -9810,14 +9863,20 @@ function drawBossFace(cx, cy, R, b) {
     ctx.strokeStyle = INK; ctx.lineWidth = 1.3; ctx.stroke();
     if (lid > 0.3) {
       ctx.fillStyle = INK;
-      ctx.beginPath(); ctx.arc(cx + s * eo + R * 0.05, ey + R * 0.02, R * 0.085, 0, 6.28); ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx + s * eo + R * (alarm ? 0.02 : 0.05), ey + R * (alarm ? -0.06 : 0.02),
+              R * (alarm ? 0.062 : 0.085), 0, 6.28);
+      ctx.fill();
     }
   }
   // brows, angled inward: pleased with himself
   ctx.strokeStyle = INK; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
   for (const s of [-1, 1]) {
     ctx.beginPath();
-    if (BOSS.turn > 0) {                          // outer end low: pleased with himself
+    if (alarm) {                                  // inner end HIGH: alarm, not anger
+      ctx.moveTo(cx + s * (eo + R * 0.26), ey - R * 0.40);
+      ctx.lineTo(cx + s * (eo - R * 0.14), ey - R * 0.56);
+    } else if (BOSS.turn > 0) {                   // outer end low: pleased with himself
       ctx.moveTo(cx + s * (eo + R * 0.22), ey - R * 0.40);
       ctx.lineTo(cx + s * (eo - R * 0.16), ey - R * 0.52);
     } else {                                      // inner end low: a scowl
@@ -9826,17 +9885,27 @@ function drawBossFace(cx, cy, R, b) {
     }
     ctx.stroke();
   }
-  // monocle on his left, with a chain that leaves the face
-  ctx.strokeStyle = 'rgba(214,178,96,0.95)'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(cx + eo, ey, R * 0.30, 0, 6.28); ctx.stroke();
+  // monocle, with a chain that leaves the face. When he is alarmed it has fallen out and
+  // hangs swinging on that chain, which says more than the mouth does: the glass he looks
+  // down at people through is off his eye.
+  const swing = alarm ? Math.sin(b.t * 5.2) * R * 0.16 : 0;
+  const mx2 = alarm ? cx + R * 0.86 + swing : cx + eo;
+  const my2 = alarm ? cy + R * 0.86 : ey;
   ctx.strokeStyle = 'rgba(214,178,96,0.55)'; ctx.lineWidth = 1.2;
   ctx.beginPath();
-  ctx.moveTo(cx + eo + R * 0.28, ey + R * 0.12);
-  ctx.quadraticCurveTo(cx + R * 0.95, cy + R * 0.55, cx + R * 0.72, cy + R * 0.95);
+  if (alarm) {
+    ctx.moveTo(cx + R * 0.62, cy + R * 0.30);
+    ctx.quadraticCurveTo(cx + R * 0.94, cy + R * 0.54, mx2, my2 - R * 0.28);
+  } else {
+    ctx.moveTo(cx + eo + R * 0.28, ey + R * 0.12);
+    ctx.quadraticCurveTo(cx + R * 0.95, cy + R * 0.55, cx + R * 0.72, cy + R * 0.95);
+  }
   ctx.stroke();
+  ctx.strokeStyle = 'rgba(214,178,96,0.95)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(mx2, my2, R * 0.30, 0, 6.28); ctx.stroke();
   // glint
   ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.4;
-  ctx.beginPath(); ctx.arc(cx + eo, ey, R * 0.30, -2.5, -1.9); ctx.stroke();
+  ctx.beginPath(); ctx.arc(mx2, my2, R * 0.30, -2.5, -1.9); ctx.stroke();
   // mouth, under the moustache: a smile lives in the corners, so this is a path with its
   // ends lifted rather than an ellipse. The lift is uneven -- his left goes higher -- because
   // a symmetric grin reads as a cartoon and a crooked one reads as a man enjoying himself.
@@ -9846,6 +9915,18 @@ function drawBossFace(cx, cy, R, b) {
   const curlL = turn * (R * 0.13 + R * 0.05 * open), curlR = turn * (R * 0.24 + R * 0.09 * open);
   const belly = turn > 0 ? my + Math.max(1.2, mh) : my - R * 0.10 + Math.max(1.2, mh) * 0.5;
   ctx.fillStyle = '#3a1d22';
+  if (alarm) {
+    const ah = R * 0.34 * open;
+    ctx.beginPath(); ctx.ellipse(cx, my + R * 0.04, mw * 0.78, Math.max(3, ah), 0, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.3; ctx.stroke();
+    ctx.save(); ctx.clip();
+    ctx.fillStyle = 'rgba(244,238,224,0.94)';
+    ctx.fillRect(cx - mw, my + R * 0.04 - ah, mw * 2, ah * 0.42);
+    ctx.restore();
+    // the tongue, which is what stops an open mouth reading as a printed hole
+    ctx.fillStyle = 'rgba(150,62,66,0.85)';
+    ctx.beginPath(); ctx.ellipse(cx, my + R * 0.04 + ah * 0.52, mw * 0.46, ah * 0.36, 0, 0, 6.28); ctx.fill();
+  } else {
   ctx.beginPath();
   ctx.moveTo(cx - mw, my - curlL);
   ctx.quadraticCurveTo(cx - mw * 0.35, belly + mh * 0.2, cx, belly);
@@ -9877,6 +9958,7 @@ function drawBossFace(cx, cy, R, b) {
   ctx.moveTo(cx - mw * 0.92, my - curlL * 0.72);
   ctx.quadraticCurveTo(cx, belly + 1.2, cx + mw * 0.92, my - curlR * 0.72);
   ctx.stroke();
+  }
   // moustache: two lobes that ride on the mouth
   for (const s of [-1, 1]) {
     ctx.beginPath();
@@ -9888,10 +9970,10 @@ function drawBossFace(cx, cy, R, b) {
     ctx.strokeStyle = INK; ctx.lineWidth = 1.4; ctx.stroke();
   }
 }
-function drawBossHat(cx, cy, R) {
+function drawBossHat(cx, cy, R, lift, tip) {
   ctx.save();
-  ctx.translate(cx, cy - R * 0.62);
-  ctx.rotate(-0.09);                                    // worn at a slight angle
+  ctx.translate(cx, cy - R * 0.62 - (lift || 0));
+  ctx.rotate(-0.09 - (tip || 0));                       // worn at a slight angle
   const brimW = R * 1.62, crownW = R * 1.04, crownH = R * 1.22;
   // crown
   ctx.fillStyle = '#17131a';
