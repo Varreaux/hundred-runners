@@ -242,6 +242,21 @@ read 30, nobody would have looked. A total tells you how many runs ended; the
 exit STATE tells you what happened to the ones that did not, which is why the
 harness now reports mode, game time and walkers for every unfinished run.
 
+**A harness killed for low memory is not a failing harness, and the fix is one
+flag.** Run it as `node --max-old-space-size=256 tools/freeze-check.js`. With the
+default heap, six 30-run attempts across two sessions were killed outright by the
+system in one evening on a box with four of five GB of swap in use; capped at
+256MB, a full 30 went through with 17MB free. A smaller heap makes V8 collect more
+often and hold far less resident, and the harness allocates continuously, so it is
+exactly the workload that benefits. Nothing about the result changes.
+
+This matters more than the flag: a killed run and a broken build look the same
+from outside. The process dies, the output is empty, and the obvious reading is
+that the tooling is broken rather than that the box is full. Check free memory
+before concluding anything from a harness that produced no report -- and note that
+our own sessions are usually the top consumers, around a gigabyte between three of
+them, so the pressure is self-inflicted and clears when someone finishes.
+
 If either file is missing, rebuild it. The harness stubs `document`, `window`,
 `performance`, `requestAnimationFrame`, `location`, `URLSearchParams` and
 `localStorage`, mocks a canvas context (throwing on negative radii and
