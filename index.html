@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = 'lastroom art pass 2 — scenes + treadmill run';
+const BUILD = 'lastroom art pass 3 — tableau depth + belt sprint';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -326,15 +326,15 @@ function finaleConfirm() {
   }
 }
 function finaleLayout() {
-  const pw = 920, ph = 500;
-  const px = (W - pw) / 2, py = (H - ph) / 2 + 4;
-  const paintW = 310, paintH = 200;
-  const gap = 28;
-  const left = { x: px + 66, y: py + 72, w: paintW, h: paintH };
+  const pw = 940, ph = 510;
+  const px = (W - pw) / 2, py = (H - ph) / 2 + 2;
+  const paintW = 330, paintH = 214;
+  const gap = 24;
+  const left = { x: px + 58, y: py + 68, w: paintW, h: paintH };
   const right = { x: left.x + paintW + gap, y: left.y, w: paintW, h: paintH };
-  const deck = { x: px + 50, y: py + ph - 108, w: pw - 100, h: 36 };
-  const water = { x: px + 40, y: py + ph - 58, w: pw - 80, h: 42 };
-  const gen = { x: px + pw - 150, y: py + ph - 126, w: 88, h: 52 };
+  const deck = { x: px + 46, y: py + ph - 112, w: pw - 92, h: 40 };
+  const water = { x: px + 36, y: py + ph - 58, w: pw - 72, h: 42 };
+  const gen = { x: px + pw - 148, y: py + ph - 130, w: 92, h: 54 };
   return { pw, ph, px, py, left, right, deck, water, gen };
 }
 function inkFill(c, x, y, w, h, r = 0) {
@@ -351,35 +351,61 @@ function paintActor(x, y, o = {}) {
     pants: o.pants || '#2c3e50', style: o.style || 'short', jit: o.jit ?? (x * 0.13), height: 1,
   };
   const sc = o.scale || 0.92, a = o.alpha == null ? 1 : o.alpha;
-  ctx.fillStyle = `rgba(0,0,0,${0.28 * a})`;
-  ctx.beginPath(); ctx.ellipse(x + 3 * sc, y + 1, 6.5 * sc, 2.1 * sc, 0, 0, 6.28); ctx.fill();
+  ctx.fillStyle = `rgba(0,0,0,${0.32 * a})`;
+  ctx.beginPath(); ctx.ellipse(x + 3.2 * sc, y + 1.2, 7.2 * sc, 2.3 * sc, 0, 0, 6.28); ctx.fill();
   drawFigure(r, x, y, o.phase || 0, sc, a);
 }
 function paintSmoke(x, y, s, t, a = 0.45) {
   ctx.save(); ctx.globalAlpha = a;
-  for (let i = 0; i < 4; i++) {
-    const ox = Math.sin(t * 1.2 + i * 1.7) * (4 + i);
-    const oy = -i * 7 - (t * 12 + i * 5) % 28;
-    ctx.fillStyle = i % 2 ? 'rgba(160,150,140,0.55)' : 'rgba(90,85,80,0.4)';
-    ctx.beginPath(); ctx.arc(x + ox, y + oy, s * (1 - i * 0.12), 0, 6.28); ctx.fill();
+  for (let i = 0; i < 5; i++) {
+    const ox = Math.sin(t * 1.35 + i * 1.7) * (5 + i * 1.4);
+    const oy = -i * 8 - (t * 14 + i * 6) % 34;
+    const g = ctx.createRadialGradient(x + ox, y + oy, 1, x + ox, y + oy, s * (1.15 - i * 0.1));
+    g.addColorStop(0, i % 2 ? 'rgba(190,175,160,0.55)' : 'rgba(110,100,95,0.5)');
+    g.addColorStop(1, 'rgba(40,35,35,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x + ox, y + oy, s * (1.15 - i * 0.1), 0, 6.28); ctx.fill();
   }
   ctx.restore();
 }
 function paintVignette(x, y, w, h, strength = 0.55) {
-  const g = ctx.createRadialGradient(x + w * 0.5, y + h * 0.42, w * 0.15, x + w * 0.5, y + h * 0.5, w * 0.72);
-  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(8,4,10,${strength})`);
+  const g = ctx.createRadialGradient(x + w * 0.5, y + h * 0.4, w * 0.12, x + w * 0.5, y + h * 0.55, w * 0.78);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.55, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(6,3,10,${strength})`);
   ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
 }
 function paintCanvasGround(x, y, w, h, top, mid, bot) {
   const g = ctx.createLinearGradient(x, y, x, y + h);
-  g.addColorStop(0, top); g.addColorStop(0.5, mid); g.addColorStop(1, bot);
+  g.addColorStop(0, top); g.addColorStop(0.42, mid); g.addColorStop(1, bot);
   ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
-  ctx.globalAlpha = 0.07;
-  for (let i = 0; i < 40; i++) {
-    ctx.fillStyle = hash(i * 2.1 + y) > 0.5 ? '#000' : '#fff';
-    ctx.fillRect(x + hash(i * 3.3) * w, y + hash(i * 5.1 + 2) * h, 1.5, 1.5);
+  // oil grain
+  ctx.globalAlpha = 0.08;
+  for (let i = 0; i < 55; i++) {
+    ctx.fillStyle = hash(i * 2.1 + y) > 0.55 ? '#000' : '#fff';
+    ctx.fillRect(x + hash(i * 3.3) * w, y + hash(i * 5.1 + 2) * h, 1.4 + hash(i) * 2, 1.2);
+  }
+  ctx.globalAlpha = 0.12;
+  for (let i = 0; i < 8; i++) {
+    ctx.strokeStyle = hash(i + y) > 0.5 ? 'rgba(255,230,180,0.25)' : 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 1; ctx.beginPath();
+    ctx.moveTo(x + hash(i * 4) * w, y + 10 + i * (h / 9));
+    ctx.quadraticCurveTo(x + w * 0.5, y + 20 + i * (h / 9), x + hash(i * 7) * w, y + 30 + i * (h / 9));
+    ctx.stroke();
   }
   ctx.globalAlpha = 1;
+}
+function paintShaft(x, y, w, h, a = 0.12) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createLinearGradient(x, y, x + w * 0.2, y + h);
+  g.addColorStop(0, `rgba(255,210,140,${a})`); g.addColorStop(1, 'rgba(255,180,80,0)');
+  ctx.fillStyle = g; ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w * 0.55, y + h); ctx.lineTo(x + w * 0.15, y + h); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function paintSil(x, y, sc = 1, a = 0.35) {
+  ctx.fillStyle = `rgba(8,6,10,${a})`;
+  ctx.beginPath(); ctx.ellipse(x, y - 10 * sc, 4 * sc, 5 * sc, 0, 0, 6.28); ctx.fill();
+  ctx.fillRect(x - 3.5 * sc, y - 6 * sc, 7 * sc, 10 * sc);
+  ctx.fillRect(x - 5 * sc, y + 3 * sc, 3.2 * sc, 8 * sc);
+  ctx.fillRect(x + 1.5 * sc, y + 3 * sc, 3.2 * sc, 8 * sc);
 }
 function drawDiffMark(d, x, y, on) {
   if (!on) return;
@@ -421,115 +447,217 @@ function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
   ctx.save();
   ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
   const id = scene.id;
-  const run = t * 12;
+  const run = t * 14;
+  const floorY = y + h - 28;
 
   if (id === 'line') {
-    paintCanvasGround(x, y, w, h, '#2a2228', '#3a3034', '#1a1418');
-    inkFill('#4a3f38', x, y + h * 0.55, w, h * 0.45);
-    inkFill('#2c333c', x + 8, y + 48, 58, 95, 3);
-    inkFill('#343c46', x + 78, y + 40, 70, 103, 3);
-    inkFill('#252b33', x + 200, y + 34, 95, 110, 3);
-    ctx.fillStyle = `rgba(230,120,40,${0.35 + 0.15 * Math.sin(t * 6)})`;
-    ctx.beginPath(); ctx.ellipse(x + 248, y + 100, 18, 22, 0, 0, 6.28); ctx.fill();
-    ctx.fillStyle = 'rgba(255,200,80,0.25)'; ctx.beginPath(); ctx.ellipse(x + 248, y + 100, 10, 12, 0, 0, 6.28); ctx.fill();
-    inkFill('#1b1519', x + 30, y + 18, 10, 40, 1);
-    inkFill('#1b1519', x + 150, y + 10, 12, 48, 1);
-    paintSmoke(x + 35, y + 18, 7, t, 0.5);
-    paintSmoke(x + 156, y + 10, 9, t * 1.1, 0.55);
-    inkFill('#1b1519', x + 6, y + 148, w - 12, 16, 2);
-    ctx.fillStyle = '#c0392b';
-    const belt = (t * 70) % 20;
-    for (let bx = x + 10 + belt; bx < x + w - 14; bx += 20) ctx.fillRect(bx, y + 153, 9, 4);
-    const shirts = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#d35400', '#7f8c8d', '#16a085'];
-    for (let i = 0; i < 7; i++) {
-      if (altered && !found.has(3) && i === 2) continue;
-      paintActor(x + 28 + i * 38, y + 148, { shirt: shirts[i], pants: '#2c3e50', phase: run + i * 1.3, scale: 0.88, jit: i * 2 });
+    paintCanvasGround(x, y, w, h, '#241c22', '#352c30', '#141014');
+    // mill ceiling beams
+    inkFill('#1a1418', x, y, w, 22);
+    for (let i = 0; i < 5; i++) inkFill('#2a2226', x + 12 + i * 64, y + 8, 44, 6, 1);
+    paintShaft(x + 40, y + 22, 90, 120, 0.1);
+    // machine blocks midground
+    inkFill('#3a3338', x + 6, y + 52, 62, 100, 3);
+    inkFill('#2e353e', x + 74, y + 40, 78, 112, 3);
+    inkFill('#252b33', x + 198, y + 34, 108, 118, 3);
+    // gear teeth
+    ctx.strokeStyle = '#6a6268'; ctx.lineWidth = 2;
+    for (let i = 0; i < 8; i++) {
+      const a = t * 1.4 + i * 0.785;
+      ctx.beginPath(); ctx.arc(x + 112, y + 96, 18, a, a + 0.4); ctx.stroke();
     }
-    inkFill('#1b1519', x + 210, y + 58, 70, 5, 1);
-    paintActor(x + 248, y + 58, { skin: '#e8c8a2', shirt: '#1a1a1a', pants: '#111', hair: '#3a2a1a', style: 'short', phase: 0, scale: 1.05 });
+    // forge glow
+    const glow = 0.28 + 0.18 * Math.sin(t * 7);
+    ctx.fillStyle = `rgba(255,110,30,${glow})`;
+    ctx.beginPath(); ctx.ellipse(x + 252, y + 108, 26, 30, 0, 0, 6.28); ctx.fill();
+    ctx.fillStyle = `rgba(255,220,90,${glow * 0.7})`;
+    ctx.beginPath(); ctx.ellipse(x + 252, y + 108, 12, 14, 0, 0, 6.28); ctx.fill();
+    // stacks + smoke
+    inkFill('#151018', x + 28, y + 16, 12, 44, 1);
+    inkFill('#151018', x + 148, y + 8, 14, 52, 1);
+    paintSmoke(x + 34, y + 16, 8, t, 0.55);
+    paintSmoke(x + 155, y + 8, 10, t * 1.15, 0.6);
+    // conveyor
+    inkFill('#121014', x + 4, y + 158, w - 8, 20, 2);
+    ctx.fillStyle = '#8e2a2a';
+    const belt = (t * 95) % 22;
+    for (let bx = x + 8 + belt; bx < x + w - 10; bx += 22) ctx.fillRect(bx, y + 164, 11, 5);
+    ctx.fillStyle = '#c0392b';
+    for (let bx = x + 8 + belt + 11; bx < x + w - 10; bx += 22) ctx.fillRect(bx, y + 164, 5, 5);
+    // workers sprinting the line
+    const shirts = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#d35400', '#7f8c8d', '#16a085', '#b33939'];
+    for (let i = 0; i < 8; i++) {
+      if (altered && !found.has(3) && i === 2) continue;
+      const bob = Math.sin(run + i * 1.4) * 1.2;
+      paintActor(x + 22 + i * 36 + Math.sin(t * 2 + i) * 2, floorY + bob, {
+        shirt: shirts[i], pants: '#1e2a36', hair: i % 2 ? '#2a1a12' : '#1b1519',
+        phase: run + i * 1.35, scale: 0.9, jit: i * 2.2,
+      });
+    }
+    // catwalk boss
+    inkFill('#101014', x + 208, y + 54, 88, 5, 1);
+    ctx.fillStyle = `rgba(255,200,120,${0.08 + 0.04 * Math.sin(t)})`;
+    ctx.beginPath(); ctx.ellipse(x + 252, y + 70, 40, 18, 0, 0, 6.28); ctx.fill();
+    paintActor(x + 252, y + 54, { skin: '#e8c8a2', shirt: '#141414', pants: '#0a0a0a', hair: '#3a2a1a', phase: 0, scale: 1.08 });
+    inkFill('#1b1519', x + 244, y + 32, 18, 5, 1); // top hat brim
+    inkFill('#1b1519', x + 248, y + 22, 10, 12, 1);
   } else if (id === 'vault') {
-    paintCanvasGround(x, y, w, h, '#1a221c', '#243028', '#121810');
-    inkFill('#1e2820', x + 6, y + 40, 130, 140, 4);
-    ctx.fillStyle = '#6b8f71'; ctx.font = 'bold 10px monospace'; ctx.fillText('WAGES', x + 42, y + 58);
-    for (let i = 0; i < 4; i++) paintActor(x + 28 + (i % 2) * 36, y + 100 + Math.floor(i / 2) * 36, { shirt: '#5d6d7e', pants: '#3d4a52', phase: Math.sin(t + i) * 0.4, scale: 0.8, jit: i });
-    inkFill('#2a3a30', x + 20, y + 160, 90, 12, 2);
-    inkFill('#3a2f1c', x + 150, y + 36, 145, 150, 6);
-    ctx.strokeStyle = '#d4a84b'; ctx.lineWidth = 2;
-    for (let i = 0; i < 3; i++) ctx.strokeRect(x + 168 + i * 5, y + 54 + i * 5, 110 - i * 10, 110 - i * 10);
-    for (let i = 0; i < 5; i++) inkFill('#d4a84b', x + 180 + (i % 3) * 22, y + 80 + Math.floor(i / 3) * 18, 16, 10, 1);
-    ctx.fillStyle = `rgba(212,168,75,${0.15 + 0.08 * Math.sin(t * 3)})`;
-    ctx.beginPath(); ctx.arc(x + 222, y + 110, 28, 0, 6.28); ctx.fill();
-    paintActor(x + 250, y + 175, { skin: '#e8c8a2', shirt: '#1a1a1a', pants: '#111', phase: 0, scale: 1 });
+    paintCanvasGround(x, y, w, h, '#141c18', '#1e2a22', '#0c1210');
+    paintShaft(x + 170, y + 10, 100, 160, 0.14);
+    // wages cage left
+    inkFill('#1a2420', x + 8, y + 36, 128, 150, 4);
+    ctx.strokeStyle = '#4a6a55'; ctx.lineWidth = 1.5;
+    for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(x + 18 + i * 18, y + 48); ctx.lineTo(x + 18 + i * 18, y + 170); ctx.stroke(); }
+    ctx.fillStyle = '#6b8f71'; ctx.font = 'bold 11px monospace'; ctx.fillText('WAGES', x + 42, y + 56);
+    ctx.fillStyle = '#3d5244'; ctx.font = '9px monospace'; ctx.fillText('$1.40 / day', x + 34, y + 72);
+    for (let i = 0; i < 4; i++) {
+      paintActor(x + 30 + (i % 2) * 40, y + 110 + Math.floor(i / 2) * 38, {
+        shirt: '#5d6d7e', pants: '#2d3a42', skin: '#a88868', phase: Math.sin(t * 1.5 + i) * 0.6, scale: 0.82, jit: i,
+      });
+    }
+    // vault door right
+    inkFill('#2a2418', x + 150, y + 28, 160, 164, 8);
+    for (let i = 0; i < 4; i++) {
+      ctx.strokeStyle = `rgba(212,168,75,${0.35 + i * 0.12})`; ctx.lineWidth = 2;
+      ctx.strokeRect(x + 164 + i * 6, y + 44 + i * 6, 128 - i * 12, 128 - i * 12);
+    }
+    // gold pile
+    for (let i = 0; i < 8; i++) {
+      inkFill('#d4a84b', x + 178 + (i % 4) * 24, y + 88 + Math.floor(i / 4) * 20 + Math.sin(t + i) * 1, 18, 12, 2);
+      ctx.fillStyle = 'rgba(255,240,180,0.35)'; ctx.fillRect(x + 180 + (i % 4) * 24, y + 90 + Math.floor(i / 4) * 20, 6, 4);
+    }
+    ctx.fillStyle = `rgba(212,168,75,${0.12 + 0.08 * Math.sin(t * 2.5)})`;
+    ctx.beginPath(); ctx.arc(x + 230, y + 120, 36, 0, 6.28); ctx.fill();
+    paintActor(x + 255, y + 178, { skin: '#e8c8a2', shirt: '#101010', pants: '#050505', phase: 0, scale: 1.05 });
   } else if (id === 'banquet') {
-    paintCanvasGround(x, y, w, h, '#2c201c', '#3a2a24', '#160e0c');
-    ctx.fillStyle = `rgba(255,210,120,${0.12 + 0.05 * Math.sin(t * 4)})`;
-    ctx.beginPath(); ctx.ellipse(x + w / 2, y + 36, 70, 24, 0, 0, 6.28); ctx.fill();
-    inkFill('#1b1519', x + w / 2 - 4, y + 12, 8, 22, 1);
-    for (let i = -2; i <= 2; i++) inkFill('#d4a84b', x + w / 2 + i * 14 - 3, y + 32, 6, 8, 2);
-    inkFill('#4a3428', x + 40, y + 70, w - 80, 28, 3);
-    inkFill('#d4a84b', x + 70, y + 62, 14, 10, 2);
-    inkFill('#8e2a2a', x + 130, y + 60, 12, 14, 2);
-    inkFill('#f1c40f', x + 190, y + 64, 18, 10, 2);
-    paintActor(x + 90, y + 70, { skin: '#e8c8a2', shirt: '#f1c40f', pants: '#1a1a1a', phase: 0, scale: 1.05 });
-    paintActor(x + 150, y + 70, { skin: '#e8c8a2', shirt: '#ecf0f1', pants: '#111', phase: 0, scale: 1.08 });
-    paintActor(x + 210, y + 70, { skin: '#d4a882', shirt: '#c0392b', pants: '#1a1a1a', phase: 0, scale: 1.02 });
-    inkFill('#1a1210', x + 8, y + 115, w - 16, 75, 3);
-    for (let i = 0; i < 6; i++) {
+    paintCanvasGround(x, y, w, h, '#2a1c18', '#3a2820', '#120c0a');
+    // velvet wall
+    inkFill('#3a1e1c', x, y + 20, w, 70);
+    const ch = 0.14 + 0.06 * Math.sin(t * 3.5);
+    ctx.fillStyle = `rgba(255,210,130,${ch})`;
+    ctx.beginPath(); ctx.ellipse(x + w / 2, y + 42, 78, 28, 0, 0, 6.28); ctx.fill();
+    inkFill('#1b1519', x + w / 2 - 5, y + 10, 10, 26, 1);
+    for (let i = -3; i <= 3; i++) {
+      inkFill('#d4a84b', x + w / 2 + i * 12 - 3, y + 34, 6, 9, 2);
+      ctx.fillStyle = `rgba(255,230,160,${0.4 + 0.3 * Math.sin(t * 6 + i)})`;
+      ctx.beginPath(); ctx.arc(x + w / 2 + i * 12, y + 34, 3, 0, 6.28); ctx.fill();
+    }
+    // table
+    inkFill('#4a3428', x + 36, y + 78, w - 72, 32, 4);
+    inkFill('#2a1c14', x + 40, y + 106, w - 80, 8, 2);
+    inkFill('#d4a84b', x + 70, y + 70, 16, 12, 2);
+    inkFill('#8e2a2a', x + 128, y + 66, 14, 16, 3);
+    inkFill('#f1c40f', x + 186, y + 72, 20, 12, 2);
+    inkFill('#ecf0f1', x + 240, y + 74, 10, 8, 2);
+    paintActor(x + 88, y + 78, { skin: '#e8c8a2', shirt: '#f1c40f', pants: '#141414', phase: Math.sin(t) * 0.2, scale: 1.06 });
+    paintActor(x + 152, y + 76, { skin: '#e8c8a2', shirt: '#ecf0f1', pants: '#0a0a0a', phase: 0, scale: 1.1 });
+    paintActor(x + 216, y + 78, { skin: '#d4a882', shirt: '#c0392b', pants: '#141414', phase: Math.sin(t + 1) * 0.25, scale: 1.04 });
+    // servants / floor
+    inkFill('#141010', x + 6, y + 128, w - 12, 78, 3);
+    for (let i = 0; i < 7; i++) {
       if (altered && !found.has(7) && i === 3) continue;
-      paintActor(x + 30 + i * 42, y + 175, { shirt: '#4a4a4a', pants: '#2a2a2a', skin: '#a07050', phase: run * 0.3 + i, scale: 0.78, jit: i * 3 });
+      paintActor(x + 26 + i * 40, floorY, {
+        shirt: '#3a3a3a', pants: '#1a1a1a', skin: '#9a7050', hair: '#1a1010',
+        phase: run * 0.35 + i * 0.9, scale: 0.8, jit: i * 3,
+      });
     }
   } else if (id === 'ticker') {
-    paintCanvasGround(x, y, w, h, '#10141a', '#181e28', '#0c1016');
-    inkFill('#0a0e14', x + 10, y + 18, w - 20, 78, 4);
-    ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 2; ctx.beginPath();
-    for (let i = 0; i < 12; i++) {
-      const px = x + 24 + i * 22, py = y + 55 + Math.sin(t * 2 + i * 0.7) * 12 - i * 1.2;
+    paintCanvasGround(x, y, w, h, '#0c1016', '#141a24', '#080c12');
+    // big board
+    inkFill('#060a10', x + 8, y + 14, w - 16, 88, 5);
+    ctx.strokeStyle = '#1a3040'; ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(x + 16, y + 28 + i * 14); ctx.lineTo(x + w - 16, y + 28 + i * 14); ctx.stroke(); }
+    ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 2.4; ctx.beginPath();
+    for (let i = 0; i < 14; i++) {
+      const px = x + 20 + i * 20, py = y + 58 + Math.sin(t * 2.2 + i * 0.65) * 14 - i * 0.8;
       if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }
     ctx.stroke();
-    ctx.strokeStyle = '#c0392b'; ctx.beginPath();
-    for (let i = 0; i < 12; i++) {
-      const px = x + 24 + i * 22, py = y + 50 + Math.cos(t * 1.5 + i) * 8 + i * 2.2;
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 2.2; ctx.beginPath();
+    for (let i = 0; i < 14; i++) {
+      const px = x + 20 + i * 20, py = y + 52 + Math.cos(t * 1.7 + i) * 9 + i * 2.4;
       if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }
     ctx.stroke();
-    ctx.fillStyle = '#7f8c8d'; ctx.font = '9px monospace'; ctx.fillText('EQUITY ▲  LABOR ▼', x + 20, y + 34);
-    inkFill('#1a1519', x + 8, y + 108, w - 16, 80, 3);
-    for (let i = 0; i < 5; i++) paintActor(x + 40 + i * 48, y + 145, { shirt: '#2c3e50', pants: '#1a1a1a', skin: '#c4a07a', phase: 0, scale: 0.85, jit: i });
-    for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = '#8a9aaa'; ctx.font = 'bold 9px monospace';
+    ctx.fillText('EQUITY ▲', x + 18, y + 28);
+    ctx.fillStyle = '#c0392b'; ctx.fillText('LABOR ▼', x + w - 72, y + 28);
+    // scrolling ticker tape
+    inkFill('#101418', x + 8, y + 104, w - 16, 14, 2);
+    ctx.fillStyle = '#f1c40f'; ctx.font = '9px monospace';
+    const tape = `  BUY  ·  SELL  ·  CUT  ·  GROW  ·  FIRE  ·  BUY  ·  `;
+    const toff = (t * 60) % 180;
+    ctx.fillText(tape + tape, x + 12 - toff, y + 114);
+    // traders standing / runners collapsing
+    inkFill('#12161c', x + 6, y + 122, w - 12, 84, 3);
+    for (let i = 0; i < 5; i++) {
+      paintActor(x + 36 + i * 52, y + 152, {
+        shirt: i % 2 ? '#1a1a2e' : '#2c3e50', pants: '#111', skin: '#c4a07a',
+        phase: Math.sin(t + i) * 0.3, scale: 0.88, jit: i,
+      });
+    }
+    for (let i = 0; i < 5; i++) {
       if (altered && !found.has(6) && i === 1) continue;
-      paintActor(x + 55 + i * 50, y + 178, { shirt: '#7f8c8d', pants: '#2c3e50', phase: run + i, scale: 0.75, alpha: 0.9, jit: i + 9 });
+      paintActor(x + 48 + i * 48, floorY, {
+        shirt: '#7f8c8d', pants: '#2c3e50', phase: run + i * 1.2, scale: 0.78, alpha: 0.92, jit: i + 9,
+      });
     }
   } else if (id === 'contract') {
-    paintCanvasGround(x, y, w, h, '#2a241c', '#3a3228', '#18140e');
-    inkFill('#1b1519', x + 48, y + 22, 204, 130, 2);
-    inkFill('#d7c4a0', x + 52, y + 26, 196, 122, 2);
+    paintCanvasGround(x, y, w, h, '#262018', '#363028', '#14100c');
+    paintShaft(x + 60, y + 8, 120, 100, 0.08);
+    // parchment desk
+    inkFill('#1a1410', x + 40, y + 18, 230, 140, 3);
+    inkFill('#d9c6a4', x + 46, y + 24, 218, 128, 2);
+    // ruled lines + red ink
     ctx.fillStyle = '#5c4a3a';
-    for (let i = 0; i < 7; i++) ctx.fillRect(x + 70, y + 42 + i * 12, 150 - (i % 3) * 18, 2.5);
-    ctx.fillStyle = '#8e2a2a'; ctx.font = 'bold 11px monospace'; ctx.fillText('IN PERPETUITY', x + 95, y + 132);
-    const qy = Math.sin(t * 5) * 3;
-    inkFill('#1b1519', x + 200, y + 90 + qy, 3, 28, 1);
-    inkFill('#d4a84b', x + 198, y + 88 + qy, 7, 5, 1);
-    paintActor(x + 70, y + 175, { shirt: '#7f8c8d', pants: '#2c3e50', phase: Math.sin(t) * 0.5, scale: 0.95 });
-    paintActor(x + 230, y + 170, { skin: '#e8c8a2', shirt: '#1a1a1a', pants: '#111', phase: 0, scale: 1.1 });
-    ctx.strokeStyle = '#8d929a'; ctx.lineWidth = 2;
-    for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(x + 100 + i * 16, y + 160, 5, 0, 6.28); ctx.stroke(); }
+    for (let i = 0; i < 8; i++) ctx.fillRect(x + 68, y + 40 + i * 12, 160 - (i % 3) * 20, 2.2);
+    ctx.fillStyle = '#8e2a2a'; ctx.font = 'bold 12px monospace'; ctx.fillText('IN PERPETUITY', x + 92, y + 136);
+    // wax seal
+    inkFill('#8e2a2a', x + 210, y + 118, 22, 22, 11);
+    ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 9px monospace'; ctx.fillText('Σ', x + 216, y + 132);
+    // quill bob
+    const qy = Math.sin(t * 5) * 4;
+    inkFill('#1b1519', x + 204, y + 72 + qy, 3, 32, 1);
+    inkFill('#d4a84b', x + 201, y + 70 + qy, 9, 6, 1);
+    // chain across desk
+    ctx.strokeStyle = '#8d929a'; ctx.lineWidth = 2.2;
+    for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(x + 90 + i * 18, y + 168, 6, 0, 6.28); ctx.stroke(); }
+    paintActor(x + 68, floorY, { shirt: '#6a7a8a', pants: '#2c3e50', phase: Math.sin(t * 2) * 0.7, scale: 0.98 });
+    paintActor(x + 240, floorY - 4, { skin: '#e8c8a2', shirt: '#101010', pants: '#050505', phase: 0, scale: 1.12 });
   } else {
-    paintCanvasGround(x, y, w, h, '#3a322c', '#5a4a3e', '#2a2018');
-    const sky = ctx.createLinearGradient(x, y, x, y + 90);
-    sky.addColorStop(0, '#4a4038'); sky.addColorStop(1, '#6a5848');
-    ctx.fillStyle = sky; ctx.fillRect(x, y, w, 88);
-    inkFill('#2a2420', x + 16, y + 55, 48, 100, 2);
-    inkFill('#322c28', x + 78, y + 42, 56, 113, 2);
-    inkFill('#1f1a18', x + 150, y + 30, 40, 125, 2);
-    inkFill('#4a3a2a', x + 210, y + 48, 72, 36, 3);
-    inkFill('#1b1519', x + 28, y + 20, 8, 40, 1);
-    inkFill('#1b1519', x + 95, y + 12, 10, 36, 1);
-    inkFill('#1b1519', x + 162, y + 8, 9, 30, 1);
-    paintSmoke(x + 32, y + 18, 8, t, 0.55);
-    paintSmoke(x + 100, y + 10, 10, t * 1.15, 0.6);
-    paintSmoke(x + 166, y + 6, 9, t * 0.9, 0.5);
-    for (let i = 0; i < 5; i++) paintActor(x + 35 + i * 48, y + 175, { skin: '#a07050', shirt: '#5d4037', pants: '#3e2723', phase: Math.sin(t * 2 + i) * 0.8, scale: 0.82, jit: i });
+    // smog city
+    paintCanvasGround(x, y, w, h, '#3a322c', '#524438', '#221810');
+    const sky = ctx.createLinearGradient(x, y, x, y + 100);
+    sky.addColorStop(0, '#5a4a40'); sky.addColorStop(0.5, '#6a5848'); sky.addColorStop(1, '#4a3a30');
+    ctx.fillStyle = sky; ctx.fillRect(x, y, w, 96);
+    // filthy sun
+    ctx.fillStyle = `rgba(220,140,60,${0.25 + 0.1 * Math.sin(t)})`;
+    ctx.beginPath(); ctx.arc(x + 260, y + 36, 22, 0, 6.28); ctx.fill();
+    // factories
+    inkFill('#2a2420', x + 10, y + 58, 54, 108, 2);
+    inkFill('#322c28', x + 72, y + 44, 62, 122, 2);
+    inkFill('#1f1a18', x + 148, y + 28, 46, 138, 2);
+    // rich house on hill
+    inkFill('#4a3a2a', x + 214, y + 52, 90, 40, 3);
+    inkFill('#3a2a1c', x + 230, y + 36, 58, 20, 2);
+    ctx.fillStyle = `rgba(255,200,100,${0.35 + 0.2 * Math.sin(t * 4)})`;
+    ctx.fillRect(x + 242, y + 64, 8, 10); ctx.fillRect(x + 262, y + 64, 8, 10);
+    // chimneys
+    inkFill('#151018', x + 24, y + 22, 10, 42, 1);
+    inkFill('#151018', x + 92, y + 12, 12, 40, 1);
+    inkFill('#151018', x + 160, y + 6, 11, 34, 1);
+    paintSmoke(x + 29, y + 20, 9, t, 0.62);
+    paintSmoke(x + 98, y + 10, 11, t * 1.2, 0.68);
+    paintSmoke(x + 165, y + 4, 10, t * 0.95, 0.58);
+    // street mud
+    inkFill('#1a1410', x, y + 160, w, 54);
+    for (let i = 0; i < 6; i++) paintSil(x + 28 + i * 48, floorY - 2, 0.9, 0.4);
+    for (let i = 0; i < 5; i++) {
+      paintActor(x + 40 + i * 50, floorY, {
+        skin: '#a07050', shirt: '#5d4037', pants: '#3e2723', hair: '#1a1010',
+        phase: Math.sin(t * 2.5 + i) * 1.1 + run * 0.15, scale: 0.84, jit: i,
+      });
+    }
   }
 
   if (altered) for (const d of diffs) if (!found.has(d.id)) drawDiffMark(d, x, y, true);
@@ -540,11 +668,19 @@ function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
     ctx.beginPath(); ctx.arc(x + d.x, y + d.y, 12, 0, 6.28); ctx.stroke();
     ctx.shadowBlur = 0;
   }
-  paintVignette(x, y, w, h, 0.62);
+  paintVignette(x, y, w, h, 0.68);
+  // canvas tooth / glare
+  ctx.fillStyle = 'rgba(255,240,200,0.04)';
+  ctx.beginPath(); ctx.ellipse(x + w * 0.35, y + h * 0.22, w * 0.28, h * 0.12, -0.3, 0, 6.28); ctx.fill();
   ctx.restore();
-  ctx.strokeStyle = '#1b1519'; ctx.lineWidth = 6; ctx.strokeRect(x - 4, y - 4, w + 8, h + 8);
-  ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.5; ctx.strokeRect(x - 1, y - 1, w + 2, h + 2);
-  ctx.strokeStyle = 'rgba(212,175,55,0.2)'; ctx.lineWidth = 1; ctx.strokeRect(x + 5, y + 5, w - 10, h - 10);
+  // ornate frame
+  ctx.strokeStyle = '#120e10'; ctx.lineWidth = 8; ctx.strokeRect(x - 5, y - 5, w + 10, h + 10);
+  ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.8; ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
+  ctx.strokeStyle = 'rgba(212,175,55,0.22)'; ctx.lineWidth = 1; ctx.strokeRect(x + 5, y + 5, w - 10, h - 10);
+  // corner bosses
+  for (const [cx, cy] of [[x - 2, y - 2], [x + w + 2, y - 2], [x - 2, y + h + 2], [x + w + 2, y + h + 2]]) {
+    inkFill('#d4a84b', cx - 4, cy - 4, 8, 8, 2);
+  }
 }
 function updateFinale(dt) {
   const f = S.finale;
@@ -589,11 +725,17 @@ function updateFinale(dt) {
       d.x = (L.deck.x - 50) + ((L.deck.x + 20 + slot) - (L.deck.x - 50)) * ease;
       d.track = slot;
       d.arrived = u >= 1;
-      d.speed = 85 + hash(i * 1.7) * 50;
+      d.speed = 110 + hash(i * 1.7) * 55;
     } else if (f.phase !== 'blackout') {
-      d.speed = d.speed || 90;
+      d.speed = d.speed || 120;
       d.track = (d.track + d.speed * dt) % trackW;
       d.x = L.deck.x + 20 + d.track;
+      // foot dust while sprinting
+      if (Math.random() < 0.35) {
+        finaleFx(f, 'smoke', d.x - 4, L.deck.y + L.deck.h - 2, {
+          n: 1, sx: 3, vx: [-40, -10], vy: [-25, -5], life: [0.2, 0.45], c: 'rgba(180,160,140,0.45)', r: 1.5,
+        });
+      }
     }
   }
 
@@ -4736,14 +4878,27 @@ function drawFinalePanel() {
   }
   ctx.globalAlpha = 1;
 
-  // deck / treadmill
-  inkFill('#3a342e', L.deck.x, L.deck.y, L.deck.w, L.deck.h, 3);
-  ctx.fillStyle = '#2a2520';
-  for (let i = 0; i < 12; i++) ctx.fillRect(L.deck.x + 8 + i * ((L.deck.w - 16) / 12), L.deck.y + 4, 4, L.deck.h - 8);
-  // belt motion
+  // deck / treadmill — moving planks read as a wheel underfoot
+  inkFill('#2e2822', L.deck.x, L.deck.y, L.deck.w, L.deck.h, 4);
+  const plank = 28;
+  const beltOff = (t * 140) % plank;
+  for (let x = L.deck.x - plank + beltOff; x < L.deck.x + L.deck.w; x += plank) {
+    const pw = Math.min(plank - 3, L.deck.x + L.deck.w - x - 2);
+    if (pw <= 0 || x + 2 < L.deck.x) continue;
+    const sx = Math.max(L.deck.x + 2, x + 2);
+    inkFill('#4a4036', sx, L.deck.y + 3, Math.min(pw, L.deck.x + L.deck.w - sx - 2), L.deck.h - 10, 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(sx + Math.min(pw, L.deck.x + L.deck.w - sx - 2) - 2, L.deck.y + 3, 2, L.deck.h - 10);
+  }
+  // red belt edge racing opposite to the eye
+  ctx.fillStyle = '#8e2a2a';
+  const edge = ((t * 160) % 20);
+  for (let x = L.deck.x + edge; x < L.deck.x + L.deck.w - 4; x += 20) {
+    ctx.fillRect(x, L.deck.y + L.deck.h - 7, 12, 4);
+  }
   ctx.fillStyle = '#c0392b';
-  const belt = ((t * 80) % 24);
-  for (let x = L.deck.x + belt; x < L.deck.x + L.deck.w - 8; x += 24) ctx.fillRect(x, L.deck.y + L.deck.h - 6, 10, 3);
+  for (let x = L.deck.x + edge + 12; x < L.deck.x + L.deck.w - 4; x += 20) {
+    ctx.fillRect(x, L.deck.y + L.deck.h - 7, 4, 4);
+  }
 
   // generator body
   inkFill('#2c333c', L.gen.x, L.gen.y, L.gen.w, L.gen.h, 4);
@@ -4775,17 +4930,19 @@ function drawFinalePanel() {
       ? 'lights failing — hold on'
       : 'arrows move cursor  ·  SPACE marks a difference', L.deck.x, L.deck.y - 10);
 
-  // runners on deck — always full run cycle once on the belt
-  for (const d of f.deck) {
+  // runners on deck — sorted back→front, full sprint cycle on the belt
+  const pack = f.deck.slice().sort((a, b) => a.x - b.x);
+  for (const d of pack) {
     if (d.enter < 0 && d.x <= L.deck.x - 40) continue;
     const sprinting = d.arrived && f.phase !== 'blackout';
     const entering = !d.arrived && d.enter >= 0;
-    const phase = (sprinting || entering) ? (t * 18 + d.i * 1.7) : (t * 2 + d.i);
-    const bob = (sprinting || entering) ? -Math.abs(Math.sin(phase)) * 2.4 : 0;
+    const phase = (sprinting || entering) ? (t * 22 + d.i * 1.9) : (t * 2 + d.i);
+    const bob = (sprinting || entering) ? -Math.abs(Math.sin(phase)) * 3.1 : 0;
+    const leanBoost = sprinting ? 1 : 1;
     const alpha = d.enter < 0 ? 0.35 : 1;
-    ctx.fillStyle = `rgba(0,0,0,${0.3 * alpha})`;
-    ctx.beginPath(); ctx.ellipse(d.x + 3, L.deck.y + L.deck.h - 1, 8, 2.4, 0, 0, 6.28); ctx.fill();
-    drawFigure(d.r, d.x, L.deck.y + L.deck.h - 5 + bob, phase, 1.08, alpha);
+    ctx.fillStyle = `rgba(0,0,0,${0.35 * alpha})`;
+    ctx.beginPath(); ctx.ellipse(d.x + 4, L.deck.y + L.deck.h - 1, 9, 2.6, 0, 0, 6.28); ctx.fill();
+    drawFigure(d.r, d.x, L.deck.y + L.deck.h - 6 + bob, phase * leanBoost, 1.12, alpha);
   }
 
   // falling bodies
