@@ -1473,7 +1473,7 @@ const PLACE = { bridge: 'drawbridge', winch: 'winch plank', rope: 'rope bridge',
 // where a runner's run ended, as a phrase and as a sort key along the course
 function doomOf(r) {
   const d = r.doom;
-  if (d && d.type) return { key: 'r' + d.ord, order: d.ord, label: `${ordinal(d.ord)} crossing Â· ${PLACE[d.type]}`, short: `the ${ordinal(d.ord)} crossing` };
+  if (d && d.type) return { key: 'r' + d.ord, order: d.ord, label: `${ordinal(d.ord)} crossing - ${PLACE[d.type]}`, short: `the ${ordinal(d.ord)} crossing` };
   if (d === 'final') return { key: 'final', order: 95, label: 'lost in the final chamber', short: 'the final chamber' };
   return { key: 'dark', order: 92, label: 'somewhere in the dark', short: 'the dark' };
 }
@@ -4827,7 +4827,7 @@ function drawFinalePanel() {
   // HUD
   ctx.textAlign = 'center';
   ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 16px monospace';
-  ctx.fillText(`FINAL CHAMBER  Â·  ${f.scene.title}`, W / 2, L.py + 26);
+  ctx.fillText(`FINAL CHAMBER  -  ${f.scene.title}`, W / 2, L.py + 26);
   ctx.fillStyle = '#a9a09a'; ctx.font = '12px monospace';
   const mm = Math.floor(Math.max(0, f.searchT) / 60), ss = Math.floor(Math.max(0, f.searchT) % 60);
   const phaseLabel = f.phase === 'blackout' ? 'LIGHTS DYING' : f.phase === 'charge' ? 'CHARGING' : 'SEARCH';
@@ -4860,7 +4860,7 @@ function drawFinalePanel() {
     ctx.fillStyle = 'rgba(255,70,70,0.08)'; ctx.fillRect(L.px, L.py, L.pw, L.ph);
     ctx.fillStyle = '#ff6b6b'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
     ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 20);
-    ctx.fillText(`BLACKOUT  Â·  FRAME ${beat}/3`, W / 2, L.left.y + L.left.h / 2);
+    ctx.fillText(`BLACKOUT  -  FRAME ${beat}/3`, W / 2, L.left.y + L.left.h / 2);
     ctx.globalAlpha = 1;
   } else if (f.phase === 'charge' && light < 0.85) {
     ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
@@ -4940,10 +4940,10 @@ function drawFinalePanel() {
 
   ctx.fillStyle = '#9a9088'; ctx.font = '11px monospace'; ctx.textAlign = 'left';
   ctx.fillText(f.phase === 'charge'
-    ? `${f.line.length} workers on the wheel  Â·  ${f.chargeNeed.toFixed(1)}s to light`
+    ? `${f.line.length} workers on the wheel  -  ${f.chargeNeed.toFixed(1)}s to light`
     : f.phase === 'blackout'
       ? 'lights failing - hold on'
-      : 'arrows move cursor  Â·  SPACE marks a difference', L.deck.x, L.deck.y - 10);
+      : 'arrows move cursor  -  SPACE marks a difference', L.deck.x, L.deck.y - 10);
 
   // runners on deck - sorted back->front, full sprint cycle on the belt
   const pack = f.deck.slice().sort((a, b) => a.x - b.x);
