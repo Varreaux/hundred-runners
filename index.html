@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = 'lastroom art pass 3 — tableau depth + belt sprint';
+const BUILD = 'lastroom art pass 4 — painterly tableaux';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -411,35 +411,31 @@ function drawDiffMark(d, x, y, on) {
   if (!on) return;
   const dx = x + d.x, dy = y + d.y, k = d.kind;
   ctx.save();
-  if (k === 'extraSmoke' || k === 'stackSmoke') paintSmoke(dx, dy, 8, S.t * 2, 0.65);
+  if (k === 'extraSmoke' || k === 'stackSmoke') paintSmoke(dx, dy, 7, S.t * 2, 0.55);
   else if (k === 'goldClock' || k === 'goldBar' || k === 'diamond' || k === 'sunMoney' || k === 'coinStack') {
-    inkFill('#d4a84b', dx - 7, dy - 5, 14, 10, 2);
-    ctx.fillStyle = '#1b1519'; ctx.font = 'bold 8px monospace'; ctx.fillText('$', dx - 3, dy + 3);
+    inkFill('#c9a227', dx - 5, dy - 4, 10, 8, 2);
+    ctx.fillStyle = 'rgba(255,240,180,0.45)'; ctx.fillRect(dx - 3, dy - 2, 3, 3);
   } else if (k === 'bossHat' || k === 'cigar' || k === 'tie' || k === 'bull') {
-    inkFill('#1b1519', dx - 9, dy - 3, 18, 7, 1);
-    inkFill('#8e2a2a', dx - 3, dy - 8, 6, 5, 1);
+    inkFill('#1b1519', dx - 7, dy - 2, 14, 5, 1);
+    inkFill('#8e2a2a', dx - 2, dy - 6, 4, 4, 1);
   } else if (k === 'missingWorker' || k === 'fallen' || k === 'kneel' || k === 'cough') {
-    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 2; ctx.globalAlpha = 0.85;
-    ctx.beginPath(); ctx.moveTo(dx - 9, dy - 9); ctx.lineTo(dx + 9, dy + 9); ctx.moveTo(dx + 9, dy - 9); ctx.lineTo(dx - 9, dy + 9); ctx.stroke();
-    ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(192,57,43,0.85)'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(dx - 7, dy - 7); ctx.lineTo(dx + 7, dy + 7); ctx.moveTo(dx + 7, dy - 7); ctx.lineTo(dx - 7, dy + 7); ctx.stroke();
   } else if (k === 'redBanner' || k === 'priceTag' || k === 'bill' || k === 'receipt') {
-    inkFill('#8e2a2a', dx - 16, dy - 8, 32, 15, 2);
-    ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 8px monospace'; ctx.fillText('PAY', dx - 9, dy + 3);
+    inkFill('#7a2222', dx - 10, dy - 5, 20, 10, 2);
   } else if (k === 'bloodSpot' || k === 'inkblot' || k === 'puddle') {
     ctx.fillStyle = k === 'bloodSpot' ? '#5a1518' : '#152030';
-    ctx.beginPath(); ctx.ellipse(dx, dy, 11, 5, 0.25, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(dx, dy, 8, 4, 0.25, 0, 6.28); ctx.fill();
   } else if (k === 'cage' || k === 'chain' || k === 'shackle') {
-    ctx.strokeStyle = '#8d929a'; ctx.lineWidth = 1.8; ctx.strokeRect(dx - 10, dy - 11, 20, 20);
-    ctx.beginPath(); ctx.moveTo(dx - 10, dy); ctx.lineTo(dx + 10, dy); ctx.moveTo(dx, dy - 11); ctx.lineTo(dx, dy + 9); ctx.stroke();
+    ctx.strokeStyle = '#8d929a'; ctx.lineWidth = 1.5; ctx.strokeRect(dx - 7, dy - 8, 14, 14);
   } else if (k === 'brokenGear' || k === 'filter' || k === 'pipe' || k === 'chimney' || k === 'percent') {
-    ctx.strokeStyle = '#a08c70'; ctx.lineWidth = 2.2;
-    ctx.beginPath(); ctx.arc(dx, dy, 9, 0.15, 5.4); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(dx + 5, dy - 7); ctx.lineTo(dx + 12, dy - 14); ctx.stroke();
+    ctx.strokeStyle = '#a08c70'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.arc(dx, dy, 7, 0.15, 5.4); ctx.stroke();
   } else if (k === 'arrowUp' || k === 'arrowDown' || k === 'crash' || k === 'chart') {
-    ctx.strokeStyle = k === 'arrowDown' || k === 'crash' ? '#c0392b' : '#2ecc71'; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.moveTo(dx - 10, dy + (k === 'arrowDown' || k === 'crash' ? -6 : 6)); ctx.lineTo(dx, dy); ctx.lineTo(dx + 10, dy + (k === 'arrowDown' || k === 'crash' ? -6 : 6)); ctx.stroke();
+    ctx.strokeStyle = k === 'arrowDown' || k === 'crash' ? '#c0392b' : '#2ecc71'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(dx - 7, dy + (k === 'arrowDown' || k === 'crash' ? -4 : 4)); ctx.lineTo(dx, dy); ctx.lineTo(dx + 7, dy + (k === 'arrowDown' || k === 'crash' ? -4 : 4)); ctx.stroke();
   } else {
-    inkFill('#c9a227', dx - 5, dy - 5, 10, 10, 5);
+    inkFill('#c9a227', dx - 4, dy - 4, 8, 8, 4);
   }
   ctx.restore();
 }
@@ -502,33 +498,51 @@ function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
     inkFill('#1b1519', x + 244, y + 32, 18, 5, 1); // top hat brim
     inkFill('#1b1519', x + 248, y + 22, 10, 12, 1);
   } else if (id === 'vault') {
-    paintCanvasGround(x, y, w, h, '#141c18', '#1e2a22', '#0c1210');
-    paintShaft(x + 170, y + 10, 100, 160, 0.14);
-    // wages cage left
-    inkFill('#1a2420', x + 8, y + 36, 128, 150, 4);
-    ctx.strokeStyle = '#4a6a55'; ctx.lineWidth = 1.5;
-    for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(x + 18 + i * 18, y + 48); ctx.lineTo(x + 18 + i * 18, y + 170); ctx.stroke(); }
-    ctx.fillStyle = '#6b8f71'; ctx.font = 'bold 11px monospace'; ctx.fillText('WAGES', x + 42, y + 56);
-    ctx.fillStyle = '#3d5244'; ctx.font = '9px monospace'; ctx.fillText('$1.40 / day', x + 34, y + 72);
+    paintCanvasGround(x, y, w, h, '#121816', '#1c2820', '#0a100e');
+    // cold stone left / warm vault right
+    const cold = ctx.createLinearGradient(x, y, x + 140, y);
+    cold.addColorStop(0, 'rgba(40,70,55,0.35)'); cold.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = cold; ctx.fillRect(x, y, 150, h);
+    paintShaft(x + 180, y + 8, 110, 170, 0.16);
+    // wages pit — empty tin cups, thin figures behind bars
+    inkFill('#162018', x + 10, y + 40, 118, 148, 5);
+    ctx.strokeStyle = '#3a5044'; ctx.lineWidth = 2;
+    for (let i = 0; i < 7; i++) {
+      ctx.beginPath(); ctx.moveTo(x + 22 + i * 14, y + 52); ctx.lineTo(x + 22 + i * 14, y + 172); ctx.stroke();
+    }
+    // empty bowls
+    for (let i = 0; i < 3; i++) {
+      ctx.strokeStyle = '#5a6a60'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(x + 36 + i * 28, y + 168, 8, 3, 0, 0, 6.28); ctx.stroke();
+    }
     for (let i = 0; i < 4; i++) {
-      paintActor(x + 30 + (i % 2) * 40, y + 110 + Math.floor(i / 2) * 38, {
-        shirt: '#5d6d7e', pants: '#2d3a42', skin: '#a88868', phase: Math.sin(t * 1.5 + i) * 0.6, scale: 0.82, jit: i,
+      paintActor(x + 32 + (i % 2) * 38, y + 108 + Math.floor(i / 2) * 36, {
+        shirt: '#4a5a62', pants: '#2a3438', skin: '#9a7858', hair: '#1a1410',
+        phase: Math.sin(t * 1.4 + i) * 0.55, scale: 0.84, jit: i,
       });
     }
-    // vault door right
-    inkFill('#2a2418', x + 150, y + 28, 160, 164, 8);
-    for (let i = 0; i < 4; i++) {
-      ctx.strokeStyle = `rgba(212,168,75,${0.35 + i * 0.12})`; ctx.lineWidth = 2;
-      ctx.strokeRect(x + 164 + i * 6, y + 44 + i * 6, 128 - i * 12, 128 - i * 12);
-    }
-    // gold pile
+    // circular vault door
+    const vx = x + 228, vy = y + 112;
+    ctx.fillStyle = '#2a2418'; ctx.beginPath(); ctx.arc(vx, vy, 68, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = '#d4a84b'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(vx, vy, 62, 0, 6.28); ctx.stroke();
+    ctx.strokeStyle = 'rgba(212,168,75,0.45)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(vx, vy, 48, 0, 6.28); ctx.stroke();
     for (let i = 0; i < 8; i++) {
-      inkFill('#d4a84b', x + 178 + (i % 4) * 24, y + 88 + Math.floor(i / 4) * 20 + Math.sin(t + i) * 1, 18, 12, 2);
-      ctx.fillStyle = 'rgba(255,240,180,0.35)'; ctx.fillRect(x + 180 + (i % 4) * 24, y + 90 + Math.floor(i / 4) * 20, 6, 4);
+      const a = t * 0.15 + i * Math.PI / 4;
+      ctx.strokeStyle = 'rgba(212,168,75,0.55)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(vx, vy); ctx.lineTo(vx + Math.cos(a) * 48, vy + Math.sin(a) * 48); ctx.stroke();
     }
-    ctx.fillStyle = `rgba(212,168,75,${0.12 + 0.08 * Math.sin(t * 2.5)})`;
-    ctx.beginPath(); ctx.arc(x + 230, y + 120, 36, 0, 6.28); ctx.fill();
-    paintActor(x + 255, y + 178, { skin: '#e8c8a2', shirt: '#101010', pants: '#050505', phase: 0, scale: 1.05 });
+    inkFill('#1b1519', vx - 10, vy - 10, 20, 20, 10);
+    inkFill('#d4a84b', vx - 4, vy - 4, 8, 8, 4);
+    // gold spill
+    for (let i = 0; i < 9; i++) {
+      const gx = vx - 40 + (i % 3) * 28 + Math.sin(t + i) * 1.5;
+      const gy = vy + 28 + Math.floor(i / 3) * 14;
+      inkFill('#d4a84b', gx, gy, 16, 10, 2);
+      ctx.fillStyle = 'rgba(255,245,200,0.4)'; ctx.fillRect(gx + 2, gy + 2, 5, 3);
+    }
+    ctx.fillStyle = `rgba(255,200,80,${0.1 + 0.06 * Math.sin(t * 2)})`;
+    ctx.beginPath(); ctx.arc(vx, vy, 55, 0, 6.28); ctx.fill();
+    paintActor(vx + 55, floorY, { skin: '#e8c8a2', shirt: '#0e0e0e', pants: '#050505', hair: '#2a1a10', phase: 0, scale: 1.08 });
   } else if (id === 'banquet') {
     paintCanvasGround(x, y, w, h, '#2a1c18', '#3a2820', '#120c0a');
     // velvet wall
@@ -562,68 +576,60 @@ function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
       });
     }
   } else if (id === 'ticker') {
-    paintCanvasGround(x, y, w, h, '#0c1016', '#141a24', '#080c12');
-    // big board
-    inkFill('#060a10', x + 8, y + 14, w - 16, 88, 5);
-    ctx.strokeStyle = '#1a3040'; ctx.lineWidth = 1;
-    for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(x + 16, y + 28 + i * 14); ctx.lineTo(x + w - 16, y + 28 + i * 14); ctx.stroke(); }
-    ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 2.4; ctx.beginPath();
-    for (let i = 0; i < 14; i++) {
-      const px = x + 20 + i * 20, py = y + 58 + Math.sin(t * 2.2 + i * 0.65) * 14 - i * 0.8;
+    paintCanvasGround(x, y, w, h, '#0a0e14', '#121820', '#06080c');
+    inkFill('#04080c', x + 10, y + 12, w - 20, 92, 6);
+    ctx.fillStyle = `rgba(46,204,113,${0.06 + 0.03 * Math.sin(t * 3)})`; ctx.fillRect(x + 14, y + 16, w - 28, 84);
+    ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 2.6; ctx.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const px = x + 18 + i * 18, py = y + 60 + Math.sin(t * 2.4 + i * 0.55) * 16 - i * 0.6;
       if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }
     ctx.stroke();
     ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 2.2; ctx.beginPath();
-    for (let i = 0; i < 14; i++) {
-      const px = x + 20 + i * 20, py = y + 52 + Math.cos(t * 1.7 + i) * 9 + i * 2.4;
+    for (let i = 0; i < 16; i++) {
+      const px = x + 18 + i * 18, py = y + 54 + Math.cos(t * 1.8 + i) * 10 + i * 2.1;
       if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }
     ctx.stroke();
-    ctx.fillStyle = '#8a9aaa'; ctx.font = 'bold 9px monospace';
-    ctx.fillText('EQUITY ▲', x + 18, y + 28);
-    ctx.fillStyle = '#c0392b'; ctx.fillText('LABOR ▼', x + w - 72, y + 28);
-    // scrolling ticker tape
-    inkFill('#101418', x + 8, y + 104, w - 16, 14, 2);
-    ctx.fillStyle = '#f1c40f'; ctx.font = '9px monospace';
-    const tape = `  BUY  ·  SELL  ·  CUT  ·  GROW  ·  FIRE  ·  BUY  ·  `;
-    const toff = (t * 60) % 180;
-    ctx.fillText(tape + tape, x + 12 - toff, y + 114);
-    // traders standing / runners collapsing
-    inkFill('#12161c', x + 6, y + 122, w - 12, 84, 3);
+    inkFill('#2ecc71', x + 20, y + 22, 8, 8, 1);
+    inkFill('#c0392b', x + w - 36, y + 22, 8, 8, 1);
+    inkFill('#0e1218', x + 10, y + 108, w - 20, 12, 2);
+    ctx.fillStyle = '#c9a227';
+    const toff = (t * 70) % 40;
+    for (let i = 0; i < 20; i++) ctx.fillRect(x + 14 + ((i * 22 - toff + 400) % 400), y + 111, 10 + (i % 3) * 4, 5);
+    inkFill('#10141a', x + 8, y + 124, w - 16, 82, 3);
     for (let i = 0; i < 5; i++) {
-      paintActor(x + 36 + i * 52, y + 152, {
-        shirt: i % 2 ? '#1a1a2e' : '#2c3e50', pants: '#111', skin: '#c4a07a',
-        phase: Math.sin(t + i) * 0.3, scale: 0.88, jit: i,
+      paintActor(x + 38 + i * 52, y + 154, {
+        shirt: i % 2 ? '#1a1a2e' : '#243044', pants: '#0c0c0c', skin: '#c4a07a',
+        phase: Math.sin(t + i) * 0.35, scale: 0.9, jit: i,
       });
     }
     for (let i = 0; i < 5; i++) {
       if (altered && !found.has(6) && i === 1) continue;
-      paintActor(x + 48 + i * 48, floorY, {
-        shirt: '#7f8c8d', pants: '#2c3e50', phase: run + i * 1.2, scale: 0.78, alpha: 0.92, jit: i + 9,
+      paintActor(x + 50 + i * 48, floorY, {
+        shirt: '#6a7a82', pants: '#2c3e50', phase: run + i * 1.25, scale: 0.8, alpha: 0.92, jit: i + 9,
       });
     }
   } else if (id === 'contract') {
-    paintCanvasGround(x, y, w, h, '#262018', '#363028', '#14100c');
-    paintShaft(x + 60, y + 8, 120, 100, 0.08);
-    // parchment desk
-    inkFill('#1a1410', x + 40, y + 18, 230, 140, 3);
-    inkFill('#d9c6a4', x + 46, y + 24, 218, 128, 2);
-    // ruled lines + red ink
-    ctx.fillStyle = '#5c4a3a';
-    for (let i = 0; i < 8; i++) ctx.fillRect(x + 68, y + 40 + i * 12, 160 - (i % 3) * 20, 2.2);
-    ctx.fillStyle = '#8e2a2a'; ctx.font = 'bold 12px monospace'; ctx.fillText('IN PERPETUITY', x + 92, y + 136);
-    // wax seal
-    inkFill('#8e2a2a', x + 210, y + 118, 22, 22, 11);
-    ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 9px monospace'; ctx.fillText('Σ', x + 216, y + 132);
-    // quill bob
+    paintCanvasGround(x, y, w, h, '#241e16', '#342c22', '#120e0a');
+    paintShaft(x + 50, y + 6, 130, 110, 0.1);
+    inkFill('#16110c', x + 36, y + 16, 240, 148, 4);
+    inkFill('#dcc8a6', x + 44, y + 24, 224, 132, 3);
+    ctx.fillStyle = 'rgba(90,70,50,0.55)';
+    for (let i = 0; i < 9; i++) ctx.fillRect(x + 64, y + 40 + i * 11, 170 - (i % 4) * 16, 1.8);
+    ctx.strokeStyle = '#3a2a1a'; ctx.lineWidth = 1.6; ctx.beginPath();
+    ctx.moveTo(x + 70, y + 138);
+    for (let i = 0; i < 8; i++) ctx.lineTo(x + 78 + i * 14, y + 136 + Math.sin(i * 1.7) * 5);
+    ctx.stroke();
+    inkFill('#8e2a2a', x + 220, y + 120, 24, 24, 12);
+    ctx.fillStyle = 'rgba(241,196,15,0.7)'; ctx.beginPath(); ctx.arc(x + 232, y + 132, 6, 0, 6.28); ctx.fill();
     const qy = Math.sin(t * 5) * 4;
-    inkFill('#1b1519', x + 204, y + 72 + qy, 3, 32, 1);
-    inkFill('#d4a84b', x + 201, y + 70 + qy, 9, 6, 1);
-    // chain across desk
+    inkFill('#1b1519', x + 208, y + 70 + qy, 3, 34, 1);
+    inkFill('#d4a84b', x + 205, y + 68 + qy, 9, 6, 1);
     ctx.strokeStyle = '#8d929a'; ctx.lineWidth = 2.2;
-    for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(x + 90 + i * 18, y + 168, 6, 0, 6.28); ctx.stroke(); }
-    paintActor(x + 68, floorY, { shirt: '#6a7a8a', pants: '#2c3e50', phase: Math.sin(t * 2) * 0.7, scale: 0.98 });
-    paintActor(x + 240, floorY - 4, { skin: '#e8c8a2', shirt: '#101010', pants: '#050505', phase: 0, scale: 1.12 });
+    for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(x + 88 + i * 18, y + 170, 6, 0, 6.28); ctx.stroke(); }
+    paintActor(x + 66, floorY, { shirt: '#6a7a8a', pants: '#2c3e50', phase: Math.sin(t * 2) * 0.75, scale: 1 });
+    paintActor(x + 246, floorY - 4, { skin: '#e8c8a2', shirt: '#0e0e0e', pants: '#050505', phase: 0, scale: 1.14 });
   } else {
     // smog city
     paintCanvasGround(x, y, w, h, '#3a322c', '#524438', '#221810');
