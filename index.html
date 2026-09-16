@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '53 the proprietor';
+const BUILD = '54 the crowd speaks where it stands';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2055,7 +2055,17 @@ function draw() {
   // reached through drawOverlays. That is the stretch where one line from the floor is
   // worth most, so the bubbles alone come through; the rest of drawOverlays is room badges
   // and name tags for a run that has not started.
-  else if (S.mode === 'intro' && S.drill && !S.drill.done) { ctx.textAlign = 'center'; drawBubbles(); ctx.textAlign = 'left'; }
+  // placedUI is the list of rectangles a bubble steps around, and drawOverlays is what
+  // CLEARS it each frame. Calling drawBubbles without it leaks: every bubble drawn pushes
+  // its box on and nothing takes one off, so the list reached 1598 rectangles after 20s of
+  // drill and each new bubble was dodging all of them -- shoved up to the ceiling, then
+  // sideways, until it had nothing to do with the person talking. Morgan saw it as the
+  // dialog boxes not lining up with the crowd at the door. Reset here, as the overlay path
+  // does, or the leak comes back the moment anything else draws bubbles on their own.
+  else if (S.mode === 'intro' && S.drill && !S.drill.done) {
+    placedUI = [];
+    ctx.textAlign = 'center'; drawBubbles(); ctx.textAlign = 'left';
+  }
   // The plate names deaths, so it points at the deaths without standing on them: it takes
   // the opposite half of the screen and reaches across with a stem.
   // Same guard as the wash above, and for the same reason. See the note there.
