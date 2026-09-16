@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '81 he is actually on screen';
+const BUILD = '80 whole animals in the rock';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1263,7 +1263,15 @@ function ambient(dt) {
   for (let wx = Math.ceil((V.left - 100) / 240) * 240; wx < V.left + V.vw + 100; wx += 240) {
     for (let k = 0; k < CFG.laneCount; k++) {
       const lx = wx + k * 40;
-      if (lx < CFG.exit && laneAt(k, lx) && Math.abs(lx - CFG.entrance) > 80 && Math.abs(lx - CFG.exit) > 80) lit.push([lx, laneY(k) - CFG.tunnelH + 2]);
+      if (lx < CFG.exit && laneAt(k, lx) && Math.abs(lx - CFG.entrance) > 80 && Math.abs(lx - CFG.exit) > 80) {
+        // Fixed pitch, fixed stagger, identical flame, none missing: an evenly spaced dotted
+        // line on every level, forming diagonals across the stack. rockCorridor's own comment
+        // says identical strips at an identical pitch read as wallpaper; the lamps never got
+        // that treatment, and Morgan's reading of act two was lamps and nothing else. One in
+        // three is out and the rest wander by up to 45 units either way.
+        if (hash(lx * 0.031 + k * 7.3) < 0.34) continue;
+        lit.push([lx + (hash(lx * 0.017 + k * 3.1) - 0.5) * 90, laneY(k) - CFG.tunnelH + 2]);
+      }
     }
   }
   if (!lit.length) return;
@@ -2576,6 +2584,11 @@ function drawMountain() {
     strataBand(y + hash(k) * 8, 9 + hash(k * 7) * 9, k);
   }
   rockFace(top, bottom);
+  // Whole animals, before the boulder pass, so loose rock is drawn OVER them and the stone
+  // partly buries what it holds. Their boxes are handed to the workings below so no drift is
+  // cut through the middle of one.
+  const skels = placeSkeletons(null);
+  for (const sk of skels) drawSkeleton(sk.cx - V.left, sk.cy, sk.L, sk.kind, sk.seed);
   parallaxRange(1, 120, (seg, sx) => {
     for (let j = 0; j < 3; j++) {
       const h = hash(seg * 13 + j * 101); if (h < 0.6) continue;
@@ -2607,7 +2620,7 @@ function drawMountain() {
   // mountain reads as honeycombed rather than as a slab with black holes painted on.
   // Kept across segments, not per segment: two cuts in neighbouring segments were free to
   // overlap, and an excavation with a mitred right-angled corner reads as a UI panel.
-  const placed = [];
+  const placed = skels.map(sk => ({ x: sk.cx - sk.L / 2 - V.left, y: sk.cy - sk.L * 0.34, w: sk.L, h: sk.L * 0.62 }));
   parallaxRange(1, 150, (seg, sx) => {
    for (let j = 0; j < 6; j++) {
     const h = hash(seg * 17.3 + j * 41.7);
@@ -2812,7 +2825,10 @@ const FIND_RATE = 0.12;
 // One crystal in six, not two in seven. A glowing pocket is the loudest object in act two and
 // they were 29% of all finds, which put ten pulsing highlights in the periphery while the
 // player is meant to be watching a gate.
-const FIND_KINDS = ['ribs', 'skull', 'spine', 'ammonite', 'femur', 'crystal'];
+// Bones are not a small find any more -- they are whole skeletons, above, at a size that has
+// nothing to do with a hole in a wall. What replaces a hole is a mineral pocket, which is the
+// other half of what Morgan asked for and the half that suits a cut that size.
+const FIND_KINDS = ['crystal'];
 // Everything a find draws sits inside a socket cut into the rock, because a bone lying ON a
 // wall is a bone stuck to a wall. The socket is drawn first and the find inside it.
 // A SHALLOW recess, not a hole. The first version filled it at 42% black, and against this
@@ -2839,7 +2855,8 @@ const BONE = '#d6cbae', BONE_D = '#a1957a';
 function boneStroke(w) { ctx.strokeStyle = INK; ctx.lineWidth = w + 1.5; ctx.lineCap = 'round'; }
 function drawFind(x, y, r, kind, seed) {
   const rx = r * 1.06, ry = r * 0.88;
-  findSocket(x, y, rx, ry);
+  // No socket. Morgan's call: no bubble and no contour round anything in the rock, so what
+  // was an ellipse cut into the wall is now just the thing itself, sitting in the stone.
   // A crystal pocket's glow is drawn after the socket and OUTSIDE the clip, because a light
   // source in a dark mine has to land on the rock around it. Clipped to the socket it stopped
   // at the rim at 44% of its peak, so the brightest object in act two lit nothing five units
@@ -2867,10 +2884,6 @@ function drawFind(x, y, r, kind, seed) {
   else drawFemur(r, seed);
   ctx.restore();
   // the socket's own lip, over the top of whatever is in it, so the find is BELOW the surface
-  ctx.strokeStyle = 'rgba(0,0,0,0.42)'; ctx.lineWidth = 2.6;            // the lip casts down
-  ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 3.34, 6.06); ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,240,214,0.30)'; ctx.lineWidth = 2.0;      // the lower edge catches
-  ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0.14, 3.00); ctx.stroke();
 }
 // A ribcage seen side on: a spine across the socket and ribs hanging off it, shortening
 // towards the tail the way a real cage does rather than being a comb of equal teeth.
@@ -3330,6 +3343,168 @@ function drawKeg(x, y, seed) {
   ctx.fillStyle = 'rgba(255,214,150,0.12)'; ctx.fillRect(-7, -h, 14, 1.8);
   ctx.restore();
 }
+// ================================================================ what is in the rock
+// Whole animals, not specimens in cases. Morgan's call, and it reverses the art pass, which
+// wanted these capped at about 0.6m: he wants full skeletons embedded directly in the rock
+// face at a size you cannot miss, with no socket, no bubble and no outline round them.
+//
+// So there is no `findSocket` here and nothing is clipped to an ellipse. What makes a bone
+// read as IN the rock rather than ON it is three things done to every segment: a dark sunk
+// shadow offset down-right underneath it, an ink edge, and then the rock's own strata and
+// boulders drawn OVER the top afterwards, so the stone partly buries what it holds.
+const SKEL_KINDS = ['longneck', 'raptor'];
+// Spines as fractions of total length, tail first, head last. x runs 0..1 along the body and
+// y is also in units of L, so the whole animal scales from one number.
+const SKEL_SPINE = {
+  longneck: [[0.00, 0.20], [0.09, 0.15], [0.19, 0.10], [0.29, 0.06], [0.39, 0.03],
+             [0.49, 0.02], [0.59, 0.02], [0.68, -0.02], [0.76, -0.09], [0.83, -0.17],
+             [0.89, -0.24], [0.94, -0.28]],
+  raptor:   [[0.00, 0.06], [0.10, 0.04], [0.21, 0.02], [0.32, 0.00], [0.43, -0.01],
+             [0.54, -0.03], [0.63, -0.08], [0.70, -0.15], [0.76, -0.20], [0.82, -0.19],
+             [0.87, -0.15], [0.92, -0.13]],
+};
+// hip and shoulder as an index into the spine, and how deep the ribs hang
+const SKEL_FORM = {
+  longneck: { hip: 3, shoulder: 7, ribFrom: 4, ribTo: 7, ribLen: 0.18, legLen: 0.22, skull: 0.075, biped: 0 },
+  raptor:   { hip: 4, shoulder: 8, ribFrom: 5, ribTo: 8, ribLen: 0.15, legLen: 0.20, skull: 0.110, biped: 1 },
+};
+function skelBone(x0, y0, x1, y1, w) {
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(0,0,0,0.42)'; ctx.lineWidth = w + 3.2;      // sunk into the stone
+  ctx.beginPath(); ctx.moveTo(x0 + 2.2, y0 + 2.6); ctx.lineTo(x1 + 2.2, y1 + 2.6); ctx.stroke();
+  ctx.strokeStyle = INK; ctx.lineWidth = w + 2;
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  ctx.strokeStyle = BONE; ctx.lineWidth = w;
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+}
+function skelJoint(x, y, r) {
+  ctx.fillStyle = 'rgba(0,0,0,0.42)';
+  ctx.beginPath(); ctx.arc(x + 2.2, y + 2.6, r, 0, 6.28); ctx.fill();
+  ctx.fillStyle = BONE; ctx.strokeStyle = INK; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill(); ctx.stroke();
+}
+function drawSkeleton(ax, ay, L, kind, seed) {
+  const f = SKEL_FORM[kind], sp = SKEL_SPINE[kind];
+  const flip = hash(seed * 3.7) > 0.5 ? -1 : 1;                        // some face the other way
+  const tilt = (hash(seed * 1.9) - 0.5) * 0.30;                        // lying at an angle in the bed
+  ctx.save(); ctx.translate(ax, ay); ctx.rotate(tilt); ctx.scale(flip, 1);
+  const P = sp.map(([px, py]) => [(px - 0.5) * L, py * L]);
+  // ribs first, so the spine sits over their heads
+  const ribD = f.ribLen * L;
+  for (let i = f.ribFrom; i <= f.ribTo; i++) {
+    const [px, py] = P[i];
+    const t = (i - f.ribFrom) / Math.max(1, f.ribTo - f.ribFrom);
+    const len = ribD * (0.72 + Math.sin(t * 3.14) * 0.42);
+    const w = L * 0.012;                                             // an animal this size has heavy ribs
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,0.42)'; ctx.lineWidth = w + 3.2;
+    ctx.beginPath(); ctx.moveTo(px + 2.2, py + 2.6);
+    ctx.quadraticCurveTo(px + len * 0.52 + 2.2, py + len * 0.62 + 2.6, px + len * 0.16 + 2.2, py + len + 2.6); ctx.stroke();
+    ctx.strokeStyle = INK; ctx.lineWidth = w + 2;
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.quadraticCurveTo(px + len * 0.52, py + len * 0.62, px + len * 0.16, py + len); ctx.stroke();
+    ctx.strokeStyle = BONE; ctx.lineWidth = w;
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.quadraticCurveTo(px + len * 0.52, py + len * 0.62, px + len * 0.16, py + len); ctx.stroke();
+  }
+  // the spine, thick at the hip and tapering to nothing at the tail tip
+  for (let i = 0; i < P.length - 1; i++) {
+    const t = i / (P.length - 1);
+    const w = L * (0.010 + 0.024 * Math.sin(Math.min(1, t * 1.5) * 3.14) + (t < 0.2 ? 0 : 0.003));
+    skelBone(P[i][0], P[i][1], P[i + 1][0], P[i + 1][1], Math.max(1.6, w));
+    if (i >= 2 && i <= f.shoulder) {                                   // neural spines along the back
+      const nx = (P[i][0] + P[i + 1][0]) / 2, ny = (P[i][1] + P[i + 1][1]) / 2;
+      skelBone(nx, ny, nx - L * 0.004, ny - L * (0.030 + 0.012 * Math.sin(i)), L * 0.006);
+    }
+  }
+  // pelvis and shoulder girdle
+  const hipP = P[f.hip], shP = P[f.shoulder];
+  skelJoint(hipP[0], hipP[1], L * 0.030);
+  skelJoint(shP[0], shP[1], L * 0.024);
+  // legs. A hind leg is femur down-forward, shin down-back, then a foot.
+  const leg = (bx, by, len, back, wf) => {
+    const kx = bx + len * 0.34 * back, ky = by + len * 0.54;
+    const fx = kx - len * 0.22 * back, fy = by + len;
+    skelBone(bx, by, kx, ky, wf); skelJoint(kx, ky, wf * 0.8);
+    skelBone(kx, ky, fx, fy, wf * 0.8);
+    skelBone(fx, fy, fx + len * 0.18, fy + len * 0.03, wf * 0.7);      // the foot
+  };
+  const LL = f.legLen * L;
+  leg(hipP[0], hipP[1], LL, 1, L * 0.020);                              // near hind
+  leg(hipP[0] - L * 0.03, hipP[1], LL * 0.92, 1, L * 0.015);            // far hind, behind it
+  if (f.biped) {                                                        // little arms, held up
+    skelBone(shP[0], shP[1], shP[0] + L * 0.05, shP[1] + L * 0.05, L * 0.008);
+    skelBone(shP[0] + L * 0.05, shP[1] + L * 0.05, shP[0] + L * 0.09, shP[1] + L * 0.03, L * 0.007);
+  } else {
+    leg(shP[0], shP[1], LL * 0.86, -1, L * 0.018);
+    leg(shP[0] - L * 0.03, shP[1], LL * 0.80, -1, L * 0.013);
+  }
+  // the skull, at the head end of the spine
+  const H = P[P.length - 1], N = P[P.length - 2];
+  const a = Math.atan2(H[1] - N[1], H[0] - N[0]), S = f.skull * L;
+  ctx.save(); ctx.translate(H[0], H[1]); ctx.rotate(a);
+  ctx.fillStyle = 'rgba(0,0,0,0.42)';
+  ctx.beginPath(); ctx.ellipse(2.2, 2.6, S, S * 0.52, 0, 0, 6.28); ctx.fill();
+  ctx.fillStyle = BONE; ctx.strokeStyle = INK; ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(-S * 0.7, -S * 0.30);
+  ctx.quadraticCurveTo(S * 0.5, -S * 0.62, S, -S * 0.10);              // snout
+  ctx.quadraticCurveTo(S * 0.6, S * 0.46, -S * 0.2, S * 0.40);
+  ctx.quadraticCurveTo(-S * 0.8, S * 0.22, -S * 0.7, -S * 0.30);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,0.66)';                                   // orbit
+  ctx.beginPath(); ctx.ellipse(-S * 0.14, -S * 0.10, S * 0.20, S * 0.17, 0, 0, 6.28); ctx.fill();
+  if (f.biped) {                                                        // teeth, along the jaw
+    ctx.fillStyle = BONE;
+    for (let i = 0; i < 6; i++) {
+      const tx = -S * 0.2 + i * S * 0.19;
+      ctx.beginPath(); ctx.moveTo(tx, S * 0.30); ctx.lineTo(tx + S * 0.05, S * 0.56); ctx.lineTo(tx + S * 0.11, S * 0.30); ctx.closePath(); ctx.fill();
+    }
+  }
+  ctx.restore();
+  ctx.restore();
+}
+// Where a skeleton can lie: a long box of rock with no gallery cutting through it. Placed on
+// a coarse world grid so one turns up every few thousand units rather than in every frame,
+// and its box is handed to the workings pass so no drift is cut through its middle.
+function placeSkeletons(push) {
+  const GRID = 800;
+  const out = [];
+  for (let g = Math.floor((V.left - GRID) / GRID); g <= Math.floor((V.left + V.vw + GRID) / GRID); g++) {
+    const base = g * GRID;
+    if (hash(g * 5.3 + 1.7) < 0.30) continue;
+    let L = 380 + hash(g * 7.1) * 300;
+    const cx = base + hash(g * 3.9) * (GRID - L) + L / 2;
+    if (cx - L / 2 < FAC.seam + 120 || cx + L / 2 > CFG.exit - 120) continue;
+    // It lies in the rock ABOVE whatever gallery is highest anywhere along its length -- five
+    // samples, not two, or a lane appearing under its middle puts a skeleton through a roof.
+    let topLane = -1;
+    for (let i = 0; i <= 4; i++) {
+      const sx = cx - L / 2 + (L * i) / 4;
+      for (let k = 0; k < CFG.laneCount; k++) if (laneAt(k, sx)) topLane = Math.max(topLane, k);
+    }
+    const roof = topLane < 0 ? CFG.baseY - CFG.tunnelH : laneY(topLane) - CFG.tunnelH;
+    // Now FIT it to the rock that is actually free, rather than hanging it a fixed distance
+    // above the roof and hoping. Two constraints, both measured off what the thing draws:
+    // it reaches 0.42 of its length above its anchor (spine -0.28, neural spines, skull) and
+    // 0.44 below (the legs), so its feet must clear the gallery roof and its back must stay
+    // inside the visible world, which at act two's zoom stops around y -820 because the
+    // camera pins worldBottom to the bottom of the canvas.
+    // TOPY is NOT derived from the camera. The visible top of the world moves with V.zoom --
+    // about -860 deep in the cave, about -230 near the seam -- and placement that reads the
+    // camera is the fault that had another session's trees changing shape every frame. This is
+    // a fixed world line just above the topmost gallery floor, so a skeleton sits in the band
+    // the galleries themselves occupy and is visible at every zoom the cave is played at.
+    const UP = 0.42, DOWN = 0.44, TOPY = -640;
+    const hiLimit = roof - 24;                                   // feet must be above this
+    let len = Math.min(L, (hiLimit - TOPY) / (UP + DOWN));
+    if (len < 300) continue;                                     // no pocket of rock big enough here
+    const loC = TOPY + len * UP, hiC = hiLimit - len * DOWN;     // the band the anchor may sit in
+    const cy = loC + (hiC - loC) * (0.35 + hash(g * 11.3) * 0.5);
+    L = len;
+    out.push({ cx, cy, L, kind: SKEL_KINDS[Math.floor(hash(g * 2.3) * SKEL_KINDS.length)], seed: g * 1.7 });
+    if (push) push({ x: cx - L / 2 - V.left, y: cy - L * 0.34, w: L, h: L * 0.62 });
+  }
+  return out;
+}
 function rockFace(top, bottom) {
   const S1 = 74;
   const x0 = Math.floor(V.left / S1) * S1, x1 = V.left + V.vw + S1;
@@ -3478,6 +3653,39 @@ function rockCorridor(wx0, wx1, y, lane = 0) {
   // six identical shelves; tripled, the bottom one is now visibly the deep one
   ctx.fillStyle = `rgb(${30 + d * 52 | 0},${23 + d * 46 | 0},${35 + d * 52 | 0})`;
   ctx.fillRect(x0, cy, x1 - x0, CFG.tunnelH + 1);
+  // The mill's walls are brick, lit, and detailed to the mortar; this was ONE flat rectangle,
+  // which is why act two read as a concrete car park with a mine painted on the outside. The
+  // same strata and the same nodule family as the mountain face, at a smaller size, clipped
+  // to the corridor. Grid keyed on the lane so six galleries are not one repeated wall.
+  ctx.save(); ctx.beginPath(); ctx.rect(x0, cy, x1 - x0, CFG.tunnelH + 1); ctx.clip();
+  for (let sy = cy - 34; sy < y; sy += 34) {
+    const k = Math.floor(sy / 34) + lane * 3;
+    ctx.fillStyle = k % 3 === 0 ? 'rgba(255,255,255,0.030)' : k % 3 === 1 ? 'rgba(0,0,0,0.085)' : 'rgba(150,100,130,0.055)';
+    strataBand(sy + hash(k) * 10, 7 + hash(k * 7) * 8, k);
+  }
+  const S2 = 58;
+  for (let wx = Math.floor((x0 + V.left) / S2) * S2; wx < x1 + V.left + S2; wx += S2) {
+    for (let wy = cy - S2; wy < y; wy += S2) {
+      const n = hash(wx * 0.021 + wy * 0.037 + lane * 2.7);
+      if (n < 0.48) continue;
+      const jx = wx - V.left + (hash(wx * 0.09 + wy) - 0.5) * S2 * 0.8;
+      const jy = wy + (hash(wx * 0.013 + wy * 0.07) - 0.5) * S2 * 0.8;
+      const rr = 3.5 + n * 8;
+      ctx.fillStyle = `rgba(0,0,0,${(0.05 + n * 0.09).toFixed(3)})`;
+      ctx.beginPath(); ctx.ellipse(jx, jy, rr, rr * 0.66, hash(wx + wy) * 3, 0, 6.28); ctx.fill();
+      ctx.fillStyle = 'rgba(255,240,214,0.055)';
+      ctx.beginPath(); ctx.ellipse(jx - 1, jy - 1.1, rr * 0.66, rr * 0.44, 0, 0, 6.28); ctx.fill();
+    }
+  }
+  // pick marks: short chisel scars, the one thing that says a person cut this
+  ctx.strokeStyle = 'rgba(0,0,0,0.13)'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+  for (let wx = Math.floor((x0 + V.left) / 26) * 26; wx < x1 + V.left; wx += 26) {
+    const n = hash(wx * 0.047 + lane * 5.1);
+    if (n < 0.55) continue;
+    const px = wx - V.left, py = cy + 16 + n * (CFG.tunnelH - 40);
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + 5 + n * 5, py - 3 - n * 4); ctx.stroke();
+  }
+  ctx.restore();
   // ribs cut into the back wall at intervals, so the corridor has an inside rather than a flat face.
   // Their spacing is keyed to the lane so the shelves do not line up into a grid.
   const ribGap = 104 + lane * 13;
