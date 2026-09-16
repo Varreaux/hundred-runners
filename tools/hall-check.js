@@ -16,6 +16,10 @@
 //
 // Deriving the extents rather than writing them down is the point: change a coordinate in
 // millEngine and this moves with it, so it goes stale by failing rather than by lying.
+//
+// It measures the MACHINES, not their smoke. Two plumes overlapping is not a defect --
+// smoke fills a room, that is what it is for -- and a puff 40 units across either side of
+// a nozzle would swamp every extent here and make the overlap number meaningless.
 const fs = require('fs'), path = require('path');
 const target = process.argv[2] || path.join(__dirname, '..', 'index.html');
 const src = fs.readFileSync(target, 'utf8').split('<script>')[1].split('</script>')[0].replace("'use strict';", '');
