@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '82 whole animals in the rock';
+const BUILD = '83 the workings, timbered';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3053,11 +3053,12 @@ const roomIsGap = r => !SOLID_HAZ[r.hazard] && !SOLID_TYPE[r.type];
 // y-4.4 above a loop drawing y-6.6 is how they came apart the first time.
 const RAIL_TOP = 6.6, RAIL_DEEP = 3.2, WHEEL_R = 4.4;
 const CAVE_CLEAR = 104;
-const PROPS = ['cart', 'prop', 'tools', 'crates', 'spoil', 'barrow', 'keg', 'prop'];
+const PROPS = ['cart', 'prop', 'tools', 'crates', 'spoil', 'barrow', 'keg', 'prop', 'sacks', 'rope', 'ladder'];
 // What tends to be left beside what. A cart stands at a face with the spoil it is being
 // filled from; a prop is set where the roof was just cut, with the tools that cut it.
 const COMPANY = { cart: 'spoil', prop: 'tools', tools: 'spoil', crates: 'keg',
-                  spoil: 'tools', barrow: 'spoil', keg: 'crates' };
+                  spoil: 'tools', barrow: 'spoil', keg: 'crates',
+                  sacks: 'crates', rope: 'tools', ladder: 'sacks' };
 // Measured against DRAWN EXTENTS, not centres. A room's hole runs [r.x, r.x + gapWidth] and
 // its ironwork reaches r.x+150 on the right and r.x-30 on the left, so a symmetric test round
 // r.x let a prop stand 16 units inside the hole with half its width over the drop. A fork's
@@ -3080,6 +3081,163 @@ function mineClear(wx, lane) {
 function standShadow(x, y, w) {
   ctx.fillStyle = 'rgba(0,0,0,0.34)';
   ctx.beginPath(); ctx.ellipse(x, y, w, 3.2, 0, 0, 6.28); ctx.fill();
+}
+// ---------------------------------------------------------------- the fabric of a working
+// Things that RUN the length of a gallery rather than stand about in it. Morgan, on act two:
+// the mill has detail and the cave has none. Props alone could not answer that, because a
+// prop is an object on a floor and what a mine actually looks like is its fabric -- the
+// timbering, the air pipe, the water it is always fighting, and the marks the surveyors leave.
+//
+// Everything here is drawn by rockCorridor, before mineProps, so the standing props are in
+// front of it and the crowd is in front of them. Anything touching the roof reads tunnelSag,
+// never CFG.tunnelH, for the same reason the pit prop does.
+function mineFabric(wx0, wx1, y, lane) {
+  const lo = Math.max(wx0, FAC.seam + 40), hi = Math.min(wx1, CFG.exit - 40);
+  if (hi <= lo) return;
+  const cy = y - CFG.tunnelH;
+  const x0 = Math.max(-20, lo - V.left), x1 = Math.min(V.vw + 20, hi - V.left);
+  if (x1 <= x0) return;
+
+  // ---- the air pipe, hung just under the roof, with flanged joints and strap hangers
+  if (hash(lane * 4.3 + 0.7) > 0.36) {
+    const py = cy + 22;
+    ctx.fillStyle = 'rgba(78,70,64,0.9)'; ctx.fillRect(x0, py, x1 - x0, 7);
+    ctx.fillStyle = 'rgba(255,214,150,0.13)'; ctx.fillRect(x0, py, x1 - x0, 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(x0, py + 5.4, x1 - x0, 1.8);
+    for (let wx = Math.floor(lo / 96) * 96; wx < hi; wx += 96) {
+      const sx = wx - V.left;
+      if (sx < x0 || sx > x1) continue;
+      ctx.fillStyle = '#5c534c'; ctx.fillRect(sx - 3, py - 1.6, 6, 10.2);   // flange
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1; ctx.strokeRect(sx - 3, py - 1.6, 6, 10.2);
+      if (Math.floor(wx / 96) % 2 === 0) {                                   // hanger to the rock
+        ctx.strokeStyle = 'rgba(150,142,138,0.6)'; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(sx, py); ctx.lineTo(sx, cy + tunnelSag(wx, lane) + 3); ctx.stroke();
+      }
+    }
+  }
+
+  // ---- timber sets: a full portal frame, legs and a cap, set where the ground is bad
+  for (let wx = Math.floor(lo / 300) * 300; wx < hi + 300; wx += 300) {
+    if (hash(wx * 0.017 + lane * 8.1) < 0.46) continue;
+    const px = wx + (hash(wx * 0.041 + lane) - 0.5) * 120;
+    if (px < lo + 40 || px > hi - 40 || !mineClear(px, lane)) continue;
+    const sx = px - V.left;
+    if (sx < -60 || sx > V.vw + 60) continue;
+    const H = CFG.tunnelH - tunnelSag(px, lane) - 4;      // same rule as a pit prop: meet the rock
+    const halfW = 30;
+    ctx.fillStyle = '#4e3c2a'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+    for (const s of [-1, 1]) {                            // legs, splayed a little as they are set
+      ctx.beginPath();
+      ctx.moveTo(sx + s * (halfW + 4), y); ctx.lineTo(sx + s * (halfW - 3), y - H + 2);
+      ctx.lineTo(sx + s * (halfW - 10), y - H + 2); ctx.lineTo(sx + s * (halfW - 3), y);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    ctx.fillRect(sx - halfW - 4, y - H - 6, (halfW + 4) * 2, 9);            // cap beam
+    ctx.strokeRect(sx - halfW - 4, y - H - 6, (halfW + 4) * 2, 9);
+    ctx.fillStyle = 'rgba(255,214,150,0.14)'; ctx.fillRect(sx - halfW - 4, y - H - 6, (halfW + 4) * 2, 2.2);
+    ctx.fillStyle = 'rgba(0,0,0,0.34)';                                     // lagging behind the cap
+    for (let i = -2; i <= 2; i++) ctx.fillRect(sx + i * 13 - 2, y - H - 12, 4, 6);
+  }
+
+  // ---- the drain: mines are always wet, and the water has to go somewhere
+  ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.fillRect(x0, y - 3.2, x1 - x0, 3.2);
+  ctx.fillStyle = 'rgba(120,170,190,0.16)'; ctx.fillRect(x0, y - 2.6, x1 - x0, 1.4);
+  for (let wx = Math.floor(lo / 210) * 210; wx < hi; wx += 210) {
+    if (hash(wx * 0.029 + lane * 2.3) < 0.55) continue;
+    const sx = wx - V.left;
+    if (sx < x0 || sx > x1) continue;
+    const pw = 9 + hash(wx * 0.07) * 13;
+    ctx.fillStyle = 'rgba(96,150,170,0.20)';
+    ctx.beginPath(); ctx.ellipse(sx, y - 1.6, pw, 2.4, 0, 0, 6.28); ctx.fill();
+    ctx.fillStyle = 'rgba(210,240,255,0.18)';
+    ctx.beginPath(); ctx.ellipse(sx - pw * 0.3, y - 2.1, pw * 0.34, 0.9, 0, 0, 6.28); ctx.fill();
+  }
+
+  // ---- seepage off the roof. One drop per gallery, on its own clock, falling into the drain.
+  if (hash(lane * 6.9 + 3.1) > 0.45) {
+    const dx = Math.floor(lo / 640) * 640 + 320 + lane * 97;
+    const sx = dx - V.left;
+    if (sx > x0 && sx < x1) {
+      const top = cy + tunnelSag(dx, lane) + 8;
+      const span = y - 2 - top;
+      const k = (S.t * 0.55 + hash(lane * 3.3)) % 1;
+      ctx.fillStyle = 'rgba(190,225,240,0.5)';
+      ctx.beginPath(); ctx.ellipse(sx, top + span * k * k, 1.5, 3.4, 0, 0, 6.28); ctx.fill();
+      ctx.fillStyle = 'rgba(190,225,240,0.22)';                            // the drip it hangs from
+      ctx.beginPath(); ctx.ellipse(sx, top, 2, 2.4, 0, 0, 6.28); ctx.fill();
+      if (k > 0.94) {                                                       // the splash
+        ctx.strokeStyle = 'rgba(210,240,255,0.45)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.ellipse(sx, y - 2, 5 + (k - 0.94) * 90, 1.6, 0, 0, 6.28); ctx.stroke();
+      }
+    }
+  }
+
+  // ---- the surveyor's chalk: station numbers and the direction out
+  ctx.font = 'bold 9px monospace'; ctx.textAlign = 'left';
+  for (let wx = Math.floor(lo / 420) * 420; wx < hi; wx += 420) {
+    if (hash(wx * 0.011 + lane * 9.7) < 0.5) continue;
+    const sx = wx - V.left;
+    if (sx < x0 + 10 || sx > x1 - 40) continue;
+    const ty = cy + 52 + hash(wx * 0.05) * 30;
+    ctx.fillStyle = 'rgba(232,226,208,0.30)';
+    ctx.fillText((lane + 1) + '-' + (40 + Math.floor(hash(wx * 0.003) * 60)), sx, ty);
+    ctx.strokeStyle = 'rgba(232,226,208,0.24)'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx + 2, ty + 9); ctx.lineTo(sx + 17, ty + 9);
+    ctx.moveTo(sx + 12, ty + 5.5); ctx.lineTo(sx + 17, ty + 9); ctx.lineTo(sx + 12, ty + 12.5);
+    ctx.stroke();
+  }
+  ctx.textAlign = 'left';
+}
+// ---- three more things to find standing in a gallery
+function drawSacks(x, y, seed) {
+  standShadow(x, y - 1, 13);
+  const n = 2 + Math.floor(hash(seed * 3.1) * 2);
+  for (let i = 0; i < n; i++) {
+    const ox = (i - (n - 1) / 2) * 11 + (hash(seed + i) - 0.5) * 4;
+    const h = 11 + hash(seed + i * 2.3) * 5, w = 7.5 + hash(seed + i * 1.7) * 2.5;
+    ctx.fillStyle = i % 2 ? '#7a6a52' : '#6b5c47'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(x + ox - w, y - 1);
+    ctx.quadraticCurveTo(x + ox - w * 1.1, y - h * 0.7, x + ox - w * 0.45, y - h);
+    ctx.quadraticCurveTo(x + ox, y - h * 1.2, x + ox + w * 0.45, y - h);
+    ctx.quadraticCurveTo(x + ox + w * 1.1, y - h * 0.7, x + ox + w, y - 1);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,214,150,0.12)';
+    ctx.beginPath(); ctx.ellipse(x + ox - w * 0.3, y - h * 0.82, w * 0.4, 1.6, -0.3, 0, 6.28); ctx.fill();
+  }
+}
+function drawRopeCoil(x, y, seed) {
+  standShadow(x, y - 1, 11);
+  const r = 8 + hash(seed * 4.7) * 3;
+  for (let i = 0; i < 4; i++) {
+    ctx.strokeStyle = i === 0 ? INK : '#8a7350';
+    ctx.lineWidth = i === 0 ? 5.2 : 3.2;
+    ctx.beginPath(); ctx.ellipse(x, y - 3 - i * 2.6, r - i * 1.1, (r - i * 1.1) * 0.34, 0, 0, 6.28); ctx.stroke();
+  }
+  ctx.strokeStyle = '#8a7350'; ctx.lineWidth = 2.6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x + r * 0.7, y - 9); ctx.quadraticCurveTo(x + r * 1.6, y - 4, x + r * 1.2, y - 1); ctx.stroke();
+}
+// A ladder to the level above. It has to REACH the roof, so it reads tunnelSag like the
+// timber does -- a ladder stopping short of the opening it serves is a prop, not a way up.
+function drawLadder(x, y, seed, lane, wx) {
+  const H = CFG.tunnelH - tunnelSag(wx, lane) + 4;
+  const lean = 5 + hash(seed * 2.9) * 5, w = 13;
+  ctx.strokeStyle = INK; ctx.lineWidth = 4.6; ctx.lineCap = 'round';
+  for (const s of [-1, 1]) {
+    ctx.beginPath(); ctx.moveTo(x + s * w / 2, y - 1); ctx.lineTo(x + s * w / 2 - lean, y - H); ctx.stroke();
+  }
+  ctx.strokeStyle = '#6b5439'; ctx.lineWidth = 2.8;
+  for (const s of [-1, 1]) {
+    ctx.beginPath(); ctx.moveTo(x + s * w / 2, y - 1); ctx.lineTo(x + s * w / 2 - lean, y - H); ctx.stroke();
+  }
+  const rungs = Math.max(3, Math.round(H / 15));
+  for (let i = 1; i < rungs; i++) {
+    const t = i / rungs, ry = y - 1 - t * (H - 1), rx = x - lean * t;
+    ctx.strokeStyle = INK; ctx.lineWidth = 3.4;
+    ctx.beginPath(); ctx.moveTo(rx - w / 2, ry); ctx.lineTo(rx + w / 2, ry); ctx.stroke();
+    ctx.strokeStyle = '#8a6a42'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(rx - w / 2, ry); ctx.lineTo(rx + w / 2, ry); ctx.stroke();
+  }
 }
 function mineProps(wx0, wx1, y, lane) {
   // Bounded to the rock, not to the caller's span. rockCorridor draws every non-mill stretch,
@@ -3129,6 +3287,9 @@ function mineProps(wx0, wx1, y, lane) {
       else if (gk === 'crates') drawCrates(gsx, y, seed);
       else if (gk === 'spoil') drawSpoil(gsx, y, seed, lane);
       else if (gk === 'barrow') drawBarrow(gsx, y, seed);
+      else if (gk === 'sacks') drawSacks(gsx, y, seed);
+      else if (gk === 'rope') drawRopeCoil(gsx, y, seed);
+      else if (gk === 'ladder') drawLadder(gsx, y, seed, lane, gx);
       else drawKeg(gsx, y, seed);
     }
   }
@@ -3728,8 +3889,9 @@ function rockCorridor(wx0, wx1, y, lane = 0) {
   ctx.closePath(); ctx.fill();
   const f = ctx.createLinearGradient(0, y - 30, 0, y); f.addColorStop(0, 'rgba(255,190,110,0)'); f.addColorStop(1, 'rgba(255,190,110,0.07)');
   ctx.fillStyle = f; ctx.fillRect(x0, y - 30, x1 - x0, 30);
-  // The workings, last, so they stand on the finished floor. Still before the crowd, so a
-  // prop can never hide a runner.
+  // The fabric of the working first -- timbering, air pipe, drain, chalk -- then the loose
+  // things that stand about in front of it, then the crowd in front of them.
+  mineFabric(wx0, wx1, y, lane);
   mineProps(wx0, wx1, y, lane);
   ctx.fillStyle = '#17121c';
 }
