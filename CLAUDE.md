@@ -213,6 +213,19 @@ level, and no lamp pool may fall outdoors. Every one of those corresponds to a d
 shipped and that a screenshot did not reveal — the worst being terraces standing up to 143
 units above the ground meant to hold them up, with open sky under the highest one.
 
+`tools/reel-check.js` — the closing reel as arithmetic. Two seconds. It draws every one of
+the sixteen death vignettes over its whole 0..1, wet and dry, and fails on an exception, a
+body that leaves the card, a body under 118px on arrival (Morgan asked for the character
+big; that is a number, not an opinion), apparatus drawn up into the 50px name, filled
+ground that does not span the card, or a SPACE that winds the end clock to the wrong place.
+It measures through a recording canvas that honours the transform stack, because a vignette
+is drawn under `translate(480, gy); scale(4)` and a tool that ignored that would read a
+154px body as a 38px one and then accuse the card of being too small.
+
+It earned itself twice on the same fault, which is now written up below: a rect height
+given as an expression that came out NEGATIVE, so ironwork grew upward out of the top of
+the card. Neither instance was visible in the source or in a still.
+
 `tools/room-check.js` — the keys-against-road arithmetic for every room, with the
 verdicts explained in its own header. Two things it checks that nothing else did:
 the cost in keys against the road at `CFG.scroll`, scored against a ceiling that
@@ -442,6 +455,15 @@ from `index.html` with the `'use strict'` line removed.
   syntax check, a sixty-game harness run and a glance at the frame. Feed both
   from one constant so they cannot disagree, and whenever you change one, look at
   the other.
+- **A rect height that is an ARITHMETIC EXPRESSION can come out negative, and a negative
+  height grows the rect UPWARD.** Twice in one session, on a crusher's ram rod and on a pair
+  of gear hangers, and both times the result stood fifty pixels off the top of the card with
+  nothing in the source to say so — `fillRect(x, -74, 8, by - 74 + 74)` looks like arithmetic
+  and is a sign error. Canvas does not complain. Write the two y values the thing spans and
+  subtract them: `fillRect(x, top, 8, bottom - top)`. A tool that measures through the
+  transform stack finds these; reading does not, and neither does a screenshot, because the
+  object is simply somewhere else in the frame and reads as absent rather than as wrong.
+
 - **Non-ASCII and emoji in object keys** need a JavaScript `\u{...}` escape. A
   Python-style `\U` produces a key that silently never matches. Named runners
   have fixed appearances in a `LOOKS` table keyed by the exact name string, so a
@@ -465,6 +487,16 @@ logic checker is the one people forget, so if you have only run one, it is that 
 you are missing. It earned itself on a steam hammer driving 12.6 units up inside
 its own crown casting twice a second, which no still could ever show: a tup half
 inside a casting just reads as a tall tup.
+
+**Freeze the shots for the duration of a pass, and do not edit under a reviewer.** A pass
+takes ten to thirty minutes and it is tempting to keep working; do not. A logic-check report
+came back opening with `index.html` changing underneath it four times and `shots/` being
+deleted and re-shot mid-read, so half its findings carried "could not confirm against a
+current picture" and had to be re-verified by hand. The art critic, separately, reported two
+shots of the same trap disagreeing about how many leaves a drawbridge had — that was not a
+conditional in the code, it was a re-shoot landing between two of its reads, and it cost it
+a finding. Take the screenshots, then leave both the shots and the file alone until the
+report is in. Waiting is cheaper than a report you cannot act on.
 
 The loop is: screenshot eight to ten fixed moments, hand them the paths plus the
 relevant drawing function names, fix everything they find, re-shoot, repeat until
@@ -509,6 +541,14 @@ simply implement:
   brighter, one lamp pool at about +260, and dark beyond it. Darkening the whole
   of act two would have corrected four hundred units of it. Settled: the lamp
   stays.
+
+**Act two being "the brightest card" has now been raised and withdrawn twice.** The second
+time was on the closing reel's own backdrops, and the critic checked its impression against
+the constants rather than restating it: `reelMillBack` composites to luminance 30.3 (40.7,
+27.0, 20.6) and `reelRockBack` to 28.9 (30.4, 25.9, 40.7), so the rock is 5% DARKER than the
+mill wall, and the hues separate cleanly — the mill red-dominant, the rock blue-dominant.
+Withdrawn by the critic itself. Do not darken act two on an impression; if it is raised a
+third time, ask for the two composites first.
 
 Refuse with the number, not with an opinion, and write the refusal down or the
 next pass will find it again.
@@ -630,6 +670,13 @@ Timings have two more traps on top of those.
 
 `?start&skip=N` jumps N seconds into a run, `&solve` adds a bot that clears
 rooms as it goes, `?finale` jumps to the final gate. Use them for screenshots.
+
+`?end=T` holds the CLOSING REEL T seconds in — a whole run played out headlessly and then
+the end clock wound to T. `&solve` gives it fewer deaths and a longer climb; `&solve&win`
+settles the last gate in the crowd's favour, for the podium. `?trap=NAME&tt=0..1` holds ONE
+card still, which is the only way to photograph a vignette without playing a run in which
+somebody happens to die that way — `&wet=1` puts water under the fall, `&who=NAME` chooses
+whose body it is, `&st=N` freezes the ambient clock so a flicker cannot move between shots.
 
 ## Design
 
