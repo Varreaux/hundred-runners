@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '78 the laugh lands on its own line';
+const BUILD = '79 the track knows where it stops';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2837,7 +2837,7 @@ function boneStroke(w) { ctx.strokeStyle = INK; ctx.lineWidth = w + 1.5; ctx.lin
 function drawFind(x, y, r, kind, seed) {
   const rx = r * 1.06, ry = r * 0.88;
   findSocket(x, y, rx, ry);
-  // A crystal pocket's glow is drawn BEFORE the socket and outside the clip, because a light
+  // A crystal pocket's glow is drawn after the socket and OUTSIDE the clip, because a light
   // source in a dark mine has to land on the rock around it. Clipped to the socket it stopped
   // at the rim at 44% of its peak, so the brightest object in act two lit nothing five units
   // away from itself.
@@ -3025,6 +3025,17 @@ function drawCrystalPocket(r, seed) {
 function tunnelSag(wx, lane) {
   return Math.sin(wx / 302 + lane * 1.7) * 13 + Math.sin(wx / 121 + lane * 0.9) * 6;
 }
+// Whether a room is a HOLE in the floor or a machine standing on it. The ground and the
+// tramway both have to agree about this and they did not: drawGround tested the hazard and
+// type tables, drawRails tested nothing and broke the track at every room, so 120 units of
+// rail went missing over the two crushers' perfectly solid floor. One predicate, read twice,
+// and the next room type added cannot make them drift apart again.
+const SOLID_TYPE = { thorn: 1, mantrap: 1, gears: 1, conveyor: 1, sweeper: 1, presses: 1, wiring: 1 };
+const SOLID_HAZ = { burst: 1, machine: 1, press: 1 };
+const roomIsGap = r => !SOLID_HAZ[r.hazard] && !SOLID_TYPE[r.type];
+// The rail stack, as numbers both the track and the cart read, because a comment saying
+// y-4.4 above a loop drawing y-6.6 is how they came apart the first time.
+const RAIL_TOP = 6.6, RAIL_DEEP = 3.2, WHEEL_R = 4.4;
 const CAVE_CLEAR = 104;
 const PROPS = ['cart', 'prop', 'tools', 'crates', 'spoil', 'barrow', 'keg', 'prop'];
 // What tends to be left beside what. A cart stands at a face with the spoil it is being
@@ -3112,11 +3123,30 @@ function mineProps(wx0, wx1, y, lane) {
 // is missing, so a run is BROKEN at each of them rather than bridging 120 units of open air
 // above a drop. Placement guarded the props and left the rails running straight over.
 function drawRails(wx0, wx1, y, lane) {
-  const gaps = S.rooms.filter(r => r.lane === lane && r.x + CFG.gapWidth > wx0 && r.x < wx1)
+  const gaps = S.rooms.filter(r => r.lane === lane && roomIsGap(r) && r.x + CFG.gapWidth > wx0 && r.x < wx1)
                       .map(r => [r.x, r.x + CFG.gapWidth]).sort((a, b) => a[0] - b[0]);
+  // A run that stops at a hole has a reason to stop. One that stops at a bucket boundary in
+  // open corridor does not, so it gets a buffer stop and reads as the end of a haulage road.
+  const stopAt = w => Math.abs(w - FAC.seam) > 4 && Math.abs(w - (CFG.exit + 60)) > 4
+                      && !gaps.some(([ga, gb]) => Math.abs(w - ga) < 4 || Math.abs(w - gb) < 4);
   let at = wx0;
-  for (const [ga, gb] of gaps) { if (ga > at) railRun(at, Math.min(ga, wx1), y); at = Math.max(at, gb); }
-  if (at < wx1) railRun(at, wx1, y);
+  for (const [ga, gb] of gaps) {
+    if (ga > at) { railRun(at, Math.min(ga, wx1), y); if (stopAt(at)) bufferStop(at, y, 1); }
+    at = Math.max(at, gb);
+  }
+  if (at < wx1) { railRun(at, wx1, y); if (stopAt(at)) bufferStop(at, y, 1); if (stopAt(wx1)) bufferStop(wx1, y, -1); }
+}
+// The end of a haulage road. A run that stops at a hole has a reason to; one that stopped at
+// a bucket boundary in open corridor just ended square in mid-air, so it gets a timber stop
+// and reads as a face the track was driven up to. `dir` is which side the run lies on.
+function bufferStop(wx, y, dir) {
+  const sx = wx - V.left;
+  if (sx < -30 || sx > V.vw + 30) return;
+  ctx.fillStyle = '#4a3a2a'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+  ctx.fillRect(sx - 2.5, y - 13, 5, 13); ctx.strokeRect(sx - 2.5, y - 13, 5, 13);
+  ctx.fillRect(sx - 8 * dir, y - 13, 8 * dir, 4.5);          // the head timber, over the rail
+  ctx.strokeRect(sx - 8 * dir, y - 13, 8 * dir, 4.5);
+  ctx.fillStyle = 'rgba(255,214,150,0.16)'; ctx.fillRect(sx - 2.5, y - 13, 5, 1.6);
 }
 // The stack from the floor up, as one set of numbers: sleeper y-3.4..y, rail head y-6.6, and
 // drawCart puts its wheel centre a radius above that at y-11. Before, 1.8 of the rail's 2.2
@@ -3128,13 +3158,16 @@ function railRun(wx0, wx1, y) {
   ctx.fillStyle = 'rgba(38,28,22,0.85)';
   for (let wx = Math.floor((x0 + V.left) / SLEEP) * SLEEP; wx < x1 + V.left; wx += SLEEP) {
     const sx = wx - V.left;
-    if (sx < x0 - SLEEP || sx > x1) continue;
+    // the WHOLE sleeper has to be inside the run. The old guard tested its centre, so on the
+    // far side of a gap a sleeper sat up to 43 units back INSIDE the hole, over the drop, on
+    // 74% of gapped rooms -- the overhang was never less than 9 units.
+    if (sx - 9 < x0 || sx + 9 > x1) continue;
     ctx.fillRect(sx - 9, y - 3.4, 18, 3.4);
   }
   // One rail, not two. At play zoom each was under a pixel and the pair read as a rendering
   // artefact the width of the screen rather than as track.
-  ctx.fillStyle = 'rgba(150,142,138,0.85)'; ctx.fillRect(x0, y - 6.6, x1 - x0, 3.2);
-  ctx.fillStyle = 'rgba(255,214,150,0.20)'; ctx.fillRect(x0, y - 6.6, x1 - x0, 1.2); // lamplight along it
+  ctx.fillStyle = 'rgba(150,142,138,0.85)'; ctx.fillRect(x0, y - RAIL_TOP, x1 - x0, RAIL_DEEP);
+  ctx.fillStyle = 'rgba(255,214,150,0.20)'; ctx.fillRect(x0, y - RAIL_TOP, x1 - x0, 1.2); // lamplight along it
 }
 function drawCart(x, y, seed) {
   const w = 44, h = 25, tip = (hash(seed * 6.1) - 0.5) * 0.1;
@@ -3162,14 +3195,13 @@ function drawCart(x, y, seed) {
     ctx.beginPath(); ctx.arc(w * 0.18, -h - 2.2, 1.4, 0, 6.28); ctx.fill();
   }
   ctx.restore();
-  // The rail head sits at y - 4.4 and is 2.2 deep, so a 4.4-radius wheel RESTING on it has
-  // its centre at y - 8.8. At y - 4.5 the rail ran through the axle and the wheel stood on
-  // the floor, which is a cart parked across its own track.
+  // A wheel RESTING on the rail has its centre a radius above the rail head. Both numbers
+  // come from the same constants the track is drawn from, so no comment has to be kept true.
   for (const wx of [-13, 13]) {
     ctx.fillStyle = '#2b2228'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.arc(x + wx, y - 11, 4.4, 0, 6.28); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x + wx, y - RAIL_TOP - WHEEL_R, WHEEL_R, 0, 6.28); ctx.fill(); ctx.stroke();
     ctx.fillStyle = 'rgba(170,160,156,0.7)';
-    ctx.beginPath(); ctx.arc(x + wx, y - 11, 1.5, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + wx, y - RAIL_TOP - WHEEL_R, 1.5, 0, 6.28); ctx.fill();
   }
 }
 // A pit prop: floor to ceiling, because a support that stops short is not supporting
@@ -3191,7 +3223,7 @@ function drawPitProp(x, y, seed, lane, wx) {
   ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;                    // grain
   for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(-3 + i * 3, -H + 6); ctx.lineTo(-3 + i * 3, -6); ctx.stroke(); }
   ctx.restore();
-  standShadow(x, y - 1, 11);
+  standShadow(x, y - 1, 6.5);       // the post is 10 wide; 11 was 2.2x its caster
 }
 // Tools leaning on the back wall. A handle that does not reach the floor is a tool hanging
 // in the air, so both start ON the floor and lean back.
@@ -3226,7 +3258,7 @@ function drawTools(x, y, seed) {
 // overhung by more than half its base.
 function drawCrates(x, y, seed) {
   const n = 1 + Math.floor(hash(seed * 4.3) * 3);
-  standShadow(x, y - 1, 14);
+  standShadow(x, y - 1, 8.5);      // the base crate is 13 wide; 14 was a shadow 1.7x its caster
   let by = y - 1;
   for (let i = 0; i < n; i++) {
     const s = 13 - i * 1.6, ox = (hash(seed + i * 2.1) - 0.5) * 3.4;
@@ -6889,9 +6921,7 @@ function drawLane(lane) {
   // laid hedge cut 120 units out of its own terrace and drew stems standing on nothing.
   // Mechanically worse than cosmetic: half the crowd fell off a terrace the picture said
   // was continuous. Keyed off the type now, because the type is what decides it.
-  const solidType = { thorn: 1, mantrap: 1, gears: 1, conveyor: 1, sweeper: 1, presses: 1, wiring: 1 };
-  const solid = { burst: 1, machine: 1, press: 1 };
-  const gaps = S.rooms.filter(r => r.lane === lane && !solid[r.hazard] && !solidType[r.type])
+  const gaps = S.rooms.filter(r => r.lane === lane && roomIsGap(r))
     .map(r => [r.x, r.x + CFG.gapWidth]).sort((a, b) => a[0] - b[0]);
   for (const [s0, s1, style] of spans) {
     let cur = Math.max(s0, view0);
