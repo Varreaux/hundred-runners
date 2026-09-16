@@ -19,6 +19,39 @@ Morgan (GitHub login `Varreaux`). Read this before editing.
   no-cache headers. Do not point him at any other port. If you run your own
   server for screenshots, keep it to yourself and say so.
 
+### Pushing is not delivering. Pull into his checkout yourself.
+
+**8765 serves `/Users/morgan/dev/first_game_jam`. Pushing puts work on origin and
+does not touch that folder.** So a push he cannot see is not a delivery, and
+"just refresh" is a lie unless somebody has pulled. Morgan asked for this
+directly on 2026-09-16, after refreshing at BUILD 57 while 58, 59, 61 and 62 were
+all sitting on `Morgan`. He asked three separate times why nothing had changed.
+Every one of those answers cost him more than the pull would have.
+
+**A worktree-isolated session cannot do it the obvious way.** `git -C <main>
+pull`, `cd <main> && git pull` and `--git-dir` are all REFUSED by the harness —
+not by permissions, and no amount of rephrasing gets round it. The route that
+works:
+
+1. `ExitWorktree` with `action: "keep"` — your worktree and branch stay on disk
+2. from the main checkout: `git status --porcelain`, then `git pull --ff-only`
+3. `EnterWorktree` with `path` set back to your worktree
+
+Confirm what he will actually load, rather than assuming the pull did it:
+
+```
+curl -s http://127.0.0.1:8765/index.html | grep -m1 -o "const BUILD = '[^']*'"
+```
+
+If `git status` shows an uncommitted `index.html`, the pull will refuse. That is
+somebody mid-edit in the shared checkout: go and ask them, do not force it and do
+not stash it. **Never overwrite files in the main checkout to shortcut this** —
+that leaves it dirty and blocks the next person's pull, which is the same fault
+one layer down.
+
+And before telling him anything has changed, check the served BUILD. Three long
+summaries were written to him about work he was structurally unable to see.
+
 ## Close the Chrome tab when you are done with it
 
 Claude in Chrome opens a tab per session and they accumulate: Morgan ends up
