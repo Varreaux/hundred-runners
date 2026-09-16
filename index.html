@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '69 the logic pass on act three';
+const BUILD = '70 bones and rails';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2604,6 +2604,19 @@ function drawMountain() {
     }
     if (!clear) continue;
     placed.push({ x: xx, y: yy, w, h: hgt });
+    // Some of these holes are a find instead. It goes HERE, in the same placement pass with
+    // the same spacing rules, so the wall loses one hole for every find it gains -- which is
+    // what "replace some of them" means. The first attempt put finds on rockFace's nodule
+    // grid instead: that is a different system, it replaced bumps rather than holes, the
+    // wall ended up with every hole it started with plus twenty-five ornaments, and workings
+    // drawn afterwards cut bones in half because this pass knew nothing about them.
+    // Only the wide cuts. A vertical one is a shaft, and a shaft with a fossil in it is a
+    // hole with a fossil in it.
+    if (!vert && hash(seg * 13.9 + j * 5.3) < FIND_RATE) {
+      drawFind(xx + w / 2, yy + hgt / 2, Math.max(20, Math.min(34, hgt * 0.72)),
+               FIND_KINDS[Math.floor(hash(seg * 3.7 + j * 11.1) * FIND_KINDS.length)], seg + j * 3.1);
+      continue;
+    }
     working(xx, yy, w, hgt, seg + j * 0.37, hash(seg * 3.3 + j * 7.9) > 0.62, vert);
    }
   });
@@ -2746,6 +2759,432 @@ function working(x, y, w, h, salt, lit, vert) {
 // Fracture, not noise. Angular aggregate on a world-locked lattice so it holds still as the
 // camera moves, with each block lit on its upper-left face and dark on its lower-right,
 // which is also the one thing the strata cannot say: bedding runs flat, fracture runs across.
+// ================================================================ what the rock holds
+// Most of the wall is nodules. A minority of cells are something the diggers cut through and
+// left: a fossil, or a crystal pocket. Which cell is which comes from the same hash the
+// nodules use, so the wall does not reshuffle as the camera moves across it.
+//
+// The rate is deliberately low. At one in three these stop being finds and become wallpaper,
+// and the wall is meant to read as rock with something IN it, not as a museum case.
+// Share of the WIDE cuts that come out as a find rather than a hole. Not a share of wall
+// area: the thing that decides whether a wall reads as rock or as a museum case is finds per
+// screen, and at 0.135 of the nodule grid that was about twenty-five of them at once.
+const FIND_RATE = 0.40;
+// One crystal in six, not two in seven. A glowing pocket is the loudest object in act two and
+// they were 29% of all finds, which put ten pulsing highlights in the periphery while the
+// player is meant to be watching a gate.
+const FIND_KINDS = ['ribs', 'skull', 'spine', 'ammonite', 'femur', 'crystal'];
+// Everything a find draws sits inside a socket cut into the rock, because a bone lying ON a
+// wall is a bone stuck to a wall. The socket is drawn first and the find inside it.
+// A SHALLOW recess, not a hole. The first version filled it at 42% black, and against this
+// rock that is indistinguishable from the dark pocks already all over the wall -- so every
+// find read as one more hole with something small at the bottom of it, which is the exact
+// thing these were added to replace. It is now a faint cool shadow with a lit lower lip, and
+// the find fills most of it.
+// A recess is in shadow under its TOP lip and lit on its LOWER inner wall. The first version
+// put the highlight on the top arc -- which is exactly what rockFace does to a nodule, so a
+// find had the shading of a bump and read as a sticker on the wall. Canvas angles: 0 to PI is
+// the lower half, PI to 2PI the upper.
+function findSocket(x, y, rx, ry) {
+  ctx.fillStyle = 'rgba(26,18,34,0.40)';
+  ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, 6.28); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.30)';                                   // overhang, under the top lip
+  ctx.beginPath(); ctx.ellipse(x, y + ry * 0.13, rx * 0.97, ry * 0.92, 0, 3.34, 6.06); ctx.fill();
+  ctx.fillStyle = 'rgba(255,240,214,0.10)';                             // lit lower inner wall
+  ctx.beginPath(); ctx.ellipse(x, y - ry * 0.13, rx * 0.97, ry * 0.92, 0, 0.14, 3.00); ctx.fill();
+}
+const BONE = '#d6cbae', BONE_D = '#a1957a';
+function boneStroke(w) { ctx.strokeStyle = INK; ctx.lineWidth = w + 1.5; ctx.lineCap = 'round'; }
+function drawFind(x, y, r, kind, seed) {
+  const rx = r * 1.06, ry = r * 0.88;
+  findSocket(x, y, rx, ry);
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, 6.28); ctx.clip();
+  const tilt = (hash(seed * 1.7) - 0.5) * 0.9;
+  ctx.translate(x, y); ctx.rotate(tilt);
+  if (kind === 'crystal') drawCrystalPocket(r, seed);
+  else if (kind === 'ribs') drawRibs(r, seed);
+  else if (kind === 'skull') drawSkull(r, seed);
+  else if (kind === 'spine') drawSpine(r, seed);
+  else if (kind === 'ammonite') drawAmmonite(r, seed);
+  else drawFemur(r, seed);
+  ctx.restore();
+  // the socket's own lip, over the top of whatever is in it, so the find is BELOW the surface
+  ctx.strokeStyle = 'rgba(0,0,0,0.30)'; ctx.lineWidth = 1.6;            // the lip casts down
+  ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 3.34, 6.06); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,240,214,0.13)'; ctx.lineWidth = 1.2;      // the lower edge catches
+  ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0.14, 3.00); ctx.stroke();
+}
+// A ribcage seen side on: a spine across the socket and ribs hanging off it, shortening
+// towards the tail the way a real cage does rather than being a comb of equal teeth.
+function drawRibs(r, seed) {
+  const n = 5 + Math.floor(hash(seed * 2.3) * 3);
+  boneStroke(2.2);
+  ctx.beginPath(); ctx.moveTo(-r * 0.9, -r * 0.34); ctx.quadraticCurveTo(0, -r * 0.5, r * 0.9, -r * 0.3); ctx.stroke();
+  ctx.strokeStyle = BONE_D; ctx.lineWidth = 2.2; ctx.stroke();
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1), sx = -r * 0.78 + t * r * 1.5;
+    const len = r * (0.78 - t * 0.34);
+    const sy = -r * 0.36 + Math.sin(t * 3.1) * r * 0.06;
+    boneStroke(1.7);
+    ctx.beginPath(); ctx.moveTo(sx, sy);
+    ctx.quadraticCurveTo(sx + r * 0.30, sy + len * 0.62, sx + r * 0.10, sy + len); ctx.stroke();
+    ctx.strokeStyle = BONE; ctx.lineWidth = 1.7; ctx.stroke();
+  }
+}
+// A long skull: snout to the left, orbit and a jaw with teeth. Not any real animal, and it
+// is not meant to be -- it has to read at about twenty pixels.
+function drawSkull(r, seed) {
+  ctx.strokeStyle = INK; ctx.lineWidth = 2.4; ctx.fillStyle = BONE;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.92, r * 0.06);
+  ctx.quadraticCurveTo(-r * 0.40, -r * 0.30, r * 0.16, -r * 0.44);
+  ctx.quadraticCurveTo(r * 0.88, -r * 0.42, r * 0.84, r * 0.14);
+  ctx.quadraticCurveTo(r * 0.60, r * 0.40, r * 0.06, r * 0.34);
+  ctx.quadraticCurveTo(-r * 0.46, r * 0.32, -r * 0.92, r * 0.06);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,0.62)';                      // orbit
+  ctx.beginPath(); ctx.ellipse(r * 0.34, -r * 0.14, r * 0.20, r * 0.17, -0.2, 0, 6.28); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';                      // nostril
+  ctx.beginPath(); ctx.ellipse(-r * 0.56, -r * 0.02, r * 0.08, r * 0.06, 0, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.1;              // jaw line and teeth
+  ctx.beginPath(); ctx.moveTo(-r * 0.86, r * 0.10); ctx.quadraticCurveTo(-r * 0.20, r * 0.26, r * 0.62, r * 0.20); ctx.stroke();
+  ctx.fillStyle = BONE;
+  for (let i = 0; i < 6; i++) {
+    const tx = -r * 0.74 + i * r * 0.22;
+    ctx.beginPath(); ctx.moveTo(tx, r * 0.16); ctx.lineTo(tx + r * 0.06, r * 0.34); ctx.lineTo(tx + r * 0.12, r * 0.16); ctx.closePath(); ctx.fill();
+  }
+}
+// Vertebrae: a chain of drums with spines, tapering along its length.
+function drawSpine(r, seed) {
+  const n = 4 + Math.floor(hash(seed * 3.1) * 3);
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1), cx = -r * 0.82 + t * r * 1.64, s = r * (0.30 - t * 0.09);
+    ctx.fillStyle = BONE; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.ellipse(cx, r * 0.10, s * 0.72, s, 0, 0, 6.28); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = BONE_D;                                 // the neural spine on top
+    ctx.beginPath();
+    ctx.moveTo(cx - s * 0.26, r * 0.02); ctx.lineTo(cx, -r * 0.30 - s * 0.5); ctx.lineTo(cx + s * 0.26, r * 0.02);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+}
+// An ammonite: a spiral of chambers. Drawn from the outside in so later whorls sit over
+// earlier ones, which is the way the shell actually overlaps.
+// The whorl is a filled BAND between an outer and an inner spiral, not a stroked line. The
+// first version only stroked, so it was the one find with no body in it: skull, spine and
+// femur all fill, and a cream line among them reads as chalk drawn on the rock.
+function drawAmmonite(r, seed) {
+  const turns = 2.5, steps = 54, R = t => r * 0.84 * Math.pow(0.80, t * turns * 1.9);
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps, a = t * turns * 6.283, rad = R(t);
+    const px = Math.cos(a) * rad, py = Math.sin(a) * rad;
+    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+  }
+  for (let i = steps; i >= 0; i--) {
+    const t = i / steps, a = t * turns * 6.283, rad = R(t) * 0.60;
+    ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+  }
+  ctx.closePath();
+  ctx.fillStyle = BONE; ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.8; ctx.stroke();
+  for (let i = 1; i < 11; i++) {                            // chamber walls across the band
+    const t = i / 11, a = t * turns * 6.283, rad = R(t);
+    ctx.strokeStyle = 'rgba(0,0,0,0.38)'; ctx.lineWidth = 1.1;
+    ctx.beginPath(); ctx.moveTo(Math.cos(a) * rad, Math.sin(a) * rad);
+    ctx.lineTo(Math.cos(a) * rad * 0.60, Math.sin(a) * rad * 0.60); ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';                       // the shaded side of the coil
+  ctx.beginPath(); ctx.arc(0, 0, R(1) * 0.58, 0, 6.28); ctx.fill();
+}
+// A single long bone, knuckled at both ends.
+function drawFemur(r, seed) {
+  const L = r * 0.84, w = r * 0.17;
+  ctx.strokeStyle = INK; ctx.lineWidth = w * 2 + 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-L, r * 0.10); ctx.quadraticCurveTo(0, -r * 0.16, L, r * 0.04); ctx.stroke();
+  ctx.strokeStyle = BONE; ctx.lineWidth = w * 2;
+  ctx.beginPath(); ctx.moveTo(-L, r * 0.10); ctx.quadraticCurveTo(0, -r * 0.16, L, r * 0.04); ctx.stroke();
+  for (const [ex, ey, s] of [[-L, r * 0.10, 1], [L, r * 0.04, -1]]) {
+    ctx.fillStyle = BONE; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(ex + s * w * 0.5, ey - w * 0.75, w * 0.95, 0, 6.28); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(ex + s * w * 0.5, ey + w * 0.80, w * 0.95, 0, 6.28); ctx.fill(); ctx.stroke();
+  }
+}
+// A crystal pocket: prisms fanning out of the floor of the socket. The glow is drawn first
+// and under them, so it reads as light coming OUT of the pocket rather than as a halo
+// pasted over the top, and its radius and its fill are the same number.
+function drawCrystalPocket(r, seed) {
+  // NOT cyan. #5ce1ff is the colour of "the player must act now" -- armed rooms, the panel
+  // frame, the gate badge -- and six glowing decorations in that hue in the same frame as a
+  // gate badge teaches the eye to ignore the one thing it must not. Violet and amber instead.
+  const warm = hash(seed * 5.9) < 0.42;
+  const face = warm ? '#e8bd7a' : '#c6a9ef', edge = warm ? '#8a5f2a' : '#6b4f9c';
+  // The glow must fit the clip drawFind applies (rx 1.06r, ry 0.88r) or it is cut off with a
+  // hard luminous edge, which is the lantern-glow-clipped-to-a-rect fault CLAUDE.md records.
+  // Centre 0.08r plus radius 0.72r reaches 0.80r, inside 0.88r.
+  const GLOW = r * 0.72, GY = r * 0.08;
+  const g = ctx.createRadialGradient(0, GY, 0, 0, GY, GLOW);
+  g.addColorStop(0, warm ? 'rgba(232,189,122,0.38)' : 'rgba(198,169,239,0.38)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, GY, GLOW, 0, 6.28); ctx.fill();
+  const n = 4 + Math.floor(hash(seed * 7.3) * 3);
+  for (let i = 0; i < n; i++) {
+    const t = n === 1 ? 0.5 : i / (n - 1);
+    // sized to stay inside the clip: base 0.34r, longest 0.64r, widest lean 0.75 rad, so the
+    // furthest tip lands at about 0.84r across and -0.30r up, against a clip of 1.06 by 0.88
+    const lean = (t - 0.5) * 1.5 + (hash(seed + i * 3.7) - 0.5) * 0.4;
+    const len = r * (0.34 + hash(seed + i * 1.9) * 0.30);
+    const hw = r * (0.09 + hash(seed + i * 2.6) * 0.06);
+    const bx = (t - 0.5) * r * 0.80;
+    ctx.save(); ctx.translate(bx, r * 0.34); ctx.rotate(lean);
+    ctx.beginPath();                                        // a prism: shaft, then a point
+    ctx.moveTo(-hw, 0); ctx.lineTo(-hw, -len * 0.74); ctx.lineTo(0, -len);
+    ctx.lineTo(hw, -len * 0.74); ctx.lineTo(hw, 0); ctx.closePath();
+    ctx.fillStyle = face; ctx.fill();
+    ctx.strokeStyle = edge; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.34)';               // the lit facet, one side only
+    ctx.beginPath();
+    ctx.moveTo(-hw, 0); ctx.lineTo(-hw, -len * 0.74); ctx.lineTo(0, -len); ctx.lineTo(0, -len * 0.5);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  // one slow twinkle per pocket, on its own phase so a wall of them does not blink together
+  const tw = 0.5 + 0.5 * Math.sin(S.t * 1.7 + hash(seed * 11.3) * 6.28);
+  ctx.fillStyle = 'rgba(255,255,255,' + (0.10 + tw * 0.28).toFixed(3) + ')';
+  const sx = (hash(seed * 4.1) - 0.5) * r * 0.7, sy = -r * 0.25;
+  ctx.beginPath();
+  ctx.moveTo(sx, sy - 4.2); ctx.lineTo(sx + 1.5, sy); ctx.lineTo(sx, sy + 4.2); ctx.lineTo(sx - 1.5, sy);
+  ctx.closePath(); ctx.fill();
+}
+
+// ================================================================ the workings
+// What a mine has in it besides tunnels. Drawn by rockCorridor, which runs before the crowd,
+// so a prop is always BEHIND the people walking past it and can never hide a runner.
+//
+// Placement is hashed off world position, so nothing moves when the camera does. Nothing is
+// placed within CAVE_CLEAR of a room or a gate: those openings are the puzzle, and a barrow
+// parked across one would be a lie about where the floor is.
+// The ceiling's sag as ONE function. rockCorridor draws the roof with it and drawPitProp
+// measures up to it with it, so they cannot drift. Written down twice they did: the prop was
+// a flat CFG.tunnelH against a roof that moves +-19 units of sag plus 14 of chisel wobble, so
+// where the roof sagged the head board hung up to 32 units under the rock it was propping.
+function tunnelSag(wx, lane) {
+  return Math.sin(wx / 302 + lane * 1.7) * 13 + Math.sin(wx / 121 + lane * 0.9) * 6;
+}
+const CAVE_CLEAR = 104;
+const PROPS = ['cart', 'prop', 'tools', 'crates', 'spoil', 'barrow', 'keg', 'prop'];
+// What tends to be left beside what. A cart stands at a face with the spoil it is being
+// filled from; a prop is set where the roof was just cut, with the tools that cut it.
+const COMPANY = { cart: 'spoil', prop: 'tools', tools: 'spoil', crates: 'keg',
+                  spoil: 'tools', barrow: 'spoil', keg: 'crates' };
+function mineClear(wx, lane) {
+  for (const r of S.rooms) if (r.lane === lane && Math.abs(r.x - wx) < CAVE_CLEAR) return false;
+  for (const g of S.gates) if (Math.abs(g.x - wx) < CAVE_CLEAR) return false;
+  for (const f of CFG.forks) if (Math.abs(f.x - wx) < CAVE_CLEAR || Math.abs(f.merge - wx) < CAVE_CLEAR) return false;
+  return true;
+}
+// A contact shadow under everything that stands on the floor. Without it a cart floats, and
+// a floating cart is the first thing a reviewer finds.
+function standShadow(x, y, w) {
+  ctx.fillStyle = 'rgba(0,0,0,0.34)';
+  ctx.beginPath(); ctx.ellipse(x, y, w, 3.2, 0, 0, 6.28); ctx.fill();
+}
+function mineProps(wx0, wx1, y, lane) {
+  // Bounded to the rock, not to the caller's span. rockCorridor draws every non-mill stretch,
+  // which includes the open country of act three, and a pit prop standing in a field would be
+  // the logic checker's first finding. FAC.seam is where the rock starts, CFG.exit where it ends.
+  const lo = Math.max(wx0, FAC.seam + 40), hi = Math.min(wx1, CFG.exit - 40);
+  if (hi <= lo) return;
+  const STEP = 232;
+  const first = Math.floor(lo / STEP) * STEP;
+  // Haulage runs from a face to a shaft. Keyed on lane alone it was an unbroken hairline from
+  // the seam to the exit on four lanes of six and absent on the other two, which is track
+  // following a contour line rather than going anywhere.
+  const BUCKET = 900;
+  const railedAt = wx => hash(lane * 9.7 + Math.floor(wx / BUCKET) * 2.3) > 0.44;
+  for (let b = Math.floor(lo / BUCKET); b <= Math.floor(hi / BUCKET); b++) {
+    if (!railedAt(b * BUCKET)) continue;
+    drawRails(Math.max(lo, b * BUCKET), Math.min(hi, (b + 1) * BUCKET), y);
+  }
+  for (let wx = first; wx < hi + STEP; wx += STEP) {
+    if (wx < lo - STEP || wx > hi) continue;
+    const h = hash(wx * 0.021 + lane * 3.3);
+    if (h < 0.42) continue;                                  // most gaps stay empty
+    const jitter = (hash(wx * 0.053 + lane) - 0.5) * STEP * 0.5;
+    const px = wx + jitter;
+    if (px < lo + 30 || px > hi - 30 || !mineClear(px, lane)) continue;
+    const sx = px - V.left;
+    if (sx < -90 || sx > V.vw + 90) continue;
+    let kind = PROPS[Math.floor(hash(wx * 0.077 + lane * 1.9) * PROPS.length)];
+    if (kind === 'cart' && !railedAt(px)) kind = 'crates';   // a cart off its rails is litter
+    // Work gets left in groups: a cart at a face with spoil and tools beside it, then a long
+    // stretch of nothing. One object per slot on an even lattice is decoration applied to a
+    // corridor, however good each object is.
+    const mate = hash(wx * 0.11 + lane * 4.7) > 0.46 ? COMPANY[kind] : null;
+    const pair = [[px, kind]];
+    if (mate) pair.push([px + (hash(wx * 0.19 + lane) > 0.5 ? 1 : -1) * (26 + hash(wx * 0.23) * 20), mate]);
+    for (const [gx, gk] of pair) {
+      if (gx < lo + 30 || gx > hi - 30 || !mineClear(gx, lane)) continue;
+      const gsx = gx - V.left;
+      if (gsx < -90 || gsx > V.vw + 90) continue;
+      const seed = gx * 0.013 + lane;
+      if (gk === 'cart') drawCart(gsx, y, seed);
+      else if (gk === 'prop') drawPitProp(gsx, y, seed, lane, gx);
+      else if (gk === 'tools') drawTools(gsx, y, seed);
+      else if (gk === 'crates') drawCrates(gsx, y, seed);
+      else if (gk === 'spoil') drawSpoil(gsx, y, seed, lane);
+      else if (gk === 'barrow') drawBarrow(gsx, y, seed);
+      else drawKeg(gsx, y, seed);
+    }
+  }
+}
+// Track, seen side on: sleepers, the near rail on top of them, and the far rail a little
+// higher and darker, which is the whole of the depth cue at this scale.
+function drawRails(wx0, wx1, y) {
+  const x0 = Math.max(-20, wx0 - V.left), x1 = Math.min(V.vw + 20, wx1 - V.left);
+  if (x1 <= x0) return;
+  const SLEEP = 34;
+  ctx.fillStyle = 'rgba(38,28,22,0.85)';
+  for (let wx = Math.floor((x0 + V.left) / SLEEP) * SLEEP; wx < x1 + V.left; wx += SLEEP) {
+    const sx = wx - V.left;
+    if (sx < x0 - SLEEP || sx > x1) continue;
+    ctx.fillRect(sx - 9, y - 4, 18, 3.4);
+  }
+  // One rail, not two. At play zoom each was under a pixel and the pair read as a rendering
+  // artefact the width of the screen rather than as track.
+  ctx.fillStyle = 'rgba(150,142,138,0.85)'; ctx.fillRect(x0, y - 4.4, x1 - x0, 3.2);
+  ctx.fillStyle = 'rgba(255,214,150,0.20)'; ctx.fillRect(x0, y - 4.4, x1 - x0, 1.2); // lamplight along it
+}
+function drawCart(x, y, seed) {
+  const w = 44, h = 25, tip = (hash(seed * 6.1) - 0.5) * 0.1;
+  standShadow(x, y - 1, w * 0.55);
+  ctx.save(); ctx.translate(x, y - 11.4); ctx.rotate(tip);
+  ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  ctx.fillStyle = '#4a3a34';                                  // body, wider at the top
+  ctx.beginPath();
+  ctx.moveTo(-w / 2, -h); ctx.lineTo(w / 2, -h); ctx.lineTo(w * 0.40, 0); ctx.lineTo(-w * 0.40, 0);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,220,160,0.14)';                   // lamplit top edge
+  ctx.fillRect(-w / 2, -h, w, 2.4);
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 1.2;  // plank seams
+  for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(i * w * 0.22, -h + 2); ctx.lineTo(i * w * 0.18, -1); ctx.stroke(); }
+  ctx.fillStyle = '#6a5a52';                                  // iron band
+  ctx.fillRect(-w * 0.46, -h * 0.52, w * 0.92, 2.6);
+  if (hash(seed * 8.7) > 0.4) {                               // ore heaped above the rim
+    ctx.fillStyle = '#3b3340'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(-w * 0.44, -h);
+    ctx.quadraticCurveTo(-w * 0.16, -h - 9, 0, -h - 6);
+    ctx.quadraticCurveTo(w * 0.18, -h - 10, w * 0.44, -h);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(190,210,230,0.30)';                 // a facet or two catching the lamp
+    ctx.beginPath(); ctx.arc(-w * 0.10, -h - 3.4, 1.9, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.arc(w * 0.18, -h - 2.2, 1.4, 0, 6.28); ctx.fill();
+  }
+  ctx.restore();
+  // The rail head sits at y - 4.4 and is 2.2 deep, so a 4.4-radius wheel RESTING on it has
+  // its centre at y - 8.8. At y - 4.5 the rail ran through the axle and the wheel stood on
+  // the floor, which is a cart parked across its own track.
+  for (const wx of [-13, 13]) {
+    ctx.fillStyle = '#2b2228'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(x + wx, y - 8.8, 4.4, 0, 6.28); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(170,160,156,0.7)';
+    ctx.beginPath(); ctx.arc(x + wx, y - 8.8, 1.5, 0, 6.28); ctx.fill();
+  }
+}
+// A pit prop: floor to ceiling, because a support that stops short is not supporting
+// anything. CFG.tunnelH is the gallery height, so the post is derived from it, not guessed.
+function drawPitProp(x, y, seed, lane, wx) {
+  // +6 so the head board beds INTO the rock rather than kissing it. A prop that exactly
+  // touches reads as balanced there; one driven in reads as holding.
+  const H = CFG.tunnelH - tunnelSag(wx, lane) + 6;
+  const lean = (hash(seed * 3.9) - 0.5) * 0.22;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(lean);
+  ctx.fillStyle = '#5b4632'; ctx.strokeStyle = INK; ctx.lineWidth = 2;
+  ctx.fillRect(-5, -H, 10, H); ctx.strokeRect(-5, -H, 10, H);
+  ctx.fillStyle = 'rgba(255,214,150,0.13)'; ctx.fillRect(-5, -H, 3, H);     // lamplit edge
+  ctx.fillStyle = '#6b5439';                                                 // head board
+  ctx.fillRect(-17, -H - 7, 34, 8); ctx.strokeRect(-17, -H - 7, 34, 8);
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;                    // grain
+  for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(-3 + i * 3, -H + 6); ctx.lineTo(-3 + i * 3, -6); ctx.stroke(); }
+  ctx.restore();
+  standShadow(x, y - 1, 11);
+}
+// Tools leaning on the back wall. A handle that does not reach the floor is a tool hanging
+// in the air, so both start ON the floor and lean back.
+function drawTools(x, y, seed) {
+  const pick = hash(seed * 2.7) > 0.45;
+  standShadow(x + 5, y - 1, 12);
+  const shaft = (dx, len, lean, col) => {
+    ctx.strokeStyle = INK; ctx.lineWidth = 4.4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x + dx, y - 1); ctx.lineTo(x + dx - lean, y - len); ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = 2.6;
+    ctx.beginPath(); ctx.moveTo(x + dx, y - 1); ctx.lineTo(x + dx - lean, y - len); ctx.stroke();
+  };
+  shaft(9, 30, 7, '#8a6a42');
+  if (pick) {                                                  // pick head, across the top
+    ctx.strokeStyle = INK; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x - 8, y - 33); ctx.quadraticCurveTo(x + 2, y - 26, x + 10, y - 33); ctx.stroke();
+    ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 2.8; ctx.stroke();
+  } else {                                                     // shovel blade, on the floor
+    ctx.fillStyle = '#9aa0a8'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.ellipse(x + 9, y - 4, 5, 4.6, 0.3, 0, 6.28); ctx.fill(); ctx.stroke();
+  }
+  shaft(15, 22, 4, '#6f5436');
+}
+function drawCrates(x, y, seed) {
+  const n = 1 + Math.floor(hash(seed * 4.3) * 3);
+  standShadow(x, y - 1, 14);
+  for (let i = 0; i < n; i++) {
+    const s = 13 - i * 1.6, ox = (hash(seed + i * 2.1) - 0.5) * 7, by = y - 1 - i * (s + 1);
+    ctx.fillStyle = i % 2 ? '#6a5236' : '#5c472f';
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.7;
+    ctx.fillRect(x + ox - s / 2, by - s, s, s); ctx.strokeRect(x + ox - s / 2, by - s, s, s);
+    ctx.fillStyle = 'rgba(255,214,150,0.12)'; ctx.fillRect(x + ox - s / 2, by - s, s, 2);
+    ctx.strokeStyle = 'rgba(0,0,0,0.42)'; ctx.lineWidth = 1;   // the diagonal brace
+    ctx.beginPath(); ctx.moveTo(x + ox - s / 2, by); ctx.lineTo(x + ox + s / 2, by - s); ctx.stroke();
+  }
+}
+// A heap of cut rock against the wall, with a couple of faces catching the lamp.
+function drawSpoil(x, y, seed) {
+  const w = 17 + hash(seed * 5.1) * 11;
+  ctx.fillStyle = '#332b38'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(x - w, y - 1);
+  ctx.quadraticCurveTo(x - w * 0.42, y - 15, x + w * 0.10, y - 12);
+  ctx.quadraticCurveTo(x + w * 0.66, y - 14, x + w, y - 1);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,214,150,0.12)';
+  ctx.beginPath(); ctx.moveTo(x - w * 0.5, y - 9); ctx.lineTo(x - w * 0.16, y - 13); ctx.lineTo(x + w * 0.04, y - 8); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(180,205,225,0.22)';
+  ctx.beginPath(); ctx.arc(x + w * 0.34, y - 7, 1.8, 0, 6.28); ctx.fill();
+}
+function drawBarrow(x, y, seed) {
+  standShadow(x, y - 1, 13);
+  ctx.save(); ctx.translate(x, y - 1);
+  ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  ctx.fillStyle = '#4f3f36';                                   // tray
+  ctx.beginPath(); ctx.moveTo(-14, -16); ctx.lineTo(13, -14); ctx.lineTo(9, -5); ctx.lineTo(-11, -6);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,214,150,0.13)'; ctx.fillRect(-14, -16.5, 27, 2);
+  ctx.strokeStyle = INK; ctx.lineWidth = 2.4; ctx.lineCap = 'round';   // handles and leg
+  ctx.beginPath(); ctx.moveTo(13, -13); ctx.lineTo(22, -9); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-11, -6); ctx.lineTo(-13, 0); ctx.stroke();
+  ctx.fillStyle = '#2b2228'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(-9, -4, 4.6, 0, 6.28); ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+function drawKeg(x, y, seed) {
+  standShadow(x, y - 1, 9);
+  ctx.save(); ctx.translate(x, y - 1);
+  ctx.fillStyle = '#5a4630'; ctx.strokeStyle = INK; ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(-7, -1); ctx.quadraticCurveTo(-9.5, -8, -7, -15);
+  ctx.lineTo(7, -15); ctx.quadraticCurveTo(9.5, -8, 7, -1);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#7d6a52';
+  ctx.fillRect(-8.6, -11, 17.2, 2); ctx.fillRect(-8.6, -6, 17.2, 2);
+  ctx.fillStyle = 'rgba(255,214,150,0.12)'; ctx.fillRect(-7, -15, 14, 1.8);
+  ctx.restore();
+}
 function rockFace(top, bottom) {
   const S1 = 74;
   const x0 = Math.floor(V.left / S1) * S1, x1 = V.left + V.vw + S1;
@@ -2914,7 +3353,7 @@ function rockCorridor(wx0, wx1, y, lane = 0) {
   // and rises the roof over 300 units, and without it the ceiling ran dead straight for the
   // width of the screen, which says the tunnel was extruded rather than cut. The lane index
   // shifts the slow wave so six corridors do not sag in step.
-  const sag = wx => Math.sin(wx / 302 + lane * 1.7) * 13 + Math.sin(wx / 121 + lane * 0.9) * 6;
+  const sag = wx => tunnelSag(wx, lane);
   ctx.fillStyle = '#2b2431'; ctx.beginPath(); ctx.moveTo(x0, cy - 2);
   for (let x = Math.floor((x0 + V.left) / 24) * 24 - V.left; x <= x1; x += 24) {
     const wx = x + V.left, k = Math.floor(wx / 24);
@@ -2925,6 +3364,9 @@ function rockCorridor(wx0, wx1, y, lane = 0) {
   ctx.fillStyle = g; ctx.fillRect(x0, cy, x1 - x0, 46);
   const f = ctx.createLinearGradient(0, y - 30, 0, y); f.addColorStop(0, 'rgba(255,190,110,0)'); f.addColorStop(1, 'rgba(255,190,110,0.07)');
   ctx.fillStyle = f; ctx.fillRect(x0, y - 30, x1 - x0, 30);
+  // The workings, last, so they stand on the finished floor. Still before the crowd, so a
+  // prop can never hide a runner.
+  mineProps(wx0, wx1, y, lane);
   ctx.fillStyle = '#17121c';
 }
 function slantCorridor(wx0, y0, wx1, y1) {
