@@ -1666,14 +1666,18 @@ function updateIntro(dt) {
   S.introT += dt;
   const gather = c.deliver + c.settle;
   for (const r of S.runners) {
-    if (S.introT < r.bornAt) { r.x = c.belt - 260 - (r.bornAt / c.deliver) * 900; r.y = introBeltY(); r.onBelt = true; r.offLine = false; r.held = true; r.stagger = 0.06; continue; }
+    if (S.introT < r.bornAt) { r.x = c.belt - 56; r.y = introBeltY(); r.onBelt = true; r.offLine = false; r.held = true; r.stagger = 0.06; continue; }
     const since = S.introT - r.bornAt;
     const ride = c.ride, step = c.step;            // along the line, then down the stair
     // (a)8: a rider is carried, and someone standing in the queue is standing. r.held
     // is what drawRunners already reads to stop the legs cycling.
     if (since < ride) {                            // carried along, feet still
       r.onBelt = true; r.offLine = false; r.held = true; r.stagger = 0.06;
-      r.x = c.belt + (since / ride) * (c.drop - c.belt);
+      // starts 52 units INSIDE the machine's throat. drawFeeder is drawn after the crowd,
+      // so those 52 units are hidden behind the housing and a rider slides out from
+      // behind the face instead of appearing against it -- which is what "spawning from
+      // nowhere" actually was: they were born exactly ON the machine's right edge.
+      r.x = (c.belt - 52) + (since / ride) * (c.drop - c.belt + 52);
       r.y = introBeltY();                          // the band's surface, the same line drawBelt draws
     } else if (since < ride + step) {              // down the stair, walking
       const k = (since - ride) / step;
@@ -1916,7 +1920,7 @@ function draw() {
   // The door spill goes on after lane 0's ground (or the cinder apron buries it) and
   // BEFORE its runners (or it washes a pale film over the faces of the crowd standing
   // in it, which is what it did: light in front of the people it is lighting).
-  for (let k = CFG.laneCount - 1; k >= 0; k--) { drawLane(k); if (k === 0) drawDoorSpill(); drawRunners(k); if (k === 0) drawStairRail(); drawRoomProps(k); for (const g of S.gates) drawGate(g, k, true); }
+  for (let k = CFG.laneCount - 1; k >= 0; k--) { drawLane(k); if (k === 0) drawDoorSpill(); drawRunners(k); if (k === 0) { drawFeeder(); drawStairRail(); } drawRoomProps(k); for (const g of S.gates) drawGate(g, k, true); }
   drawFinish();
   if (S.mode === 'play' || S.mode === 'finale') drawFx();
   ctx.restore();
@@ -5680,28 +5684,6 @@ function drawBelt() {
   if (x1 < -80 || x0 > V.vw + 80) return;
   // the trestle throws a shadow proportional to its height, like everything else outdoors
   for (let lx = x0 + 46; lx < x1 - 14; lx += 110) sunShade(lx, ground, 16, ground - bot, 0.20);
-  // The head house. The belt used to emerge from the left frame edge over a meadow with
-  // 93 units of open sky between its tail roller and the nearest masonry, which says the
-  // shift is being carried IN from the countryside rather than out of a mill. It now comes
-  // out of a dark opening in brick that runs off the top of the frame.
-  // It has to LEAVE the frame. At band - 104 the parapet sat at world 170, 123 pixels inside
-  // the canvas, with clear sky above it -- a free-standing coped pier in a meadow rather
-  // than the building the belt comes out of.
-  const hh0 = x0 - 96, hhTop = laneY(0) - 560;
-  if (hh0 < V.vw && x0 > -120) {
-    ctx.fillStyle = '#3a2f36'; ctx.fillRect(hh0, hhTop, x0 + 34 - hh0, ground - hhTop);
-    ctx.save(); ctx.beginPath(); ctx.rect(hh0, hhTop, x0 + 34 - hh0, ground - hhTop); ctx.clip();
-    brickFill(hh0, hhTop, x0 + 34 - hh0, ground - hhTop, 0.85);
-    ctx.fillStyle = 'rgba(26,20,26,0.34)'; ctx.fillRect(hh0, hhTop, x0 + 34 - hh0, ground - hhTop);
-    ctx.restore();
-    // the mouth the band runs out of, and the shadow it throws on the band
-    ctx.fillStyle = '#14101a'; ctx.fillRect(x0 - 6, band - 26, 40, 26 + BELT_H + 4);
-    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x0 + 34, band, 26, BELT_H);
-    // a sill over the opening and coping on the parapet
-    ctx.fillStyle = '#4c4157'; ctx.fillRect(x0 - 10, band - 30, 48, 6);
-
-    ctx.fillStyle = 'rgba(255,238,206,0.10)'; ctx.fillRect(hh0, hhTop, 4, ground - hhTop);
-  }
   // trestles: a pair of splayed legs with a brace between them, every 110
   for (let lx = x0 + 46; lx < x1 - 14; lx += 110) {
     const spread = 13, footL = lx - spread, footR = lx + spread;
@@ -5773,6 +5755,129 @@ function drawBelt() {
     ctx.strokeStyle = '#453b45'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(rx, band + 10, 9.6, rx < x0 + 20 ? Math.PI * 0.5 : -Math.PI * 0.5, rx < x0 + 20 ? Math.PI * 1.5 : Math.PI * 0.5); ctx.stroke();
   }
+}
+// The machine the shift comes out of.
+//
+// The belt was fine and the people on it were not: they appeared on the band at c.belt with
+// nothing behind them, so a hundred people spawned out of clear air. They are stamped out
+// now, and the belt runs out of the machine's mouth rather than beginning in a field.
+//
+// It is drawn AFTER drawBelt on purpose. The band starts 90 units left of c.belt and its
+// tail roller sits at -52; both are behind the housing, so the belt has no visible
+// beginning -- it comes out of the dark and keeps going.
+//
+// Thematically this is the whole argument in one object, so it is worth being literal about:
+// a machine that turns raw material into bodies and puts them on a conveyor. The notes in
+// the repo say capitalism had to make the body into a machine first. Here it makes them.
+function drawFeeder() {
+  const c = I();
+  const band = introBeltY(), ground = introGroundY();
+  // 112 wide, not 150. At 150 the flywheel, the hopper and the maker's plate all sat left
+  // of the canvas edge and the machine read as a plain dark box with a label on it.
+  const mx1 = c.belt - V.left, mx0 = mx1 - 112, top = 168;
+  if (mx0 > V.vw + 40 || mx1 < -40) return;
+  const W_ = mx1 - mx0, H_ = ground - top;
+  sunShade(mx1 - 16, ground, W_ / 2, H_, 0.26);
+  // ---- housing
+  ctx.fillStyle = '#2b2730'; ctx.fillRect(mx0, top, W_, H_);
+  const g = ctx.createLinearGradient(mx0, 0, mx1, 0);
+  g.addColorStop(0, 'rgba(126,134,148,0.24)');
+  g.addColorStop(0.5, 'rgba(70,74,86,0.10)');
+  g.addColorStop(1, 'rgba(0,0,0,0.32)');
+  ctx.fillStyle = g; ctx.fillRect(mx0, top, W_, H_);
+  ctx.strokeStyle = 'rgba(12,10,16,0.6)'; ctx.lineWidth = 1.6;
+  for (const py of [top + 54, top + 132]) { ctx.beginPath(); ctx.moveTo(mx0, py); ctx.lineTo(mx1, py); ctx.stroke(); }
+  rivets(mx0 + 7, mx1 - 7, top + 8, 15, 1.3, 'rgba(206,214,228,0.20)');
+  rivets(mx0 + 7, mx1 - 7, top + 54, 15, 1.3, 'rgba(206,214,228,0.13)');
+  rivets(mx0 + 7, mx1 - 7, top + 132, 15, 1.3, 'rgba(206,214,228,0.13)');
+  ctx.fillStyle = '#413c4a'; ctx.fillRect(mx0 - 7, top - 12, W_ + 14, 14);
+  ctx.fillStyle = 'rgba(214,222,236,0.26)'; ctx.fillRect(mx0 - 7, top - 12, W_ + 14, 2.4);
+  ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(mx0 - 7, top + 1, W_ + 14, 4);
+  // ---- hopper: raw material in at the top
+  ctx.fillStyle = '#4a4453';
+  ctx.beginPath();
+  ctx.moveTo(mx0 + 16, top - 12); ctx.lineTo(mx0 + 76, top - 12);
+  ctx.lineTo(mx0 + 62, top - 50); ctx.lineTo(mx0 + 30, top - 50); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(214,222,236,0.20)';
+  ctx.beginPath();
+  ctx.moveTo(mx0 + 16, top - 12); ctx.lineTo(mx0 + 30, top - 50); ctx.lineTo(mx0 + 34, top - 50);
+  ctx.lineTo(mx0 + 22, top - 12); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#17141c'; ctx.fillRect(mx0 + 32, top - 50, 28, 5);
+  // ---- flywheel
+  const fx = mx0 + 34, fy = ground - 62, fr = 25, a = S.t * 2.1;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.arc(fx, fy, fr + 3, 0, 6.28); ctx.fill();
+  ctx.fillStyle = '#39343f'; ctx.beginPath(); ctx.arc(fx, fy, fr, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = '#565064'; ctx.lineWidth = 4.5;
+  ctx.beginPath(); ctx.arc(fx, fy, fr - 3, 0, 6.28); ctx.stroke();
+  ctx.strokeStyle = 'rgba(214,222,236,0.32)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(fx, fy, fr - 3, Math.PI * 1.05, Math.PI * 1.75); ctx.stroke();
+  ctx.strokeStyle = '#4c465a'; ctx.lineWidth = 3;
+  for (let i = 0; i < 6; i++) {
+    const th = a + i * Math.PI / 3;
+    ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + Math.cos(th) * (fr - 4), fy + Math.sin(th) * (fr - 4)); ctx.stroke();
+  }
+  ctx.fillStyle = '#231f2a'; ctx.beginPath(); ctx.arc(fx, fy, 5, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = '#1d1a24'; ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.moveTo(fx - fr + 1, fy); ctx.lineTo(mx0 + 26, top + 30);
+  ctx.moveTo(fx + fr - 1, fy); ctx.lineTo(mx0 + 42, top + 30);
+  ctx.stroke();
+  ctx.fillStyle = '#4c465a'; ctx.beginPath(); ctx.arc(mx0 + 34, top + 30, 10, 0, 6.28); ctx.fill();
+  ctx.fillStyle = '#231f2a'; ctx.beginPath(); ctx.arc(mx0 + 34, top + 30, 3.5, 0, 6.28); ctx.fill();
+  // ---- the mouth, FLUSH with the right face so the shift steps straight out of it.
+  // The furnace gradient used to be brightest deep inside and nearly nothing at the lip,
+  // which left a dark band exactly where a body emerges -- so people appeared beside a
+  // glow rather than out of it. Brightest at the opening.
+  const mTop = band - 58, mH = 64;
+  ctx.fillStyle = '#0d0b12'; ctx.fillRect(mx1 - 58, mTop, 58, mH);
+  const fg = ctx.createLinearGradient(mx1 - 58, 0, mx1, 0);
+  fg.addColorStop(0, 'rgba(255,132,42,0.10)');
+  fg.addColorStop(0.55, 'rgba(255,152,58,0.34)');
+  fg.addColorStop(1, 'rgba(255,196,116,0.62)');
+  ctx.fillStyle = fg; ctx.fillRect(mx1 - 58, mTop, 58, mH);
+  ctx.fillStyle = 'rgba(30,26,34,0.85)';
+  for (const rx of [mx1 - 44, mx1 - 24]) { ctx.beginPath(); ctx.arc(rx, band + 13, 5, 0, 6.28); ctx.fill(); }
+  // light thrown OUT onto the band, which is the other half of the tell
+  const spill = ctx.createLinearGradient(mx1, 0, mx1 + 54, 0);
+  spill.addColorStop(0, 'rgba(255,186,104,0.30)');
+  spill.addColorStop(1, 'rgba(255,186,104,0)');
+  ctx.fillStyle = spill; ctx.fillRect(mx1, band - 46, 54, 52);
+  // hood and jambs
+  ctx.fillStyle = '#4a4453'; ctx.fillRect(mx1 - 66, mTop - 11, 72, 12);
+  ctx.fillStyle = 'rgba(214,222,236,0.24)'; ctx.fillRect(mx1 - 66, mTop - 11, 72, 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.36)'; ctx.fillRect(mx1 - 66, mTop + 1, 72, 4);
+  ctx.fillStyle = '#3c3745'; ctx.fillRect(mx1 - 62, mTop, 5, mH);
+  // ---- the ram
+  const stroke = Math.abs(Math.sin(S.t * 5.5));
+  const ramY = mTop - 58 + stroke * 42;
+  ctx.fillStyle = '#5a5366'; ctx.fillRect(mx1 - 48, ramY, 40, 28);
+  ctx.fillStyle = 'rgba(222,230,244,0.22)'; ctx.fillRect(mx1 - 48, ramY, 40, 3);
+  ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(mx1 - 48, ramY + 24, 40, 4);
+  ctx.fillStyle = '#413c4a'; ctx.fillRect(mx1 - 34, top + 36, 11, ramY - top - 36);
+  ctx.fillStyle = 'rgba(214,222,236,0.16)'; ctx.fillRect(mx1 - 34, top + 36, 3, ramY - top - 36);
+  // ---- steam
+  ctx.fillStyle = '#3c3745'; ctx.fillRect(mx0 + 84, top - 32, 12, 22);
+  ctx.fillStyle = '#4a4453'; ctx.fillRect(mx0 + 80, top - 38, 20, 8);
+  for (let i = 0; i < 5; i++) {
+    const t = ((S.t * 0.55 + i * 0.2) % 1);
+    ctx.fillStyle = `rgba(226,230,238,${0.32 * (1 - t)})`;
+    ctx.beginPath(); ctx.ellipse(mx0 + 90 + t * 24, top - 40 - t * 52, 6 + t * 19, 4 + t * 14, 0, 0, 6.28); ctx.fill();
+  }
+  // ---- maker's plate, below the flywheel. At top + 152 it was bolted across the middle
+  // of the wheel, which is not where a plate goes and read as a label floating on a
+  // spinning part. The wheel's bottom is ground - 62 + 25 = ground - 37, so this clears it.
+  const plY = ground - 30;
+  ctx.fillStyle = '#5e5768'; ctx.fillRect(mx0 + 10, plY, 56, 20);
+  ctx.fillStyle = 'rgba(222,230,244,0.20)'; ctx.fillRect(mx0 + 10, plY, 56, 1.6);
+  ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.fillRect(mx0 + 10, plY + 17, 56, 3);
+  ctx.fillStyle = 'rgba(18,15,22,0.72)';
+  ctx.font = 'bold 9px Georgia, serif'; ctx.textAlign = 'center';
+  ctx.fillText('No. 1 MILL', mx0 + 38, plY + 10);
+  ctx.font = '7px Georgia, serif';
+  ctx.fillText('MAKERS', mx0 + 38, plY + 18);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#231f2a';
+  ctx.fillRect(mx0 + 8, ground - 6, 32, 8); ctx.fillRect(mx1 - 46, ground - 6, 38, 8);
 }
 // The flight down from the band to the yard. It starts ON the band and finishes ON the
 // yard, because both ends come from the same two numbers the walker uses.
