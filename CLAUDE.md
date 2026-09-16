@@ -52,8 +52,11 @@ sound for hours and the one question that mattered took him ten seconds.
 
 ## Every change you push
 
-1. Verify it. Browser check for anything visual, and run the freeze harness
-   (below) for anything that touches game code.
+1. Verify it. Browser check for anything visual, and run the FAST checks for
+   anything that touches game code: `probe.js` for the acts you changed,
+   plus `room-check.js`, `enc-check.js` or `panel-check.js` as they apply. They
+   take about a second each. **The 30-game freeze harness is PAUSED — see
+   "The freeze harness" below before you reach for it.**
 2. Bump `BUILD` near the top of the script (`const BUILD = '17 whatever'`). It
    prints on the title screen, so Morgan can tell what he is looking at and we
    can tell whether he is on a stale tab. **Rebase first, then pick the number**,
@@ -181,8 +184,24 @@ plus peak sizes of the particle, bubble, floater and ripple pools. 30 is the
 deliberate default (`RUNS`, near the top of the file); the long-pass note in
 Morgan's memory says when to raise it and to put it back afterwards.
 
-Run it before pushing game code. It catches the class of bug that is invisible
-in a browser until it kills a player's run: **any exception thrown inside
+**PAUSED — Morgan's decision, 2026-09-16. Do not run this before a push, and do
+not run it to "just check".** A run takes about sixteen minutes, and he was
+waiting through one per change. The delay cost him more than the harness was
+catching. We do ONE run at the end, when the game is finished, and not per
+change until then.
+
+This is his call to make and his call to lift. Do not restore the old habit on
+your own judgement, and do not quietly run one "in the background" — several of
+us doing that is what made the box thrash in the first place. If you believe a
+change genuinely needs a harness run before it lands, ask him rather than
+starting one.
+
+**Not paused, and still required:** the art critic and the logic checker. He
+considers both critical. Nothing here loosens the art pass in "Art changes".
+
+Everything below stays written down, because that one final run still has to be
+done properly. What the harness is for: it catches the class of bug that is
+invisible in a browser until it kills a player's run: **any exception thrown inside
 `update()` or `draw()` stops `requestAnimationFrame` from being rescheduled, so
 the game freezes silently with only a console error.** Two real examples, both
 shipped and both caught this way: a `const` reassigned in `drawBubbles`, and a
