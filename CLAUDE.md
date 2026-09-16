@@ -52,6 +52,18 @@ one layer down.
 And before telling him anything has changed, check the served BUILD. Three long
 summaries were written to him about work he was structurally unable to see.
 
+**Every session does this after its own push, and does not delegate it.** Morgan
+restated it as a standing instruction on 2026-09-16 after it went wrong a second
+time: another session had offered to take the pulling on, that offer was accepted,
+and 8765 then sat one build behind until he asked "was this pushed to 8765?" and
+the answer was no. A peer's good intention is not a delivery mechanism. Pull it
+yourself, then run the `curl` above and read the number back — the only evidence
+that counts is what his browser will load, not what the branch says and not what
+somebody said they would do.
+
+It is part of finishing the work, like the BUILD bump and the message to the other
+sessions. Work he cannot load is not finished.
+
 ## Close the Chrome tab when you are done with it
 
 Claude in Chrome opens a tab per session and they accumulate: Morgan ends up
