@@ -4707,8 +4707,12 @@ function rockGround(wx0, wx1, y, style = 'in') {
   const x0 = wx0 - V.left, x1 = wx1 - V.left, inside = style === 'in';
   // outside, the bank runs all the way down to the water rather than ending in a 20px
   // crust with a gap under it, now that the lake sits at the same level as the river
-  // lane 0 runs down to the water on both sides of the mouth, so the bank does not step
-  // where the material changes; upper lanes keep their shallow band
+  // Outdoors this is only the top crust: drawOutside paints the bank itself, from
+  // laneY(0) + 30 down to the waterline, with turf over the lip and shingle below. The two
+  // abut rather than overlap, 414-434 here and 430-470 there, so 20 is all that is wanted.
+  // Inside, lane 0 has no such bank behind it and has to reach the water on its own, or a
+  // step opens under the arch where earth meets cut stone. Upper lanes have rock beneath
+  // them and keep the shallow band.
   const bandH = !inside ? 20 : (y !== laneY(0) ? 30 : Math.max(20, CFG.riverY - (y + 14)));
   ctx.fillStyle = inside ? '#3a3038' : '#4a3b2a'; ctx.fillRect(x0, y + 14, x1 - x0, bandH);
   if (!inside) { ctx.fillStyle = '#3f5a2e'; ctx.fillRect(x0, y + 31, x1 - x0, 3); }
