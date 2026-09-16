@@ -42,7 +42,7 @@ const FAULTS = [
    s => s.replace('const bL = wx0 + 4, bR = wx0 + ww - 4;', 'const bL = wx0 + 70, bR = wx0 + ww - 70;')],
   ['the near BANK never rises over the crowd',
    'raise the near bank 50px so it buries the crowd\'s legs',
-   s => s.replace('* Z - 18 + (1 - ramp) * 92;', '* Z - 130 + (1 - ramp) * 92;')],
+   s => s.replace('const LIFT = 0;', 'const LIFT = 140;')],
   ['no lamp pools out in the open',
    'delete lampPools\' guard so it lights the open hillside in daylight',
    s => s.replace('    if (lx >= CFG.exit) continue;\n', '')],

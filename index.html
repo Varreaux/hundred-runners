@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '85 the foreground moves to the mill';
+const BUILD = '86 more water under the bank';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -6530,10 +6530,15 @@ function millForeground() {
   // heights at act three's zoom and 3.1 at the finale's, which is a near plane doing the
   // opposite of its job.
   const WOB = 22 * zs;
-  // Derived from the river line -- where a lane-0 faller ends -- less a margin, so it
-  // tracks the zoom instead of being a screen constant. It comes to 490 at act three's
-  // zoom, which is the number the art pass settled on.
-  const CREST = H + (CFG.riverY - CFG.worldBottom) * Z - 18 + (1 - ramp) * 92;
+  // Derived from the river line, so it tracks the zoom instead of being a screen constant.
+  //
+  // LIFT is how far the bank's highest point sits ABOVE the water. It was 18, which at the
+  // mill's zoom of 1 put the crest 18px over the tailrace and covered nearly all of it --
+  // Morgan asked to see more water. At 0 the crest sits on the waterline, so the bank rises
+  // out of the water rather than in front of it, and the wobble below only ever takes it
+  // lower. Raise this number to hide more water, lower it to show more.
+  const LIFT = 0;
+  const CREST = H + (CFG.riverY - CFG.worldBottom) * Z - LIFT + (1 - ramp) * 92;
   const lip = k => CREST + hash(k * 2.3) * WOB * 0.68 + hash(k * 0.71) * WOB * 0.32;
   const ctrl = k => CREST + hash(k * 5.1 + 7) * WOB;
   const crestPath = () => {
