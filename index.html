@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '83 the workings, timbered';
+const BUILD = '84 the near plane holds still';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -6493,103 +6493,123 @@ function parallaxRange(p, size, fn) {
 // The machines are tall, but a beam engine is almost entirely OPEN STRUCTURE -- two legs, a
 // beam, a rod -- so it occludes a few per cent of its bounding box. That is why this shape
 // can cross the frame without hiding the view and a solid mass could not.
+// screen x -> the world x under it. Feeds windAt only, so the near plane's wind agrees
+// with the turf's instead of running on a coordinate of its own. `p` is deliberately NOT a
+// parameter: it was passed as a variable at one call site and as the literal 1.28 at the
+// other, which is one constant written twice, and dividing by it under-read the world x by
+// up to 464 units at the right of the frame -- 112 degrees of windAt's dominant period, so
+// the near grass leaned AGAINST the turf 20px behind it.
+const worldAtScreen = sx => V.left + sx / V.zoom;
 function encForeground() {
   const anchor = S.cam + CFG.packFront;
-  // Ground SLIDES UP from below the frame; it does not fade in. A translucent near bank
-  // shows the hillside through the ground in front of the camera, which is not a thing
-  // ground does. Starting at CFG.exit rather than CFG.exit + 40 also closes the 40-unit
-  // gap where the cave band had already ended and this had not begun.
   const ramp = clamp01((anchor - CFG.exit) / 420);
   if (ramp <= 0.001) return;
-  const p = 1.28, step = 132, off = V.left * p * V.zoom;
-  const k0 = Math.floor((off - step) / step), k1 = Math.floor((off + W + step) / step) + 1;
-  // ONE constant, and the crest can never rise above it. The first version had BASE = H-62
-  // with the crest drawn at BASE + 26 - a where a ran to 42, so it actually reached canvas
-  // 462 -- above the crowd's soles at 477 -- and buried their legs in about a third of
-  // nodes. The comment asserted 478 and the code did something else, which is the whole
-  // fault: a measured number written into a comment and not into the arithmetic.
+  const p = 1.28, Z = V.zoom, zs = Z / 0.4532;
+  // SEGMENTS ARE ANCHORED IN THE PLANE'S OWN WORLD, not on screen.
   //
-  // CREST is the highest the ground may ever be; WOB only ever pushes it DOWN. Soles are at
-  // 477 and the room brackets reach about 485, so 490 clears both and cannot be argued into
-  // touching them by any hash.
-  const WOB = 22;
-  const CREST = (H - 50) + (1 - ramp) * 92;
+  // Screen-anchored ones survive scrolling and do NOT survive a zoom change, and there is
+  // one in every run: at camMax updateView loses lane 4 by four units, the zoom cascades to
+  // 1, and `V.left * p * V.zoom` moves by about eleven thousand pixels -- 80-odd whole
+  // segments -- so every hash re-rolls and the entire near plane reshuffles while the
+  // camera is standing still. A 1500-frame stability measurement at fixed zoom cannot see
+  // that, and mine did not.
+  //
+  // Keyed to k, which is a position in the plane, every hash is now immune to both.
+  const SEG = 480;
+  const planeLeft = V.left * p;
+  const k0 = Math.floor(planeLeft / SEG) - 1, k1 = Math.floor((planeLeft + V.vw) / SEG) + 1;
+  const sxOf = k => (k * SEG - planeLeft) * Z;
+  // EVERYTHING SCALES WITH THE ZOOM. Fixed screen sizes made the near plane smaller than
+  // the world in front of it whenever the camera pulled in: the same engine read 6.9 body
+  // heights at act three's zoom and 3.1 at the finale's, which is a near plane doing the
+  // opposite of its job.
+  const WOB = 22 * zs;
+  // Derived from the river line -- where a lane-0 faller ends -- less a margin, so it
+  // tracks the zoom instead of being a screen constant. It comes to 490 at act three's
+  // zoom, which is the number the art pass settled on.
+  const CREST = H + (CFG.riverY - CFG.worldBottom) * Z - 18 + (1 - ramp) * 92;
   const lip = k => CREST + hash(k * 2.3) * WOB * 0.68 + hash(k * 0.71) * WOB * 0.32;
+  const ctrl = k => CREST + hash(k * 5.1 + 7) * WOB;
   const crestPath = () => {
     ctx.beginPath();
-    ctx.moveTo(k0 * step - off, H + 40);
+    ctx.moveTo(sxOf(k0), H + 40);
     for (let k = k0; k <= k1; k++) {
-      const sx = k * step - off;
-      ctx.lineTo(sx, lip(k));
-      ctx.quadraticCurveTo(sx + step * 0.42, CREST + hash(k * 5.1 + 7) * WOB, sx + step, lip(k + 1));
+      ctx.lineTo(sxOf(k), lip(k));
+      ctx.quadraticCurveTo(sxOf(k) + SEG * Z * 0.42, ctrl(k), sxOf(k + 1), lip(k + 1));
     }
-    ctx.lineTo(k1 * step - off + step, H + 40);
+    ctx.lineTo(sxOf(k1 + 1), H + 40);
     ctx.closePath();
   };
   ctx.save();
-  // THE MACHINES GO FIRST, and in a lighter ink. Drawn after the bank and in the same
-  // '#0b0d10' they were holes cut in it rather than objects beyond it -- two near objects
-  // at different depths sharing one value, which is most of why the plane read as flat.
-  // Now the bank crest genuinely crosses in front of their feet.
+  // At parallax 1.28 the nearest plane should move MOST during a death spike, and it was
+  // outside the transform that applies S.shake, so the world shook and it held still.
+  if (S.shake > 0) ctx.translate(rand(-S.shake, S.shake), rand(-S.shake, S.shake));
+  // THE MACHINES GO FIRST, behind the bank, and they slide and fade in with it.
+  //
+  // They had neither: `gy` was a screen constant while the ground slid up, so for 1.74
+  // seconds a row of engines up to 428px tall stood on nothing over the mountain flank,
+  // arriving in a single frame. The globalAlpha that used to cover it was deleted with the
+  // fade it belonged to and never given to them. Deriving gy from CREST means they cannot
+  // come adrift from their own ground again; the alpha covers the part taller than the
+  // slide, which a 92px slide cannot hide on its own.
+  ctx.globalAlpha = ramp;
+  const gy = CREST + 28 * zs;
   for (let k = k0; k <= k1; k++) {
     const hv = hash(k * 7.3 + 2);
-    // A real world x. `k * step / (p * V.zoom)` was a length in the NEAR plane's stretched
-    // space compared against ENC.free and ENC.wall, which are world coordinates, so the
-    // machines finished getting commoner about a quarter of the act before the wall did.
-    const worldish = V.left + (k * step - off) / (p * V.zoom);
+    // EXACT, and camera-independent. The previous expression was algebraically identical
+    // to the one it claimed to replace -- V.left cancels -- so a confident comment about
+    // fixing a quarter-of-an-act error described a change of precisely zero units. In the
+    // plane, segment k sits at k * SEG; the world position under it is that divided by the
+    // parallax. No V.left anywhere, so it cannot drift as a segment crosses the screen.
+    const worldish = k * SEG / p;
     const fenced = clamp01((worldish - ENC.free) / Math.max(1, ENC.wall - ENC.free));
     if (hv > 0.24 + fenced * 0.22) continue;
-    const sx = k * step - off + hash(k * 4.9) * 60;
-    // Feet just below the crest band, not 96 units below the frame. Sunk that far, the
-    // A-frame the gallows fix widened was 80% below the cut: the player saw a 43px frame
-    // under a 199px beam, a ratio of 4.6:1 rather than the 1.44:1 the code computes, and
-    // it read as a balance scale. The crossbar and the cylinder house were below the
-    // canvas entirely. Here the frame shows and the feet still hide behind the ground.
-    const gy = H - 22;
-    if (hash(k * 1.9) < 0.72) beamEngine(sx, gy, 108 + hash(k * 6.1) * 30, k);
-    else engineHouse(sx, gy, 190 + hash(k * 5.7) * 70, k);
+    const sx = sxOf(k) + hash(k * 4.9) * 90 * Z;
+    // Height capped so the counterweight's sweep stays above lane 1's deck at 390: the
+    // sweep band top is gy - 1.22h, so h must stay under about 104 screen px. It was
+    // 108-138, which parked a swinging disc inside the lane-1 crowd permanently.
+    if (hash(k * 1.9) < 0.72 - fenced * 0.4) beamEngine(sx, gy, (185 + hash(k * 6.1) * 40) * Z, k);
+    else engineHouse(sx, gy, (260 + hash(k * 5.7) * 110) * Z, k);
   }
+  ctx.globalAlpha = 1;
   // the bank itself, in front of them
   crestPath();
   ctx.fillStyle = '#0a0c10'; ctx.fill();
-  // The rim is what makes this ground rather than a bar. drawForeground's cave band reads
-  // as rock precisely because it clips a lit gradient onto its inner edge; the technique
-  // was copied here and that one element dropped, leaving a flat strip whose lower half is
-  // the same value as the hint bar underneath it -- so the two merged into one band.
+  // The rim is what makes this ground rather than a bar: the cave band reads as rock
+  // because it clips a lit gradient onto its inner edge, and copying the technique without
+  // it left a flat strip the same value as the hint bar beneath it.
   ctx.save(); crestPath(); ctx.clip();
-  const rim = ctx.createLinearGradient(0, CREST - 6, 0, CREST + 58);
+  const RIM = 64 * zs;                       // one constant: gradient and fill cannot drift
+  const rim = ctx.createLinearGradient(0, CREST - 6, 0, CREST - 6 + RIM);
   rim.addColorStop(0, 'rgba(58,84,62,0.5)');
   rim.addColorStop(0.35, 'rgba(30,44,34,0.24)');
   rim.addColorStop(1, 'rgba(8,10,12,0)');
-  ctx.fillStyle = rim; ctx.fillRect(0, CREST - 8, W, 90);
+  ctx.fillStyle = rim; ctx.fillRect(0, CREST - 6, W, RIM);
   ctx.restore();
-  // a lit line along the crest itself, strongest where the ground falls away to the left,
-  // because the sun is upper-left everywhere else in the game
-  ctx.strokeStyle = 'rgba(96,126,92,0.55)'; ctx.lineWidth = 1.6;
+  // a lit line along the crest itself
+  ctx.strokeStyle = 'rgba(96,126,92,0.55)'; ctx.lineWidth = 1.6 * zs;
   ctx.beginPath();
   for (let k = k0; k <= k1; k++) {
-    const sx = k * step - off;
-    if (k === k0) ctx.moveTo(sx, lip(k)); else ctx.lineTo(sx, lip(k));
-    ctx.quadraticCurveTo(sx + step * 0.42, CREST + hash(k * 5.1 + 7) * WOB, sx + step, lip(k + 1));
+    if (k === k0) ctx.moveTo(sxOf(k), lip(k)); else ctx.lineTo(sxOf(k), lip(k));
+    ctx.quadraticCurveTo(sxOf(k) + SEG * Z * 0.42, ctrl(k), sxOf(k + 1), lip(k + 1));
   }
   ctx.stroke();
-  // Grass heads, in the RIM colour and on their own salt. Stroked in the fill colour they
-  // were black hairs on black ground, and sharing hash(k*2.3) with the crest meant a tall
-  // blade could only ever stand on a high crest -- half of them were below their own
-  // ground by construction and the tallest cleared it by 8px.
-  ctx.strokeStyle = 'rgba(84,112,82,0.6)'; ctx.lineWidth = 1.4;
+  // Grass heads, standing on the GROUND BENEATH THEM rather than on their segment's left
+  // node. The node can be 22px from the ground under the blade, against blades 6-13px
+  // tall, so a blade near the right of a rising segment floated its whole length clear of
+  // the bank with open ground showing underneath it, and on a falling one lay buried
+  // inside the fill as a green hair. The foot is the quadratic evaluated at the blade.
+  ctx.strokeStyle = 'rgba(84,112,82,0.6)'; ctx.lineWidth = 1.4 * zs;
   for (let k = k0; k <= k1; k++) for (let j = 0; j < 7; j++) {
     const hv = hash(k * 3.1 + j * 9.7);
     if (hv < 0.4) continue;
-    const sx = k * step - off + (j + hash(k * 6.7 + j)) * (step / 7);
-    const foot = lip(k) + 2;
-    // Capped so the tallest blade still clears the crowd's soles. The crest sits at 490
-    // and soles at 476.6, which leaves 13px -- and enc-check measures it rather than
-    // trusting this comment, because the last comment here that asserted a clearance was
-    // wrong by 16px. Short, but in the rim colour rather than the fill colour they read
-    // far better at 13 than the old ones did at 8, which were black on black.
-    const tall = 6 + hv * 7;
-    const lean = windAt(worldAtScreen(sx, p), S.t) * tall * 0.5;
+    const u = (j + hash(k * 6.7 + j)) / 7;
+    const sx = sxOf(k) + u * SEG * Z;
+    const foot = (1 - u) * (1 - u) * lip(k) + 2 * u * (1 - u) * ctrl(k) + u * u * lip(k + 1) + 2;
+    // capped to the measured clearance from the crest to lane 0's soles; enc-check
+    // measures it rather than trusting this comment
+    const tall = (6 + hv * 7) * zs;
+    const lean = windAt(worldAtScreen(sx), S.t) * tall * 0.5;
     ctx.beginPath();
     ctx.moveTo(sx, foot);
     ctx.quadraticCurveTo(sx + lean * 0.35, foot - tall * 0.55, sx + lean, foot - tall);
@@ -6597,60 +6617,53 @@ function encForeground() {
   }
   ctx.restore();
 }
-// screen x in the near plane -> the world x it is standing over, so the near plane's wind
-// agrees with the turf's instead of running on a coordinate of its own
-const worldAtScreen = (sx, p) => V.left + sx / (p * V.zoom);
-// The nodding beam. An A-frame, a beam rocking on its pivot, a pump rod dropping into the
-// ground on the far side, a counterweight on the near one. Mostly air, which is the whole
-// reason it can stand between the camera and the crowd without hiding anyone.
+// The nodding beam. An A-frame, a beam rocking on its pivot, a pump rod into the ground on
+// the far side, a counterweight on the near one. Mostly air, which is the whole reason it
+// can stand between the camera and the crowd without hiding anyone.
 function beamEngine(sx, gy, h, k) {
-  const ink = '#151a23';
-  ctx.strokeStyle = ink; ctx.fillStyle = ink;
-  // PROPORTIONS ARE WHAT MAKES THIS READ, and they are the proportions the player can SEE,
-  // not the ones in the source. An early version had a beam of 0.46h on legs spread 0.2h
-  // and a row of them read unmistakably as gallows; widening the legs fixed that on paper
-  // while the frame was still sunk below the visible cut, so it became a balance scale
-  // instead. The frame has to be ON SCREEN for its ratio to mean anything.
+  ctx.strokeStyle = '#151a23'; ctx.fillStyle = '#151a23';
+  // The proportions that matter are the ones ON SCREEN. An early version put the beam at
+  // 0.46 of the frame height and a row read as gallows; widening the frame fixed that on
+  // paper while it was still sunk below the visible cut, so it became a balance scale.
   const pivotY = gy - h, halfBeam = h * 0.72, spread = h * 0.34;
-  ctx.lineWidth = Math.max(2.6, h * 0.055);
+  ctx.lineWidth = Math.max(2.4, h * 0.055);
   ctx.beginPath();
   ctx.moveTo(sx - spread, gy); ctx.lineTo(sx, pivotY);
   ctx.lineTo(sx + spread, gy); ctx.stroke();
-  ctx.lineWidth = Math.max(1.6, h * 0.03);
+  ctx.lineWidth = Math.max(1.4, h * 0.03);
   ctx.beginPath(); ctx.moveTo(sx - spread * 0.62, gy - h * 0.38); ctx.lineTo(sx + spread * 0.62, gy - h * 0.38); ctx.stroke();
-  // the beam, nodding. Each engine on its own phase off k, or a row of them rocks in step.
   const a = Math.sin(S.t * 1.15 + hash(k * 2.7) * 6.28) * 0.21;
   const dx = Math.cos(a) * halfBeam, dy = Math.sin(a) * halfBeam;
-  ctx.lineWidth = Math.max(3, h * 0.062);
+  ctx.lineWidth = Math.max(2.8, h * 0.062);
   ctx.beginPath(); ctx.moveTo(sx - dx, pivotY - dy); ctx.lineTo(sx + dx, pivotY + dy); ctx.stroke();
   // the pump rod straight down into the ground: without it the beam is a see-saw
-  ctx.lineWidth = Math.max(2, h * 0.032);
+  ctx.lineWidth = Math.max(1.8, h * 0.032);
   ctx.beginPath(); ctx.moveTo(sx + dx, pivotY + dy); ctx.lineTo(sx + dx, gy + 30); ctx.stroke();
-  // The counterweight. At 0.11h it was 26-34px across against a runner's whole 20.4px
-  // height -- the largest solid mass in the near plane was nearly two bodies wide and it
-  // swung. 0.07h keeps the cue and stops it being an object in its own right.
-  ctx.beginPath(); ctx.arc(sx - dx, pivotY - dy, h * 0.07, 0, 6.28); ctx.fill();
-  // the house over the cylinder, up where it can be seen rather than below the canvas
+  // The counterweight, against the axis that actually matters. 0.07h was justified against
+  // a runner's 20.4px HEIGHT, but a runner is 4.4 to 5.4px WIDE on screen -- so the disc
+  // was nearly four bodies across, and moving, which reads as an object among the crowd
+  // rather than in front of it. 0.045h is about two body widths.
+  ctx.beginPath(); ctx.arc(sx - dx, pivotY - dy, h * 0.045, 0, 6.28); ctx.fill();
+  // the house over the cylinder, up where it can be seen
   ctx.fillRect(sx - spread * 1.45, gy - h * 0.3, spread * 1.05, h * 0.3 + 30);
 }
 // A chimney and its engine house: static, and the commoner of the two near the wall. The
 // mill has reached the country the crowd is running through.
 function engineHouse(sx, gy, h, k) {
   ctx.fillStyle = '#151a23';
-  // Taller and thinner than it was. At 132-176 the stack rose only 34-78px above the bank,
-  // which at this parallax is 1.3 to 3.0 runner-heights -- while act three's own chimney,
-  // FURTHER AWAY, runs off the top of the frame at about forty. A near plane whose objects
-  // are smaller than the far ones inverts the thing it is there to do.
   const w = h * 0.34;
   ctx.fillRect(sx - w / 2, gy - h * 0.42, w, h * 0.42 + 30);
-  const cw = h * 0.06, cx = sx + w * 0.34;
+  // A THIN stack. At 0.06h it was a 15px bar that fully contained lane 2's crowd band and
+  // blanked three runners with one rectangle; a chimney is tall and thin, and thin is also
+  // what lets it cross a lane without deleting anyone.
+  const cw = h * 0.035, cx = sx + w * 0.34;
   ctx.beginPath();
   ctx.moveTo(cx - cw / 2, gy - h * 0.42);
   ctx.lineTo(cx - cw * 0.34, gy - h);
   ctx.lineTo(cx + cw * 0.34, gy - h);
   ctx.lineTo(cx + cw / 2, gy - h * 0.42);
   ctx.closePath(); ctx.fill();
-  ctx.fillRect(cx - cw * 0.5, gy - h - h * 0.02, cw, h * 0.02);
+  ctx.fillRect(cx - cw * 0.6, gy - h - h * 0.015, cw * 1.2, h * 0.015);
   // a pitched roof, so it is a building and not a box
   ctx.beginPath();
   ctx.moveTo(sx - w / 2 - h * 0.03, gy - h * 0.42);
@@ -6658,11 +6671,8 @@ function engineHouse(sx, gy, h, k) {
   ctx.lineTo(sx + w / 2 + h * 0.03, gy - h * 0.42);
   ctx.closePath(); ctx.fill();
   if (hash(k * 8.3) > 0.5) {
-    // Smoke drifting on the SAME wind as the grass. It carried an unconditional + t * 20
-    // rightward bias, so whenever the wind blew left the grass leaned left and the smoke
-    // still went right, in the same frame, on a field the comment claimed they shared.
     ctx.fillStyle = 'rgba(21,26,35,0.4)';
-    const wind = windAt(worldAtScreen(sx, 1.28), S.t);
+    const wind = windAt(worldAtScreen(sx), S.t);
     for (let i = 0; i < 4; i++) {
       const t = (S.t * 0.22 + i * 0.25 + hash(k + i) * 0.2) % 1;
       const r = h * (0.03 + t * 0.08);
