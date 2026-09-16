@@ -56,10 +56,25 @@ eval(src + `
              : 'all >= ' + CFG.rampLen + ' apart');
 
   // 3. No room's DRAWN extent may overlap another's. room-check tests x..x+gapWidth; a
-  //    ditch also throws a spoil bank 54 further, and the wall's masonry reaches 62 either
+  //    ditch also throws a spoil bank past that, and the wall's masonry reaches 62 either
   //    side of its gap. The wall was founded inside the ditch in front of it.
+  //
+  //    The ditch's reach is READ OUT of index.html, not written down here. It was 54, which
+  //    was true until the bank was widened to a body's height -- and a room-overlap check
+  //    carrying a stale extent does not fail loudly, it passes a real overlap in silence.
+  //    That is the same fault room-check had about the sweeper's cost, found the same day.
+  //    Throws rather than defaulting: a check that cannot find the number it needs should
+  //    stop, not quietly measure the wrong thing.
+  // \\d, not \d: this line is inside a template literal, which eats the backslash and
+  // leaves /const DITCH_SPOIL = (d+)/ -- a regex that matches nothing and throws the
+  // "cannot find the constant" error against a file that plainly contains it.
+  const spoilM = src.match(/const DITCH_SPOIL = (\\d+)/);
+  // NOTE: no backticks in this string. The whole check body lives inside a template
+  // literal passed to eval(), so a backtick here closes it and the file stops parsing.
+  if (!spoilM) throw new Error('enc-check: no DITCH_SPOIL constant in index.html -- the ditch bank was renamed or removed, and room extents cannot be priced until this is pointed at the new one.');
+  const DITCH_SPOIL = +spoilM[1];
   const extent = r => {
-    if (r.type === 'ditch') return [r.x, r.x + CFG.gapWidth + 54];
+    if (r.type === 'ditch') return [r.x, r.x + CFG.gapWidth + DITCH_SPOIL];
     if (r.type === 'wall')  return [r.x - 62, r.x + CFG.gapWidth + 62];
     return [r.x, r.x + CFG.gapWidth];
   };

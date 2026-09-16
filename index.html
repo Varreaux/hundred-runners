@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '63 the hill stops being a staircase';
+const BUILD = '64 the ditch is dug';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -214,6 +214,10 @@ const laneY = k => CFG.baseY - CFG.laneGap * k;
 // hundred cannot stop because there is nowhere to stop. So the hazards here are property
 // rather than machinery -- a ditch, a laid thorn hedge, a mantrap -- and the last room is
 // an attempt to blast a hole in the wall that has just been built across the world.
+// How far past its own gap a ditch's spoil bank reaches. Declared here rather than written
+// into the drawing, because tools/enc-check.js parses it out of this file to work out
+// whether two rooms overlap on their DRAWN extents. Move the bank and the check follows.
+const DITCH_SPOIL = 62;
 const ENC = {
   x0: CFG.exit + 48,      // where the rock ends and the grass starts
   free: 13500,            // up to here it is open country and nothing is fenced
@@ -6873,11 +6877,29 @@ function drawEncRoom(room, y) {
   // pond. The wall gets bare ground and its own function; only the ditch is dug.
   if (room.type === 'wall') { drawEncWall(room, y, sx, gw, solved, prog); return; }
   // a ditch cuts the ground. An earth section, not a black one.
+  // DITCH_SPOIL is how far past its own gap the bank reaches, and tools/enc-check.js READS
+  // IT rather than restating it. It had 54 written into it, which was true until this bank
+  // was widened; a room-overlap check carrying a stale extent passes a real overlap and
+  // says nothing, which is the same fault room-check had about the sweeper's cost.
   // A ditch is a cut in daylight, not a shaft. The first version ramped to rgba(22,18,14)
   // -- effectively black -- which at play zoom is a black rectangle sitting on a sunlit
   // hillside, indistinguishable from the cave's pit. It stays in earth the whole way down,
   // and the far face catches light because the sun is upper left and reaches into a ditch.
   const depth = room.lane === 0 ? Math.max(70, CFG.riverY - y) : 58;
+  // SLOPED ENDS. Vertical ends are what made this a crate: nothing dug in earth stands up
+  // square, it stands at the angle the soil will hold, and in strict elevation those two
+  // faces are the only part of the ditch's shape the player can see. Everything that
+  // belongs INSIDE the cut is clipped to this, so the soil, the shading and the stones all
+  // stop at the batter instead of running out to a square corner.
+  const DSLOPE = 24;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(sx, y);
+  ctx.lineTo(sx + DSLOPE, y + depth);
+  ctx.lineTo(sx + gw - DSLOPE, y + depth);
+  ctx.lineTo(sx + gw, y);
+  ctx.closePath();
+  ctx.clip();
   ctx.fillStyle = '#5c4a34'; ctx.fillRect(sx, y, gw, depth);
   // Starting LIGHTER than the sunlit bank around it (112,92,64 against a #4a3b2a deck)
   // made the cut advance instead of recede, so the ditch read as a brown crate set on the
@@ -6902,6 +6924,7 @@ function drawEncRoom(room, y) {
   // the near lip OVERHANGS and throws a shadow into the cut, which is what says the turf
   // is hanging over an edge rather than being a bright rectangle stuck on one
   ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(sx, y + 1, gw, 7);
+  ctx.restore();                                 // out of the cut; the lips sit on the ground
   ctx.fillStyle = '#3f5a2e'; ctx.fillRect(sx - 5, y - 2, 10, 5); ctx.fillRect(sx + gw - 5, y - 2, 10, 5);
   ctx.fillStyle = '#6b8e4e'; ctx.fillRect(sx - 5, y - 3, 10, 2); ctx.fillRect(sx + gw - 5, y - 3, 10, 2);
   // roots and grass trailing over both lips
@@ -6913,23 +6936,41 @@ function drawEncRoom(room, y) {
   }
   // standing water in the bottom, which is what made a ditch worth being afraid of
   const wy = y + depth - 14;
-  ctx.fillStyle = 'rgba(56,72,68,0.85)'; ctx.fillRect(sx + 3, wy, gw - 6, 14);
+  // narrowed by the batter rather than clipped again: the water lies in the BOTTOM of the
+  // cut, and the bottom is DSLOPE narrower than the mouth at each end
+  const ww2 = gw - DSLOPE * 2;
+  ctx.fillStyle = 'rgba(56,72,68,0.85)'; ctx.fillRect(sx + DSLOPE + 3, wy, ww2 - 6, 14);
   ctx.fillStyle = 'rgba(150,180,176,0.18)';
-  for (let i = 0; i < 4; i++) ctx.fillRect(sx + 10 + hash(room.x + i) * (gw - 30), wy + 3 + i * 3, 12, 1.2);
+  for (let i = 0; i < 4; i++) ctx.fillRect(sx + DSLOPE + 8 + hash(room.x + i) * Math.max(4, ww2 - 26), wy + 3 + i * 3, 10, 1.2);
   if (room.type === 'ditch') {
     // the spoil thrown up on the far side: a ditch AND a bank, which is the whole point
+    // A BANK, not a mound. A quadratic's apex sits at (P0 + 2*P1 + P2)/4, so a control
+    // point at y-30 between two ends at y+2 peaked 14 units above the ground -- under a
+    // third of a 45-unit body, and you could step over it. The whole point of ditch-and-
+    // bank is that the spoil from the cut makes the far side unclimbable; a bank you can
+    // stride across is a decorative ridge. A control at y-102 puts the apex at y-50, a
+    // body high, and it is wider so the slope is diggable rather than a spike.
     ctx.fillStyle = '#54432f';
     ctx.beginPath();
     ctx.moveTo(sx + gw, y + 2);
-    ctx.quadraticCurveTo(sx + gw + 24, y - 30, sx + gw + 54, y + 2);
+    ctx.quadraticCurveTo(sx + gw + 26, y - 102, sx + gw + DITCH_SPOIL, y + 2);
     ctx.closePath(); ctx.fill();
+    // turf taking on the top of it, thinner on the steep side
     ctx.fillStyle = '#5c8b52';
     ctx.beginPath();
-    ctx.moveTo(sx + gw, y + 1);
-    ctx.quadraticCurveTo(sx + gw + 24, y - 31, sx + gw + 54, y + 1);
-    ctx.lineTo(sx + gw + 50, y + 1);
-    ctx.quadraticCurveTo(sx + gw + 24, y - 26, sx + gw + 4, y + 1);
+    ctx.moveTo(sx + gw + 2, y + 1);
+    ctx.quadraticCurveTo(sx + gw + 26, y - 104, sx + gw + 62, y + 1);
+    ctx.lineTo(sx + gw + 56, y + 1);
+    ctx.quadraticCurveTo(sx + gw + 26, y - 92, sx + gw + 10, y + 1);
     ctx.closePath(); ctx.fill();
+    // fresh spoil showing through where the turf has not closed over
+    ctx.fillStyle = 'rgba(86,68,46,0.7)';
+    for (let i = 0; i < 6; i++) {
+      const hv = hash(room.x * 3.1 + i * 7.7);
+      ctx.beginPath();
+      ctx.ellipse(sx + gw + 12 + hv * 42, y - 12 - hv * 52, 3 + hv * 6, 2 + hv * 3, hv * 2, 0, 6.28);
+      ctx.fill();
+    }
     // a plank laid across once it is cut through
     if (solved) {
       ctx.fillStyle = INK; ctx.fillRect(sx - 6, y - 8, gw + 12, 9);
