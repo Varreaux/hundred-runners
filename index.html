@@ -336,8 +336,8 @@ function finaleLayout() {
   const sidePad = 20;
   const paintW = Math.floor((pw - sidePad * 2 - gap) / 2); // ~448 on 960 (~+36%)
   const deckTop = py + ph - 96;
-  const paintTop = py + 50;
-  const paintH = Math.min(318, deckTop - paintTop - 22); // ~+48% height vs 214
+  const paintTop = py + 80; // room for title + status chips above
+  const paintH = Math.min(300, deckTop - paintTop - 22); // ~+40% height vs 214
   const left = { x: px + sidePad, y: paintTop, w: paintW, h: paintH };
   const right = { x: left.x + paintW + gap, y: paintTop, w: paintW, h: paintH };
   const deck = { x: px + 32, y: deckTop, w: pw - 64, h: 36 };
