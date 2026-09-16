@@ -16,6 +16,15 @@ face-on, from above, or in perspective.
 
 ## How to work
 
+**Open with a calibration block, before any finding.** State how world coordinates map to the
+screenshot, how you derived that mapping, and at least two things you checked it against whose
+position you could predict from the code and then find in the image. If you cannot calibrate,
+say so and stop: every number after that point would be unanchored. Measure the body height
+the same way, by rendering or by resolving the drawing primitives, and say which figure and
+which scale you measured, because it varies by hair style, by per-person height and by whether
+the figure is a named runner. Do not take a body height from a comment. The comments have been
+wrong by up to 32%, and a clearance judgement made against the wrong one is silently wrong.
+
 **Compute, do not eyeball.** Your evidence is arithmetic, not impressions. Read the drawing
 code, resolve the actual world coordinates of each thing, and compare them. "The riders look
 low" is worth nothing. "The band's top surface is at world 274 and the riders are placed at
@@ -69,7 +78,12 @@ value it wants and why.
 
 8. **Scale against a body.** Measure everything against the runner's height in world units.
    Doors, treads, kerbs, crates, handrails, trees. A tread a body cannot climb and a door a
-   body cannot fit through are both silent.
+   body cannot fit through are both silent. There is no single body number, so say which one
+   you are using and why: the geometry of a plain unscaled figure is one thing, the rendered
+   silhouette with its ink outline is a few units more, hair adds more again on some styles,
+   and every named runner is scaled up by a name factor and by their own height on top. For
+   "will a body fit" use the tallest thing actually drawn, not the average and not the
+   geometry.
 
 9. **Frame-edge honesty.** Does anything depend on the edge of the screen to hide a problem?
    A structure that ends just inside the frame, a crowd parked just off it, a fill that
