@@ -29,13 +29,32 @@ eval(src + `
   // 1. The hill must never sit below the track it carries. Smaller y is higher, so the
   //    surface must be at or above (<=) the highest lane at that x. Violated by up to
   //    +142.9 units when signed sinusoids were added to a smoothed average.
-  let worst = -1e9, worstAt = 0;
+  //    A BAND, not a ceiling. "worst <= 0" became a TAUTOLOGY the moment encSurfaceY ended
+  //    with Math.min(..., laneY(top) - 20) minus relief: the expression is then identically
+  //    <= -20, so the check could not fail however wrong the hill got, and it sat green
+  //    through a change that pushed the crest clean out of the top of the viewport. A
+  //    check that cannot fail is not evidence about the build, it is decoration.
+  //
+  //    (NO BACKTICKS anywhere in this file below line 26. The whole body is a template
+  //    literal handed to eval, so one closes it and the file dies with "missing ) after
+  //    argument list" pointing at the eval, nowhere near the character. Twice in one day.)
+  //
+  //    So it asserts both ends. The floor is the lane table's own top (laneY(laneCount-1)),
+  //    which is the number the cap in encSurfaceY is trying to respect, read rather than
+  //    restated; above that the hill is off the top of the play viewport and the crest has
+  //    no silhouette at all.
+  let worst = -1e9, worstAt = 0, high = 1e9, highAt = 0;
   for (let wx = ENC.x0; wx < CFG.finale.x; wx += 7) {
-    const f = encSurfaceY(wx) - laneY(encTopLane(wx));
+    const s = encSurfaceY(wx);
+    const f = s - laneY(encTopLane(wx));
     if (f > worst) { worst = f; worstAt = wx; }
+    if (s < high) { high = s; highAt = wx; }
   }
-  ok('no terrace floats above its own hillside', worst <= 0,
-     'worst ' + worst.toFixed(1) + ' at wx ' + worstAt + ' (want <= 0)');
+  ok('no terrace floats above its own hillside', worst <= -20,
+     'worst ' + worst.toFixed(1) + ' at wx ' + worstAt + ' (want <= -20)');
+  const ceiling = laneY(CFG.laneCount - 1);
+  ok('the crest stays inside the play viewport', high >= ceiling,
+     'highest crest ' + high.toFixed(1) + ' at wx ' + highAt + ' (want >= ' + ceiling + ', the top lane)');
 
   // 2. A fork's ramp must not run past the end of the lane it lands on, and consecutive
   //    merges must be at least CFG.rampLen apart -- otherwise updateLane overwrites r.ramp

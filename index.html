@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '68 he frowns';
+const BUILD = '69 the logic pass on act three';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -5614,7 +5614,13 @@ function encSurfaceY(wx) {
   // The clamp stays, and it is a FLOOR in height terms: min() on y keeps the surface at or
   // above the highest track, which is what stopped terraces floating over open sky. Relief
   // is subtracted OUTSIDE it so it can only ever raise the hill, never breach that.
-  return Math.min(base - roll, laneY(encTopLane(wx)) - 20) - relief;
+  // Clamp the RESULT, not the term. Capping `relief` alone cannot enforce a ceiling on the
+  // crest, because `base - roll` is already above the deck before relief is subtracted --
+  // roll reaches 72 and base can sit 360 up, so the sum can clear the top of the frame
+  // while relief is nowhere near its cap. laneY(laneCount-1) is the number the old comment
+  // named, read from the lane table rather than written down, and enc-check now asserts it
+  // from the other side so this cannot quietly drift out of the viewport again.
+  return Math.max(laneY(CFG.laneCount - 1), Math.min(base - roll, laneY(encTopLane(wx)) - 20) - relief);
 }
 // ---------------------------------------------------------------- weather in act three
 // ONE wind field, read by everything outdoors that should move together: the turf, the
@@ -5712,8 +5718,15 @@ function drawEncLand() {
     for (let wx = x0; wx <= x1; wx += 48) {
       g2.addColorStop(clamp01((wx - x0) / span), `rgba(24,42,52,${(cloudShadeAt(wx, S.t) * 0.22).toFixed(3)})`);
     }
+    // cTop hoisted, and the height DERIVED from it. This was the same fill-height trap as
+    // the earth gradient ten lines above -- CFG.worldBottom passed as a height to a rect
+    // starting at -750, so the shadows stopped dead at world y -10 and every terrace from
+    // lane 2 down, which is most of the act and all of the lane the crowd runs on, had no
+    // cloud shading at all. Fixing one instance of a trap does not fix the next one in the
+    // same function; that is why it is a rule now and not a story.
+    const cTop = laneY(CFG.laneCount - 1) - 200;
     ctx.fillStyle = g2;
-    ctx.fillRect(x0 - V.left, laneY(CFG.laneCount - 1) - 200, x1 - x0, CFG.worldBottom + 200);
+    ctx.fillRect(x0 - V.left, cTop, x1 - x0, CFG.worldBottom + 200 - cTop);
   }
   // Mottling. At play zoom (0.39 to 0.45) a blade of grass is under a pixel, so the blades
   // below do almost nothing for the thing Morgan actually complained about -- a terrace
@@ -5891,7 +5904,12 @@ function encTree(px, baseY, h, hv, sway, bare) {
   sunShade(px, baseY + 2, r * 0.9, h * 0.5, 0.18);
 }
 function encFlora() {
-  const x0 = Math.max(ENC.x0 - 200, V.left - 240), x1 = V.left + V.vw + 240;
+  // ENC.x0, not ENC.x0 - 200. drawEncLand starts its ground at ENC.x0; flora started 200
+  // units earlier, so in the establishing shot of the act 200 units of woodland was planted
+  // on the mountainside with no ground under it -- trunks running into the rock face where
+  // the cliff was higher, and canopies hanging in open sky where it was lower. The jitter
+  // below can still throw a trunk 17 left, hence the +17.
+  const x0 = Math.max(ENC.x0 + 17, V.left - 240), x1 = V.left + V.vw + 240;
   if (x1 <= x0) return;
   // A far treeline on the back ridges first, hazed toward the sky, so the crest trees have
   // something behind them and the hill has depth instead of one green plane.
@@ -5971,8 +5989,17 @@ function drawEncBounds() {
     // crosses, and the run above the highest one, where the hillside is open. That is the
     // same information -- a boundary crossing every path you could take -- drawn on the
     // surfaces that exist.
+    // A SHORT RETURN above the top deck, not a column up to the crest. `relief` never drops
+    // below about 160, so the crest is never near the deck: the run came out 201 units of
+    // stacked stone on lane 4 and 315 units -- fifty-two blocks, seven body heights -- past
+    // the last merge where the top lane is 0. A 13-unit-thick stack at 24:1 with no batter
+    // is not a wall, it is a column standing on end, and in a strict side elevation a fence
+    // running away up the hill foreshortens toward its own x rather than rising up the frame.
+    // One body's worth of return says "this continues over the hill" without pretending to
+    // draw the part that is edge-on to the camera.
     const topDeck = laneY(encTopLane(here));
-    for (let y = topDeck - 6; y > crest; y -= 6) {
+    const runTop = Math.max(crest, topDeck - 46);
+    for (let y = topDeck - 6; y > runTop; y -= 6) {
       // leave a gap wherever a track passes through, and stand a gate in it
       let inGap = false;
       for (let k = 0; k < CFG.laneCount; k++) {
@@ -6012,6 +6039,12 @@ function drawEncBounds() {
     // a post standing ON each deck the line crosses, beside the gap the track goes through
     for (let k = 0; k < CFG.laneCount; k++) {
       if (!laneAt(k, here)) continue;
+      // ...and NOT where the deck is a hole. drawLane cuts a real gap for a ditch, so two
+      // of the nine fence lines -- 14096 over the lane-0 ditch at 14060, and 13833.7 over
+      // the lane-4 ditch at 13800 -- stood a post and a five-bar gate 36 units down inside
+      // a 70-unit trench, held up by nothing. Neither loop consulted S.rooms.
+      if (S.rooms.some(m => m.lane === k && m.type === 'ditch'
+                         && here > m.x - 4 && here < m.x + CFG.gapWidth + 4)) continue;
       const dy = laneY(k);
       sunShade(sx, dy + 2, 4, STAKE * 2.4, 0.18);
       ctx.fillStyle = kind === 3 ? '#8a8378' : '#5c4830';
@@ -6024,7 +6057,17 @@ function drawEncBounds() {
       if (!laneAt(k, here)) continue;
       const gy = laneY(k);
       sunShade(sx + 6, gy + 2, 10, 38, 0.20);
-      const shut = clamp01((here - ENC.free) / (ENC.wall - ENC.free) * 1.5);
+      // CLOSING BEHIND YOU, which is what this module's own header says it does. As a
+      // function of x alone the gates were shut in FRONT of the crowd -- the last three
+      // fence lines before the wall each hung a 34-unit five-bar gate and a 43-unit post
+      // across lane 0, the only live lane, and a hundred people walked through the lot of
+      // them. 34 units is a gate a 45-unit body cannot step over, and it was decoration in
+      // a function that draws before the runners, so they simply painted over it.
+      //
+      // The second factor is the pack's own position: open ahead of the front runner,
+      // swinging shut as he passes, fully closed behind him.
+      const shut = clamp01((here - ENC.free) / (ENC.wall - ENC.free) * 1.5)
+                 * clamp01((S.cam + CFG.packFront - here) / 120);
       ctx.save(); ctx.translate(sx, gy + 2);
       // a five-bar gate seen from the side: open it lies along the line, shut it crosses
       // A real gate: a head stile, a heel stile, four rails between them and a brace.
@@ -7032,6 +7075,23 @@ function drawEncRoom(room, y) {
     // bank is that the spoil from the cut makes the far side unclimbable; a bank you can
     // stride across is a decorative ridge. A control at y-102 puts the apex at y-50, a
     // body high, and it is wider so the slope is diggable rather than a spike.
+    // THE ROOM IS CALLED "cut through the bank", AND UNTIL NOW IT NEVER CUT IT. Solving a
+    // ditch laid a plank over the hole and left the bank whole, so a hundred people walked
+    // straight through a solid earth bank taller than they are, four times in the act,
+    // immediately after clearing the room that promised exactly that cut. The bank's apex
+    // is 35 units and it reaches 37 within 14 units of the lip -- there is no way over it
+    // and none around it, because travel is +x and it sits across the whole deck.
+    //
+    // Solved, a track-width notch is taken out of it with an even-odd hole, leaving the
+    // spoil heaped either side of the gap: which is what cutting through a bank looks like.
+    // 30 wide against a 14-wide body, cut to within 4 units of the walking surface.
+    ctx.save();
+    if (solved) {
+      ctx.beginPath();
+      ctx.rect(sx + gw - 10, y - 200, DITCH_SPOIL + 30, 260);
+      ctx.rect(sx + gw + 34, y - 120, 30, 116 + 4);
+      ctx.clip('evenodd');
+    }
     ctx.fillStyle = '#54432f';
     ctx.beginPath();
     ctx.moveTo(sx + gw, y + 2);
@@ -7045,19 +7105,37 @@ function drawEncRoom(room, y) {
     ctx.lineTo(sx + gw + DITCH_SPOIL - 6, y + 1);
     ctx.quadraticCurveTo(sx + gw + 44, y - 64, sx + gw + 10, y + 1);
     ctx.closePath(); ctx.fill();
+    ctx.restore();
+    // the cut faces of the notch, so the gap reads as dug rather than as a missing pixel
+    if (solved) {
+      ctx.fillStyle = 'rgba(52,40,28,0.75)';
+      ctx.fillRect(sx + gw + 32, y - 116, 3, 116);
+      ctx.fillRect(sx + gw + 61, y - 116, 3, 116);
+    }
     // fresh spoil showing through where the turf has not closed over
     ctx.fillStyle = 'rgba(86,68,46,0.7)';
     for (let i = 0; i < 6; i++) {
       const hv = hash(room.x * 3.1 + i * 7.7);
       ctx.beginPath();
-      ctx.ellipse(sx + gw + 12 + hv * 42, y - 12 - hv * 52, 3 + hv * 6, 2 + hv * 3, hv * 2, 0, 6.28);
+      // ON the bank's own curve, evaluated at the same t. Independent x and y meant the
+      // clod's height ROSE with hv while the bank's height FELL past its apex, so about a
+      // third of them ended up clear of the earth they are supposed to be lying on -- the
+      // worst hanging a body's height in open air, at all four ditches.
+      const t = 0.14 + hv * 0.58;
+      const bx = sx + gw + 88 * t * (1 - t) + DITCH_SPOIL * t * t;
+      const by = y + 2 * ((1 - t) * (1 - t) + t * t) - 144 * t * (1 - t) + 4;
+      ctx.ellipse(bx, by, 3 + hv * 6, 2 + hv * 3, hv * 2, 0, 6.28);
       ctx.fill();
     }
     // a plank laid across once it is cut through
     if (solved) {
-      ctx.fillStyle = INK; ctx.fillRect(sx - 6, y - 8, gw + 12, 9);
-      ctx.fillStyle = '#8b5a2b'; ctx.fillRect(sx - 5, y - 7, gw + 10, 7);
-      ctx.fillStyle = 'rgba(255,240,206,0.18)'; ctx.fillRect(sx - 5, y - 7, gw + 10, 1.6);
+      // The plank's TOP is the deck's surface. At y-8 its walking surface sat 7 units above
+      // the deck while a runner's soles land between y+2.3 and y+15.5, so every body
+      // crossing was 9 to 22 units sunk into it -- a fifth to a half of a 45-unit body.
+      // That is the conveyor's "sunk to the knee" fault reproduced exactly.
+      ctx.fillStyle = INK; ctx.fillRect(sx - 6, y - 2, gw + 12, 9);
+      ctx.fillStyle = '#8b5a2b'; ctx.fillRect(sx - 5, y - 1, gw + 10, 7);
+      ctx.fillStyle = 'rgba(255,240,206,0.18)'; ctx.fillRect(sx - 5, y - 1, gw + 10, 1.6);
     }
   }
 }
@@ -7142,11 +7220,16 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
   face.addColorStop(0.62, 'rgba(0,0,0,0.10)');
   face.addColorStop(1, 'rgba(0,0,0,0.34)');
   ctx.fillStyle = face; ctx.fillRect(wx0, top, ww, bottom - top);
-  // Damp rising out of the ground, and clean stone up top: it is newly built.
-  const damp = ctx.createLinearGradient(0, bottom - 300, 0, bottom);
+  // Damp rising out of THE GROUND, not out of `bottom`. bottom is worldBottom + 120 = 660
+  // and the ground the wall stands on is y = 400, so 261 of the 300-unit ramp was below the
+  // floor of the world: the visible part reached alpha 0.044 where the ground is and the
+  // full 0.34 where nobody can ever see it. Anchored to y, and both the gradient and the
+  // rect fed from one DAMP so they cannot drift.
+  const DAMP = 300;
+  const damp = ctx.createLinearGradient(0, y - DAMP, 0, y);
   damp.addColorStop(0, 'rgba(48,56,44,0)');
   damp.addColorStop(1, 'rgba(48,56,44,0.34)');
-  ctx.fillStyle = damp; ctx.fillRect(wx0, bottom - 300, ww, 300);
+  ctx.fillStyle = damp; ctx.fillRect(wx0, y - DAMP, ww, DAMP);
   ctx.restore();
   // A COPING, so the wall has a top rather than running off the frame as an open-ended
   // band. Even off-screen it matters at the finale zoom, and it is the one line that says
