@@ -49,7 +49,7 @@ const CFG = {
   },
   crusherPeriod: 1.6,
   spikeCooldown: 3,      // real seconds before another death-spike slow-motion can fire
-  // LastRoom playtest: no forks â€” straight corridor to the final chamber
+  // LastRoom playtest: no forks - straight corridor to the final chamber
   forks: [],
   gates: [],
   gateArm: 140, holdMax: 8,
@@ -58,11 +58,11 @@ const CFG = {
   names: ['Amish', 'Atthiyya', 'Onur', 'Ferran', 'Frankie', 'Hasan', 'Isabela', 'Linh', 'Long',
           'Morgan', 'Rohan', 'Sara', 'Skodo', 'Dave', 'Gigo', 'Mariam', 'Maria-Paz', 'Matou\u0161',
           'Nikita', 'Paula', 'Hoda', 'Sithe', 'Valeria', 'Violeta\u{1F49C}', 'Wilson', 'BOOM\u{1F4A3}'],
-  rooms: [],              // no mid-run puzzles â€” start, then Final only
+  rooms: [],              // no mid-run puzzles - start, then Final only
   // Document.xlsx / LastRoom: sealed capitalism chamber, spot-the-difference finale
   finale: { x: 2100, findCount: 10, searchTime: 90, hitRadius: 24, cursorSpeed: 320 },
 };
-// Generator charge time from Document LastRoom sheet: workers 1..100 â†’ 10.9s .. 1.0s
+// Generator charge time from Document LastRoom sheet: workers 1..100 -> 10.9s .. 1.0s
 CFG.finale.genTime = n => Math.max(1, 11 - 0.1 * Math.max(1, n));
 CFG.exit = CFG.finale.x - 10;
 const laneY = k => CFG.baseY - CFG.laneGap * k;
@@ -84,14 +84,14 @@ const LINES = {
   ],
   safe: ['See? Totally safe.', 'I was never worried.', 'Sturdy!', 'Told you it was fine.', 'Easy.'],
   held: ['Why are we stopped?', 'Any minute now...', 'Is this a bathroom break?', 'I can see my house from here.', 'Personal space, please.',
-    'Oof.', 'Excuse mâ€”', 'I was here first!', 'No pushing!', 'My spleen.', 'Mind theâ€”', 'Who ordered a queue?'],
+    'Oof.', 'Excuse m-', 'I was here first!', 'No pushing!', 'My spleen.', 'Mind the-', 'Who ordered a queue?'],
   fall: [
-    'I retire tomorâ€”', 'Not the new shoes!', 'Tell my cat Iâ€”', 'Oh. Oh no.', 'Wheee!', "This wasn't in the brochure!",
+    'I retire tomor-', 'Not the new shoes!', 'Tell my cat I-', 'Oh. Oh no.', 'Wheee!', "This wasn't in the brochure!",
     'Bit of a dip here.', 'I regret the snacks.', 'Is THIS the gift shop?', 'Skipped leg day...', 'Told you, honey!',
-    'Nooooâ€”', 'Big changes indeed.', "Well, that's a Tuesday.", 'The waiver!', 'Five stars, would fall again.',
+    'Noooo-', 'Big changes indeed.', "Well, that's a Tuesday.", 'The waiver!', 'Five stars, would fall again.',
     'The puppy!', 'Cancel the mortgage!', 'So... alive...',
   ],
-  crush: ['Ow.', 'Rude!', 'Mind theâ€”', 'Squish.', 'Not the hair!', 'I had plans.'],
+  crush: ['Ow.', 'Rude!', 'Mind the-', 'Squish.', 'Not the hair!', 'I had plans.'],
 };
 const WORDS = {
   4: ['ROPE', 'GATE', 'LOCK', 'PULL', 'HAUL', 'LIFT', 'KNOT', 'HOOK'],
@@ -172,7 +172,7 @@ function saveBest(n) { try { if (n > loadBest()) localStorage.setItem('hr_best',
 // ================================================================ LastRoom finale (Document.xlsx / LastRoom)
 const HELD = Object.create(null);
 const FINALE_BLACKOUT = 1.55; // 3 flicker beats before generator restarts
-// Six dark capitalism tableaux â€” inked, muted gold / rust / mill soot, same art language as the run.
+// Six dark capitalism tableaux - inked, muted gold / rust / mill soot, same art language as the run.
 const FINALE_SCENES = [
   {
     id: 'line', title: 'THE LINE NEVER STOPS',
@@ -264,7 +264,7 @@ function finaleLightLevel(f) {
   if (f.phase === 'search') return 1;
   if (f.phase === 'blackout') {
     const t = f.blackoutT;
-    // Three readable beats: cut â†’ ghost pulse â†’ dying stutter â†’ black
+    // Three readable beats: cut -> ghost pulse -> dying stutter -> black
     if (t < 0.28) return 0.05 + Math.sin(t * 40) * 0.04;
     if (t < 0.55) return 0.42 + Math.sin((t - 0.28) * 22) * 0.12;
     if (t < 0.95) return 0.12 + (Math.sin(t * 55) > 0.3 ? 0.18 : 0);
@@ -513,7 +513,7 @@ function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
     cold.addColorStop(0, 'rgba(40,70,55,0.35)'); cold.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = cold; ctx.fillRect(x, y, 150, h);
     paintShaft(x + 180, y + 8, 110, 170, 0.16);
-    // wages pit â€” empty tin cups, thin figures behind bars
+    // wages pit - empty tin cups, thin figures behind bars
     inkFill('#162018', x + 10, y + 40, 118, 148, 5);
     ctx.strokeStyle = '#3a5044'; ctx.lineWidth = 2;
     for (let i = 0; i < 7; i++) {
@@ -1211,7 +1211,7 @@ function releaseGate(g, spread) {
   }
 }
 function finaleFail() {
-  // legacy name kept for any remaining references â€” LastRoom uses finaleWrong()
+  // legacy name kept for any remaining references - LastRoom uses finaleWrong()
   finaleWrong();
 }
 
@@ -1981,7 +1981,7 @@ function working(x, y, w, h, salt, lit, vert) {
   ctx.closePath(); ctx.fill();
   // Silhouette of the void: a broken floor and a roof that follows the rock. The arch used
   // to be capped at 11 on cuts up to 46 tall, which flattened the roof into a near-straight
-  // line â€” the last thing making these read as panes rather than as holes.
+  // line - the last thing making these read as panes rather than as holes.
   const arch = h * (0.3 + r(6) * 0.26);
   ctx.beginPath();
   ctx.moveTo(x + r(10) * 5, y + h);
@@ -2258,7 +2258,7 @@ function slantCorridor(wx0, y0, wx1, y1) {
 // ================================================================ the mill (act one)
 // The run starts inside a factory built against the foot of the mountain: brick,
 // cast iron and daylight as far as the seam, rock beyond it. The change of world
-// is architectural, not a cross-fade â€” the crowd walks the length of the mill and
+// is architectural, not a cross-fade - the crowd walks the length of the mill and
 // out through a shored portal into the workings.
 const FAC = {
   x0: CFG.entrance - 48,
@@ -2671,7 +2671,7 @@ function millWindow(sx, cy, th, lift, salt, face) {
   const gr = ctx.createRadialGradient(sx, ty + h * 0.4, 6, sx, ty + h * 0.4, w);
   gr.addColorStop(0, 'rgba(40,44,40,0)'); gr.addColorStop(1, `rgba(36,40,34,${0.3 - lift * 0.12})`);
   ctx.fillStyle = gr; ctx.fillRect(sx - w / 2, ty, w, h);
-  // a few panes dead, boarded or cracked â€” fixed per window
+  // a few panes dead, boarded or cracked - fixed per window
   if (!face) for (let i = 0; i < 4; i++) for (let j = 0; j < 6; j++) {
     const hv = hash(salt * 0.7 + i * 13.3 + j * 5.1);
     const px = sx - w / 2 + i * w / 4, py = ty + j * h / 6;
@@ -3078,7 +3078,7 @@ function millDeck(wx0, wx1, y) {
     ctx.moveTo(sx, y + (up ? 9 : 3)); ctx.lineTo(sx + 5, y + (up ? 3 : 9));
   }
   ctx.stroke();
-  // panel joints, scuffed paint and grime â€” the deck is not one ruled sheet
+  // panel joints, scuffed paint and grime - the deck is not one ruled sheet
   for (let wx = Math.floor(wx0 / 118) * 118; wx < wx1 + 118; wx += 118) {
     const sx = wx - V.left;
     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(sx, y, 2, 13);
@@ -3653,7 +3653,7 @@ function millSkyline() {
 }
 
 // The mill was built against a rock face, so brick and rock interlock along a
-// ragged edge that leans out over the works â€” not a ruled vertical cut.
+// ragged edge that leans out over the works - not a ruled vertical cut.
 function seamXAt(y) {
   // the lean used to run to 250 against a jitter of about 10, a 10:1 ratio that
   // made the whole edge one ruled diagonal. Less lean, more tooth.
@@ -4865,11 +4865,11 @@ function drawFinalePanel() {
   } else if (f.phase === 'charge' && light < 0.85) {
     ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
     ctx.globalAlpha = 0.45 + 0.55 * Math.sin(t * 9);
-    ctx.fillText('RUNNING THE GENERATORâ€¦', W / 2, L.left.y + L.left.h / 2);
+    ctx.fillText('RUNNING THE GENERATOR...', W / 2, L.left.y + L.left.h / 2);
     ctx.globalAlpha = 1;
   }
 
-  // â€”â€” generator pit â€”â€”
+  // -- generator pit --
   // water
   const wg = ctx.createLinearGradient(0, L.water.y, 0, L.water.y + L.water.h);
   wg.addColorStop(0, '#1a4a62'); wg.addColorStop(0.5, '#0f3550'); wg.addColorStop(1, '#0a2030');
@@ -4893,7 +4893,7 @@ function drawFinalePanel() {
   }
   ctx.globalAlpha = 1;
 
-  // deck / treadmill â€” moving planks read as a wheel underfoot
+  // deck / treadmill - moving planks read as a wheel underfoot
   inkFill('#2e2822', L.deck.x, L.deck.y, L.deck.w, L.deck.h, 4);
   const plank = 28;
   const beltOff = (t * 140) % plank;
@@ -4942,10 +4942,10 @@ function drawFinalePanel() {
   ctx.fillText(f.phase === 'charge'
     ? `${f.line.length} workers on the wheel  Â·  ${f.chargeNeed.toFixed(1)}s to light`
     : f.phase === 'blackout'
-      ? 'lights failing â€” hold on'
+      ? 'lights failing - hold on'
       : 'arrows move cursor  Â·  SPACE marks a difference', L.deck.x, L.deck.y - 10);
 
-  // runners on deck â€” sorted backâ†’front, full sprint cycle on the belt
+  // runners on deck - sorted back->front, full sprint cycle on the belt
   const pack = f.deck.slice().sort((a, b) => a.x - b.x);
   for (const d of pack) {
     if (d.enter < 0 && d.x <= L.deck.x - 40) continue;
@@ -5007,13 +5007,13 @@ function drawTitle() {
   ctx.fillStyle = '#f1c40f'; ctx.fillText('HUNDRED RUNNERS', W / 2, 110);
   ctx.fillStyle = '#eee'; ctx.font = '15px monospace';
   const lines = [
-    'LAST ROOM PLAYTEST â€” no mid-run puzzles.',
+    'LAST ROOM PLAYTEST - no mid-run puzzles.',
     'Everyone runs straight to the sealed capitalism chamber.',
     'The room is dark: the crew must run a generator to light it.',
     'More survivors = faster charge. Then spot 10 differences in 90 seconds.',
     '',
     'ARROWS move the cursor. SPACE confirms a difference.',
-    'A wrong mark costs one person and kills the lights â€” recharge from scratch.',
+    'A wrong mark costs one person and kills the lights - recharge from scratch.',
     'M mutes. R restarts after a run ends.',
   ];
   lines.forEach((l, i) => ctx.fillText(l, W / 2, 156 + i * 22));
@@ -5083,7 +5083,7 @@ function drawEnd() {
   ctx.font = 'bold 11px monospace';
   ctx.globalAlpha = clamp01((T - 0.88) / 0.3);
   ctx.fillStyle = 'rgba(150,240,190,0.9)';
-  ctx.fillText(out.length ? `MADE IT OUT â€” ${out.length}` : 'NOT ONE OF THEM MADE IT OUT', W / 2, y);
+  ctx.fillText(out.length ? `MADE IT OUT - ${out.length}` : 'NOT ONE OF THEM MADE IT OUT', W / 2, y);
   ctx.globalAlpha = 1;
   y += out.length ? 20 : 10;
   ctx.font = 'bold 13px monospace';
@@ -5166,13 +5166,13 @@ function drawEnd() {
     if (l1 > 0) {
       ctx.globalAlpha = Math.min(1, l1 * 1.6);
       ctx.fillStyle = '#ffd27a';
-      ctx.fillText(`Got furthest: ${furthest.name} â€” ${Math.round(furthest.endX / CFG.finale.x * 100)}% of the way, at ${doomOf(furthest).short}`, W / 2, y);
+      ctx.fillText(`Got furthest: ${furthest.name} - ${Math.round(furthest.endX / CFG.finale.x * 100)}% of the way, at ${doomOf(furthest).short}`, W / 2, y);
       ctx.globalAlpha = 1;
     }
     if (l2 > 0) {
       ctx.globalAlpha = Math.min(1, l2 * 1.6);
       ctx.fillStyle = 'rgba(255,150,150,0.85)';
-      ctx.fillText(`First to go: ${first.name} â€” ${doomOf(first).short}, ${first.deathT.toFixed(0)}s in`, W / 2, y + 18);
+      ctx.fillText(`First to go: ${first.name} - ${doomOf(first).short}, ${first.deathT.toFixed(0)}s in`, W / 2, y + 18);
       ctx.globalAlpha = 1;
     }
     at += 0.7;
@@ -5199,7 +5199,7 @@ function drawEnd() {
       }
     }
     ctx.fillStyle = '#aaa'; ctx.font = '14px monospace';
-    typeLine(`${left} survivor${left === 1 ? '' : 's'} â€” ${line}`, W / 2, H - 52, at);
+    typeLine(`${left} survivor${left === 1 ? '' : 's'} - ${line}`, W / 2, H - 52, at);
   }
 
   ctx.globalAlpha = 0.55 + 0.45 * Math.sin(S.t * 3.4);
