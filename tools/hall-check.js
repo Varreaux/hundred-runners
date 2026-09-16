@@ -39,13 +39,21 @@ const mul = (m, n) => [
 const xf = (x, y) => [M[0] * x + M[2] * y + M[4], M[1] * x + M[3] * y + M[5]];
 const mscale = () => (Math.hypot(M[0], M[1]) + Math.hypot(M[2], M[3])) / 2;
 const box = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
-let path0 = null, recording = false;
-const resetBox = () => { box.x0 = box.y0 = Infinity; box.x1 = box.y1 = -Infinity; };
+const solid = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+let path0 = null, recording = false, mainCtx = null;
+const resetBox = () => {
+  box.x0 = box.y0 = solid.x0 = solid.y0 = Infinity;
+  box.x1 = box.y1 = solid.x1 = solid.y1 = -Infinity;
+};
 function hit(x0, y0, x1, y1) {
   if (!recording) return;
   if (![x0, y0, x1, y1].every(Number.isFinite)) return;
   box.x0 = Math.min(box.x0, x0); box.y0 = Math.min(box.y0, y0);
   box.x1 = Math.max(box.x1, x1); box.y1 = Math.max(box.y1, y1);
+  // a glow is light falling on the hall, not a part of the machine
+  if (mainCtx && mainCtx.globalCompositeOperation === 'lighter') return;
+  solid.x0 = Math.min(solid.x0, x0); solid.y0 = Math.min(solid.y0, y0);
+  solid.x1 = Math.max(solid.x1, x1); solid.y1 = Math.max(solid.y1, y1);
 }
 function pt(rx, ry) {
   if (!Number.isFinite(rx) || !Number.isFinite(ry)) return;
@@ -54,7 +62,10 @@ function pt(rx, ry) {
   else { path0.x0 = Math.min(path0.x0, x); path0.y0 = Math.min(path0.y0, y);
          path0.x1 = Math.max(path0.x1, x); path0.y1 = Math.max(path0.y1, y); }
 }
-function makeCtx() {
+// Only the PAGE's context contributes to the box. An offscreen canvas -- puffSprite's,
+// and anything else the game builds once and stamps -- draws its own frame at its own
+// origin, and that is not where the machine is.
+function makeCtx(isMain) {
   const grad = { addColorStop() {} };
   const c = {
     canvas: { width: 960, height: 540 },
@@ -93,10 +104,18 @@ function makeCtx() {
     fillStyle: '', strokeStyle: '', lineWidth: 1, lineCap: '', lineJoin: '', font: '', textAlign: '',
     globalAlpha: 1, globalCompositeOperation: '', shadowBlur: 0, shadowColor: '', filter: '',
   };
+  if (!isMain) {
+    // keep the radius check, which is about validity, and drop every recorder
+    for (const k of ['moveTo', 'lineTo', 'quadraticCurveTo', 'bezierCurveTo', 'rect',
+                     'ellipse', 'fill', 'stroke', 'fillRect', 'strokeRect', 'drawImage']) c[k] = () => {};
+    c.arc = (x, y, r) => { if (!isFinite(r) || r < 0) throw new Error('bad radius ' + r); };
+  }
   return c;
 }
-global.document = { getElementById: () => ({ getContext: makeCtx, width: 960, height: 540 }),
-                    createElement: () => ({ getContext: makeCtx, width: 8, height: 8 }) };
+global.document = {
+  getElementById: () => ({ getContext: () => (mainCtx = makeCtx(true)), width: 960, height: 540 }),
+  createElement: () => ({ getContext: () => makeCtx(false), width: 8, height: 8 }),
+};
 global.window = { addEventListener() {} };
 global.performance = { now: () => 0 }; global.requestAnimationFrame = () => {};
 global.location = { search: '' };
@@ -116,14 +135,27 @@ const { CFG, FAC, V, S, hash, millBay, bayDrive, millFeature } = api;
 
 // Draw one bay's machine at a known place and report where the paint went. The camera is
 // put where millCorridor would put it so inView lets the machine through.
+//
+// OVER A WHOLE CYCLE, not at one instant. All three of these move, and two of them change
+// WIDTH as they move: the hammer's blow throws sparks 19 units past its quiet silhouette
+// for 9% of its cycle, and the cupola's tap glow reaches 12 further for 18% of its. A
+// single S.t therefore reads the true extent of about one machine in eight and reports a
+// spot value as though it were a bound. 32 samples over 12.8 seconds cover the hammer's
+// 1.72s stroke and the tap's 11.1s clock, and the union of the boxes IS the bound.
 const NAMES = ['engine', 'hammer', 'cupola'];
+const CYCLE_SAMPLES = 32, CYCLE_SECONDS = 12.8;
 function measure(gx, lane, feat, y, shy) {
-  V.left = gx - 480; V.vw = 960; V.zoom = 1; S.t = 3.37;
+  V.left = gx - 480; V.vw = 960; V.zoom = 1;
   resetBox(); path0 = null; M = [1, 0, 0, 1, 0, 0]; mstack.length = 0; recording = true;
-  millFeature(gx, y, lane, feat, shy);
+  for (let i = 0; i < CYCLE_SAMPLES; i++) {
+    S.t = 0.37 + i * (CYCLE_SECONDS / CYCLE_SAMPLES);
+    path0 = null; M = [1, 0, 0, 1, 0, 0]; mstack.length = 0;
+    millFeature(gx, y, lane, feat, shy);
+  }
   recording = false;
   const sx = gx - V.left;
-  return { x0: box.x0 - sx, x1: box.x1 - sx, y0: box.y0 - y, y1: box.y1 - y };
+  return { x0: box.x0 - sx, x1: box.x1 - sx, y0: box.y0 - y, y1: box.y1 - y,
+           sx0: solid.x0 - sx, sx1: solid.x1 - sx };
 }
 
 // Walk the mill exactly as millCorridor does: same bay pitch, same jitter expression.
@@ -143,7 +175,8 @@ for (let lane = 0; lane < CFG.laneCount; lane++) {
 const fails = [];
 const say = (ok, msg) => { console.log((ok ? 'ok   ' : 'FAIL ') + msg); if (!ok) fails.push(msg); };
 
-console.log(`${bays.length} big engines across ${CFG.laneCount} lanes ` +
+console.log(`${bays.length} big engines across ${CFG.laneCount} lanes, each measured over ` +
+  `${CYCLE_SAMPLES} instants of a ${CYCLE_SECONDS}s window ` +
   `(${NAMES.map((n, i) => bays.filter(b => b.bay.feat === i).length + ' ' + n).join(', ')})\n`);
 
 // 1. neighbours
@@ -152,7 +185,7 @@ for (const a of bays) {
   for (const b of bays) {
     if (a === b || a.lane !== b.lane || b.gx <= a.gx) continue;
     if (b.gx - a.gx > 420) continue;
-    const gap = (b.gx + b.ext.x0) - (a.gx + a.ext.x1);
+    const gap = (b.gx + b.ext.sx0) - (a.gx + a.ext.sx1);
     if (!worst || gap < worst.gap) worst = { gap, a, b };
   }
 }
@@ -165,12 +198,12 @@ for (const a of bays) {
     if (Math.abs(gxn - a.gx) < 80 || Math.abs(gxn - a.gx) > 300) continue;
     const n = millBay(gxn, a.lane, Math.round(wxn / 200) * 200);
     if (!n.has || n.feat >= 0) continue;
-    const gap = s < 0 ? (a.gx + a.ext.x0) - (gxn + PLANT_REACH) : (gxn - PLANT_REACH) - (a.gx + a.ext.x1);
+    const gap = s < 0 ? (a.gx + a.ext.sx0) - (gxn + PLANT_REACH) : (gxn - PLANT_REACH) - (a.gx + a.ext.sx1);
     if (!worst || gap < worst.gap) worst = { gap, a, b: { gx: gxn, bay: n, ext: { x0: -PLANT_REACH, x1: PLANT_REACH } } };
   }
 }
 say(!worst || worst.gap >= 0, worst
-  ? `no two machines overlap on their drawn extents  tightest ${worst.gap.toFixed(1)} units, ` +
+  ? `no two machines overlap on their SOLID extents  tightest ${worst.gap.toFixed(1)} units, ` +
     `${NAMES[worst.a.bay.feat]} at ${worst.a.gx | 0} beside ${worst.b.bay.feat >= 0 ? NAMES[worst.b.bay.feat] : 'plant'} at ${worst.b.gx | 0}`
   : 'no two machines overlap on their drawn extents  (none placed)');
 

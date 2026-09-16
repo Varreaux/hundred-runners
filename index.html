@@ -3644,6 +3644,11 @@ function millBay(gx, lane, wx) {
 // that is not belt-driven. 'self' is the mill engine, which is the one machine in the hall
 // on the other end of the shafting rather than hanging off it, and draws its own drive.
 const SELF_DRIVEN = 'self';
+// A machine has to FIT the stretch of hall it is given, not merely be near it: millCorridor
+// clips at the span and a half-drawn engine leaves a flywheel in mid-air. Every loop that
+// asks about a feature asks through this, because applying it in the feature loops and not
+// in the shafting loop left cupola belts hanging to nothing at every upper-lane span end.
+const featFits = (gx, wx0, wx1) => gx > wx0 + 112 && gx < wx1 - 112;
 function bayDrive(bay, sx, y) {
   if (bay.feat === 0) return SELF_DRIVEN;
   if (bay.feat === 1) return null;                 // the steam hammer takes steam, not a belt
@@ -3840,28 +3845,29 @@ function millEngine(sx, y, gx, shy) {
   // the rim's tangent so the belt meets the wheel instead of stopping short of it. Drawn
   // here and not by the shafting loop -- bayDrive returns SELF_DRIVEN to keep the loop out
   // of it -- because the wheel has to be down before a belt can wrap it.
-  const dvx = cx - sx, dvy = CL - shy, dl = Math.hypot(dvx, dvy) || 1;
+  const dvx = 0, dvy = CL - shy, dl = Math.abs(dvy) || 1;   // drum is over the wheel
   const nx = -dvy / dl, ny = dvx / dl, sag = Math.sin(S.t * 5 + gx) * 1.1;
-  // Hangers spaced for the drum. The hall's ordinary pair leave 17.6 units between them
-  // and this drum is 43 across, so it was drawn straight over both bearings; those two are
-  // inside its radius and stay hidden behind it.
-  for (const hd of [-32, 29]) {
-    ctx.fillStyle = '#3f414a'; ctx.fillRect(sx + hd, shy - 52, 3.4, 52);
-    ctx.fillStyle = 'rgba(214,230,248,0.12)'; ctx.fillRect(sx + hd, shy - 52, 1.1, 52);
-    ctx.fillStyle = '#4b4a55'; ctx.fillRect(sx + hd - 3, shy - 6, 9.4, 8);
+  // Hangers spaced for the drum, and the drum itself directly over the flywheel. Sitting
+  // at sx it threw the belt diagonally across the engine: the lower strand began inside
+  // the upper slide bar, passed half a unit from the crosshead's centre line, and cut the
+  // motion plate in half -- all of it painted over the moving parts, because the belt is
+  // drawn last. Over the wheel the strands are vertical and miss every one of them.
+  for (const hd of [-30, 27]) {
+    ctx.fillStyle = '#3f414a'; ctx.fillRect(cx + hd, shy - 52, 3.4, 52);
+    ctx.fillStyle = 'rgba(214,230,248,0.12)'; ctx.fillRect(cx + hd, shy - 52, 1.1, 52);
+    ctx.fillStyle = '#4b4a55'; ctx.fillRect(cx + hd - 3, shy - 6, 9.4, 8);
   }
-  // the main driving pulley, over the bay's ordinary 8-unit one
-  ctx.fillStyle = DARK; ctx.beginPath(); ctx.arc(sx, shy, DRUM + 1.6, 0, 6.28); ctx.fill();
-  ctx.fillStyle = '#343742'; ctx.beginPath(); ctx.arc(sx, shy, DRUM, 0, 6.28); ctx.fill();
+  ctx.fillStyle = DARK; ctx.beginPath(); ctx.arc(cx, shy, DRUM + 1.6, 0, 6.28); ctx.fill();
+  ctx.fillStyle = '#343742'; ctx.beginPath(); ctx.arc(cx, shy, DRUM, 0, 6.28); ctx.fill();
   ctx.strokeStyle = 'rgba(206,224,244,0.2)'; ctx.lineWidth = 1.3;
-  ctx.beginPath(); ctx.arc(sx, shy, DRUM, 3.4, 5.5); ctx.stroke();
-  ctx.fillStyle = '#23252e'; ctx.beginPath(); ctx.arc(sx, shy, 5, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, shy, DRUM, 3.4, 5.5); ctx.stroke();
+  ctx.fillStyle = '#23252e'; ctx.beginPath(); ctx.arc(cx, shy, 5, 0, 6.28); ctx.fill();
   const dspin = shaftPhase(gx) + hash(gx) * 6;
   ctx.fillStyle = 'rgba(224,206,160,0.3)';
-  ctx.beginPath(); ctx.arc(sx + Math.cos(dspin) * (DRUM - 4), shy + Math.sin(dspin) * (DRUM - 4), 1.5, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + Math.cos(dspin) * (DRUM - 4), shy + Math.sin(dspin) * (DRUM - 4), 1.5, 0, 6.28); ctx.fill();
   ctx.save(); ctx.lineCap = 'butt';
   for (const d of [-1, 1]) {
-    const ax = sx + nx * d * DRUM, ay = shy + ny * d * DRUM;
+    const ax = cx + nx * d * DRUM, ay = shy + ny * d * DRUM;
     const bx2 = cx + nx * d * RIM, by2 = CL + ny * d * RIM;
     const mx = (ax + bx2) / 2 + nx * d * 2.4 + sag * d, my = (ay + by2) / 2 + ny * d * 2.4;
     ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 4.4;
@@ -3920,9 +3926,10 @@ function millEngine(sx, y, gx, shy) {
   }
 
   // the warmth off a working cylinder, thrown down onto the deck in front of it
-  const wg = ctx.createLinearGradient(0, y - 24, 0, y);
-  wg.addColorStop(0, 'rgba(255,196,120,0)'); wg.addColorStop(1, 'rgba(255,196,120,0.07)');
-  ctx.fillStyle = wg; ctx.fillRect(sx - 104, y - 24, 122, 24);
+  const wg = ctx.createLinearGradient(0, y - 24, 0, y + 20);
+  wg.addColorStop(0, 'rgba(255,196,120,0)'); wg.addColorStop(0.545, 'rgba(255,196,120,0.07)');
+  wg.addColorStop(1, 'rgba(255,196,120,0)');
+  ctx.fillStyle = wg; ctx.fillRect(sx - 104, y - 24, 122, 44);
 }
 // The cocks are open on the down stroke, which is when a cylinder full of condensate has
 // somewhere to go, so the blast comes once a revolution rather than as a steady leak: a
@@ -3999,16 +4006,16 @@ function millHammer(sx, y, gx) {
     ctx.fillStyle = DARK;
     ctx.beginPath();
     ctx.moveTo(sx + d * 47, y - 8); ctx.lineTo(sx + d * 30, y - 8);
-    ctx.lineTo(sx + d * 15, y - 80); ctx.lineTo(sx + d * 27, y - 80); ctx.closePath(); ctx.fill();
+    ctx.lineTo(sx + d * 20, y - 80); ctx.lineTo(sx + d * 30, y - 80); ctx.closePath(); ctx.fill();
     ctx.fillStyle = d < 0 ? '#2c3538' : '#222a2c';
     ctx.beginPath();
     ctx.moveTo(sx + d * 45, y - 9); ctx.lineTo(sx + d * 32.4, y - 9);
-    ctx.lineTo(sx + d * 17.4, y - 79); ctx.lineTo(sx + d * 25.4, y - 79); ctx.closePath(); ctx.fill();
+    ctx.lineTo(sx + d * 22, y - 79); ctx.lineTo(sx + d * 28.6, y - 79); ctx.closePath(); ctx.fill();
     if (d < 0) {
       ctx.fillStyle = 'rgba(206,228,248,0.16)';
       ctx.beginPath();
       ctx.moveTo(sx - 45, y - 9); ctx.lineTo(sx - 42, y - 9);
-      ctx.lineTo(sx - 22.4, y - 79); ctx.lineTo(sx - 25.4, y - 79); ctx.closePath(); ctx.fill();
+      ctx.lineTo(sx - 25, y - 79); ctx.lineTo(sx - 28.6, y - 79); ctx.closePath(); ctx.fill();
     }
     // lightening holes: what makes a casting read as a casting rather than a plank
     for (let i = 0; i < 3; i++) {
@@ -4041,10 +4048,12 @@ function millHammer(sx, y, gx) {
   for (let i = 0; i < 7; i++) ctx.fillRect(sx - 20 + i * 6.4, y - 94.6, 2, 2);
   // Steam IN, off the overhead main. It was claimed in a comment and never drawn: the
   // hammer had an exhaust, no supply, and no belt either, so nothing was driving it.
-  ctx.fillStyle = DARK; ctx.fillRect(sx + 18, y - 104, 22, 9);
-  ctx.fillStyle = '#39424a'; ctx.fillRect(sx + 18, y - 103, 21, 7);
-  ctx.fillStyle = 'rgba(210,230,240,0.13)'; ctx.fillRect(sx + 18, y - 103, 21, 1.3);
-  // exhaust: out of the cylinder side, elbowed down the standard, blowing at head height
+  ctx.fillStyle = DARK; ctx.fillRect(sx + 18, y - 98, 22, 9); ctx.fillRect(sx + 31, y - 105, 9, 10);
+  ctx.fillStyle = '#39424a'; ctx.fillRect(sx + 18, y - 97, 21, 7); ctx.fillRect(sx + 32, y - 105, 7, 9);
+  ctx.fillStyle = 'rgba(210,230,240,0.13)'; ctx.fillRect(sx + 18, y - 97, 21, 1.3);
+  // exhaust: out of the cylinder side and down the standard. The mouth is 80 above the
+  // deck, which against a 45-unit body is nearly two of them -- well overhead, not head
+  // height, which is what this comment used to claim.
   ctx.fillStyle = DARK; ctx.fillRect(sx - 44, y - 104, 26, 9); ctx.fillRect(sx - 44, y - 104, 9, 22);
   ctx.fillStyle = '#39424a'; ctx.fillRect(sx - 43, y - 103, 25, 7); ctx.fillRect(sx - 43, y - 103, 7, 21);
   ctx.fillStyle = 'rgba(210,230,240,0.13)'; ctx.fillRect(sx - 43, y - 103, 25, 1.3);
@@ -4109,8 +4118,8 @@ function millHammer(sx, y, gx) {
 // free-running plume cannot do, because its puffs are spread evenly round the clock.
 function millHammerSmoke(sx, y, gx) {
   const { ph, since } = hammerStroke(gx);
-  millSmoke(sx - 40, y - 82, { n: 8, rise: 34, rate: 0.95, r0: 5, r1: 27, drift: -40,
-    a: 0.46 * Math.max(0, 1 - Math.abs(ph - 0.62) * 4.5), salt: gx * 1.7, tint: '230,235,243',
+  millSmoke(sx - 40, y - 82, { n: 8, rise: 22, rate: 0.95, r0: 5, r1: 27, drift: -40,
+    a: 0.46 * Math.max(0, 1 - Math.abs(ph - 0.77) * 4.5), salt: gx * 1.7, tint: '230,235,243',
     ceil: SMOKE_CEIL(y), roll: -1.2 });
   // rise well past the climb, so there is `over` to convert into the sideways run that
   // carries it out from under the crown. At rise 46 against a 45-unit climb it had one
@@ -4214,7 +4223,7 @@ function millCupola(sx, y, gx, shy) {
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     // an arc, not a plumb line: it leaves the lip with the speed it had in the spout
     for (let i = 0; i < 9; i++) {
-      const q = i / 8, px2 = sx - 54 - q * 9, py2 = y - 19 + q * q * 19;
+      const q = i / 8, px2 = sx - 54 - q * 9, py2 = y - 19 + q * q * 15;
       ctx.fillStyle = 'rgba(255,200,116,0.85)';
       ctx.fillRect(px2 - 1.8, py2, 3.6 + q * 1.4, 3.4);
     }
@@ -4284,15 +4293,30 @@ function millCupola(sx, y, gx, shy) {
   ctx.fillStyle = DARK; ctx.beginPath(); ctx.arc(bx, by, 5, 0, 6.28); ctx.fill();
   ctx.strokeStyle = '#545d66'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(bx, by, 14.4, 0, 6.28); ctx.stroke();
-  // the driven pulley, on a bracket clear of the casing so the belt has somewhere to land
-  ctx.fillStyle = DARK; ctx.fillRect(bx - 4.4, y - 62, 8.8, 22);
-  ctx.fillStyle = BODY; ctx.fillRect(bx - 3.4, y - 61, 6.8, 21);
-  ctx.fillStyle = '#131118'; ctx.beginPath(); ctx.arc(bx, y - 62, BPUL + 1.6, 0, 6.28); ctx.fill();
-  ctx.fillStyle = '#343742'; ctx.beginPath(); ctx.arc(bx, y - 62, BPUL, 0, 6.28); ctx.fill();
-  ctx.strokeStyle = 'rgba(206,224,244,0.22)'; ctx.lineWidth = 1.1;
-  ctx.beginPath(); ctx.arc(bx, y - 62, BPUL, 3.4, 5.5); ctx.stroke();
-  ctx.fillStyle = 'rgba(224,206,160,0.3)';
-  ctx.beginPath(); ctx.arc(bx + Math.cos(spin) * (BPUL - 1.6), y - 62 + Math.sin(spin) * (BPUL - 1.6), 1.2, 0, 6.28); ctx.fill();
+  // The countershaft: a bracket OFF to the side, not a bar down the middle of the port.
+  ctx.fillStyle = DARK; ctx.fillRect(bx + 15, y - 64, 7, 26);
+  ctx.fillStyle = BODY; ctx.fillRect(bx + 16, y - 63, 5, 25);
+  ctx.fillStyle = DARK; ctx.fillRect(bx - 2, y - 65, 24, 6);
+  ctx.fillStyle = BODY; ctx.fillRect(bx - 1, y - 64, 22, 4.4);
+  ctx.fillStyle = 'rgba(214,230,248,0.13)'; ctx.fillRect(bx - 1, y - 64, 22, 1.1);
+  // the belt down from it to the fan shaft. Same size at both ends, so the step-up is all
+  // in the first belt and one ratio describes the whole train.
+  ctx.save(); ctx.lineCap = 'butt';
+  for (const d of [-1, 1]) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 3.4;
+    ctx.beginPath(); ctx.moveTo(bx + d * BPUL, y - 62); ctx.lineTo(bx + d * BPUL, by); ctx.stroke();
+    ctx.strokeStyle = d < 0 ? '#2e241a' : '#3c2d20'; ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.moveTo(bx + d * BPUL, y - 62); ctx.lineTo(bx + d * BPUL, by); ctx.stroke();
+  }
+  ctx.restore();
+  for (const py of [y - 62, by]) {
+    ctx.fillStyle = '#131118'; ctx.beginPath(); ctx.arc(bx, py, BPUL + 1.6, 0, 6.28); ctx.fill();
+    ctx.fillStyle = '#343742'; ctx.beginPath(); ctx.arc(bx, py, BPUL, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = 'rgba(206,224,244,0.22)'; ctx.lineWidth = 1.1;
+    ctx.beginPath(); ctx.arc(bx, py, BPUL, 3.4, 5.5); ctx.stroke();
+    ctx.fillStyle = 'rgba(224,206,160,0.3)';
+    ctx.beginPath(); ctx.arc(bx + Math.cos(spin) * (BPUL - 1.6), py + Math.sin(spin) * (BPUL - 1.6), 1.2, 0, 6.28); ctx.fill();
+  }
   void shy;
 }
 // What the hood misses rolls out round both lips, climbs the outside of the flue and then
@@ -4458,6 +4482,13 @@ function millCorridor(wx0, wx1, y, laneIn) {
     const hj = hash(wx * 0.0091);
     const gx = wx + 172 + (hj - 0.5) * 50, sx = gx - V.left;
     if (gx < wx0 + 16 || gx > wx1 - 16) continue;
+    // not through a machine: the next bay's centre is 147 to 197 to the right of here, and
+    // an engine reaches 110 back from it, so without this every engine and every cupola in
+    // the hall had a column running up through the middle of it
+    const nb = wx + 200, nbgx = nb + 8 + (hash(nb * 0.0051) - 0.5) * 50;
+    const nbay = featFits(nbgx, wx0, wx1) ? millBay(nbgx, lane, nb) : { feat: -1 };
+    if (nbay.feat >= 0 && gx > nbgx - FEAT_REACH[nbay.feat][0] - 10
+        && gx < nbgx + FEAT_REACH[nbay.feat][1] + 10) continue;
     ctx.fillStyle = '#131119'; ctx.fillRect(sx - 7, cy + 16, 14, y - cy - 14);
     ctx.fillStyle = '#2b2933'; ctx.fillRect(sx - 5.6, cy + 16, 11.2, y - cy - 14);
     ctx.fillStyle = 'rgba(214,230,248,0.13)'; ctx.fillRect(sx - 5.6, cy + 16, 3, y - cy - 14);
@@ -4502,7 +4533,8 @@ function millCorridor(wx0, wx1, y, laneIn) {
   for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50, sx = gx - V.left;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
-    const bay = millBay(gx, lane, wx);
+    const bay0 = millBay(gx, lane, wx);
+    const bay = featFits(gx, wx0, wx1) ? bay0 : { has: bay0.has, kind: bay0.kind, feat: -1 };
     // hanger
     ctx.fillStyle = '#3f414a'; ctx.fillRect(sx - 12, cy + 24, 3.4, shy - cy - 24); ctx.fillRect(sx + 9, cy + 24, 3.4, shy - cy - 24);
     // pulley
@@ -4547,7 +4579,7 @@ function millCorridor(wx0, wx1, y, laneIn) {
   for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
-    if (gx < wx0 + 112 || gx > wx1 - 112) continue;   // it has to FIT, not merely be near
+    if (!featFits(gx, wx0, wx1)) continue;
     const feat = millBay(gx, lane, wx).feat;
     if (feat >= 0) millFeature(gx, y - 2, lane, feat, shy);
   }
@@ -4563,7 +4595,7 @@ function millCorridor(wx0, wx1, y, laneIn) {
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
     const bay = millBay(gx, lane, wx);
     if (bay.feat >= 0) {
-      if (gx > wx0 + 112 && gx < wx1 - 112) millFeatureSmoke(gx, y - 2, lane, bay.feat);
+      if (featFits(gx, wx0, wx1)) millFeatureSmoke(gx, y - 2, lane, bay.feat);
     } else if (bay.has && bay.kind === 2 && inView(gx, 130)) {
       millBoilerSmoke(gx - V.left, y - 2, gx);
     }
