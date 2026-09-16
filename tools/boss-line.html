@@ -1,0 +1,45 @@
+<!doctype html>
+<!-- Hold Mr. Capitalism on a chosen line of his script.
+       tools/boss-line.html?line=1&ch=999&t=3&shot
+     line is the index into BOSS_SCRIPT, ch how much of it has been typed, t his own clock.
+
+     ?intro=N cannot do this and that is not an oversight: moving off a line costs a SPACE,
+     on purpose, so that nobody is carried past him unread -- and the dev flag only advances
+     the clock. Anything past his first line therefore cannot be photographed without
+     driving him, and a change to a later line would otherwise be shipped unseen.
+
+     It paints its own failure, for the reason the bench does: a page that throws leaves an
+     empty canvas, and an empty canvas is indistinguishable from a composition problem.
+     NO BACKTICKS BELOW THIS LINE: the whole bench is inside a template literal. -->
+<html><head><meta charset="utf-8"><title>bossline</title>
+<style>html,body{margin:0;background:#0d0f16}canvas{display:block}</style></head>
+<body><canvas id="c" width="960" height="540"></canvas>
+<script>
+const req = new XMLHttpRequest();
+req.open('GET', '../index.html', false); req.send();
+const o = '<' + 'script>', cl = '<' + '/script>';
+const game = req.responseText.split(o)[1].split(cl)[0].replace("'use strict';", '');
+const bench = `
+  const Q2 = new URLSearchParams(location.search);
+  S.mode = 'intro'; S.introT = 0;
+  for (let i = 0; i < 12 * 60 && !S.boss; i++) update(1 / 60);
+  if (S.boss) {
+    S.boss.line = +(Q2.get('line') || 1);
+    S.boss.ch = +(Q2.get('ch') || 999);
+    S.boss.wrapFor = -1;
+    S.boss.t = +(Q2.get('t') || 3);
+    S.boss.inK = 1; S.boss.outK = 0;
+  }
+  draw();
+`;
+try { (0, eval)(game + bench); }
+catch (e) {
+  const cv = document.getElementById('c'), g = cv.getContext('2d');
+  g.fillStyle = '#2a0d12'; g.fillRect(0, 0, cv.width, cv.height);
+  g.fillStyle = '#ff6b6b'; g.font = 'bold 20px monospace';
+  g.fillText('BOSSLINE FAILED', 24, 48);
+  g.font = '13px monospace';
+  String(e && e.stack || e).split('\n').slice(0, 10).forEach((l, i) => g.fillText(l.slice(0, 96), 24, 80 + i * 18));
+  document.title = 'FAILED: ' + (e && e.message || e);
+}
+</script></body></html>
