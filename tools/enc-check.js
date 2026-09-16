@@ -169,6 +169,43 @@ eval(src + `
     try { for (let k = 0; k < CFG.laneCount; k++) lampPools(k); }
     finally { ctx.save = realSave; V.left = keep.left; V.vw = keep.vw; V.zoom = keep.zoom; }
   }
+  // 6. The near plane must never rise over the crowd. Morgan's one constraint on it was
+  //    "not something that would hide the view", and the first version broke it by its own
+  //    arithmetic while a comment asserted it did not: the crest was drawn at BASE + 26 - a
+  //    with a running to 42, so it reached 16px ABOVE the soles and buried their legs in a
+  //    third of nodes. A measured number written into a comment instead of into the code.
+  //
+  //    So it is measured HERE. Park the view in act three, run encForeground against a
+  //    recording context, take the highest y anything reached, and compare it with where
+  //    lane 0's soles land on the canvas. Nothing in the near plane may be above that.
+  let fgTop = 1e9;
+  {
+    const keep = { left: V.left, vw: V.vw, zoom: V.zoom, cam: S.cam };
+    const realLine = ctx.lineTo, realQuad = ctx.quadraticCurveTo, realMove = ctx.moveTo;
+    S.cam = ENC.free + 400; V.left = S.cam - 816.3; V.vw = 2119; V.zoom = 0.4532;
+    // The BANK only. The machines are deliberately allowed to rise past the crowd: they
+    // are open structure -- two legs, a beam, a rod -- and a thin line crossing is what
+    // Morgan asked for. It is the solid ground that must not, because that is what can
+    // actually bury anyone. Stubbing them is how the check says which of the two it means.
+    const realBeam = beamEngine, realHouse = engineHouse;
+    beamEngine = () => {}; engineHouse = () => {};
+    const note = y => { if (y < fgTop) fgTop = y; };
+    ctx.lineTo = function (x, y) { note(y); return realLine.apply(this, arguments); };
+    ctx.moveTo = function (x, y) { note(y); return realMove.apply(this, arguments); };
+    ctx.quadraticCurveTo = function (cx2, cy2, x, y) { note(cy2); note(y); return realQuad.apply(this, arguments); };
+    try { encForeground(); }
+    finally {
+      ctx.lineTo = realLine; ctx.moveTo = realMove; ctx.quadraticCurveTo = realQuad;
+      beamEngine = realBeam; engineHouse = realHouse;
+      V.left = keep.left; V.vw = keep.vw; V.zoom = keep.zoom; S.cam = keep.cam;
+    }
+  }
+  // where a runner's soles land on the canvas, by the same transform draw() uses
+  const soleY = 540 + (laneY(0) - CFG.worldBottom) * 0.4532;
+  ok('the near BANK never rises over the crowd', fgTop >= soleY,
+     'highest foreground point canvas y ' + fgTop.toFixed(1) + ' against soles at ' + soleY.toFixed(1) +
+     ' (bigger y is lower; want >= soles)');
+
   ok('no lamp pools out in the open', pools === 0,
      pools === 0 ? 'lampPools drew nothing with the view parked past the mouth'
                  : pools + ' lamp pools drawn in daylight past CFG.exit');
