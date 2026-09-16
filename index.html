@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '75 and then he owns the hills';
+const BUILD = '76 engines beyond the bank';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2122,6 +2122,8 @@ function draw() {
   // after the world, before the vignette and the HUD: it is weather, not a screen effect
   encGrade();
   drawForeground();
+  // After the grade, because a thing this close is not seen through the weather
+  encForeground();
   drawVignette();
   ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.16; ctx.fillStyle = ctx.createPattern(grain(), 'repeat'); ctx.fillRect(0, 0, W, H); ctx.restore();
   // The red wash goes on BEFORE the overlays, so the room badge, the name tags and the
@@ -6053,6 +6055,146 @@ function parallaxRange(p, size, fn) {
 }
 // rock between the camera and the world, moving faster than it. It fades out as the view pulls
 // back, so the six-tunnel shot is never obstructed.
+// ---------------------------------------------------------------- act three's near plane
+//
+// Morgan asked for the cave's foreground treatment out in the open, with the occasional
+// machine in silhouette -- the nodding pump shape that rocks back and forth.
+//
+// What it is: a BEAM ENGINE, which is that exact silhouette and that exact motion, and is
+// the machine the shape actually comes from. A pumpjack is a twentieth-century American
+// oilfield descendant of it; a beam rocking on a central pivot over a pump rod is what was
+// standing in this landscape when it was being fenced. So it is the picture he asked for
+// without a derrick turning up in enclosure-era England. If he wants the literal oilfield
+// version instead it is the same function with a taller frame and a counterweight.
+//
+// It also carries the act's argument, which is why it is a machine and not a hedgerow: the
+// enclosure and the mill are the same force arriving in the same country. The engine
+// houses get commoner toward the wall, on the same `fenced` scalar the trees thin out on.
+//
+// THE SIZE IS MEASURED, NOT CHOSEN. At act three's zoom the crowd's soles land at canvas
+// y 477 with 37px to the hint bar, so the near bank tops out at 478 and cannot touch them.
+// The machines are tall, but a beam engine is almost entirely OPEN STRUCTURE -- two legs, a
+// beam, a rod -- so it occludes a few per cent of its bounding box. That is why this shape
+// can cross the frame without hiding the view and a solid mass could not.
+function encForeground() {
+  const anchor = S.cam + CFG.packFront;
+  const fade = clamp01((anchor - (CFG.exit + 40)) / 420);
+  if (fade <= 0.01) return;
+  // Screen space, so the scroll is scaled by zoom as well as parallax -- the same reason
+  // the cave band does it, or its apparent distance changes whenever the camera zooms.
+  const p = 1.28, step = 132, off = V.left * p * V.zoom;
+  const k0 = Math.floor((off - step) / step), k1 = Math.floor((off + W + step) / step) + 1;
+  const BASE = H - 62;                       // the bank's crest: measured to clear the crowd
+  ctx.save();
+  ctx.globalAlpha = fade;
+  // the bank itself: rough ground between the camera and the world, unlit
+  ctx.beginPath();
+  ctx.moveTo(k0 * step - off, H + 30);
+  for (let k = k0; k <= k1; k++) {
+    const sx = k * step - off;
+    const a = 4 + hash(k * 2.3) * 26 + hash(k * 0.71) * 12;
+    const b = 4 + hash((k + 1) * 2.3) * 26 + hash((k + 1) * 0.71) * 12;
+    const mid = 2 + hash(k * 5.1 + 7) * 34;
+    ctx.lineTo(sx, BASE + 26 - a);
+    ctx.quadraticCurveTo(sx + step * 0.42, BASE + 26 - mid, sx + step, BASE + 26 - b);
+  }
+  ctx.lineTo(k1 * step - off + step, H + 30);
+  ctx.closePath();
+  ctx.fillStyle = '#0b0d10'; ctx.fill();
+  // grass heads on the near bank, leaning on the same wind as everything else outdoors
+  ctx.strokeStyle = '#0b0d10'; ctx.lineWidth = 1.3;
+  for (let k = k0; k <= k1; k++) for (let j = 0; j < 7; j++) {
+    const hv = hash(k * 3.1 + j * 9.7);
+    if (hv < 0.45) continue;
+    const sx = k * step - off + (j + hv) * (step / 7);
+    const top = BASE + 22 - hash(k * 2.3) * 22 - hv * 17;
+    const lean = windAt(k * step + j * 19, S.t) * 6;
+    ctx.beginPath(); ctx.moveTo(sx, BASE + 26); ctx.quadraticCurveTo(sx + lean * 0.4, (top + BASE) / 2, sx + lean, top); ctx.stroke();
+  }
+  // the machines
+  for (let k = k0; k <= k1; k++) {
+    const hv = hash(k * 7.3 + 2);
+    const worldish = k * step / (p * V.zoom);          // roughly where this segment sits
+    const fenced = clamp01((worldish - ENC.free) / Math.max(1, ENC.wall - ENC.free));
+    if (hv > 0.24 + fenced * 0.22) continue;
+    const sx = k * step - off + hash(k * 4.9) * 60;
+    // The base sits BELOW the frame, so only the upper part of the machine shows over the
+    // near bank. That is both how a foreground actually works and the only way this fits:
+    // the crowd's crowns are at canvas y 456 and a machine standing on the bank would have
+    // to cross them. Sunk like this, the tops land around 452 and only the beam's swing
+    // reaches into their band -- a moving line, not a mass, which is what Morgan asked for.
+    const gy = H + 36;
+    if (hash(k * 1.9) < 0.72) beamEngine(sx, gy, 120 + hash(k * 6.1) * 36, k);
+    else engineHouse(sx, gy, 132 + hash(k * 5.7) * 44, k);
+  }
+  ctx.restore();
+}
+// The nodding beam: an A-frame, a beam rocking on its pivot, a pump rod dropping into the
+// ground on the far side. Mostly air, which is the whole reason it can stand in front of
+// the crowd without hiding anyone.
+function beamEngine(sx, gy, h, k) {
+  const ink = '#0b0d10';
+  ctx.strokeStyle = ink; ctx.fillStyle = ink;
+  // PROPORTIONS ARE WHAT MAKES THIS READ. The first version had a beam of 0.46h on legs
+  // spread 0.2h, which is a tall narrow A with a short crossbar -- eight of them in a row
+  // read unmistakably as gallows. The machine's whole identity is a LONG beam on a squat
+  // frame: the beam is 1.5 times the frame's height end to end, and the legs are splayed
+  // wide enough to look like they are holding something heavy up.
+  const pivotY = gy - h, halfBeam = h * 0.72, spread = h * 0.34;
+  ctx.lineWidth = Math.max(2.6, h * 0.055);
+  ctx.beginPath();
+  ctx.moveTo(sx - spread, gy); ctx.lineTo(sx, pivotY);
+  ctx.lineTo(sx + spread, gy); ctx.stroke();
+  ctx.lineWidth = Math.max(1.6, h * 0.03);
+  ctx.beginPath(); ctx.moveTo(sx - spread * 0.62, gy - h * 0.38); ctx.lineTo(sx + spread * 0.62, gy - h * 0.38); ctx.stroke();
+  // the beam, nodding. Each engine on its own phase off k, or a row of them rocks in step.
+  const a = Math.sin(S.t * 1.15 + hash(k * 2.7) * 6.28) * 0.21;
+  const dx = Math.cos(a) * halfBeam, dy = Math.sin(a) * halfBeam;
+  ctx.lineWidth = Math.max(3.4, h * 0.07);
+  ctx.beginPath(); ctx.moveTo(sx - dx, pivotY - dy); ctx.lineTo(sx + dx, pivotY + dy); ctx.stroke();
+  // The pump rod straight down from the outer end into the ground, which is the other half
+  // of the silhouette -- without it the beam is a see-saw rather than a thing doing work.
+  ctx.lineWidth = Math.max(2, h * 0.035);
+  ctx.beginPath(); ctx.moveTo(sx + dx, pivotY + dy); ctx.lineTo(sx + dx, gy + 40); ctx.stroke();
+  // the counterweight on the near end: a heavy disc, and the clearest single cue that this
+  // is a pumping engine and not a crane or a frame
+  ctx.beginPath(); ctx.arc(sx - dx, pivotY - dy, h * 0.11, 0, 6.28); ctx.fill();
+  // the house over the cylinder, sunk into the bank
+  ctx.fillRect(sx - spread * 1.5, gy - h * 0.2, spread * 1.1, h * 0.2 + 40);
+}
+// A chimney and its engine house: static, and the commoner of the two near the wall. The
+// mill has reached the country the crowd is running through.
+function engineHouse(sx, gy, h, k) {
+  ctx.fillStyle = '#0b0d10';
+  const w = h * 0.52;
+  ctx.fillRect(sx - w / 2, gy - h * 0.58, w, h * 0.58);
+  // the stack, tapering, offset to one side
+  const cw = h * 0.1, cx = sx + w * 0.34;
+  ctx.beginPath();
+  ctx.moveTo(cx - cw / 2, gy - h * 0.58);
+  ctx.lineTo(cx - cw * 0.34, gy - h);
+  ctx.lineTo(cx + cw * 0.34, gy - h);
+  ctx.lineTo(cx + cw / 2, gy - h * 0.58);
+  ctx.closePath(); ctx.fill();
+  ctx.fillRect(cx - cw * 0.46, gy - h - h * 0.03, cw * 0.92, h * 0.03);
+  // a pitched roof, so it is a building and not a box
+  ctx.beginPath();
+  ctx.moveTo(sx - w / 2 - h * 0.04, gy - h * 0.58);
+  ctx.lineTo(sx, gy - h * 0.72);
+  ctx.lineTo(sx + w / 2 + h * 0.04, gy - h * 0.58);
+  ctx.closePath(); ctx.fill();
+  if (hash(k * 8.3) > 0.5) {
+    // smoke, drifting downwind on the same field as the grass
+    ctx.fillStyle = 'rgba(11,13,16,0.4)';
+    for (let i = 0; i < 4; i++) {
+      const t = (S.t * 0.22 + i * 0.25 + hash(k + i) * 0.2) % 1;
+      const r = h * (0.05 + t * 0.14);
+      ctx.beginPath();
+      ctx.arc(cx + windAt(k * 60, S.t) * t * 46 + t * 20, gy - h - t * h * 0.7, r, 0, 6.28);
+      ctx.fill();
+    }
+  }
+}
 function drawForeground() {
   // There is only rock in front of the camera when the camera is inside rock. Outdoors this
   // band was reading as black mountains hanging in the sky and black teeth over the lake.
