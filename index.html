@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '71 the grin is back';
+const BUILD = '72 nothing spazes out';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -6099,11 +6099,22 @@ function drawEncLand() {
   const x0 = Math.max(ENC.x0, V.left - 80), x1 = V.left + V.vw + 80;
   if (x1 <= x0) return;
   const step = 24;
+  // The silhouette is sampled on a grid SNAPPED TO THE WORLD, not started at the camera's
+  // left edge. encSurfaceY contains laneY(encTopLane(wx)) inside its clamp, and that is a
+  // STEP function -- so with vertices sliding as V.left moves, every lane-span boundary in
+  // the outline jittered sideways by up to a full step, sixty times a second. Morgan saw
+  // the hill "spazing out" and it is this: not noise in the shape, noise in where the
+  // shape was being measured.
+  //
+  // Same rule as the trees above, one level up: anything that decides FORM must be
+  // anchored in the world. A camera-anchored sample grid re-measures a fixed thing from a
+  // moving ruler and the thing appears to move.
+  const gx0 = Math.floor(x0 / step) * step;
   const ridge = (off, col, alpha, wob) => {
     ctx.fillStyle = col; ctx.globalAlpha = alpha;
     ctx.beginPath();
     ctx.moveTo(x0 - V.left, CFG.worldBottom + 200);
-    for (let wx = x0; wx <= x1 + step; wx += step) ctx.lineTo(wx - V.left, encSurfaceY(wx) + off + (wob ? wob(wx) : 0));
+    for (let wx = gx0; wx <= x1 + step; wx += step) ctx.lineTo(wx - V.left, encSurfaceY(wx) + off + (wob ? wob(wx) : 0));
     ctx.lineTo(x1 + step - V.left, CFG.worldBottom + 200);
     ctx.closePath(); ctx.fill();
     ctx.globalAlpha = 1;
@@ -6131,7 +6142,7 @@ function drawEncLand() {
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(x0 - V.left, CFG.worldBottom + 200);
-  for (let wx = x0; wx <= x1 + step; wx += step) ctx.lineTo(wx - V.left, encSurfaceY(wx));
+  for (let wx = gx0; wx <= x1 + step; wx += step) ctx.lineTo(wx - V.left, encSurfaceY(wx));
   ctx.lineTo(x1 + step - V.left, CFG.worldBottom + 200);
   ctx.closePath(); ctx.clip();
   // gTop is hoisted so the gradient and the fill CANNOT disagree. They did, and it is the
@@ -6282,7 +6293,7 @@ function drawEncLand() {
   // since alpha scaled with the drop, the more deeply shaded the slope the brighter its
   // highlight. The sunward face is the one that RISES to the right: b < a.
   ctx.lineWidth = encStroke(1.2);
-  for (let wx = x0; wx <= x1; wx += step) {
+  for (let wx = gx0; wx <= x1; wx += step) {
     const a = encSurfaceY(wx), b = encSurfaceY(wx + step);
     if (b >= a) continue;                       // only the slopes that face the sun
     ctx.strokeStyle = `rgba(190,222,150,${Math.min(0.5, (a - b) / step * 0.9)})`;
@@ -6302,7 +6313,14 @@ function drawEncLand() {
 // out of the mountain the ground is wooded and scrubby, and as the boundaries close in the
 // land has been cleared, until by the wall there is almost nothing left standing on it.
 // Enclosure grubbed out the commons' trees; this is that, drawn.
-function encTree(px, baseY, h, hv, sway, bare) {
+// `seed` is the tree's WORLD x, and every hash in here must use it rather than px.
+//
+// px is a screen coordinate: it changes every frame as the camera scrolls, so hashing off
+// it re-rolls the shape sixty times a second. The dead trees' limb count, fork height and
+// limb angles were all keyed to px, which made their branches thrash about continuously --
+// Morgan saw it immediately and described it exactly. Anything that decides the FORM of a
+// thing has to be anchored in the world; only its position may come from the camera.
+function encTree(px, baseY, h, hv, sway, bare, seed) {
   const lean = sway * h * 0.12;
   // trunk, tapering, leaning with the canopy so the whole thing bends as one
   ctx.strokeStyle = bare ? '#5a4a3c' : '#4a3d2f';
@@ -6317,10 +6335,10 @@ function encTree(px, baseY, h, hv, sway, bare) {
     // the act geometrically congruent, so eight copies of one glyph stood in a single
     // frame and read as broken umbrellas rather than as trees somebody cut down.
     ctx.lineWidth = Math.max(0.8, h * 0.045);
-    const n = 2 + Math.floor(hash(px * 1.7) * 3);
-    const fork = 0.4 + hash(px * 2.9) * 0.3;
+    const n = 2 + Math.floor(hash(seed * 1.7) * 3);
+    const fork = 0.4 + hash(seed * 2.9) * 0.3;
     for (let i = 0; i < n; i++) {
-      const hv = hash(px * 0.7 + i * 4.3);
+      const hv = hash(seed * 0.7 + i * 4.3);
       const d = -1 + (i + hv * 0.7) * (2 / Math.max(1, n - 0.3));
       ctx.beginPath();
       ctx.moveTo(px + lean * 0.7, baseY - h * fork);
@@ -6382,7 +6400,7 @@ function encFlora() {
     // how big the hill is" -- said the hill was a rockery. A hillside oak is 205 to 385
     // units. These run 70 to 230, with the biggest on the crest where the silhouette is.
     const h = (70 + hv3 * 160) * (1 - fenced * 0.3);
-    encTree(jx - V.left, base + 3, h, hv3, windAt(jx, S.t), fenced > 0.55 && hv2 > 0.62);
+    encTree(jx - V.left, base + 3, h, hv3, windAt(jx, S.t), fenced > 0.55 && hv2 > 0.62, jx);
   }
 }
 // The fences. This is the act's argument, so it is drawn rather than implied: for the
