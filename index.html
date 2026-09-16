@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '72 nothing spazes out';
+const BUILD = '73 the mine holds together';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2798,6 +2798,17 @@ function boneStroke(w) { ctx.strokeStyle = INK; ctx.lineWidth = w + 1.5; ctx.lin
 function drawFind(x, y, r, kind, seed) {
   const rx = r * 1.06, ry = r * 0.88;
   findSocket(x, y, rx, ry);
+  // A crystal pocket's glow is drawn BEFORE the socket and outside the clip, because a light
+  // source in a dark mine has to land on the rock around it. Clipped to the socket it stopped
+  // at the rim at 44% of its peak, so the brightest object in act two lit nothing five units
+  // away from itself.
+  if (kind === 'crystal') {
+    const G = r * 1.5, warm = hash(seed * 5.9) < 0.42;
+    const gl = ctx.createRadialGradient(x, y, 0, x, y, G);
+    gl.addColorStop(0, warm ? 'rgba(232,189,122,0.30)' : 'rgba(198,169,239,0.30)');
+    gl.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(x, y, G, 0, 6.28); ctx.fill();
+  }
   ctx.save();
   ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, 6.28); ctx.clip();
   const tilt = (hash(seed * 1.7) - 0.5) * 0.9;
@@ -2977,10 +2988,21 @@ const PROPS = ['cart', 'prop', 'tools', 'crates', 'spoil', 'barrow', 'keg', 'pro
 // filled from; a prop is set where the roof was just cut, with the tools that cut it.
 const COMPANY = { cart: 'spoil', prop: 'tools', tools: 'spoil', crates: 'keg',
                   spoil: 'tools', barrow: 'spoil', keg: 'crates' };
+// Measured against DRAWN EXTENTS, not centres. A room's hole runs [r.x, r.x + gapWidth] and
+// its ironwork reaches r.x+150 on the right and r.x-30 on the left, so a symmetric test round
+// r.x let a prop stand 16 units inside the hole with half its width over the drop. A fork's
+// ramp is CFG.rampLen long and its deck is opaque and drawn later, so a pit prop at f.x+104
+// loses its top to it; the span is tested, not the two endpoints.
 function mineClear(wx, lane) {
-  for (const r of S.rooms) if (r.lane === lane && Math.abs(r.x - wx) < CAVE_CLEAR) return false;
+  for (const r of S.rooms) {
+    if (r.lane !== lane) continue;
+    if (wx > r.x - 30 - CAVE_CLEAR && wx < r.x + 150 + CAVE_CLEAR) return false;
+  }
   for (const g of S.gates) if (Math.abs(g.x - wx) < CAVE_CLEAR) return false;
-  for (const f of CFG.forks) if (Math.abs(f.x - wx) < CAVE_CLEAR || Math.abs(f.merge - wx) < CAVE_CLEAR) return false;
+  for (const f of CFG.forks) {
+    if (wx > f.x - CAVE_CLEAR && wx < f.x + CFG.rampLen + CAVE_CLEAR) return false;
+    if (wx > f.merge - CAVE_CLEAR && wx < f.merge + CFG.rampLen + CAVE_CLEAR) return false;
+  }
   return true;
 }
 // A contact shadow under everything that stands on the floor. Without it a cart floats, and
@@ -3004,7 +3026,10 @@ function mineProps(wx0, wx1, y, lane) {
   const railedAt = wx => hash(lane * 9.7 + Math.floor(wx / BUCKET) * 2.3) > 0.44;
   for (let b = Math.floor(lo / BUCKET); b <= Math.floor(hi / BUCKET); b++) {
     if (!railedAt(b * BUCKET)) continue;
-    drawRails(Math.max(lo, b * BUCKET), Math.min(hi, (b + 1) * BUCKET), y);
+    // rails may run the full length of the rock: track that stops 40 units short of the
+    // portal and the mouth is a tramway that carries nothing in or out
+    drawRails(Math.max(Math.max(wx0, FAC.seam), b * BUCKET),
+              Math.min(Math.min(wx1, CFG.exit + 60), (b + 1) * BUCKET), y, lane);
   }
   for (let wx = first; wx < hi + STEP; wx += STEP) {
     if (wx < lo - STEP || wx > hi) continue;
@@ -3040,7 +3065,20 @@ function mineProps(wx0, wx1, y, lane) {
 }
 // Track, seen side on: sleepers, the near rail on top of them, and the far rail a little
 // higher and darker, which is the whole of the depth cue at this scale.
-function drawRails(wx0, wx1, y) {
+// Track cannot cross a hole in its own floor. The gapped rooms are exactly where the floor
+// is missing, so a run is BROKEN at each of them rather than bridging 120 units of open air
+// above a drop. Placement guarded the props and left the rails running straight over.
+function drawRails(wx0, wx1, y, lane) {
+  const gaps = S.rooms.filter(r => r.lane === lane && r.x + CFG.gapWidth > wx0 && r.x < wx1)
+                      .map(r => [r.x, r.x + CFG.gapWidth]).sort((a, b) => a[0] - b[0]);
+  let at = wx0;
+  for (const [ga, gb] of gaps) { if (ga > at) railRun(at, Math.min(ga, wx1), y); at = Math.max(at, gb); }
+  if (at < wx1) railRun(at, wx1, y);
+}
+// The stack from the floor up, as one set of numbers: sleeper y-3.4..y, rail head y-6.6, and
+// drawCart puts its wheel centre a radius above that at y-11. Before, 1.8 of the rail's 2.2
+// was buried inside the sleeper and the wheel stood on the floor with the rail through its axle.
+function railRun(wx0, wx1, y) {
   const x0 = Math.max(-20, wx0 - V.left), x1 = Math.min(V.vw + 20, wx1 - V.left);
   if (x1 <= x0) return;
   const SLEEP = 34;
@@ -3048,17 +3086,17 @@ function drawRails(wx0, wx1, y) {
   for (let wx = Math.floor((x0 + V.left) / SLEEP) * SLEEP; wx < x1 + V.left; wx += SLEEP) {
     const sx = wx - V.left;
     if (sx < x0 - SLEEP || sx > x1) continue;
-    ctx.fillRect(sx - 9, y - 4, 18, 3.4);
+    ctx.fillRect(sx - 9, y - 3.4, 18, 3.4);
   }
   // One rail, not two. At play zoom each was under a pixel and the pair read as a rendering
   // artefact the width of the screen rather than as track.
-  ctx.fillStyle = 'rgba(150,142,138,0.85)'; ctx.fillRect(x0, y - 4.4, x1 - x0, 3.2);
-  ctx.fillStyle = 'rgba(255,214,150,0.20)'; ctx.fillRect(x0, y - 4.4, x1 - x0, 1.2); // lamplight along it
+  ctx.fillStyle = 'rgba(150,142,138,0.85)'; ctx.fillRect(x0, y - 6.6, x1 - x0, 3.2);
+  ctx.fillStyle = 'rgba(255,214,150,0.20)'; ctx.fillRect(x0, y - 6.6, x1 - x0, 1.2); // lamplight along it
 }
 function drawCart(x, y, seed) {
   const w = 44, h = 25, tip = (hash(seed * 6.1) - 0.5) * 0.1;
   standShadow(x, y - 1, w * 0.55);
-  ctx.save(); ctx.translate(x, y - 11.4); ctx.rotate(tip);
+  ctx.save(); ctx.translate(x, y - 14); ctx.rotate(tip);
   ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.lineJoin = 'round';
   ctx.fillStyle = '#4a3a34';                                  // body, wider at the top
   ctx.beginPath();
@@ -3086,21 +3124,24 @@ function drawCart(x, y, seed) {
   // the floor, which is a cart parked across its own track.
   for (const wx of [-13, 13]) {
     ctx.fillStyle = '#2b2228'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.arc(x + wx, y - 8.8, 4.4, 0, 6.28); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x + wx, y - 11, 4.4, 0, 6.28); ctx.fill(); ctx.stroke();
     ctx.fillStyle = 'rgba(170,160,156,0.7)';
-    ctx.beginPath(); ctx.arc(x + wx, y - 8.8, 1.5, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + wx, y - 11, 1.5, 0, 6.28); ctx.fill();
   }
 }
 // A pit prop: floor to ceiling, because a support that stops short is not supporting
 // anything. CFG.tunnelH is the gallery height, so the post is derived from it, not guessed.
 function drawPitProp(x, y, seed, lane, wx) {
-  // +6 so the head board beds INTO the rock rather than kissing it. A prop that exactly
-  // touches reads as balanced there; one driven in reads as holding.
-  const H = CFG.tunnelH - tunnelSag(wx, lane) + 6;
+  // The head board is drawn from -H-7 to -H+1, so the CAP TOP is at y-H-7, and that is the
+  // thing that has to meet the rock at y-tunnelH+sag. Hence H = tunnelH - sag - 7, plus 3 of
+  // bedding so the timber is driven in rather than balanced against it. Getting this off the
+  // post instead of the cap leaves it ten units adrift, which is the same class of mistake as
+  // the flat tunnelH it replaced.
+  const H = CFG.tunnelH - tunnelSag(wx, lane) - 4;
   const lean = (hash(seed * 3.9) - 0.5) * 0.22;
   ctx.save(); ctx.translate(x, y); ctx.rotate(lean);
   ctx.fillStyle = '#5b4632'; ctx.strokeStyle = INK; ctx.lineWidth = 2;
-  ctx.fillRect(-5, -H, 10, H); ctx.strokeRect(-5, -H, 10, H);
+  ctx.fillRect(-5, -H, 10, H + 1); ctx.strokeRect(-5, -H, 10, H + 1);   // foot at y-1, with everything else
   ctx.fillStyle = 'rgba(255,214,150,0.13)'; ctx.fillRect(-5, -H, 3, H);     // lamplit edge
   ctx.fillStyle = '#6b5439';                                                 // head board
   ctx.fillRect(-17, -H - 7, 34, 8); ctx.strokeRect(-17, -H - 7, 34, 8);
@@ -3120,34 +3161,53 @@ function drawTools(x, y, seed) {
     ctx.strokeStyle = col; ctx.lineWidth = 2.6;
     ctx.beginPath(); ctx.moveTo(x + dx, y - 1); ctx.lineTo(x + dx - lean, y - len); ctx.stroke();
   };
-  shaft(9, 30, 7, '#8a6a42');
+  // Barely any lean. In a strict side elevation a tool resting on the BACK wall leans away
+  // from the viewer and draws upright; leaning it sideways in the picture plane gives a shaft
+  // balanced on its point with nothing behind it. What is left is the wobble of a real stack.
+  const l1 = 27 + hash(seed * 4.9) * 9, l2 = 19 + hash(seed * 8.3) * 7;
+  const s1 = (hash(seed * 5.7) - 0.5) * 4, s2 = (hash(seed * 6.3) - 0.5) * 4;
+  shaft(9, l1, s1, '#8a6a42');
   if (pick) {                                                  // pick head, across the top
     ctx.strokeStyle = INK; ctx.lineWidth = 5; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(x - 8, y - 33); ctx.quadraticCurveTo(x + 2, y - 26, x + 10, y - 33); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 1 - s1 - 8, y - l1 - 3); ctx.quadraticCurveTo(x + 1 - s1 + 2, y - l1 + 4, x + 1 - s1 + 10, y - l1 - 3); ctx.stroke();
     ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 2.8; ctx.stroke();
   } else {                                                     // shovel blade, on the floor
     ctx.fillStyle = '#9aa0a8'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
     ctx.beginPath(); ctx.ellipse(x + 9, y - 4, 5, 4.6, 0.3, 0, 6.28); ctx.fill(); ctx.stroke();
   }
-  shaft(15, 22, 4, '#6f5436');
+  shaft(15, l2, s2, '#6f5436');
 }
+// `by` accumulates. Using the CURRENT crate's size for the whole offset made each one sit
+// on a shelf the height of itself rather than on the one below, so the third crate sank two
+// units into the second. The jitter is halved too: at 7 units on a 10-wide crate the stack
+// overhung by more than half its base.
 function drawCrates(x, y, seed) {
   const n = 1 + Math.floor(hash(seed * 4.3) * 3);
   standShadow(x, y - 1, 14);
+  let by = y - 1;
   for (let i = 0; i < n; i++) {
-    const s = 13 - i * 1.6, ox = (hash(seed + i * 2.1) - 0.5) * 7, by = y - 1 - i * (s + 1);
+    const s = 13 - i * 1.6, ox = (hash(seed + i * 2.1) - 0.5) * 3.4;
     ctx.fillStyle = i % 2 ? '#6a5236' : '#5c472f';
     ctx.strokeStyle = INK; ctx.lineWidth = 1.7;
     ctx.fillRect(x + ox - s / 2, by - s, s, s); ctx.strokeRect(x + ox - s / 2, by - s, s, s);
     ctx.fillStyle = 'rgba(255,214,150,0.12)'; ctx.fillRect(x + ox - s / 2, by - s, s, 2);
     ctx.strokeStyle = 'rgba(0,0,0,0.42)'; ctx.lineWidth = 1;   // the diagonal brace
     ctx.beginPath(); ctx.moveTo(x + ox - s / 2, by); ctx.lineTo(x + ox + s / 2, by - s); ctx.stroke();
+    by -= s;
   }
 }
 // A heap of cut rock against the wall, with a couple of faces catching the lamp.
-function drawSpoil(x, y, seed) {
+// The only prop with no contact shadow, and the only one whose tone ignored its lane. The
+// back wall behind it runs rgb(30,23,35) on the deep lane to rgb(82,69,87) on the top one, so
+// a constant fill was lighter than its wall at the bottom of the stack and darker at the top:
+// the same heap with two different materials depending where it stands. It is derived from the
+// same ramp the wall uses, always a little lighter, so cut rock reads as cut rock everywhere.
+function drawSpoil(x, y, seed, lane) {
   const w = 17 + hash(seed * 5.1) * 11;
-  ctx.fillStyle = '#332b38'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
+  const d = CFG.laneCount > 1 ? (lane || 0) / (CFG.laneCount - 1) : 0;
+  standShadow(x, y - 1, w * 0.8);
+  ctx.fillStyle = `rgb(${50 + d * 52 | 0},${41 + d * 46 | 0},${56 + d * 52 | 0})`;
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
   ctx.beginPath(); ctx.moveTo(x - w, y - 1);
   ctx.quadraticCurveTo(x - w * 0.42, y - 15, x + w * 0.10, y - 12);
   ctx.quadraticCurveTo(x + w * 0.66, y - 14, x + w, y - 1);
@@ -3159,7 +3219,7 @@ function drawSpoil(x, y, seed) {
 }
 function drawBarrow(x, y, seed) {
   standShadow(x, y - 1, 13);
-  ctx.save(); ctx.translate(x, y - 1);
+  ctx.save(); ctx.translate(x, y - 1); ctx.scale(hash(seed * 7.7) > 0.5 ? -1 : 1, 1);
   ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.lineJoin = 'round';
   ctx.fillStyle = '#4f3f36';                                   // tray
   ctx.beginPath(); ctx.moveTo(-14, -16); ctx.lineTo(13, -14); ctx.lineTo(9, -5); ctx.lineTo(-11, -6);
@@ -3167,22 +3227,29 @@ function drawBarrow(x, y, seed) {
   ctx.fillStyle = 'rgba(255,214,150,0.13)'; ctx.fillRect(-14, -16.5, 27, 2);
   ctx.strokeStyle = INK; ctx.lineWidth = 2.4; ctx.lineCap = 'round';   // handles and leg
   ctx.beginPath(); ctx.moveTo(13, -13); ctx.lineTo(22, -9); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(-11, -6); ctx.lineTo(-13, 0); ctx.stroke();
+  // The leg belongs at the HANDLE end. With both supports under the left end the whole tray
+  // and 22 units of handle were cantilevered past them and it tipped onto its own handles.
+  ctx.beginPath(); ctx.moveTo(9, -6); ctx.lineTo(11, 0); ctx.stroke();
   ctx.fillStyle = '#2b2228'; ctx.strokeStyle = INK; ctx.lineWidth = 1.6;
   ctx.beginPath(); ctx.arc(-9, -4, 4.6, 0, 6.28); ctx.fill(); ctx.stroke();
   ctx.restore();
 }
+// It took a seed and ignored it, so every keg in act two was pixel-identical; and its body
+// started at -1 inside a frame already at y-1, so it floated two units.
 function drawKeg(x, y, seed) {
   standShadow(x, y - 1, 9);
-  ctx.save(); ctx.translate(x, y - 1);
-  ctx.fillStyle = '#5a4630'; ctx.strokeStyle = INK; ctx.lineWidth = 1.8;
+  const h = 13 + hash(seed * 3.3) * 5, bel = 2.0 + hash(seed * 6.7) * 1.6;
+  const flip = hash(seed * 9.1) > 0.5 ? -1 : 1;
+  ctx.save(); ctx.translate(x, y - 1); ctx.scale(flip, 1);
+  ctx.fillStyle = hash(seed * 2.9) > 0.5 ? '#5a4630' : '#4d3b2a';
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.8;
   ctx.beginPath();
-  ctx.moveTo(-7, -1); ctx.quadraticCurveTo(-9.5, -8, -7, -15);
-  ctx.lineTo(7, -15); ctx.quadraticCurveTo(9.5, -8, 7, -1);
+  ctx.moveTo(-7, 0); ctx.quadraticCurveTo(-7 - bel, -h / 2, -7, -h);
+  ctx.lineTo(7, -h); ctx.quadraticCurveTo(7 + bel, -h / 2, 7, 0);
   ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.fillStyle = '#7d6a52';
-  ctx.fillRect(-8.6, -11, 17.2, 2); ctx.fillRect(-8.6, -6, 17.2, 2);
-  ctx.fillStyle = 'rgba(255,214,150,0.12)'; ctx.fillRect(-7, -15, 14, 1.8);
+  ctx.fillRect(-8.6, -h * 0.74, 17.2, 2); ctx.fillRect(-8.6, -h * 0.34, 17.2, 2);
+  ctx.fillStyle = 'rgba(255,214,150,0.12)'; ctx.fillRect(-7, -h, 14, 1.8);
   ctx.restore();
 }
 function rockFace(top, bottom) {
@@ -3360,8 +3427,19 @@ function rockCorridor(wx0, wx1, y, lane = 0) {
     ctx.quadraticCurveTo(x + 12, cy + 4 + sag(wx + 12) + hash(k * 1.7 + y) * 14, x + 24, cy + sag(wx + 24) + hash(k * 2.3 + y) * 8);
   }
   ctx.lineTo(x1, cy - 2); ctx.closePath(); ctx.fill();
-  const g = ctx.createLinearGradient(0, cy, 0, cy + 46); g.addColorStop(0, 'rgba(0,0,0,0.5)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = g; ctx.fillRect(x0, cy, x1 - x0, 46);
+  // This shadow is the strongest edge anywhere near the roof -- half-black against a lip
+  // only five per channel darker than the mountain -- so it is what the eye reads AS the
+  // ceiling. Drawn as a fillRect from cy it was a ruled straight line, and the two-octave sag
+  // above it was thrown away: rock cut by hand, ceiling drawn with a ruler. It follows the
+  // same profile as the lip now. Gradient spans cy-19 (the deepest the roof ever rises) to
+  // cy+46, which is exactly what gets filled, so the two extents cannot disagree.
+  const g = ctx.createLinearGradient(0, cy - 19, 0, cy + 46);
+  g.addColorStop(0, 'rgba(0,0,0,0.5)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(x0, cy + sag(x0 + V.left));
+  for (let x = x0; x <= x1; x += 24) ctx.lineTo(x, cy + sag(x + V.left));
+  ctx.lineTo(x1, cy + sag(x1 + V.left)); ctx.lineTo(x1, cy + 46); ctx.lineTo(x0, cy + 46);
+  ctx.closePath(); ctx.fill();
   const f = ctx.createLinearGradient(0, y - 30, 0, y); f.addColorStop(0, 'rgba(255,190,110,0)'); f.addColorStop(1, 'rgba(255,190,110,0.07)');
   ctx.fillStyle = f; ctx.fillRect(x0, y - 30, x1 - x0, 30);
   // The workings, last, so they stand on the finished floor. Still before the crowd, so a
