@@ -8,7 +8,11 @@
 //   node tools/enc-check.js
 'use strict';
 const fs = require('fs'), path = require('path');
-const root = path.join(__dirname, '..');
+// Optional root, so the checks can be pointed at a deliberately broken COPY. Without it
+// the only way to prove an invariant can fail is to damage the real index.html and hope to
+// remember to undo it -- which is how a check ends up trusted on the strength of never
+// having been seen to do anything. See tools/enc-falsify.js.
+const root = process.argv[2] || path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
   .split('<script>')[1].split('</script>')[0].replace("'use strict';", '');
 const h = fs.readFileSync(path.join(root, 'tools', 'freeze-check.js'), 'utf8');
@@ -52,9 +56,24 @@ eval(src + `
   }
   ok('no terrace floats above its own hillside', worst <= -20,
      'worst ' + worst.toFixed(1) + ' at wx ' + worstAt + ' (want <= -20)');
+  //    The first version of this asserted high >= ceiling, and tools/enc-falsify.js caught
+  //    it DEAD on its own injected fault within the hour: encSurfaceY ends with
+  //    Math.max(ceiling, ...), so the assertion tested the output of the clamp that
+  //    guarantees it. Written, ironically, in the same edit that fixed the tautology above.
+  //
+  //    What is falsifiable is the SYMPTOM the clamp produces when it is doing real work.
+  //    If relief grows, the crest does not leave the frame -- it gets pinned flat against
+  //    the ceiling over long runs, which is a dead straight skyline and its own fault. So
+  //    assert the hill is not resting on its own safety net.
   const ceiling = laneY(CFG.laneCount - 1);
-  ok('the crest stays inside the play viewport', high >= ceiling,
-     'highest crest ' + high.toFixed(1) + ' at wx ' + highAt + ' (want >= ' + ceiling + ', the top lane)');
+  let run = 0, worstRun = 0, runAt = 0;
+  for (let wx = ENC.x0; wx < CFG.finale.x; wx += 7) {
+    if (encSurfaceY(wx) <= ceiling + 0.01) { run += 7; if (run > worstRun) { worstRun = run; runAt = wx; } }
+    else run = 0;
+  }
+  ok('the crest is not pinned flat against its own ceiling', worstRun <= 300,
+     worstRun ? 'longest flat run ' + worstRun + ' units ending at wx ' + runAt + ' (want <= 300)'
+              : 'never reaches the ceiling');
 
   // 2. A fork's ramp must not run past the end of the lane it lands on, and consecutive
   //    merges must be at least CFG.rampLen apart -- otherwise updateLane overwrites r.ramp
@@ -109,10 +128,19 @@ eval(src + `
 
   // 4. The breach must be as wide as the wall's footprint at ground level, or the crowd
   //    walks through solid masonry either side of it.
+  //    READ from drawEncWall, not restated. This check was DEAD: it computed the breach as
+  //    masonry + 4 either side, which is a copy of drawEncWall's own numbers, so narrowing
+  //    the real breach to 70 units a side left the check computing 4 and reporting fine.
+  //    enc-falsify caught it. Same shape as the 54 that sat in the ditch extent: a check
+  //    that restates the thing it is testing is testing itself.
   const wall = CFG.rooms.find(r => r.type === 'wall');
   if (wall) {
-    const masonry = [wall.x - 62, wall.x + CFG.gapWidth + 62];
-    const breach  = [masonry[0] + 4, masonry[1] - 4];
+    const jambM = src.match(/const bL = wx0 \\+ (\\d+), bR = wx0 \\+ ww - (\\d+);/);
+    const wallM = src.match(/const wx0 = sx - (\\d+), ww = gw \\+ (\\d+);/);
+    if (!jambM || !wallM) throw new Error('enc-check: drawEncWall no longer declares bL/bR or wx0/ww in the expected form, so the breach cannot be measured. Point this at the new expressions rather than leaving it green.');
+    const off = +wallM[1];
+    const masonry = [wall.x - off, wall.x + CFG.gapWidth + (+wallM[2] - off)];
+    const breach  = [masonry[0] + (+jambM[1]), masonry[1] - (+jambM[2])];
     const buried  = (breach[0] - masonry[0]) + (masonry[1] - breach[1]);
     // A few units of jamb either side is masonry, not an obstruction: a runner is about
     // 14 wide and walks down the middle. The fault this catches is 56 units a side, which
@@ -122,14 +150,28 @@ eval(src + `
   }
 
   // 5. Lamplight belongs under a ceiling. Nothing in act three may be lit by a lamp.
-  let litOutdoors = 0;
-  for (let wx = Math.ceil(CFG.exit / 240) * 240; wx < CFG.finale.x; wx += 240)
-    for (let k = 0; k < CFG.laneCount; k++) {
-      const lx = wx + k * 40;
-      if (lx > CFG.exit && laneAt(k, lx)) litOutdoors++;
-    }
-  ok('no lamp pools out in the open', typeof ENC_LAMP_GUARDED === 'undefined' || ENC_LAMP_GUARDED,
-     litOutdoors + ' lamp positions fall in act three; lampPools must skip them');
+  //
+  //    This assertion was "typeof ENC_LAMP_GUARDED === 'undefined' || ENC_LAMP_GUARDED",
+  //    and ENC_LAMP_GUARDED HAS NEVER EXISTED in index.html. So it read
+  //    typeof undefined === 'undefined', which is true, always, forever. The check has
+  //    never tested anything, while printing a detail line about 37 lamp positions that
+  //    made it look like it had. Third dead invariant in this file, and the only one that
+  //    was born dead rather than made dead by a later change.
+  //
+  //    It EXERCISES lampPools now rather than asking the source a question: park the view
+  //    in act three, count what the function actually draws, and require it to be nothing.
+  //    A guard that is deleted, inverted or moved then shows up here.
+  let pools = 0;
+  {
+    const keep = { left: V.left, vw: V.vw, zoom: V.zoom }, realSave = ctx.save;
+    V.left = CFG.exit + 600; V.vw = 2119; V.zoom = 0.453;
+    ctx.save = function () { pools++; return realSave.apply(this, arguments); };
+    try { for (let k = 0; k < CFG.laneCount; k++) lampPools(k); }
+    finally { ctx.save = realSave; V.left = keep.left; V.vw = keep.vw; V.zoom = keep.zoom; }
+  }
+  ok('no lamp pools out in the open', pools === 0,
+     pools === 0 ? 'lampPools drew nothing with the view parked past the mouth'
+                 : pools + ' lamp pools drawn in daylight past CFG.exit');
 
 })();
 `);
