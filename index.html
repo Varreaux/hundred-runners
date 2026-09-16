@@ -9482,12 +9482,12 @@ function drawHud() {
     }, '');
     hintBar(VERBS[S.drill.room.verb].hint, note, longest + '    ' + note);
   }
-  // while he talks, the bottom line is the way past him
   // No hint bar for the proprietor. The band already prints the same words, in gold, beside
   // him, pulsing when the line is ready, and two copies of one instruction 373px apart in two
   // sizes and two colours is one copy too many. The one next to him is the better one. (It
   // also read BOSS_SCRIPT.length here against b.script.length everywhere else, which was
   // harmless only while the cave script happened to be the auto one.)
+  // Two sessions deleted this independently, from the same finding, and met here.
 }
 // The line across the bottom that explains the controls. Shrink to fit rather than run
 // off both ends: the longest combination -- a verb hint plus "(ESC to close)" plus the
@@ -9706,8 +9706,12 @@ function drawPanel(room) {
 // Because he is gone before the first panel arrives, the drill's own layout is untouched:
 // no midline push, no shared vertical budget, nothing for the two to argue about.
 const BOSS = {
-  y: 48,            // the HUD's lower edge
-  h: 122,           // tall enough for hat, globe and shoulders at a readable size
+  y: 42,            // the HUD's real lower edge: drawHud fills to 40 and shadows to 42.
+                    // At 48 a six-unit slot of moving scene showed between the two, and
+                    // that gap was the entire reason the band read as pasted on.
+  h: 128,           // so the lower rule stays where it was, at y + h = 170
+  bust: 67,         // the head's centre below y. Moved with y so he did not move: the six
+                    // units went to the hat, which had none.
   slide: 0.55,      // seconds to drop in and to lift out
   cps: 30,          // characters a second, about reading pace
   read: 1.5,        // auto-advance only: the beat a filled line is held before he moves on,
@@ -9765,7 +9769,7 @@ function startBoss(script, auto, onGone) {
   S.boss = {
     script: script || BOSS_SCRIPT, auto: !!auto, onGone: onGone || null,
     line: 0, ch: 0, dwell: 0, t: 0, inK: 0, outK: 0, gone: false,
-    laugh: 0, blink: 0, nextBlink: 1.4 + Math.random() * 2.6, spin: 0,
+    laugh: 0, blink: 0, nextBlink: 1.4 + Math.random() * 2.6, spin: S.t * 0.26,
     leaving: false, wrapFor: -1, wrap: [],
   };
 }
@@ -9789,10 +9793,17 @@ function updateBoss(dt) {
   }
   // The script does not advance itself. A line types out and then waits, however long
   // that takes; nothing here is on a timer the player cannot see.
+  // A room is the game; he is a joke over the top of it. If one arms while he is talking
+  // he goes, mid-sentence, rather than covering the panel that says which room it is.
+  if (b.auto && !b.leaving &&
+      (S.rooms.some(m => m.state === 'armed' || m.state === 'open') || V.zoom < 0.82)) b.leaving = true;
   const line = b.script[b.line];
   if (line) {
-    if (b.ch < line.t.length) b.ch = Math.min(line.t.length, b.ch + BOSS.cps * dt);
-    else {
+    if (b.ch < line.t.length) {
+      const was = b.ch;
+      b.ch = Math.min(line.t.length, b.ch + BOSS.cps * dt);
+      if (was < line.t.length && b.ch >= line.t.length && line.laugh) b.laugh = 1.05;
+    } else {
       b.dwell += dt;
       // read at about the speed it was typed, plus a beat, so a line that is twice as long
       // is held twice as long rather than every line getting the same arbitrary pause
@@ -9813,9 +9824,8 @@ function bossAdvance() {
   if (b.auto) return;                                   // his own clock; SPACE is the player's
   const line = b.script[b.line];
   if (!line) { b.leaving = true; return; }
-  if (b.ch < line.t.length) { b.ch = line.t.length; b.dwell = 0; return; }
+  if (b.ch < line.t.length) { b.ch = line.t.length; b.dwell = 0; if (line.laugh) b.laugh = 1.05; return; }
   if (b.dwell < BOSS.dwell) return;
-  if (line.laugh) b.laugh = 1.05;
   b.line++; b.ch = 0; b.dwell = 0;
   if (b.line >= b.script.length) b.leaving = true;
 }
@@ -9834,8 +9844,11 @@ function bossRow(full, shown, x, y, word, t) {
   put(pre, x, y);
   const px = x + ctx.measureText(pre).width;
   // two frequencies so it does not read as one clean oscillation, which looks mechanical
-  const jx = Math.sin(t * 43) * 1.6 + Math.sin(t * 71 + 1.1) * 0.7;
-  const jy = Math.cos(t * 57) * 1.3;
+  // decays over the two seconds after the word lands: a flinch, not a permanent tremor
+  const age = Math.max(0, (shown.length - i - word.length) / 30);
+  const k = Math.max(0, 1 - age / 2);
+  const jx = (Math.sin(t * 43) * 1.6 + Math.sin(t * 71 + 1.1) * 0.7) * k;
+  const jy = Math.cos(t * 57) * 1.3 * k;
   ctx.fillStyle = 'rgba(12,8,12,0.9)'; ctx.fillText(mid, px + jx + 1.2, y + jy + 1.2);
   ctx.fillStyle = '#f3ded0'; ctx.fillText(mid, px + jx, y + jy);
   put(post, px + ctx.measureText(word).width, y);
@@ -9876,7 +9889,7 @@ function drawBoss() {
 
   // ---- him
   const bob = Math.sin(b.t * 1.5) * 1.1 + (b.laugh > 0 ? Math.sin(b.laugh * 30) * 2.6 * Math.min(1, b.laugh * 1.6) : 0);
-  const cx = BOSS.bustX, cy = BOSS.y + 61 + bob, R = 33;
+  const cx = BOSS.bustX, cy = BOSS.y + BOSS.bust + bob, R = 33;
   drawBossBody(cx, cy, R);
   drawBossGlobe(cx, cy, R, b);
   drawBossFace(cx, cy, R, b);
@@ -9885,15 +9898,26 @@ function drawBoss() {
   // which is the same joke the mill's own machines make one act earlier.
   const m = (b.script[b.line] || {}).mood;
   const startled = m === 'alarm', furious = m === 'rage';
-  const hop = startled ? R * 0.46 * (0.72 + 0.28 * Math.abs(Math.sin(b.t * 4.1))) : 0;
-  const ragehop = furious ? R * 0.26 * (0.86 + 0.14 * Math.abs(Math.sin(b.t * 11))) : 0;
-  drawBossHat(cx, cy, R, hop + ragehop,
-              startled ? Math.sin(b.t * 3.3) * 0.16 : furious ? 0.07 : 0);
+  const hop = startled ? R * 0.05 * (0.5 + 0.5 * Math.abs(Math.sin(b.t * 4.1))) : 0;
+  const sideways = startled ? R * 0.30 * Math.sin(b.t * 3.7) : 0;
+  // the globe's own shading, re-laid over the face so his features sit ON the sphere
+  // rather than on a sticker stuck to it
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.28); ctx.clip();
+  const term = ctx.createRadialGradient(cx - R * 0.34, cy - R * 0.36, R * 0.12, cx, cy, R * 1.06);
+  term.addColorStop(0, 'rgba(255,248,232,0.10)');
+  term.addColorStop(0.55, 'rgba(0,0,0,0)');
+  term.addColorStop(1, 'rgba(6,10,22,0.46)');
+  ctx.fillStyle = term; ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
+  ctx.restore();
+  drawBossHat(cx, cy, R, hop,
+              startled ? 0.26 + Math.sin(b.t * 3.3) * 0.12 : furious ? 0.07 : 0,
+              sideways);
   if (furious) {
     for (const d of [-1, 1]) {
-      millSmoke(cx + d * R * 0.62, cy - R * 0.86, {
-        n: 8, rise: R * 1.5, rate: 1.05, r0: R * 0.12, r1: R * 0.42,
-        drift: d * R * 0.62, a: 0.5, salt: 77 + d, tint: '250,236,214',
+      millSmoke(cx + d * R * 0.46, cy - R * 0.66, {
+        n: 8, rise: R * 0.92, rate: 1.05, r0: R * 0.11, r1: R * 0.38,
+        drift: d * R * 0.66, a: 0.5, salt: 77 + d, tint: '250,236,214',
       });
     }
   }
@@ -9920,7 +9944,7 @@ function drawBoss() {
     bossRow(row, s, tx, ty + i * 22, line.shake, b.t);
     if (take < row.length && Math.sin(b.t * 9) > 0) {    // a cursor while he is still saying it
       const cwx = tx + ctx.measureText(s).width + 2;
-      ctx.fillStyle = 'rgba(206,168,92,0.8)'; ctx.fillRect(cwx, ty + i * 22 - 8, 7, 2);
+      ctx.fillStyle = 'rgba(206,168,92,0.8)'; ctx.fillRect(cwx, ty + i * 22 + 7, 7, 2);
     }
   }
   ctx.textBaseline = 'alphabetic';
@@ -9929,6 +9953,12 @@ function drawBoss() {
   ctx.font = 'bold 9px monospace'; ctx.textAlign = 'left';
   ctx.fillStyle = 'rgba(206,168,92,0.72)';
   ctx.fillText('MR. CAPITALISM', tx, BOSS.y + BOSS.h - 12);
+
+  // the same grain every other surface in the frame carries. Without it the band was the
+  // only clean thing on screen, which is what "pasted on" actually meant.
+  ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.16;
+  ctx.fillStyle = ctx.createPattern(grain(), 'repeat');
+  ctx.fillRect(0, BOSS.y, W, BOSS.h); ctx.restore();
 
   // ---- the prompt. It pulses only once the line is actually ready to be moved past, so
   // the pulse is a signal rather than decoration, and it names the last line as the last.
@@ -9988,6 +10018,12 @@ function drawBossGlobe(cx, cy, R, b) {
   const g = ctx.createLinearGradient(cx - R, cy - R, cx + R, cy + R);
   g.addColorStop(0, '#59aed9'); g.addColorStop(1, '#215b86');
   ctx.fillStyle = g; ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
+  // the seas, and only the seas, when he loses his temper
+  const boiling = (b.script[b.line] || {}).mood === 'rage';
+  if (boiling) {
+    ctx.fillStyle = 'rgba(208,26,18,' + (0.74 + 0.14 * Math.abs(Math.sin(b.t * 9))).toFixed(3) + ')';
+    ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
+  }
   // land, placed by longitude and squashed towards the limb so it turns rather than slides
   for (const c of BOSS_LAND) {
     const a = c.lon + b.spin, ca = Math.cos(a);
@@ -10007,7 +10043,7 @@ function drawBossGlobe(cx, cy, R, b) {
     ctx.restore();
   }
   // graticule
-  ctx.strokeStyle = 'rgba(232,244,255,0.16)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = boiling ? 'rgba(255,238,230,0.40)' : 'rgba(232,244,255,0.16)'; ctx.lineWidth = 1;
   for (let i = -2; i <= 2; i++) {
     ctx.beginPath(); ctx.ellipse(cx, cy + i * R * 0.38, R * Math.cos(i * 0.42), R * 0.06, 0, 0, 6.28); ctx.stroke();
   }
@@ -10041,17 +10077,10 @@ function drawBossFace(cx, cy, R, b) {
              : 0.06;
   // narrow when he laughs, WIDE when the shift walks out, NARROW again when that turns to
   // temper. Alarm and rage pulling the lids opposite ways is most of what separates them.
-  const lid = b.blink > 0 ? 0.12 : (laughing ? 0.45 : rage ? 0.5 : alarm ? 1.24 : 1);
+  const lid = b.blink > 0 ? 0.12 : (laughing ? 0.45 : rage ? 0.30 : alarm ? 1.24 : 1);
   // The head is the world, so when he loses it the world goes red. Clipped to the globe,
   // under everything the face draws, so it colours the planet and not his moustache.
-  if (rage) {
-    ctx.save();
-    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.28); ctx.clip();
-    ctx.globalCompositeOperation = 'source-atop';
-    ctx.fillStyle = 'rgba(214,38,26,' + (0.32 + 0.11 * Math.abs(Math.sin(b.t * 9))).toFixed(3) + ')';
-    ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
-    ctx.restore();
-  }
+  // (the red lives in drawBossGlobe now, under the continents rather than over them)
   const ey = cy - R * 0.20, eo = R * 0.36;
   // eyes
   for (const s of [-1, 1]) {
@@ -10061,9 +10090,9 @@ function drawBossFace(cx, cy, R, b) {
     if (lid > 0.3) {
       ctx.fillStyle = INK;
       ctx.beginPath();
-      ctx.arc(cx + s * eo + R * (alarm ? 0.02 : rage ? 0.03 : 0.05),
-              ey + R * (alarm ? -0.06 : rage ? 0.05 : 0.02),
-              R * (alarm ? 0.062 : rage ? 0.072 : 0.085), 0, 6.28);
+      ctx.arc(cx + s * eo + R * (alarm ? 0.02 : rage ? -0.04 : 0.05),
+              ey + R * (alarm ? -0.06 : rage ? 0.10 : 0.02),
+              R * (alarm ? 0.062 : rage ? 0.075 : 0.085), 0, 6.28);
       ctx.fill();
     }
   }
@@ -10071,19 +10100,19 @@ function drawBossFace(cx, cy, R, b) {
   ctx.strokeStyle = INK; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
   for (const s of [-1, 1]) {
     ctx.beginPath();
-    if (rage) {                                   // inner end low and driven down
+    if (rage) {                                   // inner end low and driven at the nose
       ctx.lineWidth = 3.2;
-      ctx.moveTo(cx + s * (eo + R * 0.32), ey - R * 0.44);
+      ctx.moveTo(cx + s * (eo + R * 0.32), ey - R * 0.40);
       ctx.lineTo(cx + s * (eo - R * 0.18), ey - R * 0.16);
     } else if (alarm) {                           // inner end HIGH: alarm, not anger
-      ctx.moveTo(cx + s * (eo + R * 0.26), ey - R * 0.40);
-      ctx.lineTo(cx + s * (eo - R * 0.14), ey - R * 0.56);
+      ctx.moveTo(cx + s * (eo + R * 0.26), ey - R * 0.27);
+      ctx.lineTo(cx + s * (eo - R * 0.14), ey - R * 0.40);
     } else if (BOSS.turn > 0) {                   // outer end low: pleased with himself
-      ctx.moveTo(cx + s * (eo + R * 0.22), ey - R * 0.40);
-      ctx.lineTo(cx + s * (eo - R * 0.16), ey - R * 0.52);
+      ctx.moveTo(cx + s * (eo + R * 0.22), ey - R * 0.29);
+      ctx.lineTo(cx + s * (eo - R * 0.16), ey - R * 0.40);
     } else {                                      // inner end low: a scowl
-      ctx.moveTo(cx + s * (eo + R * 0.24), ey - R * 0.56);
-      ctx.lineTo(cx + s * (eo - R * 0.18), ey - R * 0.34);
+      ctx.moveTo(cx + s * (eo + R * 0.24), ey - R * 0.40);
+      ctx.lineTo(cx + s * (eo - R * 0.18), ey - R * 0.28);
     }
     ctx.stroke();
   }
@@ -10096,12 +10125,13 @@ function drawBossFace(cx, cy, R, b) {
   const my2 = alarm ? cy + R * 0.86 : ey;
   ctx.strokeStyle = 'rgba(214,178,96,0.55)'; ctx.lineWidth = 1.2;
   ctx.beginPath();
+  const lapelX = cx + R * 0.66, lapelY = cy + R * 1.18;   // where a chain actually ends
   if (alarm) {
-    ctx.moveTo(cx + R * 0.62, cy + R * 0.30);
-    ctx.quadraticCurveTo(cx + R * 0.94, cy + R * 0.54, mx2, my2 - R * 0.28);
+    ctx.moveTo(mx2, my2 - R * 0.30);
+    ctx.quadraticCurveTo(cx + R * 1.02, cy + R * 0.62, lapelX, lapelY);
   } else {
     ctx.moveTo(cx + eo + R * 0.28, ey + R * 0.12);
-    ctx.quadraticCurveTo(cx + R * 0.95, cy + R * 0.55, cx + R * 0.72, cy + R * 0.95);
+    ctx.quadraticCurveTo(cx + R * 0.98, cy + R * 0.56, lapelX, lapelY);
   }
   ctx.stroke();
   ctx.strokeStyle = 'rgba(214,178,96,0.95)'; ctx.lineWidth = 2;
@@ -10119,7 +10149,10 @@ function drawBossFace(cx, cy, R, b) {
   const belly = turn > 0 ? my + Math.max(1.2, mh) : my - R * 0.10 + Math.max(1.2, mh) * 0.5;
   ctx.fillStyle = '#3a1d22';
   if (shout) {
-    const ah = R * (rage ? 0.30 : 0.34) * open, ay2 = my + R * 0.04;
+    // 0.14R rather than 0.04R for the snarl: the moustache reaches cy+0.32R and the
+    // bared upper teeth were behind it, so the one mouth meant to show teeth showed fewer
+    // than the frightened one did.
+    const ah = R * (rage ? 0.30 : 0.34) * open, ay2 = my + R * (rage ? 0.16 : 0.04);
     const drop = rage ? R * 0.16 : 0;             // corners pulled down: a snarl, not a gasp
     ctx.beginPath();
     ctx.moveTo(cx - mw * 0.78, ay2 - drop);
@@ -10179,18 +10212,18 @@ function drawBossFace(cx, cy, R, b) {
     ctx.strokeStyle = INK; ctx.lineWidth = 1.4; ctx.stroke();
   }
 }
-function drawBossHat(cx, cy, R, lift, tip) {
+function drawBossHat(cx, cy, R, lift, tip, shift) {
   ctx.save();
-  ctx.translate(cx, cy - R * 0.62 - (lift || 0));
+  ctx.translate(cx + (shift || 0), cy - R * 0.75 - (lift || 0));
   ctx.rotate(-0.09 - (tip || 0));                       // worn at a slight angle
-  const brimW = R * 1.62, crownW = R * 1.04, crownH = R * 1.22;
+  const brimW = R * 1.62, crownW = R * 1.04, crownH = R * 1.05, brimH = R * 0.13;
   // crown
   ctx.fillStyle = '#17131a';
   roundRect(-crownW / 2, -crownH, crownW, crownH + 6, 4); ctx.fill();
   ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.stroke();
   // hatband
   ctx.fillStyle = '#6d2229';
-  ctx.fillRect(-crownW / 2, -R * 0.24, crownW, R * 0.26);
+  ctx.fillRect(-crownW / 2, -R * 0.20, crownW, R * 0.22);
   // a sheen down the crown's left, so it reads as silk and not a black rectangle
   const g = ctx.createLinearGradient(-crownW / 2, -crownH, crownW / 2, -crownH);
   g.addColorStop(0, 'rgba(255,255,255,0.14)');
@@ -10199,7 +10232,7 @@ function drawBossHat(cx, cy, R, lift, tip) {
   ctx.fillStyle = g; ctx.fillRect(-crownW / 2, -crownH, crownW, crownH);
   // brim
   ctx.fillStyle = '#1b161e';
-  ctx.beginPath(); ctx.ellipse(0, 0, brimW, R * 0.24, 0, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0, 0, brimW, brimH, 0, 0, 6.28); ctx.fill();
   ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.stroke();
   ctx.restore();
 }
