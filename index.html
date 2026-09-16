@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = 'lastroom spot-the-difference playtest';
+const BUILD = 'lastroom visual pass — scenes, blackout, generator pit';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -171,18 +171,73 @@ function saveBest(n) { try { if (n > loadBest()) localStorage.setItem('hr_best',
 
 // ================================================================ LastRoom finale (Document.xlsx / LastRoom)
 const HELD = Object.create(null);
-const FINALE_DIFF_KINDS = ['coin', 'sign', 'smoke', 'window', 'bag', 'clock', 'crane', 'worker', 'barcode', 'dollar'];
-function makeFinaleDiffs() {
-  const spots = [
-    { x: 48, y: 42 }, { x: 150, y: 38 }, { x: 248, y: 48 }, { x: 72, y: 98 }, { x: 168, y: 108 },
-    { x: 252, y: 118 }, { x: 54, y: 162 }, { x: 140, y: 158 }, { x: 220, y: 168 }, { x: 268, y: 88 },
-  ];
-  const kinds = FINALE_DIFF_KINDS.slice();
-  for (let i = kinds.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [kinds[i], kinds[j]] = [kinds[j], kinds[i]]; }
-  return spots.map((p, i) => ({ ...p, kind: kinds[i], id: i }));
+const FINALE_BLACKOUT = 1.55; // 3 flicker beats before generator restarts
+// Six dark capitalism tableaux — inked, muted gold / rust / mill soot, same art language as the run.
+const FINALE_SCENES = [
+  {
+    id: 'line', title: 'THE LINE NEVER STOPS',
+    diffs: [
+      { x: 42, y: 48, kind: 'extraSmoke' }, { x: 118, y: 36, kind: 'goldClock' }, { x: 248, y: 52, kind: 'bossHat' },
+      { x: 70, y: 110, kind: 'missingWorker' }, { x: 160, y: 102, kind: 'redBanner' }, { x: 240, y: 120, kind: 'coinStack' },
+      { x: 48, y: 168, kind: 'brokenGear' }, { x: 145, y: 162, kind: 'bloodSpot' }, { x: 220, y: 170, kind: 'cage' }, { x: 275, y: 90, kind: 'priceTag' },
+    ],
+  },
+  {
+    id: 'vault', title: 'WAGES VS VAULT',
+    diffs: [
+      { x: 36, y: 44, kind: 'ledger' }, { x: 130, y: 40, kind: 'goldBar' }, { x: 250, y: 46, kind: 'safeCrack' },
+      { x: 58, y: 100, kind: 'emptyPocket' }, { x: 155, y: 108, kind: 'chain' }, { x: 245, y: 115, kind: 'diamond' },
+      { x: 40, y: 165, kind: 'tinCup' }, { x: 140, y: 160, kind: 'boot' }, { x: 230, y: 168, kind: 'receipt' }, { x: 270, y: 88, kind: 'percent' },
+    ],
+  },
+  {
+    id: 'banquet', title: 'THEIR TABLE, YOUR FLOOR',
+    diffs: [
+      { x: 50, y: 38, kind: 'chandelier' }, { x: 150, y: 42, kind: 'wine' }, { x: 255, y: 40, kind: 'roast' },
+      { x: 64, y: 105, kind: 'servant' }, { x: 168, y: 100, kind: 'cigar' }, { x: 248, y: 112, kind: 'mask' },
+      { x: 45, y: 170, kind: 'crumb' }, { x: 135, y: 164, kind: 'kneel' }, { x: 225, y: 172, kind: 'rat' }, { x: 278, y: 92, kind: 'bill' },
+    ],
+  },
+  {
+    id: 'ticker', title: 'NUMBERS EAT BODIES',
+    diffs: [
+      { x: 40, y: 36, kind: 'arrowUp' }, { x: 140, y: 44, kind: 'arrowDown' }, { x: 250, y: 38, kind: 'crash' },
+      { x: 60, y: 98, kind: 'screen' }, { x: 160, y: 110, kind: 'headset' }, { x: 242, y: 105, kind: 'chart' },
+      { x: 48, y: 166, kind: 'fallen' }, { x: 148, y: 160, kind: 'briefcase' }, { x: 228, y: 170, kind: 'tie' }, { x: 272, y: 86, kind: 'bull' },
+    ],
+  },
+  {
+    id: 'contract', title: 'SIGN HERE FOREVER',
+    diffs: [
+      { x: 44, y: 42, kind: 'stamp' }, { x: 145, y: 38, kind: 'quill' }, { x: 252, y: 48, kind: 'seal' },
+      { x: 68, y: 108, kind: 'fineprint' }, { x: 165, y: 102, kind: 'thumb' }, { x: 245, y: 118, kind: 'shackle' },
+      { x: 42, y: 168, kind: 'inkblot' }, { x: 138, y: 162, kind: 'tear' }, { x: 218, y: 170, kind: 'hourglass' }, { x: 275, y: 90, kind: 'X' },
+    ],
+  },
+  {
+    id: 'smog', title: 'PROGRESS HAS A SMELL',
+    diffs: [
+      { x: 38, y: 40, kind: 'stackSmoke' }, { x: 135, y: 34, kind: 'mansion' }, { x: 248, y: 44, kind: 'sunMoney' },
+      { x: 55, y: 105, kind: 'cough' }, { x: 158, y: 100, kind: 'filter' }, { x: 240, y: 112, kind: 'pipe' },
+      { x: 46, y: 168, kind: 'puddle' }, { x: 142, y: 160, kind: 'bird' }, { x: 226, y: 172, kind: 'maskGas' }, { x: 270, y: 88, kind: 'chimney' },
+    ],
+  },
+];
+function pickFinaleScene() { return FINALE_SCENES[Math.floor(Math.random() * FINALE_SCENES.length)]; }
+function makeFinaleDiffs(scene) {
+  return scene.diffs.map((d, i) => ({ ...d, id: i }));
+}
+function finaleFx(f, k, x, y, o = {}) {
+  const n = o.n || 1, vx = o.vx || [-20, 20], vy = o.vy || [-40, -10], lf = o.life || [0.35, 0.8];
+  for (let i = 0; i < n; i++) {
+    const life = rand(lf[0], lf[1]);
+    f.fx.push({ k, x: x + rand(-(o.sx || 0), o.sx || 0), y: y + rand(-(o.sy || 0), o.sy || 0),
+      vx: rand(vx[0], vx[1]), vy: rand(vy[0], vy[1]), life, max: life, c: o.c || '#ffe0a0', r: o.r || 2 });
+  }
 }
 function startFinale() {
   const line = S.runners.filter(r => r.state === 'arrived');
+  const scene = pickFinaleScene();
   const n = line.length;
   S.finale = {
     phase: 'charge',
@@ -191,44 +246,65 @@ function startFinale() {
     light: 0,
     searchT: CFG.finale.searchTime,
     found: new Set(),
-    diffs: makeFinaleDiffs(),
-    cursor: { x: 470, y: 250 },
+    scene,
+    diffs: makeFinaleDiffs(scene),
+    cursor: { x: 470, y: 220 },
     line,
-    leaving: [],
+    deck: line.map((r, i) => ({ r, i, enter: -i * 0.055, x: 0, arrived: false })),
+    falling: [],
+    fx: [],
+    ripples: [],
+    blackoutT: 0,
     flashWrong: 0,
-    whirl: 0,
+    genPulse: 0,
   };
   S.mode = 'finale';
 }
 function finaleLightLevel(f) {
   if (f.phase === 'search') return 1;
-  // dim flicker while charging the generator
+  if (f.phase === 'blackout') {
+    const t = f.blackoutT;
+    // Three readable beats: cut → ghost pulse → dying stutter → black
+    if (t < 0.28) return 0.05 + Math.sin(t * 40) * 0.04;
+    if (t < 0.55) return 0.42 + Math.sin((t - 0.28) * 22) * 0.12;
+    if (t < 0.95) return 0.12 + (Math.sin(t * 55) > 0.3 ? 0.18 : 0);
+    return 0.03 + Math.sin(t * 30) * 0.02;
+  }
   const progress = clamp01(f.chargeT / f.chargeNeed);
-  return 0.08 + progress * 0.55 + Math.sin(S.t * 18) * 0.06 * (0.3 + progress);
+  const flicker = Math.sin(S.t * 14) * 0.045 + Math.sin(S.t * 29) * 0.025;
+  return 0.07 + progress * 0.62 + flicker * (0.35 + progress);
 }
 function beginFinaleCharge(f) {
   f.phase = 'charge';
   f.chargeT = 0;
   f.chargeNeed = CFG.finale.genTime(Math.max(1, f.line.length));
   f.light = 0;
+  f.deck = f.line.map((r, i) => ({ r, i, enter: -i * 0.05, x: 0, arrived: false }));
 }
 function finaleWrong() {
   const f = S.finale;
-  f.flashWrong = 0.55; f.whirl = 1; S.wrongFlash = 0.45; S.shake = 8; AU.fail();
+  if (f.phase === 'blackout') return;
+  f.flashWrong = 0.7; S.wrongFlash = 0.5; S.shake = 10; AU.fail();
+  const L = finaleLayout();
   const r = f.line.pop();
   if (r) {
     r.state = 'gone'; r.doom = 'final'; r.deathT = S.t;
-    f.leaving.push({ r, t: 0 });
-    S.floaters.push({ sx: W / 2, sy: H / 2 - 50, txt: r.name ? `${r.name} FALLS` : 'ONE IS LOST', life: 1.3, color: '#ff5555', big: true });
+    const slot = f.deck.find(d => d.r === r);
+    const sx = slot ? slot.x : L.deck.x + L.deck.w * 0.5;
+    const sy = L.deck.y - 2;
+    f.falling.push({ r, t: 0, x: sx, y: sy, vx: rand(-40, 40), vy: -80, rot: rand(-0.4, 0.4) });
+    f.deck = f.deck.filter(d => d.r !== r);
+    S.floaters.push({ sx: W / 2, sy: L.py + 56, txt: r.name ? `${r.name} FALLS` : 'ONE IS LOST', life: 1.35, color: '#ff6b6b', big: true });
   }
   if (f.line.length <= 0) { S.mode = 'lose'; return; }
-  beginFinaleCharge(f);
+  f.phase = 'blackout';
+  f.blackoutT = 0;
+  f.light = 0;
 }
 function finaleConfirm() {
   const f = S.finale;
   if (f.phase !== 'search') return;
   const layout = finaleLayout();
-  // Accept a hit on either painting (same relative spot).
   const targets = [];
   for (const side of [layout.left, layout.right]) {
     for (const d of f.diffs) {
@@ -250,75 +326,205 @@ function finaleConfirm() {
   }
 }
 function finaleLayout() {
-  const pw = 900, ph = 460;
-  const px = (W - pw) / 2, py = (H - ph) / 2;
-  const paintW = 300, paintH = 210;
-  const gap = 36;
-  const left = { x: px + 70, y: py + 78, w: paintW, h: paintH };
+  const pw = 920, ph = 500;
+  const px = (W - pw) / 2, py = (H - ph) / 2 + 4;
+  const paintW = 310, paintH = 200;
+  const gap = 28;
+  const left = { x: px + 66, y: py + 72, w: paintW, h: paintH };
   const right = { x: left.x + paintW + gap, y: left.y, w: paintW, h: paintH };
-  return { pw, ph, px, py, left, right };
+  const deck = { x: px + 50, y: py + ph - 108, w: pw - 100, h: 36 };
+  const water = { x: px + 40, y: py + ph - 58, w: pw - 80, h: 42 };
+  const gen = { x: px + pw - 150, y: py + ph - 126, w: 88, h: 52 };
+  return { pw, ph, px, py, left, right, deck, water, gen };
 }
-function drawCapitalismPainting(x, y, w, h, diffs, found, altered) {
+function inkFill(c, x, y, w, h, r = 0) {
+  ctx.fillStyle = INK;
+  if (r) { roundRect(x - 1.2, y - 1.2, w + 2.4, h + 2.4, r + 1); ctx.fill(); }
+  else ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+  ctx.fillStyle = c;
+  if (r) { roundRect(x, y, w, h, r); ctx.fill(); }
+  else ctx.fillRect(x, y, w, h);
+}
+function paintMiniPerson(x, y, skin, shirt, scale = 1, phase = 0) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
+  const sn = Math.sin(phase);
+  ctx.fillStyle = INK; ctx.fillRect(-3.2, -12, 6.4, 9);
+  ctx.fillStyle = shirt; ctx.fillRect(-2.5, -11, 5, 7.5);
+  ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(0, -15, 4.2, 0, 6.28); ctx.fill();
+  ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(0, -15, 3.3, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = INK; ctx.lineWidth = 2.4;
+  ctx.beginPath(); ctx.moveTo(-2, -4); ctx.lineTo(-3 + sn * 2, 2); ctx.moveTo(2, -4); ctx.lineTo(3 - sn * 2, 2); ctx.stroke();
+  ctx.strokeStyle = shade(skin, 0.85); ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.restore();
+}
+function drawDiffMark(d, x, y, on) {
+  if (!on) return;
+  const dx = x + d.x, dy = y + d.y;
+  ctx.save();
+  // Small scene-aware accents (altered painting only)
+  const k = d.kind;
+  if (k === 'extraSmoke' || k === 'stackSmoke') {
+    ctx.fillStyle = 'rgba(160,150,140,0.55)';
+    ctx.beginPath(); ctx.arc(dx, dy, 9, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.arc(dx + 7, dy - 6, 6, 0, 6.28); ctx.fill();
+  } else if (k === 'goldClock' || k === 'goldBar' || k === 'diamond' || k === 'sunMoney') {
+    ctx.fillStyle = '#d4a84b'; ctx.beginPath(); ctx.arc(dx, dy, 7, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.4; ctx.stroke();
+  } else if (k === 'bossHat' || k === 'cigar' || k === 'tie' || k === 'bull') {
+    ctx.fillStyle = '#1b1519'; ctx.fillRect(dx - 8, dy - 4, 16, 6);
+    ctx.fillStyle = '#c0392b'; ctx.fillRect(dx - 3, dy - 7, 6, 4);
+  } else if (k === 'missingWorker' || k === 'fallen' || k === 'kneel' || k === 'cough') {
+    ctx.globalAlpha = 0.35; paintMiniPerson(dx, dy + 6, '#c4a07a', '#7f8c8d', 0.7, 0); ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(dx - 8, dy - 8); ctx.lineTo(dx + 8, dy + 8); ctx.moveTo(dx + 8, dy - 8); ctx.lineTo(dx - 8, dy + 8); ctx.stroke();
+  } else if (k === 'redBanner' || k === 'priceTag' || k === 'bill' || k === 'receipt') {
+    ctx.fillStyle = '#8e2a2a'; ctx.fillRect(dx - 14, dy - 7, 28, 14);
+    ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 8px monospace'; ctx.fillText('$$$', dx - 9, dy + 3);
+  } else if (k === 'coinStack' || k === 'percent') {
+    ctx.fillStyle = '#b8963e'; for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.ellipse(dx, dy + 4 - i * 4, 8, 3, 0, 0, 6.28); ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke(); }
+  } else if (k === 'bloodSpot' || k === 'inkblot' || k === 'puddle') {
+    ctx.fillStyle = k === 'bloodSpot' ? '#6b1d1d' : '#1a2030';
+    ctx.beginPath(); ctx.ellipse(dx, dy, 10, 5, 0.2, 0, 6.28); ctx.fill();
+  } else if (k === 'cage' || k === 'chain' || k === 'shackle') {
+    ctx.strokeStyle = '#8d929a'; ctx.lineWidth = 1.6;
+    ctx.strokeRect(dx - 9, dy - 10, 18, 18);
+    ctx.beginPath(); ctx.moveTo(dx - 9, dy); ctx.lineTo(dx + 9, dy); ctx.moveTo(dx, dy - 10); ctx.lineTo(dx, dy + 8); ctx.stroke();
+  } else if (k === 'brokenGear' || k === 'filter' || k === 'pipe' || k === 'chimney') {
+    ctx.strokeStyle = '#a08c70'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(dx, dy, 8, 0.2, 5.2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(dx + 4, dy - 6); ctx.lineTo(dx + 10, dy - 12); ctx.stroke();
+  } else {
+    ctx.fillStyle = '#c9a227'; ctx.beginPath(); ctx.arc(dx, dy, 5, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.2; ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
   ctx.save();
   ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-  // sealed room / factory capitalism tableau
-  ctx.fillStyle = '#1a1520'; ctx.fillRect(x, y, w, h);
-  const sky = ctx.createLinearGradient(x, y, x, y + h * 0.45);
-  sky.addColorStop(0, '#3a2a22'); sky.addColorStop(1, '#6b4a2e');
-  ctx.fillStyle = sky; ctx.fillRect(x, y, w, h * 0.42);
-  ctx.fillStyle = '#2c3e50'; ctx.fillRect(x + 18, y + 70, 90, 70);
-  ctx.fillStyle = '#34495e'; ctx.fillRect(x + 120, y + 55, 110, 85);
-  ctx.fillStyle = '#1b2838'; ctx.fillRect(x + 210, y + 48, 70, 92);
-  // smokestacks
-  ctx.fillStyle = '#222'; ctx.fillRect(x + 40, y + 40, 10, 30); ctx.fillRect(x + 160, y + 28, 12, 28);
-  // money rain / ledgers
-  ctx.fillStyle = '#27ae60';
-  for (let i = 0; i < 8; i++) ctx.fillRect(x + 20 + i * 34, y + 150, 18, 10);
-  ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 16px monospace'; ctx.fillText('$', x + 250, y + 40);
-  ctx.fillStyle = '#bdc3c7'; ctx.font = '10px monospace'; ctx.fillText('PROFIT', x + 18, y + 28);
-  ctx.fillText('LABOR', x + 200, y + 195);
-  // conveyor
-  ctx.fillStyle = '#7f8c8d'; ctx.fillRect(x + 10, y + 175, w - 20, 8);
-  // people silhouettes
-  for (let i = 0; i < 5; i++) {
-    ctx.fillStyle = '#946b4a';
-    ctx.beginPath(); ctx.arc(x + 40 + i * 48, y + 168, 5, 0, 6.28); ctx.fill();
-    ctx.fillRect(x + 37 + i * 48, y + 172, 6, 10);
+  // shared dark chamber wash
+  const g = ctx.createLinearGradient(x, y, x, y + h);
+  g.addColorStop(0, '#1c1418'); g.addColorStop(0.45, '#2a1c22'); g.addColorStop(1, '#141018');
+  ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+
+  const id = scene.id;
+  if (id === 'line') {
+    inkFill('#3a4550', x + 12, y + 70, w - 24, 18, 2);
+    for (let i = 0; i < 5; i++) inkFill('#2c333c', x + 20 + i * 54, y + 55, 40, 16, 2);
+    inkFill('#4a3a30', x + 8, y + 118, 70, 55, 3);
+    inkFill('#3d322c', x + 95, y + 110, 90, 63, 3);
+    inkFill('#2b2420', x + 205, y + 100, 80, 73, 3);
+    ctx.fillStyle = '#1b1519'; ctx.fillRect(x + 40, y + 40, 8, 30); ctx.fillRect(x + 160, y + 28, 10, 42);
+    for (let i = 0; i < 6; i++) paintMiniPerson(x + 30 + i * 42, y + 165, '#c4a07a', ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#d35400', '#7f8c8d'][i], 0.85, t * 10 + i);
+    ctx.fillStyle = 'rgba(200,180,120,0.08)'; ctx.fillRect(x, y, w, 40);
+  } else if (id === 'vault') {
+    inkFill('#1e2a24', x + 10, y + 50, 120, 120, 4);
+    inkFill('#3a2f1c', x + 150, y + 45, 130, 130, 6);
+    ctx.strokeStyle = '#d4a84b'; ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) ctx.strokeRect(x + 165 + i * 4, y + 60 + i * 4, 100 - i * 8, 100 - i * 8);
+    ctx.fillStyle = '#d4a84b'; ctx.beginPath(); ctx.arc(x + 215, y + 110, 10, 0, 6.28); ctx.fill();
+    for (let i = 0; i < 4; i++) paintMiniPerson(x + 28 + i * 28, y + 175, '#b8956e', '#5d6d7e', 0.8, 0);
+    ctx.fillStyle = '#6b8f71'; ctx.font = 'bold 11px monospace'; ctx.fillText('WAGE', x + 28, y + 70);
+    ctx.fillStyle = '#d4a84b'; ctx.fillText('VAULT', x + 185, y + 70);
+  } else if (id === 'banquet') {
+    inkFill('#3b2a22', x + 20, y + 40, w - 40, 70, 4);
+    inkFill('#2a1c18', x + 40, y + 55, w - 80, 40, 2);
+    ctx.fillStyle = '#d4a84b'; ctx.fillRect(x + 70, y + 60, 18, 12); ctx.fillRect(x + 140, y + 58, 22, 14); ctx.fillRect(x + 210, y + 62, 16, 10);
+    inkFill('#1a1512', x + 10, y + 120, w - 20, 70, 3);
+    for (let i = 0; i < 3; i++) paintMiniPerson(x + 80 + i * 55, y + 95, '#e8c8a2', '#f1c40f', 0.95, 0);
+    for (let i = 0; i < 5; i++) paintMiniPerson(x + 35 + i * 50, y + 175, '#a07050', '#4a4a4a', 0.75, Math.sin(t + i));
+  } else if (id === 'ticker') {
+    inkFill('#12161c', x + 12, y + 30, w - 24, 70, 3);
+    ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 2; ctx.beginPath();
+    ctx.moveTo(x + 24, y + 80); ctx.lineTo(x + 80, y + 50); ctx.lineTo(x + 120, y + 60); ctx.lineTo(x + 180, y + 35); ctx.lineTo(x + 260, y + 70); ctx.stroke();
+    ctx.strokeStyle = '#c0392b'; ctx.beginPath();
+    ctx.moveTo(x + 24, y + 55); ctx.lineTo(x + 90, y + 70); ctx.lineTo(x + 160, y + 85); ctx.lineTo(x + 270, y + 95); ctx.stroke();
+    inkFill('#1a1519', x + 10, y + 115, w - 20, 75, 3);
+    for (let i = 0; i < 7; i++) paintMiniPerson(x + 28 + i * 38, y + 170, '#c4a07a', '#2c3e50', 0.8, t * 8 + i);
+    ctx.fillStyle = '#7f8c8d'; ctx.font = '10px monospace'; ctx.fillText('MKT +12.4   LAB −3.1', x + 24, y + 48);
+  } else if (id === 'contract') {
+    inkFill('#d7c4a0', x + 50, y + 28, 200, 150, 2);
+    ctx.fillStyle = INK; ctx.fillRect(x + 48, y + 26, 204, 154);
+    ctx.fillStyle = '#d7c4a0'; ctx.fillRect(x + 52, y + 30, 196, 146);
+    ctx.fillStyle = '#5c4a3a'; ctx.font = '9px monospace';
+    for (let i = 0; i < 8; i++) ctx.fillRect(x + 70, y + 48 + i * 14, 150 - (i % 3) * 20, 3);
+    ctx.fillStyle = '#8e2a2a'; ctx.font = 'bold 12px monospace'; ctx.fillText('IN PERPETUITY', x + 88, y + 160);
+    paintMiniPerson(x + 40, y + 185, '#c4a07a', '#7f8c8d', 0.9, 0);
+    paintMiniPerson(x + 250, y + 185, '#e8c8a2', '#1a1a1a', 1, 0);
+  } else { // smog
+    const sky = ctx.createLinearGradient(x, y, x, y + 90);
+    sky.addColorStop(0, '#3a3028'); sky.addColorStop(1, '#6a5240');
+    ctx.fillStyle = sky; ctx.fillRect(x, y, w, 90);
+    inkFill('#2a2420', x + 20, y + 70, 50, 90, 2);
+    inkFill('#2a2420', x + 90, y + 55, 60, 105, 2);
+    inkFill('#1f1a18', x + 180, y + 40, 45, 120, 2);
+    ctx.fillStyle = 'rgba(140,130,120,0.35)';
+    for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(x + 40 + i * 50, y + 30 + Math.sin(t * 2 + i) * 4, 16 + i, 0, 6.28); ctx.fill(); }
+    inkFill('#4a3a2a', x + 200, y + 55, 70, 40, 3); // distant mansion
+    for (let i = 0; i < 5; i++) paintMiniPerson(x + 30 + i * 45, y + 175, '#a07050', '#5d4037', 0.8, 0);
   }
-  // apply differences on the altered painting only
-  if (altered) {
-    for (const d of diffs) {
-      if (found.has(d.id)) continue;
-      const dx = x + d.x, dy = y + d.y;
-      if (d.kind === 'coin') { ctx.fillStyle = '#f1c40f'; ctx.beginPath(); ctx.arc(dx, dy, 7, 0, 6.28); ctx.fill(); ctx.fillStyle = '#000'; ctx.font = '9px monospace'; ctx.fillText('$', dx - 3, dy + 3); }
-      else if (d.kind === 'sign') { ctx.fillStyle = '#c0392b'; ctx.fillRect(dx - 16, dy - 8, 32, 14); ctx.fillStyle = '#fff'; ctx.font = '8px monospace'; ctx.fillText('SALE', dx - 12, dy + 2); }
-      else if (d.kind === 'smoke') { ctx.fillStyle = 'rgba(180,180,180,0.7)'; ctx.beginPath(); ctx.arc(dx, dy, 10, 0, 6.28); ctx.fill(); ctx.beginPath(); ctx.arc(dx + 8, dy - 6, 7, 0, 6.28); ctx.fill(); }
-      else if (d.kind === 'window') { ctx.fillStyle = '#3498db'; ctx.fillRect(dx - 8, dy - 8, 16, 16); ctx.strokeStyle = '#fff'; ctx.strokeRect(dx - 8, dy - 8, 16, 16); }
-      else if (d.kind === 'bag') { ctx.fillStyle = '#8e5a2b'; ctx.fillRect(dx - 8, dy - 6, 16, 12); ctx.fillStyle = '#f1c40f'; ctx.fillRect(dx - 3, dy - 2, 6, 4); }
-      else if (d.kind === 'clock') { ctx.fillStyle = '#ecf0f1'; ctx.beginPath(); ctx.arc(dx, dy, 9, 0, 6.28); ctx.fill(); ctx.strokeStyle = '#c0392b'; ctx.beginPath(); ctx.moveTo(dx, dy); ctx.lineTo(dx + 5, dy - 4); ctx.stroke(); }
-      else if (d.kind === 'crane') { ctx.strokeStyle = '#e67e22'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(dx - 10, dy + 8); ctx.lineTo(dx, dy - 10); ctx.lineTo(dx + 12, dy + 4); ctx.stroke(); }
-      else if (d.kind === 'worker') { ctx.fillStyle = '#e74c3c'; ctx.beginPath(); ctx.arc(dx, dy - 4, 5, 0, 6.28); ctx.fill(); ctx.fillRect(dx - 3, dy, 6, 10); }
-      else if (d.kind === 'barcode') { ctx.fillStyle = '#111'; for (let i = 0; i < 6; i++) ctx.fillRect(dx - 10 + i * 4, dy - 8, 2, 16); }
-      else if (d.kind === 'dollar') { ctx.fillStyle = '#2ecc71'; ctx.font = 'bold 18px monospace'; ctx.fillText('¥', dx - 6, dy + 6); }
-    }
-  }
-  // mark found diffs on both paintings
+
+  // subtle grain / premium motion
+  ctx.globalAlpha = 0.06 + 0.03 * Math.sin(t * 2);
+  ctx.fillStyle = '#000';
+  for (let i = 0; i < 18; i++) ctx.fillRect(x + hash(i * 3.1 + t) * w, y + hash(i * 7.7) * h, 2, 2);
+  ctx.globalAlpha = 1;
+
+  if (altered) for (const d of diffs) if (!found.has(d.id)) drawDiffMark(d, x, y, true);
   for (const d of diffs) {
     if (!found.has(d.id)) continue;
     ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(x + d.x, y + d.y, 12, 0, 6.28); ctx.stroke();
+    ctx.shadowColor = 'rgba(46,204,113,0.45)'; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(x + d.x, y + d.y, 13, 0, 6.28); ctx.stroke();
+    ctx.shadowBlur = 0;
   }
   ctx.restore();
-  ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 3; ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
+  // ornate dark frame
+  ctx.strokeStyle = '#1b1519'; ctx.lineWidth = 5; ctx.strokeRect(x - 3, y - 3, w + 6, h + 6);
+  ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.6; ctx.strokeRect(x - 1, y - 1, w + 2, h + 2);
+  ctx.strokeStyle = 'rgba(212,175,55,0.25)'; ctx.lineWidth = 1; ctx.strokeRect(x + 4, y + 4, w - 8, h - 8);
 }
 function updateFinale(dt) {
   const f = S.finale;
+  const L = finaleLayout();
   f.flashWrong = Math.max(0, f.flashWrong - dt);
-  f.whirl = Math.max(0, f.whirl - dt);
-  for (const l of f.leaving) l.t += dt;
-  f.leaving = f.leaving.filter(l => l.t < 1.4);
+  f.genPulse = Math.max(0, f.genPulse - dt);
 
-  // cursor movement (held arrows)
+  // screen-space FX
+  for (const p of f.fx) { p.life -= dt; p.vy += (p.k === 'drop' ? 520 : 40) * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+  f.fx = f.fx.filter(p => p.life > 0);
+  for (const r of f.ripples) { r.r += 38 * dt; r.life -= dt; }
+  f.ripples = f.ripples.filter(r => r.life > 0);
+
+  // falling bodies into the whirlpool
+  for (const fall of f.falling) {
+    fall.t += dt; fall.vy += 520 * dt; fall.x += fall.vx * dt; fall.y += fall.vy * dt; fall.rot += dt * 4;
+    if (!fall.splashed && fall.y >= L.water.y + 8) {
+      fall.splashed = true;
+      finaleFx(f, 'drop', fall.x, L.water.y + 10, { n: 14, sx: 8, vx: [-140, 140], vy: [-280, -90], life: [0.4, 0.95], c: '#bfe6ff' });
+      finaleFx(f, 'smoke', fall.x, L.water.y + 6, { n: 4, sx: 10, vx: [-30, 30], vy: [-40, -10], life: [0.5, 1], c: 'rgba(180,220,255,0.35)' });
+      f.ripples.push({ x: fall.x, y: L.water.y + 14, r: 4, life: 0.95 });
+      AU.thud();
+    }
+  }
+  f.falling = f.falling.filter(fall => fall.t < 2.2);
+
+  // deck runners enter staggered, then run in place
+  const shown = Math.min(28, f.deck.length);
+  for (let i = 0; i < f.deck.length; i++) {
+    const d = f.deck[i];
+    d.enter += dt;
+    const slotX = L.deck.x + 18 + (Math.min(i, shown - 1) / Math.max(1, shown - 1)) * (L.deck.w - 36);
+    if (d.enter < 0) { d.x = L.deck.x - 40; d.arrived = false; }
+    else {
+      const u = clamp01(d.enter / 0.45);
+      const ease = 1 - Math.pow(1 - u, 3);
+      d.x = (L.deck.x - 40) + (slotX - (L.deck.x - 40)) * ease;
+      d.arrived = u >= 1;
+    }
+  }
+
+  // cursor
   let mx = 0, my = 0;
   if (HELD.ARROWLEFT || HELD.A) mx -= 1;
   if (HELD.ARROWRIGHT || HELD.D) mx += 1;
@@ -326,28 +532,34 @@ function updateFinale(dt) {
   if (HELD.ARROWDOWN || HELD.S) my += 1;
   if (mx || my) {
     const len = Math.hypot(mx, my) || 1;
-    const L = finaleLayout();
     f.cursor.x += (mx / len) * CFG.finale.cursorSpeed * dt;
     f.cursor.y += (my / len) * CFG.finale.cursorSpeed * dt;
     f.cursor.x = Math.max(L.px + 20, Math.min(L.px + L.pw - 20, f.cursor.x));
-    f.cursor.y = Math.max(L.py + 50, Math.min(L.py + L.ph - 30, f.cursor.y));
+    f.cursor.y = Math.max(L.py + 50, Math.min(L.left.y + L.left.h + 8, f.cursor.y));
   }
 
-  if (f.phase === 'charge') {
+  if (f.phase === 'blackout') {
+    f.blackoutT += dt;
+    f.light = finaleLightLevel(f);
+    if (f.blackoutT >= FINALE_BLACKOUT) beginFinaleCharge(f);
+  } else if (f.phase === 'charge') {
     f.chargeT += dt;
     f.light = finaleLightLevel(f);
+    // generator sparks
+    if (Math.random() < dt * 8) {
+      finaleFx(f, 'spark', L.gen.x + 44, L.gen.y + 18, {
+        n: 2, sx: 10, sy: 6, vx: [-80, 80], vy: [-160, -40], life: [0.2, 0.45], c: pick(['#ffe0a0', '#7fdbff', '#fff']),
+      });
+      f.genPulse = 0.2;
+    }
     if (f.chargeT >= f.chargeNeed) {
-      f.phase = 'search';
-      f.light = 1;
-      AU.thud();
+      f.phase = 'search'; f.light = 1; f.genPulse = 0.5; AU.thud();
+      finaleFx(f, 'spark', L.gen.x + 44, L.gen.y + 10, { n: 16, sx: 20, vx: [-120, 120], vy: [-200, -40], life: [0.3, 0.7], c: '#ffe0a0' });
     }
   } else if (f.phase === 'search') {
     f.light = 1;
     f.searchT -= dt;
-    if (f.searchT <= 0) {
-      // time up: lose remaining attempts one-by-one feel → hard lose
-      S.mode = 'lose';
-    }
+    if (f.searchT <= 0) S.mode = 'lose';
   }
 }
 
@@ -4373,84 +4585,170 @@ function drawFinalePanel() {
   const f = S.finale;
   const L = finaleLayout();
   const light = finaleLightLevel(f);
-  // sealed dark chamber backdrop
-  ctx.fillStyle = `rgba(4,2,8,${0.72 + (1 - light) * 0.2})`; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#120e16'; ctx.fillRect(L.px, L.py, L.pw, L.ph);
-  ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 2; ctx.strokeRect(L.px + 1, L.py + 1, L.pw - 2, L.ph - 2);
+  const t = S.t;
 
+  // sealed chamber
+  ctx.fillStyle = `rgba(6,3,10,${0.78 + (1 - light) * 0.15})`; ctx.fillRect(0, 0, W, H);
+  const panelG = ctx.createLinearGradient(L.px, L.py, L.px, L.py + L.ph);
+  panelG.addColorStop(0, '#161018'); panelG.addColorStop(1, '#0c0a10');
+  ctx.fillStyle = panelG; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+  ctx.strokeStyle = '#1b1519'; ctx.lineWidth = 4; ctx.strokeRect(L.px + 2, L.py + 2, L.pw - 4, L.ph - 4);
+  ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.4; ctx.strokeRect(L.px + 5, L.py + 5, L.pw - 10, L.ph - 10);
+
+  // HUD
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 18px monospace';
-  ctx.fillText('FINAL CHAMBER  ·  CAPITALISM', W / 2, L.py + 28);
-  ctx.fillStyle = '#ccc'; ctx.font = '12px monospace';
+  ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 16px monospace';
+  ctx.fillText(`FINAL CHAMBER  ·  ${f.scene.title}`, W / 2, L.py + 26);
+  ctx.fillStyle = '#a9a09a'; ctx.font = '12px monospace';
   const mm = Math.floor(Math.max(0, f.searchT) / 60), ss = Math.floor(Math.max(0, f.searchT) % 60);
-  ctx.fillText(`found ${f.found.size}/${CFG.finale.findCount}   time ${mm}:${String(ss).padStart(2, '0')}   crew ${f.line.length}`, W / 2, L.py + 48);
-  ctx.textAlign = 'left';
+  const phaseLabel = f.phase === 'blackout' ? 'LIGHTS DYING' : f.phase === 'charge' ? 'CHARGING' : 'SEARCH';
+  ctx.fillText(`${phaseLabel}   found ${f.found.size}/${CFG.finale.findCount}   ${mm}:${String(ss).padStart(2, '0')}   crew ${f.line.length}`, W / 2, L.py + 46);
 
   // paintings
-  drawCapitalismPainting(L.left.x, L.left.y, L.left.w, L.left.h, f.diffs, f.found, false);
-  drawCapitalismPainting(L.right.x, L.right.y, L.right.w, L.right.h, f.diffs, f.found, true);
-  ctx.fillStyle = '#888'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
-  ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 16);
-  ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 16);
+  drawFinaleScene(f.scene, L.left.x, L.left.y, L.left.w, L.left.h, false, f.diffs, f.found, t);
+  drawFinaleScene(f.scene, L.right.x, L.right.y, L.right.w, L.right.h, true, f.diffs, f.found, t);
+  ctx.fillStyle = '#7a726c'; ctx.font = '10px monospace';
+  ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 14);
+  ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 14);
 
-  // darkness overlay on paintings while charging / dim
-  if (light < 0.95) {
-    ctx.fillStyle = `rgba(0,0,0,${1 - light})`;
-    ctx.fillRect(L.left.x, L.left.y, L.left.w, L.left.h);
-    ctx.fillRect(L.right.x, L.right.y, L.right.w, L.right.h);
-    if (f.phase === 'charge') {
-      ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 14px monospace';
-      ctx.globalAlpha = 0.5 + 0.5 * Math.sin(S.t * 10);
-      ctx.fillText('RUNNING THE GENERATOR…', W / 2, L.left.y + L.left.h / 2);
-      ctx.globalAlpha = 1;
+  // light veil over paintings (dim / flicker / blackout)
+  if (light < 0.98) {
+    ctx.fillStyle = `rgba(4,2,8,${Math.pow(1 - light, 1.15) * 0.92})`;
+    ctx.fillRect(L.left.x - 2, L.left.y - 2, L.left.w + 4, L.left.h + 4);
+    ctx.fillRect(L.right.x - 2, L.right.y - 2, L.right.w + 4, L.right.h + 4);
+    // warm lamp ghosts when partially lit
+    if (light > 0.12 && f.phase !== 'search') {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const pulse = 0.04 + light * 0.1 + Math.sin(t * 16) * 0.02;
+      ctx.fillStyle = `rgba(255,200,120,${pulse})`;
+      ctx.beginPath(); ctx.ellipse(L.left.x + L.left.w / 2, L.left.y + 30, 70, 28, 0, 0, 6.28); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(L.right.x + L.right.w / 2, L.right.y + 30, 70, 28, 0, 0, 6.28); ctx.fill();
+      ctx.restore();
     }
   }
-
-  // generator bar + workers
-  const gx = L.px + 60, gy = L.py + L.ph - 70, gw = L.pw - 120;
-  ctx.fillStyle = '#2a2430'; ctx.fillRect(gx, gy, gw, 16);
-  const chargeFrac = f.phase === 'charge' ? clamp01(f.chargeT / f.chargeNeed) : 1;
-  ctx.fillStyle = f.phase === 'charge' ? '#e67e22' : '#2ecc71';
-  ctx.fillRect(gx, gy, gw * chargeFrac, 16);
-  ctx.strokeStyle = '#888'; ctx.strokeRect(gx, gy, gw, 16);
-  ctx.fillStyle = '#bbb'; ctx.font = '11px monospace'; ctx.textAlign = 'left';
-  const need = f.chargeNeed.toFixed(1);
-  ctx.fillText(f.phase === 'charge'
-    ? `generator  ${f.line.length} workers  ·  ${need}s to full light`
-    : 'lights steady — find 10 differences  ·  arrows move cursor  ·  SPACE confirm', gx, gy - 8);
-
-  // tiny running figures on the generator
-  const shown = Math.min(24, f.line.length);
-  for (let i = 0; i < shown; i++) {
-    const r = f.line[i];
-    const fx = gx + 10 + (i / Math.max(1, shown - 1)) * (gw - 20);
-    const bob = f.phase === 'charge' ? Math.sin(S.t * 14 + i) * 2 : 0;
-    drawFigure(r, fx, gy + 36 + bob, S.t * 14 + i, 0.85, 1);
+  if (f.phase === 'blackout') {
+    const beat = f.blackoutT < 0.28 ? 1 : f.blackoutT < 0.55 ? 2 : 3;
+    ctx.fillStyle = 'rgba(255,70,70,0.08)'; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+    ctx.fillStyle = '#ff6b6b'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+    ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 20);
+    ctx.fillText(`BLACKOUT  ·  FRAME ${beat}/3`, W / 2, L.left.y + L.left.h / 2);
+    ctx.globalAlpha = 1;
+  } else if (f.phase === 'charge' && light < 0.85) {
+    ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+    ctx.globalAlpha = 0.45 + 0.55 * Math.sin(t * 9);
+    ctx.fillText('RUNNING THE GENERATOR…', W / 2, L.left.y + L.left.h / 2);
+    ctx.globalAlpha = 1;
   }
 
-  // whirlpool punishment hint
-  if (f.whirl > 0) {
-    ctx.save();
-    ctx.globalAlpha = f.whirl;
-    ctx.strokeStyle = '#5dade2'; ctx.lineWidth = 3;
-    const wx = W / 2, wy = L.py + L.ph - 20;
+  // —— generator pit ——
+  // water
+  const wg = ctx.createLinearGradient(0, L.water.y, 0, L.water.y + L.water.h);
+  wg.addColorStop(0, '#1a4a62'); wg.addColorStop(0.5, '#0f3550'); wg.addColorStop(1, '#0a2030');
+  ctx.fillStyle = wg; ctx.fillRect(L.water.x, L.water.y, L.water.w, L.water.h);
+  ctx.fillStyle = 'rgba(180,230,255,0.12)';
+  for (let i = 0; i < 6; i++) {
+    const wx = L.water.x + 20 + i * (L.water.w / 6) + Math.sin(t * 2 + i) * 6;
+    ctx.fillRect(wx, L.water.y + 8 + Math.sin(t * 3 + i * 1.3) * 3, 28, 2);
+  }
+  // whirl undertow
+  ctx.strokeStyle = 'rgba(140,210,255,0.35)'; ctx.lineWidth = 1.5;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.ellipse(L.water.x + L.water.w * 0.55, L.water.y + 22, 22 + i * 14, 7 + i * 3, t * 1.8 + i, 0, 6.28);
+    ctx.stroke();
+  }
+  for (const r of f.ripples) {
+    ctx.globalAlpha = r.life;
+    ctx.strokeStyle = 'rgba(200,240,255,0.85)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(r.x, r.y, r.r * 1.5, r.r * 0.45, 0, 0, 6.28); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // deck / treadmill
+  inkFill('#3a342e', L.deck.x, L.deck.y, L.deck.w, L.deck.h, 3);
+  ctx.fillStyle = '#2a2520';
+  for (let i = 0; i < 12; i++) ctx.fillRect(L.deck.x + 8 + i * ((L.deck.w - 16) / 12), L.deck.y + 4, 4, L.deck.h - 8);
+  // belt motion
+  ctx.fillStyle = '#c0392b';
+  const belt = ((t * 80) % 24);
+  for (let x = L.deck.x + belt; x < L.deck.x + L.deck.w - 8; x += 24) ctx.fillRect(x, L.deck.y + L.deck.h - 6, 10, 3);
+
+  // generator body
+  inkFill('#2c333c', L.gen.x, L.gen.y, L.gen.w, L.gen.h, 4);
+  inkFill('#1b1519', L.gen.x + 12, L.gen.y + 8, 28, 28, 14);
+  ctx.strokeStyle = f.phase === 'charge' || f.genPulse > 0 ? '#7fdbff' : '#556070';
+  ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(L.gen.x + 26, L.gen.y + 22, 10, 0, 6.28); ctx.stroke();
+  if (f.phase === 'charge' || f.genPulse > 0) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = `rgba(127,219,255,${0.35 + f.genPulse})`;
     for (let i = 0; i < 3; i++) {
-      ctx.beginPath(); ctx.ellipse(wx, wy, 30 + i * 18, 10 + i * 5, S.t * 4, 0, 6.28); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(L.gen.x + 40, L.gen.y + 16);
+      ctx.lineTo(L.gen.x + 55 + Math.sin(t * 30 + i) * 6, L.gen.y + 8 + i * 10);
+      ctx.lineTo(L.gen.x + 72, L.gen.y + 20 + Math.cos(t * 25 + i) * 4);
+      ctx.stroke();
     }
     ctx.restore();
   }
-  for (const l of f.leaving) {
-    const fallY = L.py + L.ph - 30 + l.t * 40;
-    drawFigure(l.r, W / 2 + Math.sin(l.t * 10) * 20, fallY, l.t * 12, 1, Math.max(0, 1 - l.t / 1.4));
+  // charge bar on generator
+  const chargeFrac = f.phase === 'search' ? 1 : f.phase === 'charge' ? clamp01(f.chargeT / f.chargeNeed) : 0;
+  ctx.fillStyle = '#1b1519'; ctx.fillRect(L.gen.x + 48, L.gen.y + 38, 32, 6);
+  ctx.fillStyle = f.phase === 'search' ? '#2ecc71' : '#e67e22';
+  ctx.fillRect(L.gen.x + 48, L.gen.y + 38, 32 * chargeFrac, 6);
+
+  ctx.fillStyle = '#9a9088'; ctx.font = '11px monospace'; ctx.textAlign = 'left';
+  ctx.fillText(f.phase === 'charge'
+    ? `${f.line.length} workers on the wheel  ·  ${f.chargeNeed.toFixed(1)}s to light`
+    : f.phase === 'blackout'
+      ? 'lights failing — hold on'
+      : 'arrows move cursor  ·  SPACE marks a difference', L.deck.x, L.deck.y - 10);
+
+  // runners on deck
+  const runPhase = (f.phase === 'charge' || f.phase === 'search') ? t * 14 : t * 4;
+  for (const d of f.deck) {
+    if (d.enter < -0.01 && d.x <= L.deck.x - 30) continue;
+    const bob = d.arrived && f.phase !== 'blackout' ? -Math.abs(Math.sin(runPhase + d.i)) * 1.5 : 0;
+    const moving = d.arrived && (f.phase === 'charge' || f.phase === 'search');
+    // shadow on deck
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath(); ctx.ellipse(d.x + 2, L.deck.y + L.deck.h - 2, 7, 2.2, 0, 0, 6.28); ctx.fill();
+    drawFigure(d.r, d.x, L.deck.y + L.deck.h - 4 + bob, moving ? runPhase + d.i : 0, 0.95, d.enter < 0 ? 0.4 : 1);
   }
 
-  // cursor
+  // falling bodies
+  for (const fall of f.falling) {
+    ctx.save();
+    ctx.translate(fall.x, fall.y);
+    ctx.rotate(fall.rot);
+    const alpha = fall.splashed ? Math.max(0, 1 - (fall.t - 0.35) / 1.5) : 1;
+    drawFigure(fall.r, 0, 0, fall.t * 10, 1, alpha);
+    ctx.restore();
+  }
+
+  // FX sparks / spray
+  for (const p of f.fx) {
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.fillStyle = p.c;
+    if (p.k === 'spark') {
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.life * 8);
+      ctx.fillRect(-1.5, -4, 3, 8); ctx.restore();
+    } else {
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r || 2, 0, 6.28); ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // cursor (only useful in search, but show dim otherwise)
   const cx = f.cursor.x, cy = f.cursor.y;
+  ctx.globalAlpha = f.phase === 'search' ? 1 : 0.35;
   ctx.strokeStyle = f.flashWrong > 0 ? '#ff4646' : '#5ce1ff'; ctx.lineWidth = 2;
+  ctx.shadowColor = f.flashWrong > 0 ? 'rgba(255,70,70,0.5)' : 'rgba(92,225,255,0.45)'; ctx.shadowBlur = 6;
   ctx.beginPath(); ctx.moveTo(cx - 12, cy); ctx.lineTo(cx + 12, cy); ctx.moveTo(cx, cy - 12); ctx.lineTo(cx, cy + 12); ctx.stroke();
   ctx.beginPath(); ctx.arc(cx, cy, 8, 0, 6.28); ctx.stroke();
+  ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+
   if (f.flashWrong > 0) {
-    ctx.fillStyle = `rgba(255,40,40,${f.flashWrong * 0.35})`; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+    ctx.fillStyle = `rgba(255,40,40,${f.flashWrong * 0.28})`; ctx.fillRect(L.px, L.py, L.pw, L.ph);
   }
   ctx.textAlign = 'left';
 }
