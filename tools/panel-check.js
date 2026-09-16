@@ -12,7 +12,7 @@
 // Character widths are the measured ratios for the two fonts the panel uses, not the
 // harness mock's flat 6px: the mock would report every string the same width and pass.
 const fs=require('fs'), path=require('path');
-const root='/Users/morganwaddington/first_game_jam';
+const root=path.join(__dirname,'..');
 const src=fs.readFileSync(root+'/index.html','utf8').split('<script>')[1].split('</script>')[0].replace("'use strict';",'');
 const h=fs.readFileSync(root+'/tools/freeze-check.js','utf8');
 eval(h.slice(h.indexOf('function makeCtx()'), h.indexOf('eval(src')).replace("path.join(__dirname, 'audio-mock.js')","'"+root+"/tools/audio-mock.js'"));
