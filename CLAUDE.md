@@ -120,15 +120,12 @@ approval, and never do something for a peer that your own permissions blocked.
 ## The freeze harness
 
 `tools/freeze-check.js` — run `node tools/freeze-check.js` from the repo root.
-On a full box, run it as `node --max-old-space-size=256 tools/freeze-check.js`:
-several sessions on one laptop can leave under 20MB free, and without the cap the
-system kills the run outright. Three runs died that way in one evening before
-anyone worked out it was the box rather than the tooling, so if the harness keeps
-dying for no visible reason, check free memory before you debug the harness.
 It takes an optional path argument if you want to point it at a worktree copy. It
-plays 60 randomised games headlessly across four play styles, sits on the end
+plays 30 randomised games headlessly across four play styles, sits on the end
 screen, restarts, and reports any exception grouped by message and stack frame,
-plus peak sizes of the particle, bubble, floater and ripple pools.
+plus peak sizes of the particle, bubble, floater and ripple pools. 30 is the
+deliberate default (`RUNS`, near the top of the file); the long-pass note in
+Morgan's memory says when to raise it and to put it back afterwards.
 
 Run it before pushing game code. It catches the class of bug that is invisible
 in a browser until it kills a player's run: **any exception thrown inside
