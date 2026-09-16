@@ -134,7 +134,7 @@ for (let lane = 0; lane < CFG.laneCount; lane++) {
   for (let wx = Math.floor((FAC.x0 - 240) / 200) * 200; wx < FAC.seam + 240; wx += 200) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
     if (gx < FAC.x0 || gx > FAC.seam) continue;
-    const bay = millBay(gx, lane);
+    const bay = millBay(gx, lane, wx);
     if (bay.feat < 0) continue;
     bays.push({ gx, lane, y, shy, bay, ext: measure(gx, lane, bay.feat, y, shy) });
   }
@@ -163,7 +163,7 @@ for (const a of bays) {
     const wxn = a.gx + s;
     const gxn = Math.round(wxn / 200) * 200 + 8 + (hash(Math.round(wxn / 200) * 200 * 0.0051) - 0.5) * 50;
     if (Math.abs(gxn - a.gx) < 80 || Math.abs(gxn - a.gx) > 300) continue;
-    const n = millBay(gxn, a.lane);
+    const n = millBay(gxn, a.lane, Math.round(wxn / 200) * 200);
     if (!n.has || n.feat >= 0) continue;
     const gap = s < 0 ? (a.gx + a.ext.x0) - (gxn + PLANT_REACH) : (gxn - PLANT_REACH) - (a.gx + a.ext.x1);
     if (!worst || gap < worst.gap) worst = { gap, a, b: { gx: gxn, bay: n, ext: { x0: -PLANT_REACH, x1: PLANT_REACH } } };

@@ -3543,15 +3543,33 @@ function millSmoke(sx, y, o) {
 // 250 apart and an engine is 197 wide. What guarantees it is tools/hall-check.js, which
 // measures every placed pair on the mill's real bay positions and fails if one overlaps.
 // Run it after touching a width, a jitter or a lane span.
-function millBay(gx, lane) {
+// How far each kind reaches either side of its own gx, measured off the drawing and
+// checked by tools/hall-check.js, which derives the same extents by recording where paint
+// actually lands. If you widen a machine, this is the other place the number lives.
+const FEAT_REACH = [[110, 87], [48, 48], [46, 96]];   // engine, hammer, cupola
+// `wx` is the bay's grid position, as opposed to `gx`, which is where the jitter puts
+// its machine. It is optional because millPlant only wants `kind`, which no neighbour can
+// affect; every loop that places a FEATURE must pass it, or adjacency goes unchecked.
+function millBay(gx, lane, wx) {
   const has = hash(gx * 0.011 + lane * 3.3) >= 0.28;
   const kind = Math.floor(hash(gx * 0.017 + lane * 7.7) * 4);
   // The multipliers are picked, not arbitrary: over the mill's own bay positions they give
   // 42 engines across the six lanes, fourteen of each kind, six to ten per lane. The
   // obvious first pair put eight cupolas and one hammer on the whole course, which is what
   // a hash does when you ask it for three-way balance over forty samples and do not look.
-  const feat = has && hash(gx * 0.043 + lane * 5.1) < 0.34
+  let feat = has && hash(gx * 0.043 + lane * 5.1) < 0.44
     ? Math.floor(hash(gx * 0.029 + lane * 2.9) * 3) : -1;
+  // Refuse only a pair that does not FIT. The jitter is +/- 25, so two adjacent centres
+  // can be 150 apart while an engine reaches 197 across; but two hammers need 96 and have
+  // 150, and refusing those as well cost more machines than it saved. Deterministic from
+  // wx alone, so a machine cannot appear or vanish as the camera moves past it.
+  if (feat >= 0 && wx !== undefined) {
+    const p = wx - 200, pgx = p + 8 + (hash(p * 0.0051) - 0.5) * 50;
+    if (hash(pgx * 0.011 + lane * 3.3) >= 0.28 && hash(pgx * 0.043 + lane * 5.1) < 0.44) {
+      const pfeat = Math.floor(hash(pgx * 0.029 + lane * 2.9) * 3);
+      if (gx - pgx < FEAT_REACH[pfeat][1] + FEAT_REACH[feat][0] + 6) feat = -1;
+    }
+  }
   return { has, kind, feat };
 }
 // Where the line shaft's belt lands on this bay, in screen coordinates, or null for a bay
@@ -3618,7 +3636,10 @@ function contactShadow(sx, y, rx) {
   g.addColorStop(0, 'rgba(0,0,0,0.38)');
   g.addColorStop(0.55, 'rgba(0,0,0,0.26)');
   g.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.save(); ctx.translate(sx, y + 1); ctx.scale(1, 7 / rx); ctx.translate(-sx, -(y + 1));
+  // offset away from the light. Every body in the hall, mine and millPlant's, carries its
+  // rim on the top and left edges; a shadow centred under it contradicts them.
+  const off = rx * 0.12;
+  ctx.save(); ctx.translate(sx + off, y + 1); ctx.scale(1, 7 / rx); ctx.translate(-sx, -(y + 1));
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, y + 1, rx, 0, 6.28); ctx.fill();
   ctx.restore();
 }
@@ -3631,11 +3652,17 @@ function contactShadow(sx, y, rx) {
 // the corridor is CFG.tunnelH tall with the shafting 52 down from the ceiling, which
 // leaves 78 units of headroom. A beam engine wants half again that and comes out squat;
 // a horizontal engine is the machine that shape of building actually got.
+// The engine's crank angle, in one place. The body and the smoke both need it and they
+// drifted the moment the belt gearing was added to one and not the other: the drain cocks
+// beat 1.325x faster than the crank they are supposed to be opening with. Same reason
+// hammerStroke and millBay exist.
+const ENG = { drum: 20, rim: 26.5 };              // the belt's two radii; everything follows
+const engineCrank = gx => shaftPhase(gx) * (ENG.drum / ENG.rim) + hash(gx) * 6.28;
 function millEngine(sx, y, gx, shy) {
   const DARK = '#100e16', BODY = '#28322f', LIT = '#3c4845', EDGE = 'rgba(198,222,244,0.3)';
   const BRASS = '#6e5a2e', SHEEN = 'rgba(228,200,130,0.3)';
-  const DRUM = 20, RIM = 26.5;                    // the belt's two radii; everything follows
-  const a = shaftPhase(gx) * (DRUM / RIM) + hash(gx) * 6.28;
+  const DRUM = ENG.drum, RIM = ENG.rim;
+  const a = engineCrank(gx);
   const CL = y - 48;                              // centre line: piston, crosshead, crank
   const cr = 12, rod = 62, cx = sx + 56;
   const px = cx + Math.cos(a) * cr, py = CL + Math.sin(a) * cr;
@@ -3711,6 +3738,10 @@ function millEngine(sx, y, gx, shy) {
   ctx.fillStyle = DARK; ctx.fillRect(sx - 52, y - 90, 14, 28);
   ctx.fillStyle = '#39424a'; ctx.fillRect(sx - 51, y - 90, 12, 28);
   ctx.fillStyle = 'rgba(210,230,240,0.13)'; ctx.fillRect(sx - 51, y - 90, 3, 28);
+  // the joint millEngineSmoke leaks at. Without it the steam came out of smooth pipe.
+  ctx.fillStyle = '#1a161c'; ctx.fillRect(sx - 54, y - 74, 18, 6);
+  ctx.fillStyle = '#3b3540'; ctx.fillRect(sx - 54, y - 74, 18, 4);
+  ctx.fillStyle = 'rgba(214,230,248,0.13)'; ctx.fillRect(sx - 54, y - 74, 18, 1.2);
   ctx.fillStyle = DARK; ctx.fillRect(sx - 56, y - 92, 22, 7);
   ctx.fillStyle = LIT; ctx.fillRect(sx - 55, y - 91.4, 20, 5);
   ctx.fillStyle = RIM; ctx.fillRect(sx - 55, y - 91.4, 20, 1.2);
@@ -3743,6 +3774,14 @@ function millEngine(sx, y, gx, shy) {
   // of it -- because the wheel has to be down before a belt can wrap it.
   const dvx = cx - sx, dvy = CL - shy, dl = Math.hypot(dvx, dvy) || 1;
   const nx = -dvy / dl, ny = dvx / dl, sag = Math.sin(S.t * 5 + gx) * 1.1;
+  // Hangers spaced for the drum. The hall's ordinary pair leave 17.6 units between them
+  // and this drum is 43 across, so it was drawn straight over both bearings; those two are
+  // inside its radius and stay hidden behind it.
+  for (const hd of [-32, 29]) {
+    ctx.fillStyle = '#3f414a'; ctx.fillRect(sx + hd, shy - 52, 3.4, 52);
+    ctx.fillStyle = 'rgba(214,230,248,0.12)'; ctx.fillRect(sx + hd, shy - 52, 1.1, 52);
+    ctx.fillStyle = '#4b4a55'; ctx.fillRect(sx + hd - 3, shy - 6, 9.4, 8);
+  }
   // the main driving pulley, over the bay's ordinary 8-unit one
   ctx.fillStyle = DARK; ctx.beginPath(); ctx.arc(sx, shy, DRUM + 1.6, 0, 6.28); ctx.fill();
   ctx.fillStyle = '#343742'; ctx.beginPath(); ctx.arc(sx, shy, DRUM, 0, 6.28); ctx.fill();
@@ -3821,8 +3860,7 @@ function millEngine(sx, y, gx, shy) {
 // somewhere to go, so the blast comes once a revolution rather than as a steady leak: a
 // machine that exhales on a beat reads as working.
 function millEngineSmoke(sx, y, gx) {
-  const a = shaftPhase(gx) + hash(gx) * 6.28;
-  const blow = Math.max(0, Math.sin(a));
+  const blow = Math.max(0, Math.sin(engineCrank(gx)));
   // the exhaust bend, which is where a mill engine actually shows: the pipe goes up to the
   // flue and the bend leaks, all day, whatever the crank is doing
   millSmoke(sx - 44, y - 70, { n: 12, rise: 40, rate: 0.32, r0: 7, r1: 28, drift: 12,
@@ -3856,49 +3894,58 @@ function millHammer(sx, y, gx) {
   // in the cycle when a fresh heat can appear on the anvil without anything inside it
   const bh = (ph >= 0.56 && ph < 0.82) ? HAM.work : HAM.work - 2.4;
   const seat = y - HAM.seat;                              // the anvil's top face
-  const tupB = seat - bh - lift * HAM.stroke, tupT = tupB - HAM.tup;
+  // The tup hangs off a piston rod. Its lifted position must not depend on what is lying
+  // on the anvil -- written as seat - bh - lift*stroke it rose 2.4 units with every fresh
+  // billet, 20 units clear of the thing it was tracking.
+  const tupB = seat - HAM.work - lift * HAM.stroke + (1 - lift) * (HAM.work - bh);
+  const tupT = tupB - HAM.tup;
 
   // ---- foundation: a timber block under a cast anvil, banded with iron
   contactShadow(sx, y, 54);
-  ctx.fillStyle = '#1d1613'; ctx.fillRect(sx - 48, y - 15, 96, 15);
-  const fgd = ctx.createLinearGradient(0, y - 15, 0, y);
+  // The anvil has to be the heaviest thing in the frame; at 12 units of block under a tup
+  // 22 tall it read as a press. The height comes out of the timber, not the anvil, so the
+  // seat stays at 26 and the clearance sum above is untouched.
+  ctx.fillStyle = '#1d1613'; ctx.fillRect(sx - 48, y - 9, 96, 9);
+  const fgd = ctx.createLinearGradient(0, y - 9, 0, y);
   fgd.addColorStop(0, '#332821'); fgd.addColorStop(1, '#1e1714');
-  ctx.fillStyle = fgd; ctx.fillRect(sx - 47, y - 14, 94, 13);
-  ctx.fillStyle = 'rgba(255,224,182,0.05)'; ctx.fillRect(sx - 47, y - 14, 94, 1.3);
+  ctx.fillStyle = fgd; ctx.fillRect(sx - 47, y - 8, 94, 7);
+  ctx.fillStyle = 'rgba(255,224,182,0.05)'; ctx.fillRect(sx - 47, y - 8, 94, 1.2);
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  for (const bx of [-30, 2, 28]) ctx.fillRect(sx + bx, y - 14, 2.4, 13);
-  for (const by of [-12, -4]) {
-    ctx.fillStyle = '#171319'; ctx.fillRect(sx - 48, y + by, 96, 3.6);
-    ctx.fillStyle = '#343c41'; ctx.fillRect(sx - 48, y + by, 96, 2.4);
-    ctx.fillStyle = 'rgba(214,232,248,0.14)'; ctx.fillRect(sx - 48, y + by, 96, 0.9);
-  }
-  ctx.fillStyle = DARK; ctx.fillRect(sx - 30, seat - 1, 60, 13);
-  const ag = ctx.createLinearGradient(sx - 30, 0, sx + 30, 0);
+  for (const bx of [-30, 2, 28]) ctx.fillRect(sx + bx, y - 8, 2.4, 7);
+  ctx.fillStyle = '#171319'; ctx.fillRect(sx - 48, y - 5, 96, 3.4);
+  ctx.fillStyle = '#343c41'; ctx.fillRect(sx - 48, y - 5, 96, 2.2);
+  ctx.fillStyle = 'rgba(214,232,248,0.14)'; ctx.fillRect(sx - 48, y - 5, 96, 0.9);
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 32, seat - 1, 64, 19);
+  const ag = ctx.createLinearGradient(sx - 31, 0, sx + 31, 0);
   ag.addColorStop(0, '#39454a'); ag.addColorStop(0.5, '#283134'); ag.addColorStop(1, '#1d2427');
-  ctx.fillStyle = ag; ctx.fillRect(sx - 29, seat, 58, 11);
-  ctx.fillStyle = RIM; ctx.fillRect(sx - 29, seat, 58, 1.8);
-  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(sx - 29, seat + 8, 58, 2.4);
+  ctx.fillStyle = ag; ctx.fillRect(sx - 31, seat, 62, 17);
+  ctx.fillStyle = RIM; ctx.fillRect(sx - 31, seat, 62, 1.8);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(sx - 31, seat + 8, 62, 2.4);
+  // the waist and base of the block, so it reads as a casting rather than a slab
+  ctx.fillStyle = DARK; ctx.fillRect(sx - 38, seat + 13, 76, 6);
+  ctx.fillStyle = '#2b3437'; ctx.fillRect(sx - 37, seat + 13.6, 74, 4.4);
+  ctx.fillStyle = 'rgba(206,228,248,0.1)'; ctx.fillRect(sx - 37, seat + 13.6, 74, 1.1);
 
   // ---- the standards, splayed, with the tup running between them
   for (const d of [-1, 1]) {
     ctx.fillStyle = DARK;
     ctx.beginPath();
-    ctx.moveTo(sx + d * 47, y - 14); ctx.lineTo(sx + d * 30, y - 14);
+    ctx.moveTo(sx + d * 47, y - 8); ctx.lineTo(sx + d * 30, y - 8);
     ctx.lineTo(sx + d * 15, y - 80); ctx.lineTo(sx + d * 27, y - 80); ctx.closePath(); ctx.fill();
     ctx.fillStyle = d < 0 ? '#2c3538' : '#222a2c';
     ctx.beginPath();
-    ctx.moveTo(sx + d * 45, y - 15); ctx.lineTo(sx + d * 32.4, y - 15);
+    ctx.moveTo(sx + d * 45, y - 9); ctx.lineTo(sx + d * 32.4, y - 9);
     ctx.lineTo(sx + d * 17.4, y - 79); ctx.lineTo(sx + d * 25.4, y - 79); ctx.closePath(); ctx.fill();
     if (d < 0) {
       ctx.fillStyle = 'rgba(206,228,248,0.16)';
       ctx.beginPath();
-      ctx.moveTo(sx - 45, y - 15); ctx.lineTo(sx - 42, y - 15);
+      ctx.moveTo(sx - 45, y - 9); ctx.lineTo(sx - 42, y - 9);
       ctx.lineTo(sx - 22.4, y - 79); ctx.lineTo(sx - 25.4, y - 79); ctx.closePath(); ctx.fill();
     }
     // lightening holes: what makes a casting read as a casting rather than a plank
     for (let i = 0; i < 3; i++) {
       const f = 0.22 + i * 0.26;
-      const hx = sx + d * (38.5 - f * 15.5), hy = y - 15 - f * 64;
+      const hx = sx + d * (38.5 - f * 15.5), hy = y - 9 - f * 70;
       ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.ellipse(hx, hy, 3.6, 4.6, 0, 0, 6.28); ctx.fill();
       ctx.fillStyle = 'rgba(190,214,238,0.1)'; ctx.beginPath(); ctx.ellipse(hx, hy + 1.4, 3.6, 1.6, 0, 0, 6.28); ctx.fill();
     }
@@ -3971,7 +4018,7 @@ function millHammer(sx, y, gx) {
   hg.addColorStop(0, `rgba(255,150,58,${0.5 * glow})`);
   hg.addColorStop(0.45, `rgba(255,132,46,${0.16 * glow})`);
   hg.addColorStop(1, 'rgba(255,132,46,0)');
-  ctx.fillStyle = hg; ctx.fillRect(sx - 60, seat - 62, 120, 82);
+  ctx.fillStyle = hg; ctx.fillRect(sx - 60, seat - 62, 120, 62 + 46);
   ctx.restore();
 
   // ---- the blow: scale and sparks off the face, thrown flat along the anvil
@@ -3995,13 +4042,17 @@ function millHammer(sx, y, gx) {
 function millHammerSmoke(sx, y, gx) {
   const { ph, since } = hammerStroke(gx);
   millSmoke(sx - 40, y - 82, { n: 8, rise: 34, rate: 0.95, r0: 5, r1: 27, drift: -40,
-    a: 0.46 * Math.max(0, 1 - Math.abs(ph - 0.62) * 4.5), salt: gx * 1.7, tint: '230,235,243' });
-  millSmoke(sx + 2, y - HAM.seat - 6, { n: 10, rise: 46, rate: 0.28, r0: 8, r1: 30, drift: 12,
-    a: 0.42, salt: gx * 2.3, tint: '176,169,166', ceil: y - HAM.crownBot + 2, roll: 1.2 });
+    a: 0.46 * Math.max(0, 1 - Math.abs(ph - 0.62) * 4.5), salt: gx * 1.7, tint: '230,235,243',
+    ceil: SMOKE_CEIL(y), roll: -1.2 });
+  // rise well past the climb, so there is `over` to convert into the sideways run that
+  // carries it out from under the crown. At rise 46 against a 45-unit climb it had one
+  // unit to spend and stopped dead, leaving the side columns unconnected to anything.
+  millSmoke(sx + 2, y - HAM.seat - 6, { n: 10, rise: 96, rate: 0.28, r0: 8, r1: 30, drift: 10,
+    a: 0.42, salt: gx * 2.3, tint: '176,169,166', ceil: y - HAM.crownBot + 2, roll: 1.4 });
   // and out past the standards to the roof, which is the only way up that is not straight
   // through the crown casting
   for (const d of [-1, 1]) {
-    millSmoke(sx + d * 38, y - HAM.crownBot + 2, { n: 9, rise: 34, rate: 0.26, r0: 9, r1: 33, drift: d * 12,
+    millSmoke(sx + d * 30, y - HAM.crownBot + 3, { n: 9, rise: 36, rate: 0.26, r0: 9, r1: 33, drift: d * 14,
       a: 0.36, salt: gx * (9.1 + d), tint: '170,164,162', ceil: SMOKE_CEIL(y), roll: d * 1.2 });
   }
   if (since < 1) {
@@ -4196,27 +4247,28 @@ function millCupola(sx, y, gx, shy) {
 function millCupolaSmoke(sx, y, gx) {
   const fl = cupolaFlame(gx);
   for (const d of [-1, 1]) {
-    // The COLUMN. rise sits just past the 19 units it has to climb, so most of a puff's
-    // life is spent going up. It is the only smoke silhouette that survives play zoom.
-    millSmoke(sx + d * 34, y - 79, { n: 12, rise: 29, rate: 0.34, r0: 8, r1: 30, drift: d * 10,
+    // The COLUMN, seeded OUTBOARD of the hood lip at sx +/- 44, not inside the casting.
+    millSmoke(sx + d * 47, y - 76, { n: 12, rise: 32, rate: 0.34, r0: 8, r1: 30, drift: d * 10,
       a: 0.46, salt: gx * (2.1 + d), tint: '150,144,145', ceil: SMOKE_CEIL(y), roll: d * 1.1 });
     // and a thinner, slower layer that does nothing but lie along the roof, so the hall
     // still reads as lidded without the column being emptied to pay for it
-    millSmoke(sx + d * 34, y - 79, { n: 9, rise: 92, rate: 0.1, r0: 11, r1: 42, drift: d * 12,
+    millSmoke(sx + d * 47, y - 76, { n: 9, rise: 92, rate: 0.1, r0: 11, r1: 42, drift: d * 12,
       a: 0.2, salt: gx * (7.7 + d), tint: '140,136,138', ceil: SMOKE_CEIL(y), roll: d * 1.5 });
     // the same smoke lit from underneath by the door it just came off: a warm pass at a
     // third the height, which is what stops the column reading as fog with a fire behind it
-    millSmoke(sx + d * 30, y - 77, { n: 6, rise: 24, rate: 0.42, r0: 7, r1: 20, drift: d * 9,
+    millSmoke(sx + d * 45, y - 74, { n: 6, rise: 24, rate: 0.42, r0: 7, r1: 20, drift: d * 9,
       a: 0.32 * fl, salt: gx * (5.3 + d), tint: '198,148,104', ceil: SMOKE_CEIL(y), roll: d });
   }
   // what leaks from under the hood's front lip. Its ceiling is the hood, not the roof:
   // this puff cannot climb through 17 units of sheet iron, and it was being drawn over it.
   millSmoke(sx - 2, y - 73, { n: 8, rise: 12, rate: 0.5, r0: 6, r1: 17, drift: 3,
     a: 0.3, salt: gx, tint: '178,148,124', ceil: y - 78, roll: -1.2 });
-  // and the column, off the open door: 46 units of climb against the lit shell, which is
-  // three times what the hood lip has to work with and the only run tall enough to read
+  // and the column, off the open door: 27 units of climb up the lit face of the shell,
+  // and then the HOOD is its ceiling, not the roof. Given the roof it drove through 17
+  // units of sheet and 5 of flue -- the fattest plume on the machine going straight
+  // through the thing built to catch it. It rolls out to the lip and the lip plume has it.
   millSmoke(sx + 6, y - 50, { n: 13, rise: 58, rate: 0.26, r0: 6, r1: 27, drift: 11,
-    a: 0.36, salt: gx * 11.3, tint: '158,150,148', ceil: SMOKE_CEIL(y), roll: 1.1 });
+    a: 0.36, salt: gx * 11.3, tint: '158,150,148', ceil: y - 77, roll: 1.5 });
   millSmoke(sx + 5, y - 48, { n: 6, rise: 22, rate: 0.4, r0: 5, r1: 15, drift: 8,
     a: 0.3 * fl, salt: gx * 13.7, tint: '212,152,92' });
 }
@@ -4329,7 +4381,7 @@ function millCorridor(wx0, wx1, y, laneIn) {
   for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
-    const bay = millBay(gx, lane);
+    const bay = millBay(gx, lane, wx);
     if (!bay.has || bay.feat >= 0) continue;     // a big engine has this bay; it is drawn later
     millPlant(gx, y - 2, lane, bay.kind);
   }
@@ -4382,7 +4434,7 @@ function millCorridor(wx0, wx1, y, laneIn) {
   for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50, sx = gx - V.left;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
-    const bay = millBay(gx, lane);
+    const bay = millBay(gx, lane, wx);
     // hanger
     ctx.fillStyle = '#3f414a'; ctx.fillRect(sx - 12, cy + 24, 3.4, shy - cy - 24); ctx.fillRect(sx + 9, cy + 24, 3.4, shy - cy - 24);
     // pulley
@@ -4428,7 +4480,7 @@ function millCorridor(wx0, wx1, y, laneIn) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
     if (gx < wx0 + 112 || gx > wx1 - 112) continue;   // it has to FIT, not merely be near
-    const feat = millBay(gx, lane).feat;
+    const feat = millBay(gx, lane, wx).feat;
     if (feat >= 0) millFeature(gx, y - 2, lane, feat, shy);
   }
   // the roof truss
@@ -4441,13 +4493,19 @@ function millCorridor(wx0, wx1, y, laneIn) {
   for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
-    const bay = millBay(gx, lane);
+    const bay = millBay(gx, lane, wx);
     if (bay.feat >= 0) {
       if (gx > wx0 + 112 && gx < wx1 - 112) millFeatureSmoke(gx, y - 2, lane, bay.feat);
     } else if (bay.has && bay.kind === 2 && inView(gx, 130)) {
       millBoilerSmoke(gx - V.left, y - 2, gx);
     }
   }
+  // a quarter of the roof shadow, laid back over the smoke. The full one erased the
+  // plumes, which is why they moved after it; none of it left them brighter than the iron
+  // they come off, which is the wrong way round for the thing furthest into the dark.
+  const g3 = ctx.createLinearGradient(0, cy + 18, 0, cy + 66);
+  g3.addColorStop(0, 'rgba(0,0,0,0.22)'); g3.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g3; ctx.fillRect(x0, cy + 18, x1 - x0, 48);
   const f = ctx.createLinearGradient(0, y - 34, 0, y); f.addColorStop(0, 'rgba(255,196,120,0)'); f.addColorStop(1, 'rgba(255,196,120,0.05)');
   ctx.fillStyle = f; ctx.fillRect(x0, y - 34, x1 - x0, 34);
   ctx.restore();
