@@ -69,8 +69,16 @@ function makeCtx(isMain) {
   const grad = { addColorStop() {} };
   const c = {
     canvas: { width: 960, height: 540 },
-    save() { mstack.push(M.slice()); },
-    restore() { M = mstack.pop() || [1, 0, 0, 1, 0, 0]; },
+    // the whole state, not just the transform: a leaked globalCompositeOperation made a
+    // third of the hall invisible to this tool without any sign that it had
+    save() { mstack.push({ m: M.slice(), comp: c.globalCompositeOperation, alpha: c.globalAlpha,
+                           lw: c.lineWidth, cap: c.lineCap }); },
+    restore() {
+      const s = mstack.pop();
+      if (!s) { M = [1, 0, 0, 1, 0, 0]; return; }
+      M = s.m; c.globalCompositeOperation = s.comp; c.globalAlpha = s.alpha;
+      c.lineWidth = s.lw; c.lineCap = s.cap;
+    },
     translate(x, y) { M = mul(M, [1, 0, 0, 1, x, y]); },
     scale(x, y) { M = mul(M, [x, 0, 0, y, 0, 0]); },
     rotate(a) { const c = Math.cos(a), n = Math.sin(a); M = mul(M, [c, n, -n, c, 0, 0]); },
@@ -147,6 +155,7 @@ const CYCLE_SAMPLES = 32, CYCLE_SECONDS = 12.8;
 function measure(gx, lane, feat, y, shy) {
   V.left = gx - 480; V.vw = 960; V.zoom = 1;
   resetBox(); path0 = null; M = [1, 0, 0, 1, 0, 0]; mstack.length = 0; recording = true;
+  if (mainCtx) mainCtx.globalCompositeOperation = '';
   for (let i = 0; i < CYCLE_SAMPLES; i++) {
     S.t = 0.37 + i * (CYCLE_SECONDS / CYCLE_SAMPLES);
     path0 = null; M = [1, 0, 0, 1, 0, 0]; mstack.length = 0;
@@ -173,7 +182,11 @@ for (let lane = 0; lane < CFG.laneCount; lane++) {
 }
 
 const fails = [];
-const say = (ok, msg) => { console.log((ok ? 'ok   ' : 'FAIL ') + msg); if (!ok) fails.push(msg); };
+const say = (ok, name, detail) => {
+  const line = name + (detail ? '  ' + detail : '');
+  console.log((ok ? 'ok   ' : 'FAIL ') + line);
+  if (!ok) fails.push(line);
+};
 
 console.log(`${bays.length} big engines across ${CFG.laneCount} lanes, each measured over ` +
   `${CYCLE_SAMPLES} instants of a ${CYCLE_SECONDS}s window ` +
@@ -202,10 +215,10 @@ for (const a of bays) {
     if (!worst || gap < worst.gap) worst = { gap, a, b: { gx: gxn, bay: n, ext: { x0: -PLANT_REACH, x1: PLANT_REACH } } };
   }
 }
-say(!worst || worst.gap >= 0, worst
-  ? `no two machines overlap on their SOLID extents  tightest ${worst.gap.toFixed(1)} units, ` +
+say(!worst || worst.gap >= 0, 'no two machines overlap on their SOLID extents', worst
+  ? `tightest ${worst.gap.toFixed(1)} units, ` +
     `${NAMES[worst.a.bay.feat]} at ${worst.a.gx | 0} beside ${worst.b.bay.feat >= 0 ? NAMES[worst.b.bay.feat] : 'plant'} at ${worst.b.gx | 0}`
-  : 'no two machines overlap on their drawn extents  (none placed)');
+  : '(none placed)');
 
 // 2. ceiling and floor. The limit is millCorridor's CLIP, not the ceiling line: the truss
 // covers the top 24 units of the hall, so a cupola flue running up into it is deliberate,
@@ -218,16 +231,15 @@ for (const b of bays) {
   if (!hi || b.ext.y0 < hi.ext.y0) hi = b;
   if (!lo || b.ext.y1 > lo.ext.y1) lo = b;
 }
-say(hi && hi.ext.y0 >= CEIL,
-  `no paint escapes the room  highest ${(-hi.ext.y0).toFixed(1)} above the floor ` +
+say(hi && hi.ext.y0 >= CEIL, 'no paint escapes the room',
+  `highest ${(-hi.ext.y0).toFixed(1)} above the floor ` +
   `(${NAMES[hi.bay.feat]} at ${hi.gx | 0}); the truss covers from ${CFG.tunnelH - 24}, the clip is ${-CEIL}`);
 // Same rule as the ceiling and for the same reason: the limit is the clip, not the deck.
 // A heat gradient has to run PAST the floor or its ramp is cut off with a tenth of its
 // alpha still on it, which in 'lighter' is a hard edge and a fire that throws no pool on
 // the boards under it. 20 below is where millCorridor stops drawing.
-say(lo && lo.ext.y1 <= 20,
-  `no paint escapes below the deck  lowest ${lo.ext.y1.toFixed(1)} under it ` +
-  `(${NAMES[lo.bay.feat]} at ${lo.gx | 0}); the clip ends at 20`);
+say(lo && lo.ext.y1 <= 20, 'no paint escapes below the deck',
+  `lowest ${lo.ext.y1.toFixed(1)} under it (${NAMES[lo.bay.feat]} at ${lo.gx | 0}); the clip ends at 20`);
 
 // 3. the belt lands on the machine it drives
 let bad = [];
@@ -241,7 +253,7 @@ for (const b of bays) {
              `outside ${b.ext.x0.toFixed(0)}..${b.ext.x1.toFixed(0)} / ${b.ext.y0.toFixed(0)}..${b.ext.y1.toFixed(0)}`);
   void sx;
 }
-say(bad.length === 0, bad.length ? bad.join('; ') : 'every belt lands on the machine it drives');
+say(bad.length === 0, 'every belt lands on the machine it drives', bad.join('; '));
 
 // 4. every machine has a power source, and it is the one its drawing shows
 const DRIVEN = { 0: 'self', 1: null, 2: 'belt' };
@@ -252,8 +264,9 @@ for (const b of bays) {
   if (kind !== DRIVEN[b.bay.feat])
     bad.push(`${NAMES[b.bay.feat]} at ${b.gx | 0} is driven by ${kind}, expected ${DRIVEN[b.bay.feat]}`);
 }
-say(bad.length === 0, bad.length ? bad.join('; ')
-  : 'power sources match: the engine drives the shaft, the hammer takes steam, the blower takes a belt');
+say(bad.length === 0, 'power sources match',
+  bad.length ? bad.join('; ')
+             : 'the engine drives the shaft, the hammer takes steam, the blower takes a belt');
 
 console.log(fails.length ? `\n${fails.length} problem(s) in the hall.` : '\nthe hall holds together.');
 process.exit(fails.length ? 1 : 0);
