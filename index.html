@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '58 weather on the hill';
+const BUILD = '59 clouds are vapour';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2169,8 +2169,35 @@ function drawSky() {
     ctx.fillStyle = 'rgba(150,170,200,0.4)'; ctx.beginPath();
     for (let j = 0; j < 5; j++) { const L = lobe(j); const ex = L.ex + away * 5 * sc, ey = cy + L.dy + 9 * sc; ctx.moveTo(ex + L.rx, ey); ctx.ellipse(ex, ey, L.rx * 0.92, 7 * sc, 0, 0, 6.28); }
     ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.88)'; ctx.beginPath();
-    for (let j = 0; j < 5; j++) { const L = lobe(j); const ey = cy + L.dy; ctx.moveTo(L.ex + L.rx, ey); ctx.ellipse(L.ex, ey, L.rx, (12 + hash(i + j * 2.3) * 8) * sc, 0, 0, 6.28); }
+    // Three passes, widening and fading, instead of one hard-edged white fill. A cloud's
+    // edge is the one place it is obviously vapour rather than a cut-out, and a single
+    // ellipse at alpha 0.88 has a 1px boundary against the sky -- which is most of why
+    // these read as paper shapes pinned on the blue. Cheap feathering: the outer passes
+    // are large and nearly transparent, so the silhouette dissolves instead of stopping.
+    // Warmed toward the sun on the top edge, because the light is coming from up there.
+    for (const [grow, alpha, tint] of [[1.34, 0.16, '236,242,252'], [1.15, 0.26, '248,250,255'], [1, 0.9, '255,255,255']]) {
+      ctx.fillStyle = `rgba(${tint},${alpha})`;
+      ctx.beginPath();
+      for (let j = 0; j < 5; j++) {
+        const L = lobe(j), ey = cy + L.dy;
+        const ry = (12 + hash(i + j * 2.3) * 8) * sc;
+        ctx.moveTo(L.ex + L.rx * grow, ey);
+        ctx.ellipse(L.ex, ey, L.rx * grow, ry * grow, 0, 0, 6.28);
+      }
+      ctx.fill();
+    }
+    // a warm lit crown on the side facing the sun
+    // ON the top edge and faint. At 0.5 alpha and 0.42 of the lobe height it sat in the
+    // MIDDLE of the cloud as a yellow smear, which is a cloud with a stripe through it
+    // rather than a cloud catching the sun.
+    ctx.fillStyle = 'rgba(255,248,222,0.22)';
+    ctx.beginPath();
+    for (let j = 0; j < 5; j++) {
+      const L = lobe(j), ry = (12 + hash(i + j * 2.3) * 8) * sc;
+      const ey = cy + L.dy - ry * 0.74;
+      ctx.moveTo(L.ex - away * 3 * sc + L.rx * 0.5, ey);
+      ctx.ellipse(L.ex - away * 3 * sc, ey, L.rx * 0.5, 2.6 * sc, 0, 0, 6.28);
+    }
     ctx.fill();
   }
   // the mill makes its own weather: the sky browns over for the whole of act one
