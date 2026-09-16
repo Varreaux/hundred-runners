@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '84 the near plane holds still';
+const BUILD = '85 the foreground moves to the mill';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2134,7 +2134,7 @@ function draw() {
   encGrade();
   drawForeground();
   // After the grade, because a thing this close is not seen through the weather
-  encForeground();
+  millForeground();
   drawVignette();
   ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.16; ctx.fillStyle = ctx.createPattern(grain(), 'repeat'); ctx.fillRect(0, 0, W, H); ctx.restore();
   // The red wash goes on BEFORE the overlays, so the room badge, the name tags and the
@@ -6500,9 +6500,15 @@ function parallaxRange(p, size, fn) {
 // up to 464 units at the right of the frame -- 112 degrees of windAt's dominant period, so
 // the near grass leaned AGAINST the turf 20px behind it.
 const worldAtScreen = sx => V.left + sx / V.zoom;
-function encForeground() {
+// ACT ONE'S near plane -- the mill, not the enclosure. Morgan asked for the cave's
+// foreground treatment with occasional machinery in silhouette, and it was built against
+// act three by mistake; this is the same code gated to the mill instead. Nothing about the
+// bank, the engines or their arithmetic changed in the move.
+function millForeground() {
   const anchor = S.cam + CFG.packFront;
-  const ramp = clamp01((anchor - CFG.exit) / 420);
+  // Rises as the shift comes into the mill and falls again before the seam, so it hands
+  // over to drawForeground's rock band rather than both or neither being present.
+  const ramp = Math.min(clamp01((anchor - FAC.x0) / 420), clamp01((FAC.seam - anchor) / 420));
   if (ramp <= 0.001) return;
   const p = 1.28, Z = V.zoom, zs = Z / 0.4532;
   // SEGMENTS ARE ANCHORED IN THE PLANE'S OWN WORLD, not on screen.

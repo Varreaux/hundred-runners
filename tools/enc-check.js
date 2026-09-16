@@ -182,7 +182,11 @@ eval(src + `
   {
     const keep = { left: V.left, vw: V.vw, zoom: V.zoom, cam: S.cam };
     const realLine = ctx.lineTo, realQuad = ctx.quadraticCurveTo, realMove = ctx.moveTo;
-    S.cam = ENC.free + 400; V.left = S.cam - 816.3; V.vw = 2119; V.zoom = 0.4532;
+    // PARKED IN THE MILL, because that is where the near plane lives now. It was built
+    // against act three by mistake and moved; a check left pointing at act three would
+    // have called a function that draws nothing there and passed on an empty measurement,
+    // which is the third way this file has found to be green about nothing.
+    S.cam = 2400; V.left = S.cam - 75; V.vw = 960; V.zoom = 1;
     // The BANK only. The machines are deliberately allowed to rise past the crowd: they
     // are open structure -- two legs, a beam, a rod -- and a thin line crossing is what
     // Morgan asked for. It is the solid ground that must not, because that is what can
@@ -193,15 +197,16 @@ eval(src + `
     ctx.lineTo = function (x, y) { note(y); return realLine.apply(this, arguments); };
     ctx.moveTo = function (x, y) { note(y); return realMove.apply(this, arguments); };
     ctx.quadraticCurveTo = function (cx2, cy2, x, y) { note(cy2); note(y); return realQuad.apply(this, arguments); };
-    try { encForeground(); }
+    try { millForeground(); }
     finally {
       ctx.lineTo = realLine; ctx.moveTo = realMove; ctx.quadraticCurveTo = realQuad;
       beamEngine = realBeam; engineHouse = realHouse;
       V.left = keep.left; V.vw = keep.vw; V.zoom = keep.zoom; S.cam = keep.cam;
     }
   }
-  // where a runner's soles land on the canvas, by the same transform draw() uses
-  const soleY = 540 + (laneY(0) - CFG.worldBottom) * 0.4532;
+  // where a runner's soles land on the canvas, by the same transform draw() uses, at the
+  // zoom the mill is actually seen at
+  const soleY = 540 + (laneY(0) - CFG.worldBottom) * 1;
   ok('the near BANK never rises over the crowd', fgTop >= soleY,
      'highest foreground point canvas y ' + fgTop.toFixed(1) + ' against soles at ' + soleY.toFixed(1) +
      ' (bigger y is lower; want >= soles)');
