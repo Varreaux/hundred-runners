@@ -4103,8 +4103,7 @@ function drawFinish() {
       drawFigure(r, 0, 0, idle * 0.35, r.height || 1, 1);
       ctx.restore();
     }
-    for (const l of f.leaving) drawFigure(l.r, fx - 60 - l.t * 60, y + 4, l.t * 12, l.r.height || 1, Math.max(0, 1 - l.t / 1.2));
-    f.leaving = f.leaving.filter(l => l.t < 1.2);
+    // falls into the generator whirlpool are drawn in drawFinalePanel (screen space)
   }
 }
 // Hair long enough to fall behind the body is drawn before it; the rest goes on after the head.
