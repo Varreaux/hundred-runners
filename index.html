@@ -8829,6 +8829,7 @@ const BOSS = {
   dwell: 0.30,      // a filled line must sit this long before SPACE will move on, so that
                     // a held key or a mashed one cannot carry the reader past a line they
                     // have not seen. Short enough to be invisible to anyone reading.
+  turn: 1,          // the mouth: +1 corners up and brows pleased, -1 corners down and a scowl
   bustX: 106,       // his centre; the drill panel never reaches left of 270
   textX: 214,       // where his words start
 };
@@ -9113,8 +9114,13 @@ function drawBossFace(cx, cy, R, b) {
   ctx.strokeStyle = INK; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
   for (const s of [-1, 1]) {
     ctx.beginPath();
-    ctx.moveTo(cx + s * (eo + R * 0.22), ey - R * 0.40);
-    ctx.lineTo(cx + s * (eo - R * 0.16), ey - R * 0.52);
+    if (BOSS.turn > 0) {                          // outer end low: pleased with himself
+      ctx.moveTo(cx + s * (eo + R * 0.22), ey - R * 0.40);
+      ctx.lineTo(cx + s * (eo - R * 0.16), ey - R * 0.52);
+    } else {                                      // inner end low: a scowl
+      ctx.moveTo(cx + s * (eo + R * 0.24), ey - R * 0.56);
+      ctx.lineTo(cx + s * (eo - R * 0.18), ey - R * 0.34);
+    }
     ctx.stroke();
   }
   // monocle on his left, with a chain that leaves the face
@@ -9133,15 +9139,18 @@ function drawBossFace(cx, cy, R, b) {
   // a symmetric grin reads as a cartoon and a crooked one reads as a man enjoying himself.
   const mo = cy + R * 0.42;                       // the moustache's own line, which stays put
   const my = cy + R * 0.56, mw = R * 0.40, mh = R * 0.30 * open;
-  const curlL = R * 0.13 + R * 0.05 * open, curlR = R * 0.24 + R * 0.09 * open;
+  const turn = BOSS.turn;                         // +1 corners up, -1 corners down
+  const curlL = turn * (R * 0.13 + R * 0.05 * open), curlR = turn * (R * 0.24 + R * 0.09 * open);
+  const belly = turn > 0 ? my + Math.max(1.2, mh) : my - R * 0.10 + Math.max(1.2, mh) * 0.5;
   ctx.fillStyle = '#3a1d22';
   ctx.beginPath();
   ctx.moveTo(cx - mw, my - curlL);
-  ctx.quadraticCurveTo(cx - mw * 0.35, my + mh * 0.55 + 1.4, cx, my + Math.max(1.2, mh));
-  ctx.quadraticCurveTo(cx + mw * 0.35, my + mh * 0.55 + 1.4, cx + mw, my - curlR);
+  ctx.quadraticCurveTo(cx - mw * 0.35, belly + mh * 0.2, cx, belly);
+  ctx.quadraticCurveTo(cx + mw * 0.35, belly + mh * 0.2, cx + mw, my - curlR);
   // the upper lip runs back along the line of the teeth, sagging less than the lower
-  ctx.quadraticCurveTo(cx + mw * 0.3, my - (curlL + curlR) * 0.22, cx, my - R * 0.02);
-  ctx.quadraticCurveTo(cx - mw * 0.3, my - (curlL + curlR) * 0.22, cx - mw, my - curlL);
+  const lipY = turn > 0 ? my - R * 0.02 : belly - Math.max(1.2, mh) - R * 0.04;
+  ctx.quadraticCurveTo(cx + mw * 0.3, lipY - (curlL + curlR) * 0.16, cx, lipY);
+  ctx.quadraticCurveTo(cx - mw * 0.3, lipY - (curlL + curlR) * 0.16, cx - mw, my - curlL);
   ctx.closePath(); ctx.fill();
   ctx.strokeStyle = INK; ctx.lineWidth = 1.3; ctx.stroke();
   // teeth: a light band just under the upper lip, only once the mouth is open enough to
@@ -9149,12 +9158,13 @@ function drawBossFace(cx, cy, R, b) {
   ctx.save();
   ctx.clip();
   ctx.fillStyle = 'rgba(244,238,224,0.94)';
-  ctx.fillRect(cx - mw, my - R * 0.10, mw * 2, R * 0.13 + mh * 0.34);
+  const tY = turn > 0 ? my - R * 0.10 : lipY - R * 0.02;
+  ctx.fillRect(cx - mw, tY, mw * 2, R * 0.13 + mh * 0.34);
   ctx.strokeStyle = 'rgba(58,29,34,0.45)'; ctx.lineWidth = 0.9;
   for (let i = -2; i <= 2; i++) {
     ctx.beginPath();
-    ctx.moveTo(cx + i * mw * 0.34, my - R * 0.10);
-    ctx.lineTo(cx + i * mw * 0.34, my + R * 0.08 + mh * 0.34);
+    ctx.moveTo(cx + i * mw * 0.34, tY);
+    ctx.lineTo(cx + i * mw * 0.34, tY + R * 0.18 + mh * 0.34);
     ctx.stroke();
   }
   ctx.restore();
@@ -9162,7 +9172,7 @@ function drawBossFace(cx, cy, R, b) {
   ctx.strokeStyle = 'rgba(232,168,158,0.5)'; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(cx - mw * 0.92, my - curlL * 0.72);
-  ctx.quadraticCurveTo(cx, my + Math.max(1.2, mh) + 1.2, cx + mw * 0.92, my - curlR * 0.72);
+  ctx.quadraticCurveTo(cx, belly + 1.2, cx + mw * 0.92, my - curlR * 0.72);
   ctx.stroke();
   // moustache: two lobes that ride on the mouth
   for (const s of [-1, 1]) {
