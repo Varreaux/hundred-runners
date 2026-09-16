@@ -25,7 +25,7 @@ const CFG = {
   armDist: 240,           // room unlocks when the front runner is this close
   baseY: 400,             // floor of tunnel 0; each tunnel above is laneGap higher
   laneGap: 190,
-  laneCount: 6,
+  laneCount: 4,
   tunnelH: 130,
   entrance: 760,
   riverY: 470,
@@ -49,43 +49,60 @@ const CFG = {
   // a fork sends `split` of the runners on tunnel `from` up a ramp into tunnel `to`; they come back at `merge`.
   // nested forks must merge before the fork they branched from.
   forks: [
-    { x: 2700,  from: 0, to: 1, merge: 5600,  split: 0.5 },
-    { x: 3800,  from: 1, to: 2, merge: 5200,  split: 0.5 },
-    { x: 6600,  from: 0, to: 1, merge: 11000, split: 0.55 },
-    { x: 7000,  from: 1, to: 2, merge: 10700, split: 0.6 },
-    { x: 7400,  from: 2, to: 3, merge: 10400, split: 0.6 },
-    { x: 7800,  from: 3, to: 4, merge: 10100, split: 0.6 },
-    { x: 8200,  from: 4, to: 5, merge: 9800,  split: 0.6 },
+    { x: 2366, from: 0, to: 1, merge: 5016, split: 0.5 },
+    { x: 3166, from: 1, to: 2, merge: 4216, split: 0.5 },
+    { x: 6066, from: 0, to: 1, merge: 12266, split: 0.55 },
+    { x: 7116, from: 1, to: 2, merge: 10966, split: 0.6 },
+    { x: 8466, from: 2, to: 3, merge: 10316, split: 0.6 },
   ],
   gates: [],
   gateArm: 140, holdMax: 3, trampleEvery: 0.75,
   names: ['IDA', 'BO', 'JUNO', 'MAX', 'PIP', 'SOL', 'TEO', 'ZARA'],
+  // Document.xlsx / Room Matrix: cumulative spacing in global No order.
   rooms: [
-    { x: 1300,  lane: 0, type: 'bridge',  diff: 1 },
-    { x: 1750,  lane: 0, type: 'gears', diff: 1 },
-    { x: 2200,  lane: 0, type: 'rope',    diff: 1 },
-    { x: 2500,  lane: 0, type: 'conveyor', diff: 1 },
-    { x: 3300,  lane: 0, type: 'winch',   diff: 2 },
-    { x: 4000,  lane: 0, type: 'sweeper', diff: 1 },
-    { x: 3600,  lane: 1, type: 'bridge',  diff: 2 },
-    { x: 4400,  lane: 2, type: 'rope',    diff: 2 },
-    { x: 4600,  lane: 0, type: 'crusher', diff: 2 },
-    { x: 5300,  lane: 0, type: 'calculation', diff: 1 },
-    { x: 5800,  lane: 0, type: 'wiring', diff: 1 },
-    { x: 4900,  lane: 1, type: 'rickety', diff: 2 },
-    { x: 6200,  lane: 0, type: 'winch',   diff: 3 },
-    { x: 8300,  lane: 0, type: 'rickety', diff: 3 },
-    { x: 8500,  lane: 1, type: 'bridge',  diff: 3 },
-    { x: 8700,  lane: 2, type: 'crusher', diff: 3 },
-    { x: 8900,  lane: 3, type: 'rope',    diff: 3 },
-    { x: 9100,  lane: 4, type: 'winch',   diff: 3 },
-    { x: 9300,  lane: 5, type: 'bridge',  diff: 3 },
-    { x: 9600,  lane: 0, type: 'winch',   diff: 4 },
-    { x: 9900,  lane: 1, type: 'crusher', diff: 4 },
-    { x: 10200, lane: 2, type: 'rope',    diff: 4 },
-    { x: 11600, lane: 0, type: 'bridge',  diff: 5 },
+    { no: 2, id: '0.1', x: 940, lane: 0, maxDifficulty: 0 },
+    { no: 3, id: '0.2', x: 1390, lane: 0, maxDifficulty: 1 },
+    { no: 4, id: '0.3', x: 1810, lane: 0, maxDifficulty: 1 },
+    { no: 5, id: '0.4', x: 2230, lane: 0, maxDifficulty: 1 },
+    { no: 6, id: '0.5', x: 2630, lane: 0, maxDifficulty: 1 },
+    { no: 7, id: '1.1', x: 3030, lane: 1, maxDifficulty: 2 },
+    { no: 8, id: '0.6', x: 3330, lane: 0, maxDifficulty: 2 },
+    { no: 9, id: '1.2', x: 3680, lane: 1, maxDifficulty: 2 },
+    { no: 10, id: '2.1', x: 4080, lane: 2, maxDifficulty: 2 },
+    { no: 11, id: '0.7', x: 4480, lane: 0, maxDifficulty: 2 },
+    { no: 12, id: '1.3', x: 4880, lane: 1, maxDifficulty: 3 },
+    { no: 13, id: '0.8', x: 5230, lane: 0, maxDifficulty: 3 },
+    { no: 14, id: '0.9', x: 5580, lane: 0, maxDifficulty: 3 },
+    { no: 15, id: '0.10', x: 5930, lane: 0, maxDifficulty: 3 },
+    { no: 16, id: '0.11', x: 6280, lane: 0, maxDifficulty: 3 },
+    { no: 17, id: '1.4', x: 6630, lane: 1, maxDifficulty: 4 },
+    { no: 18, id: '1.5', x: 6980, lane: 1, maxDifficulty: 4 },
+    { no: 19, id: '0.12', x: 7330, lane: 0, maxDifficulty: 4 },
+    { no: 20, id: '1.6', x: 7630, lane: 1, maxDifficulty: 4 },
+    { no: 21, id: '2.2', x: 7930, lane: 2, maxDifficulty: 4 },
+    { no: 22, id: '0.13', x: 8080, lane: 0, maxDifficulty: 4 },
+    { no: 23, id: '2.3', x: 8330, lane: 2, maxDifficulty: 5 },
+    { no: 24, id: '1.7', x: 8580, lane: 1, maxDifficulty: 5 },
+    { no: 25, id: '0.14', x: 8830, lane: 0, maxDifficulty: 5 },
+    { no: 26, id: '3.1', x: 9130, lane: 3, maxDifficulty: 5 },
+    { no: 27, id: '2.4', x: 9330, lane: 2, maxDifficulty: 5 },
+    { no: 28, id: '1.8', x: 9530, lane: 1, maxDifficulty: 5 },
+    { no: 29, id: '0.15', x: 9730, lane: 0, maxDifficulty: 5 },
+    { no: 30, id: '3.2', x: 10030, lane: 3, maxDifficulty: 5 },
+    { no: 31, id: '2.5', x: 10180, lane: 2, maxDifficulty: 5 },
+    { no: 32, id: '1.9', x: 10330, lane: 1, maxDifficulty: 5 },
+    { no: 33, id: '0.16', x: 10480, lane: 0, maxDifficulty: 5 },
+    { no: 34, id: '2.6', x: 10730, lane: 2, maxDifficulty: 5 },
+    { no: 35, id: '1.10', x: 10830, lane: 1, maxDifficulty: 5 },
+    { no: 36, id: '0.17', x: 10930, lane: 0, maxDifficulty: 5 },
+    { no: 37, id: '1.11', x: 11380, lane: 1, maxDifficulty: 5 },
+    { no: 38, id: '0.18', x: 11530, lane: 0, maxDifficulty: 5 },
+    { no: 39, id: '1.12', x: 11680, lane: 1, maxDifficulty: 5 },
+    { no: 40, id: '0.19', x: 11830, lane: 0, maxDifficulty: 5 },
+    { no: 41, id: '1.13', x: 11980, lane: 1, maxDifficulty: 5 },
+    { no: 42, id: '0.20', x: 12130, lane: 0, maxDifficulty: 5 },
   ],
-  finale: { x: 12300, baseLen: 6, keyTime: 0.9 },
+  finale: { id: '0.21', x: 12630, baseLen: 6, keyTime: 0.9 },
 };
 CFG.exit = CFG.finale.x - 10;
 const laneY = k => CFG.baseY - CFG.laneGap * k;
@@ -383,19 +400,19 @@ Object.assign(VERBS, {
     hint: 'Watch the flashes, then repeat with number keys 1–9',
     start() { const m = { round: 0, inputLight: null, inputT: 0 }; lightRound(m); return m; },
     key(m, k) {
-      if (!/^[1-9]$/.test(k) || m.watch || m.round >= 2) return null;
+      if (!/^[1-9]$/.test(k) || m.watch || m.round >= 1) return null;
       m.inputLight = k; m.inputT = 0.28;
       if (k !== m.seq[m.idx]) { m.idx = 0; m.watch = true; m.clock = 0; return 'wrong'; }
       if (++m.idx < m.seq.length) return 'ok';
-      if (++m.round === 2) return 'done';
+      if (++m.round === 1) return 'done';
       lightRound(m); return 'ok';
     },
     update(m, dt) { m.inputT = Math.max(0, m.inputT - dt); if (m.watch) { m.clock += dt; if (m.clock >= LIGHT_BEAT * (1 + m.seq.length)) { m.watch = false; m.idx = 0; } } },
-    progress(m) { return m.round / 2; },
+    progress(m) { return m.round; },
     draw(m, px, py, pw) {
       const tick = (m.clock - LIGHT_BEAT) / LIGHT_BEAT;
       const lit = m.inputT > 0 ? m.inputLight : m.watch && tick >= 0 && tick % 1 < 0.65 ? m.seq[Math.floor(tick)] : null;
-      factoryText(`ROUND ${Math.min(2, m.round + 1)}/2 · ${m.watch ? 'WATCH' : 'YOUR TURN'} · ${m.seq.length} flashes`, px + pw / 2, py + 49, '#f1c40f');
+      factoryText(`${m.watch ? 'WATCH' : 'YOUR TURN'} · ${m.seq.length} flashes`, px + pw / 2, py + 49, '#f1c40f');
       for (let i = 0; i < 9; i++) {
         const x = px + pw / 2 - 70 + (i % 3) * 50, y = py + 61 + Math.floor(i / 3) * 42;
         ctx.fillStyle = lit === String(i + 1) ? (m.inputT > 0 ? '#5ce1ff' : '#ffc64d') : '#343d4c'; ctx.fillRect(x, y, 40, 34);
@@ -410,19 +427,19 @@ Object.assign(VERBS, {
     start() {
       const ops = ['+', '−', '×', '÷'];
       for (let i = ops.length - 1; i > 0; i--) { const j = Math.floor(rand(0, i + 1)); [ops[i], ops[j]] = [ops[j], ops[i]]; }
-      const questions = ops.slice(0, 3).map(op => {
+      const questions = ops.slice(0, 1).map(op => {
         const integer = max => Math.floor(rand(0, max + 1));
         let a, b, answer;
         if (op === '+') { answer = integer(100); a = integer(answer); b = answer - a; }
-        else if (op === '−') { answer = integer(100); b = integer(200 - answer); a = b + answer; }
+        else if (op === '−') { answer = integer(100); b = integer(100 - answer); a = b + answer; }
         else if (op === '×') { a = 2 + integer(18); b = integer(Math.floor(100 / a)); answer = a * b; }
-        else { b = 2 + integer(18); answer = integer(Math.min(100, Math.floor(200 / b))); a = b * answer; }
+        else { b = 2 + integer(18); answer = integer(Math.min(100, Math.floor(100 / b))); a = b * answer; }
         return { a, b, op, answer };
       });
       return { questions, idx: 0, input: '', failed: false };
     },
     key(m, k) {
-      if (m.idx >= 3) return null;
+      if (m.idx >= m.questions.length) return null;
       if (k === 'BACKSPACE') { m.input = m.input.slice(0, -1); m.failed = false; return 'ok'; }
       if (!/^[0-9]$/.test(k) || m.input.length >= 3) return null;
       m.input += k;
@@ -431,21 +448,20 @@ Object.assign(VERBS, {
         return 'ok';
       }
       m.idx++; m.input = ''; m.failed = false;
-      return m.idx === 3 ? 'done' : 'ok';
+      return m.idx === m.questions.length ? 'done' : 'ok';
     },
-    update() {}, progress(m) { return m.idx / 3; },
+    update() {}, progress(m) { return m.idx / m.questions.length; },
     draw(m, px, py, pw) {
-      const center = px + pw / 2, q = m.questions[Math.min(m.idx, 2)];
-      for (let i = 0; i < 3; i++) {
-        const x = center + (i - 1) * 76;
-        ctx.fillStyle = i < m.idx ? '#2ecc71' : i === m.idx ? '#426378' : '#273142'; ctx.fillRect(x - 28, py + 38, 56, 22);
-        factoryText(i < m.idx ? 'DONE' : 'Q' + (i + 1), x, py + 54, '#fff', 12);
+      const center = px + pw / 2, q = m.questions[Math.min(m.idx, m.questions.length - 1)];
+      for (let i = 0; i < m.questions.length; i++) {
+        ctx.fillStyle = i < m.idx ? '#2ecc71' : '#444';
+        ctx.beginPath(); ctx.arc(center + (i - (m.questions.length - 1) / 2) * 18, py + 48, 5, 0, Math.PI * 2); ctx.fill();
       }
       factoryText(q.a + ' ' + q.op + ' ' + q.b + ' = ?', center, py + 103, '#f1c40f', 28);
       ctx.fillStyle = '#18232f'; ctx.fillRect(center - 88, py + 117, 176, 40);
       ctx.strokeStyle = m.failed ? '#ff7777' : '#5ce1ff'; ctx.lineWidth = 2; ctx.strokeRect(center - 88, py + 117, 176, 40);
       factoryText(m.input || '_', center, py + 146, '#fff', 26);
-      factoryText(m.failed ? 'Not correct — BACKSPACE to edit' : 'Three questions · whole-number answers from 0 to 100', center, py + 180, m.failed ? '#ff7777' : '#b8c2d2', 12);
+      factoryText(m.failed ? 'Not correct — BACKSPACE to edit' : 'Whole-number answers from 0 to 100', center, py + 180, m.failed ? '#ff7777' : '#b8c2d2', 12);
       factoryText('Type the answer to continue automatically · ESC close', center, py + 202, '#5ce1ff', 12);
     },
   },
@@ -500,6 +516,66 @@ function drawMachineRoom(room, y) {
   if (room.state === 'armed') { ctx.strokeStyle = S.active === room ? '#5ce1ff' : room.color; ctx.lineWidth = 2 / V.zoom; ctx.strokeRect(x - 14, y - 123, 148, 137); }
 }
 
+// Puzzle sheet difficulty ranks select eligible families; existing minigame tuning stays separate.
+const PUZZLE_FAMILIES = [
+  { name: 'Gear', difficulty: 1, types: ['gears'] },
+  { name: 'Typo', difficulty: 2, types: ['bridge', 'crusher', 'rope', 'rickety'] },
+  { name: 'Slider', difficulty: 1, types: ['winch'] },
+  { name: 'Lever', difficulty: 0, types: ['conveyor'] },
+  { name: 'Wiring', difficulty: 3, types: ['wiring'] },
+  { name: 'Trace', difficulty: 4, types: ['sweeper'] },
+  { name: 'Calculation', difficulty: 5, types: ['calculation'] },
+];
+const ROOM_DIFFICULTIES = {"bridge": [1, 2, 3, 3, 5], "gears": [1], "rope": [1, 2, 3, 4], "conveyor": [1], "winch": [2, 3, 3, 4], "sweeper": [1], "crusher": [2, 3, 4], "calculation": [1], "wiring": [1], "rickety": [2, 3]};
+function shuffled(items) {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+function randomizedRooms() {
+  const assignments = Array(CFG.rooms.length).fill(null);
+  // The final six regular rooms must use different puzzle families (not just different art).
+  const finalFamilies = new Set();
+  const finalSlots = CFG.rooms.map((room, i) => i).filter(i => CFG.rooms[i].no >= 37 && CFG.rooms[i].no <= 42);
+  finalSlots.sort((a, b) => CFG.rooms[a].maxDifficulty - CFG.rooms[b].maxDifficulty);
+  for (const i of finalSlots) {
+    const eligible = PUZZLE_FAMILIES.filter(p => p.difficulty <= CFG.rooms[i].maxDifficulty && !finalFamilies.has(p.name));
+    if (!eligible.length) throw new Error('Room Matrix cannot fit unique final puzzles');
+    const weight = p => p.difficulty === 5 ? 0.5 : p.difficulty === 4 ? 0.65 : 1;
+    let ticket = Math.random() * eligible.reduce((sum, p) => sum + weight(p), 0);
+    const family = eligible.find(p => (ticket -= weight(p)) < 0) || eligible[eligible.length - 1];
+    assignments[i] = family;
+    finalFamilies.add(family.name);
+  }
+  // Count these reservations toward the four-per-family minimum, hardest first.
+  const priority = shuffled(PUZZLE_FAMILIES).sort((a, b) => b.difficulty - a.difficulty);
+  for (const family of priority) {
+    const available = shuffled(CFG.rooms.map((room, i) => i).filter(i =>
+      !assignments[i] && CFG.rooms[i].maxDifficulty >= family.difficulty));
+    const needed = Math.max(0, 4 - assignments.filter(p => p === family).length);
+    if (available.length < needed) throw new Error('Room Matrix cannot fit four ' + family.name + ' puzzles');
+    for (const i of available.slice(0, needed)) assignments[i] = family;
+  }
+  const variants = {}, difficulties = {};
+  return CFG.rooms.map((room, i) => {
+    let family = assignments[i];
+    if (!family) {
+      const eligible = PUZZLE_FAMILIES.filter(p => p.difficulty <= room.maxDifficulty);
+      const weight = p => p.difficulty === 5 ? 0.5 : p.difficulty === 4 ? 0.65 : 1;
+      let ticket = Math.random() * eligible.reduce((sum, p) => sum + weight(p), 0);
+      family = eligible.find(p => (ticket -= weight(p)) < 0) || eligible[eligible.length - 1];
+    }
+    if (!variants[family.name]?.length) variants[family.name] = shuffled(family.types);
+    const type = variants[family.name].pop();
+    if (!difficulties[type]?.length) difficulties[type] = shuffled(ROOM_DIFFICULTIES[type]);
+    return { ...room, type, puzzleFamily: family.name, difficulty: family.difficulty,
+      diff: difficulties[type].pop() };
+  });
+}
+
 // ================================================================ state
 let S;
 function reset() {
@@ -522,7 +598,7 @@ function reset() {
     });
   }
   for (const r of S.runners) r.x = r.slot;
-  for (const r of CFG.rooms) {
+  for (const r of randomizedRooms()) {
     const t = CFG.types[r.type];
     S.rooms.push({ ...r, verb: t.verb, hazard: t.hazard, title: t.title, color: t.color,
                    hot: null, mg: null, state: 'dormant', bridge: 0, deaths: 0, slamT: rand(0, CFG.crusherPeriod) });
@@ -686,7 +762,7 @@ function update(dt) {
   if (S.active) VERBS[S.active.verb].update(S.active.mg, dt);
   if (S.active && S.active.verb === 'gears' && gearsAligned(S.active.mg)) clearRoom(S.active);
   for (const room of S.rooms) {
-    if (room.state === 'armed' && room.verb === 'lights' && room.mg.round === 2) {
+    if (room.state === 'armed' && room.verb === 'lights' && room.mg.round === 1) {
       if (S.active !== room) room.mg.inputT = Math.max(0, room.mg.inputT - dt);
       if (room.mg.inputT <= 0) clearRoom(room);
     }
@@ -1464,14 +1540,21 @@ if (qs.has('finale')) {
   S.stats.arrived = 12; S.cam = S.camMax; updateView(1);
   S.finale = { len: 6, seq: makeSeq(6), idx: 2, attempts: 12, timer: 0.9, line: S.runners.slice(0, 12), leaving: [] }; S.mode = 'finale';
 }
-// Standalone playtest only: jump to one new room without changing the full run.
+// Standalone playtest only: jump to a randomized room of the selected type.
 if (qs.has('room')) {
  const room=S.rooms.find(r=>r.type===qs.get('room'));
  if(room && ['gears','conveyor','sweeper','calculation','wiring'].includes(room.type)) {
   S.mode='play'; S.cam=room.x-CFG.armDist-CFG.packFront;
-  S.runners.forEach(r=>{r.x=S.cam+r.slot;r.lastForkX=room.x;});
+  const route=[];
+  for(let lane=1;lane<=room.lane;lane++) {
+   const f=CFG.forks.find(f=>f.to===lane && f.x<room.x && f.merge>room.x);
+   if(f) route.push({mergeX:f.merge,back:f.from});
+  }
+  S.runners.forEach((r,i)=>{
+   r.x=room.x-150-Math.floor(i/CFG.groupRows)*4;
+   r.lane=room.lane;r.y=laneY(room.lane);r.route=route.map(f=>({...f}));r.lastForkX=room.x;
+  });
   S.rooms.forEach(r=>{if(r.x<room.x) {r.state='solved';r.bridge=1;}});
-  S.gates.forEach(g=>{if(g.x<room.x)g.state='spent';});
   armRoom(room); S.active=room; updateView(1);
  }
 }
