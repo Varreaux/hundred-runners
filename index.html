@@ -742,6 +742,15 @@ const VERBS = {
         ctx.strokeStyle = used ? '#6ee7a0' : marked ? '#a7987d' : '#4c4455';
         ctx.lineWidth = marked ? 2 : 1;
         roundRect(x, y, 44, 32, 5); ctx.stroke();
+        // THE PRINT STAYS BESIDE THE DIGIT, NOT OVER IT, and this is a refusal rather than
+        // an oversight. It looks more like a greasy key with the mark over the number, and
+        // an art pass asked for exactly that; it was tried and reverted, because a bold 17px
+        // digit is about 10.2 by 12 and thumbMark's rings run out to rx 10.9 / 5.2 / 1.8 for
+        // the three ranks. Centred, the digit hides 1 of rank 0's 6 rings, 3 of rank 1's 4,
+        // and 2 of rank 2's 2 -- the lightest mark vanishes completely, and telling rank 1
+        // from rank 2 is the comparison the player has to make twice. The key's face tint
+        // still carries the rank; the rings are the only thing that says how many presses of
+        // grease are on it. If this comes back, argue it at those numbers.
         if (marked) {
           ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2, 40, 28); ctx.clip();
           thumbMark(x + 31, y + 17, rank, 1);
