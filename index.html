@@ -10996,22 +10996,28 @@ function drawHud() {
 // line carries every instruction the game gives, so it was the worst offender.
 //
 // IT WRAPS, IT DOES NOT SHRINK. The first attempt at this just raised the size from 13 to
-// 17 and kept the shrink-to-fit loop, and it changed nothing at all on the eleven screens
-// it was written for: the drill sizes every panel's line off the LONGEST hint in the set
-// (so the type does not jump as panels swap), the longest is blast's at 93 characters, and
-// 93 characters plus the aside do not fit on one line at any size above 13. So all eleven
-// drill lines rendered at exactly the size complained about, and the only line in the game
-// that came out at 17 was "watch the tunnels ahead", which teaches nothing.
+// 17 and kept the shrink-to-fit loop, and it changed nothing at all on the screens it was
+// written for: the drill sizes every panel's line off the LONGEST hint in the set (so the
+// type does not jump as panels swap), the longest is the mantrap's at 97 characters, and 97
+// characters plus the aside do not fit on one line at any size above 13. So every drill line
+// rendered at exactly the size complained about, and the only line in the game that came out
+// at 17 was "watch the tunnels ahead", which teaches nothing.
 //
 // At 17px a line holds about 91 characters, and shortening every instruction to fit that
 // would cost the instructions. So the size is fixed and the LINE COUNT gives instead.
 const HINT_FS = 17, HINT_LH = 20, HINT_PAD = 7;
 // The tallest the band ever gets, for anything that has to stay clear of it. Two lines is
-// the practical worst case: the longest instruction the game can assemble is BLAST's hint
-// (93 characters, the longest in the table) plus "(ESC to close)" plus the gate clause, so
-// 146, and at 17px monospace a line holds about 91. That leaves 36 characters of slack, not
-// a lot; a hint past roughly 165 would make this three lines while the death plate's clamp
+// the practical worst case: the longest instruction the game can assemble is the MANTRAP's
+// hint (97 characters, the longest in the table) plus "(ESC to close)" plus the gate clause,
+// so 150, and at 17px monospace a line holds about 91. That leaves about 30 characters of
+// slack; a hint past roughly 165 would make this three lines while the death plate's clamp
 // went on assuming two.
+//
+// This said "blast's, 93" for a while, which was a reviewer's correction of a right answer.
+// The comment originally named the mantrap, the reviewer measured blast at 93 against a
+// mantrap hint it read as 83, and the swap was taken on its word without re-deriving it.
+// Do not count characters out of a report. Both halves of any number in here should come
+// back out of index.html, and the drill's own sizeFrom already does exactly that.
 const hintBandH = () => HINT_PAD * 2 + 2 * HINT_LH;
 // A space that wrap() will not break on. The aside travels as ONE word with the four
 // spaces that separate it from the instruction, so it cannot be split across a line and
@@ -11051,14 +11057,14 @@ function hintBar(text, note, sizeFrom) {
   const full = note ? text + ' ' + ('    ' + note).replace(/ /g, HINT_NB) : text;
   const rows = wrap(full);
   // sizeFrom is the longest line in a set the caller will cycle through. It sizes the BAND
-  // rather than the type: the drill swaps eleven panels in sequence and a bar that changed
+  // rather than the type: the drill swaps a dozen panels in sequence and a bar that changed
   // height between them would flicker, which is what that argument was always for.
   const n = Math.max(rows.length, sizeFrom ? wrap(sizeFrom).length : 1);
   const band = HINT_PAD * 2 + n * HINT_LH;
   ctx.fillStyle = 'rgba(8,10,18,0.6)'; ctx.fillRect(0, H - band, W, band);
   ctx.textAlign = 'left';
   // centred in the band, so a one-line hint in a band sized for two does not sit against
-  // the top with an empty row under it -- which is six of the eleven drill panels
+  // the top with an empty row under it -- which is seven of the twelve drill panels
   const top = H - band + HINT_PAD + (n - rows.length) * HINT_LH / 2;
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i], cut = row.indexOf(HINT_NB);
@@ -11137,9 +11143,10 @@ function drawKeyBoxes(chars, idx, px, py, pw) {
 // 1 is the old size. Morgan asked for this: "whatever is written is too small to read."
 //
 // One transform rather than editing the numbers, because a panel is a hundred hand-placed
-// coordinates across eleven verbs -- eleven chances to get it wrong, and a guarantee that
-// the next verb added misses it. Canvas text under a scaled transform is rendered at the
-// effective size, so type gets bigger rather than blurrier.
+// coordinates across a dozen verbs -- a dozen chances to get it wrong, and a guarantee that
+// the next verb added misses it. There has already been a next verb: the wages terminal
+// landed as the twelfth while this comment still said eleven. Canvas text under a scaled
+// transform is rendered at the effective size, so type gets bigger rather than blurrier.
 //
 // WHAT LIMITS THIS IS NOT THE CANVAS, IT IS THE CROWD. A panel is opaque and sits over the
 // road, so every unit it grows is road you cannot watch while you work -- and watching the
@@ -11148,7 +11155,7 @@ function drawKeyBoxes(chars, idx, px, py, pw) {
 // covered. tools/cover-check.js scores that directly, at scale 1.00 against the current
 // value, on the same frames. Its shapes, in its own order, ph then pw:
 //
-//   150 x 420, eight of the eleven verbs    about  6-7% of the crowd hidden -> 9-10%
+//   150 x 420, nine of the twelve verbs     about  6-7% of the crowd hidden -> 8-10%
 //   176 x 420, dig                                 7%   -> 14%
 //   210 x 420, the sweeper                        10%   -> 21%
 //   218 x 620, the press keypad                   10%   -> 22%
@@ -11889,7 +11896,7 @@ function drawDrill() {
   // pw * PANEL_SCALE, not pw: the span has to clear the panel as DRAWN. Against the
   // unscaled half-width a panel still had 163px of itself on screen at pw 420, and 215 at
   // 620, on the frame it was last drawn -- so it popped out of existence rather than
-  // leaving, eleven times, on the line whose own comment says the span exists to stop
+  // leaving, once per panel, on the line whose own comment says the span exists to stop
   // exactly that.
   ctx.translate(d.pos * d.pos * d.pos * (W / 2 + pw * PANEL_SCALE / 2 + 40), 0);
   if (S.wrongFlash > 0) ctx.translate(Math.sin(S.wrongFlash * 90) * S.wrongFlash * 9, 0);
