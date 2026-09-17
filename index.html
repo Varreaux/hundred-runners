@@ -108,6 +108,44 @@ const CFG = {
     mantrap: { verb: 'lift',  title: 'force the jaws open',    hazard: 'burst', color: '#ffd23c' },
     wall:    { verb: 'blast', title: 'blow the wall open',     hazard: 'all',   color: '#ff4646' },
   },
+  // ---------------------------------------------------------------- WHICH ROOMS, WHICH ACT
+  // From Linh's "Family difficulty and weights" sheet. Her document does not divide the
+  // mini-games by act -- it ranks them into FAMILIES and then says which ranks are allowed
+  // at which point along the course, as a ramp over room numbers (No 2 -> rank 0, No 3-6 ->
+  // 1, No 7-11 -> 2, No 12-16 -> 3, No 17-22 -> 4, No 23-42 -> 5). Read as a fraction of her
+  // course that ramp is 7% / 21% / 35% / 50% / 64% / 96%, and our three acts end at 38% and
+  // 79% of ours -- so collapsing her six bands onto three acts is nearly the same line:
+  //
+  //   act one   (the mill, to 5950)      ranks 0-2   lever, gear, slider, typing
+  //   act two   (the mountain, to 12290) ranks 0-4   + wiring, + trace
+  //   act three (the enclosure, beyond)  ranks 0-5   everything, mixed
+  //
+  // The rank is about PLACEMENT, not tuning -- her words. `diff` on each room is untouched
+  // and still does what it always did. tools/act-check.js enforces this and explains the
+  // one room that does not satisfy it.
+  families: {
+    conveyor: { family: 'Lever',       rank: 0, weight: 1 },
+    gears:    { family: 'Gear',        rank: 1, weight: 1 },
+    winch:    { family: 'Slider',      rank: 1, weight: 1 },
+    bridge:   { family: 'Typo',        rank: 2, weight: 1 },
+    crusher:  { family: 'Typo',        rank: 2, weight: 1 },
+    rope:     { family: 'Typo',        rank: 2, weight: 1 },
+    rickety:  { family: 'Typo',        rank: 2, weight: 1 },
+    wiring:   { family: 'Wiring',      rank: 3, weight: 1 },
+    sweeper:  { family: 'Trace',       rank: 4, weight: 0.65 },
+    // Her sheet retires `presses` and puts Calculation at rank 5 in its place. Our presses
+    // room is being rewritten into that calculation room by another session, so it is left
+    // where it stands and carries the rank its replacement will have.
+    presses:  { family: 'Calculation', rank: 5, weight: 0.5 },
+    // Ours, added after her branch: the enclosure's own rooms. They are property rather
+    // than machinery and have no family on her sheet, so they are ranked here by what they
+    // cost a player -- a thorn hedge is a typing room, a ditch is a drumming room, a
+    // mantrap is a hold, and the wall is the hardest thing in the game.
+    ditch:    { family: 'Bank',        rank: 3, weight: 1 },
+    thorn:    { family: 'Typo',        rank: 2, weight: 1 },
+    mantrap:  { family: 'Jaws',        rank: 4, weight: 1 },
+    wall:     { family: 'Blast',       rank: 5, weight: 1 },
+  },
   crusherPeriod: 1.6,
   // hazard -> how far into the room it starts killing; canReach asks this
   // instead of assuming 8, so the next hazard added cannot reintroduce the bug
@@ -272,11 +310,29 @@ const CFG = {
     { x: 14060, lane: 0, type: 'ditch',   diff: 5, warn: 480 },
     { x: 14380, lane: 2, type: 'ditch',   diff: 4, warn: 480 },
     { x: 14560, lane: 1, type: 'thorn',   diff: 5 },
+    // THE MISHMASH. Act three used to hold only the four enclosure types, so the last act
+    // introduced four new rooms and brought nothing back. Morgan asked for all of them
+    // combined here, and these are the families that can stand in open country without
+    // asking for art that does not exist: a gate winch, a drawbridge over the cut, a rope
+    // bridge over the stream, a rickety crossing. The machine families -- lever, gear,
+    // wiring, trace, calculation -- stay in the mill and the mountain, because a conveyor
+    // in a hedgerow is a drawing nobody has made.
+    { x: 13640, lane: 1, type: 'winch',   diff: 4 },
+    { x: 13900, lane: 3, type: 'rope',    diff: 4 },
+    { x: 13500, lane: 4, type: 'bridge',  diff: 5 },
+    { x: 14700, lane: 0, type: 'rickety', diff: 5 },
     // the wall across everything. Its warning is long because it is the one room the
     // whole act has been walking toward and a player should see it coming.
     { x: 15180, lane: 0, type: 'wall',    diff: 5, warn: 1000 },
   ],
-  finale: { x: 15600, baseLen: 6, keyTime: 0.9 },
+  // THE LAST ROOM. Linh's finale, transplanted from her LastRoom branch (486d00e).
+  // x stays at OUR 15600 -- her branch carries a playtest x of 2100 with laneCount 1 and no
+  // forks, and her own merge note says in bold not to bring those across: they would turn
+  // the public game into a short straight corridor with no branches. The finale SYSTEM
+  // comes over; the course stays ours.
+  finale: { x: 15600, findCount: 10, searchTime: 90, hitRadius: 36,
+            cursorSpeed: 1.15, cursorAccel: 4.5, cursorFriction: 10,
+            baseLen: 6, keyTime: 0.9 },
 };
 // The mountain's MOUTH, which is no longer the end of the course. These were one number
 // until act three existed; everything that means "where the rock stops" reads CFG.exit,
@@ -284,6 +340,15 @@ const CFG = {
 // enclosure -- is the ground between them.
 CFG.exit = 12290;
 CFG.roofTo = CFG.exit;
+// Which act a world x falls in, and the hardest family rank allowed to stand there. Derived
+// from the boundaries themselves rather than written down, so moving the seam or the mouth
+// moves the ramp with it instead of leaving it pointing at old ground.
+CFG.actAt = wx => (wx < CFG.roofFrom ? 1 : wx < CFG.exit ? 2 : 3);
+CFG.maxRankAt = wx => [2, 4, 5][CFG.actAt(wx) - 1];
+// Generator charge time from Linh's Document sheet: 1 worker 10.9s, 100 workers 1.0s.
+// The crew you arrive with is the resource that lights the chamber.
+CFG.finale.genTime = n => Math.max(1, 11 - 0.1 * Math.max(1, n));
+const FINALE_ART = { w: 330, h: 214 };   // authoring space; scaled up when drawn
 const laneY = k => CFG.baseY - CFG.laneGap * k;
 // ---------------------------------------------------------------- act three: the enclosure
 // Open country past the mountain's mouth. It reads as freedom for the first stretch --
@@ -1964,6 +2029,21 @@ const AU = {
   },
   cheer(n) { for (let i = 0; i < 3; i++) { const f = 440 * Math.pow(1.26, i) * (1 + Math.min(n, 8) * 0.06); this.tone('triangle', f, f * 1.5, 0.35, 0.08, i * 0.06); } },
   fail() { this.tone('sawtooth', 200, 60, 0.5, 0.22); },
+  finaleSting() {
+    // door-slam into the sealed chamber
+    this.tone('sine', 48, 28, 1.1, 0.55);
+    this.noise(0.55, 0.28, ['lowpass', 280]);
+    this.tone('sawtooth', 160, 55, 0.7, 0.12, 0.08);
+    this.tone('square', 90, 40, 0.9, 0.06, 0.2);
+  },
+  finaleDread(intensity = 1) {
+    // low dissonant pulse for the Final Wall / proprietor beat
+    const g = 0.045 * intensity;
+    this.tone('sawtooth', 52, 46, 0.85, g * 1.6);
+    this.tone('sine', 78, 66, 1.0, g * 1.1, 0.05);
+    this.tone('triangle', 103, 97, 0.7, g * 0.7, 0.12);
+    if (intensity > 0.8) this.noise(0.35, 0.06 * intensity, ['lowpass', 160]);
+  },
   ambient(inside, moving, dt) {
     if (!this.ctx) return;
     if (this.muted) { this.rumble.gain.value = 0; this.bedGain.gain.value = 0; this.tail.gain.value = 0; return; }
@@ -2288,14 +2368,10 @@ window.addEventListener('keydown', e => {
     else if (res === 'wrong') { S.wrongFlash = 0.25; AU.wrong(); }
     else if (res === 'ok') AU.tick(VERBS[room.verb].progress(room.mg));
   }
-  if (S.mode === 'finale') {
-    const f = S.finale;
-    if (!CFG.keyPool.includes(k)) return;
-    if (k === f.seq[f.idx]) {
-      f.idx++; f.timer = CFG.finale.keyTime; AU.tick(f.idx / f.len);
-      if (f.idx >= f.len) { S.mode = 'win'; saveBest(f.attempts); }
-    } else finaleFail();
-  }
+  // The last room is a search, not a sequence: SPACE marks wherever the lamp is resting,
+  // and the arrows (or WASD) move it. HELD is filled below so the lamp can be steered
+  // smoothly rather than a key-press at a time.
+  if (S.mode === 'finale') { HELD[k] = true; if (k === ' ') finaleConfirm(); return; }
 });
 // The other half of a held key. `e.repeat` is dropped at the top of keydown, so a held key
 // delivers exactly one keydown; verbs that are ABOUT holding (lift, blast) need to be told
@@ -2303,6 +2379,10 @@ window.addEventListener('keydown', e => {
 // nothing else has to know keyup exists. A verb whose panel closes mid-hold never gets its
 // release, which is why every hold verb also decays its own state in update().
 window.addEventListener('keyup', e => {
+  // The last room steers its lamp from HELD, so a key that is never cleared leaves the lamp
+  // drifting for ever. Cleared FIRST, above everything, because every path below can return
+  // early and any of them would strand it.
+  HELD[e.key.toUpperCase()] = false;
   // A KEYUP IS A GLOBAL EVENT AND HAS TO REACH EVERY ROOM THAT COULD BE HOLDING, not just the
   // selected one. It used to go to S.active alone, and a hold survived being navigated away
   // from: grip the mantrap, press another room's hotkey, let go, and the keyup arrives while a
@@ -2531,18 +2611,942 @@ function updateSeamGate(dt) {
   }
 }
 const seamHolding = () => S.seam.phase !== 'off' && S.seam.phase !== 'done';
-function finaleFail() {
-  const f = S.finale;
-  f.attempts--; f.idx = 0; f.timer = CFG.finale.keyTime; S.wrongFlash = 0.4; S.shake = 6; AU.fail();
-  f.seq = makeSeq(f.len);
-  // shift, not pop. pop() took the person at the BACK of the line -- up to 323 units, 7.2
-  // body heights, behind the one who was then drawn walking away -- so the loser teleported
-  // to the front of the crowd on the frame they were lost.
-  const r = f.line.shift();
-  if (r) { r.state = 'gone'; r.doom = 'final'; r.deathT = S.t; f.leaving.push({ r, t: 0 }); }
-  S.floaters.push({ sx: W / 2, sy: H / 2 - 40, txt: r && r.name ? `${r.name} IS LOST` : 'ATTEMPT LOST', life: 1.2, color: '#ff5555', big: true });
-  if (f.attempts <= 0) S.mode = 'lose';
+// The cave door above and the last room below arrived in the same place from two
+// different branches. Both are kept: the QTE finale that used to sit between them is
+// gone, and finaleFail survives as a thin alias to finaleWrong inside the block below,
+// so nothing that called it breaks.
+// ================================================================ THE LAST ROOM
+// Linh's finale, from her LastRoom branch. A generator you charge with the crew you
+// brought, then a lit spot you move across two paintings of the same scene, marking the
+// ten places where one has been altered. Wrong marks cost bodies; the search timer costs
+// the rest. Transplanted whole rather than reimplemented -- it is her design and her art.
+const HELD = Object.create(null);
+const FINALE_BLACKOUT = 1.55; // 3 flicker beats before generator restarts
+const FINALE_INTRO_WALL = 2.6;   // red flicker + FINAL WALL (longer scare beat)
+const FINALE_INTRO_SPEECH = 8.5; // boss monologue — hold long enough to read
+const FINALE_BOSS_LINES = [
+  'Ten discrepancies. Find them. Fail, and forfeit a body.',
+  'Correct the ledgers — or feed the wheel.',
+  'The canvas lies in ten places. Prove you can still see.',
+];
+// Six dark capitalism tableaux - inked, muted gold / rust / mill soot, same art language as the run.
+const FINALE_SCENES = [
+  {
+    id: 'line', title: 'THE LINE NEVER STOPS',
+    diffs: [
+      { x: 42, y: 48, kind: 'extraSmoke' }, { x: 118, y: 36, kind: 'goldClock' }, { x: 248, y: 52, kind: 'bossHat' },
+      { x: 70, y: 110, kind: 'missingWorker' }, { x: 160, y: 102, kind: 'redBanner' }, { x: 240, y: 120, kind: 'coinStack' },
+      { x: 48, y: 168, kind: 'brokenGear' }, { x: 145, y: 162, kind: 'bloodSpot' }, { x: 220, y: 170, kind: 'cage' }, { x: 275, y: 90, kind: 'priceTag' },
+    ],
+  },
+  {
+    id: 'vault', title: 'WAGES VS VAULT',
+    diffs: [
+      { x: 36, y: 44, kind: 'ledger' }, { x: 130, y: 40, kind: 'goldBar' }, { x: 250, y: 46, kind: 'safeCrack' },
+      { x: 58, y: 100, kind: 'emptyPocket' }, { x: 155, y: 108, kind: 'chain' }, { x: 245, y: 115, kind: 'diamond' },
+      { x: 40, y: 165, kind: 'tinCup' }, { x: 140, y: 160, kind: 'boot' }, { x: 230, y: 168, kind: 'receipt' }, { x: 270, y: 88, kind: 'percent' },
+    ],
+  },
+  {
+    id: 'banquet', title: 'THEIR TABLE, YOUR FLOOR',
+    diffs: [
+      { x: 50, y: 38, kind: 'chandelier' }, { x: 150, y: 42, kind: 'wine' }, { x: 255, y: 40, kind: 'roast' },
+      { x: 64, y: 105, kind: 'servant' }, { x: 168, y: 100, kind: 'cigar' }, { x: 248, y: 112, kind: 'mask' },
+      { x: 45, y: 170, kind: 'crumb' }, { x: 135, y: 164, kind: 'kneel' }, { x: 225, y: 172, kind: 'rat' }, { x: 278, y: 92, kind: 'bill' },
+    ],
+  },
+  {
+    id: 'ticker', title: 'NUMBERS EAT BODIES',
+    diffs: [
+      { x: 40, y: 36, kind: 'arrowUp' }, { x: 140, y: 44, kind: 'arrowDown' }, { x: 250, y: 38, kind: 'crash' },
+      { x: 60, y: 98, kind: 'screen' }, { x: 160, y: 110, kind: 'headset' }, { x: 242, y: 105, kind: 'chart' },
+      { x: 48, y: 166, kind: 'fallen' }, { x: 148, y: 160, kind: 'briefcase' }, { x: 228, y: 170, kind: 'tie' }, { x: 272, y: 86, kind: 'bull' },
+    ],
+  },
+  {
+    id: 'contract', title: 'SIGN HERE FOREVER',
+    diffs: [
+      { x: 44, y: 42, kind: 'stamp' }, { x: 145, y: 38, kind: 'quill' }, { x: 252, y: 48, kind: 'seal' },
+      { x: 68, y: 108, kind: 'fineprint' }, { x: 165, y: 102, kind: 'thumb' }, { x: 245, y: 118, kind: 'shackle' },
+      { x: 42, y: 168, kind: 'inkblot' }, { x: 138, y: 162, kind: 'tear' }, { x: 218, y: 170, kind: 'hourglass' }, { x: 275, y: 90, kind: 'X' },
+    ],
+  },
+  {
+    id: 'smog', title: 'PROGRESS HAS A SMELL',
+    diffs: [
+      { x: 38, y: 40, kind: 'stackSmoke' }, { x: 135, y: 34, kind: 'mansion' }, { x: 248, y: 44, kind: 'sunMoney' },
+      { x: 55, y: 105, kind: 'cough' }, { x: 158, y: 100, kind: 'filter' }, { x: 240, y: 112, kind: 'pipe' },
+      { x: 46, y: 168, kind: 'puddle' }, { x: 142, y: 160, kind: 'bird' }, { x: 226, y: 172, kind: 'maskGas' }, { x: 270, y: 88, kind: 'chimney' },
+    ],
+  },
+];
+function pickFinaleScene() { return FINALE_SCENES[Math.floor(Math.random() * FINALE_SCENES.length)]; }
+function makeFinaleDiffs(scene) {
+  return scene.diffs.map((d, i) => ({ ...d, id: i }));
 }
+function finaleFx(f, k, x, y, o = {}) {
+  const n = o.n || 1, vx = o.vx || [-20, 20], vy = o.vy || [-40, -10], lf = o.life || [0.35, 0.8];
+  for (let i = 0; i < n; i++) {
+    const life = rand(lf[0], lf[1]);
+    f.fx.push({ k, x: x + rand(-(o.sx || 0), o.sx || 0), y: y + rand(-(o.sy || 0), o.sy || 0),
+      vx: rand(vx[0], vx[1]), vy: rand(vy[0], vy[1]), life, max: life, c: o.c || '#ffe0a0', r: o.r || 2 });
+  }
+}
+function startFinale() {
+  const line = S.runners.filter(r => r.state === 'arrived');
+  const scene = pickFinaleScene();
+  const n = line.length;
+  S.finale = {
+    phase: 'intro',
+    introT: 0,
+    bossLine: pick(FINALE_BOSS_LINES),
+    chargeT: 0,
+    chargeNeed: CFG.finale.genTime(n),
+    light: 0,
+    searchT: CFG.finale.searchTime,
+    found: new Set(),
+    foundAt: {},              // id -> the clock reading when it was marked, so a tick can land
+    scene,
+    diffs: makeFinaleDiffs(scene),
+    cursor: { x: W / 2, y: H * 0.42 },
+    cursorVel: { x: 0, y: 0 },
+    spot: { u: 0.5, v: 0.45 }, // shared UV across both paintings (flashlight control)
+    spotVel: { u: 0, v: 0 },
+    line,
+    deck: line.slice(0, 12).map((r, i) => ({ r, i, enter: -i * 0.06, x: 0, arrived: false, track: 0, speed: 95 + (i % 4) * 18 })),
+    falling: [],
+    fx: [],
+    ripples: [],
+    blackoutT: 0,
+    flashWrong: 0,
+    genPulse: 0,
+    beltPow: 0,   // 0..1 smoothed power from crew on the belt
+    dreadBeat: 0, // intro audio scheduler
+  };
+  S.mode = 'finale';
+  AU.init();
+  AU.finaleSting();
+}
+function finaleLightLevel(f) {
+  if (f.phase === 'search') return 1;
+  if (f.phase === 'blackout') {
+    const t = f.blackoutT;
+    // Three readable beats: cut -> ghost pulse -> dying stutter -> black
+    if (t < 0.28) return 0.05 + Math.sin(t * 40) * 0.04;
+    if (t < 0.55) return 0.42 + Math.sin((t - 0.28) * 22) * 0.12;
+    if (t < 0.95) return 0.12 + (Math.sin(t * 55) > 0.3 ? 0.18 : 0);
+    return 0.03 + Math.sin(t * 30) * 0.02;
+  }
+  const progress = finaleChargeProgress(f);
+  const flicker = Math.sin(S.t * 14) * 0.045 + Math.sin(S.t * 29) * 0.025;
+  return 0.07 + progress * 0.62 + flicker * (0.35 + progress);
+}
+// How far the generator has come, as ONE number that the room's light, the phase gate and
+// the bar all read. They used to disagree: the light rose on chargeT/genTime while the
+// phase flipped on the belt being full, and those two are not the same clock. With 100
+// survivors genTime says one second and the belt took about thirty, so the room stood
+// fully lit for twenty-nine seconds of nothing; with one survivor the belt filled in a
+// third of a second and the search began in an almost black room. Whichever is slower is
+// the truth, so min() is the gate, and the light cannot run ahead of it any more.
+function finaleChargeProgress(f) {
+  const boarded = finaleFillFrac(f);                                          // the crew getting aboard
+  const wound = clamp01(f.chargeT / Math.max(0.001, f.chargeNeed || 1));      // the flywheel winding up
+  // Two stages, one number. Boarding is the first quarter of the way to light and the
+  // generator does the rest, and it cannot finish before the belt is full. Writing it as a
+  // single expression is the whole point: the light, the phase gate and the bar all read
+  // this, so they cannot drift apart the way they did when the light rose on genTime while
+  // the gate waited on the belt -- a hundred survivors stood in a fully lit room for
+  // twenty-nine seconds of nothing, and one survivor began the search in the dark.
+  return boarded * 0.25 + (boarded >= 1 ? wound * 0.75 : 0);
+}
+function beginFinaleCharge(f) {
+  f.phase = 'charge';
+  f.chargeT = 0;
+  f.chargeNeed = CFG.finale.genTime(Math.max(1, f.line.length));
+  f.light = 0;
+  f.beltPow = 0;
+  f.wrongT = 0;
+  f.packDone = 0;
+  f.packNeed = Math.max(1, f.line.length);
+  f.packQueue = f.line.slice();
+  f.spawnI = 0;
+  f.deck = [];
+  f.spot = f.spot || { u: 0.5, v: 0.45 };
+  f.spotVel = { u: 0, v: 0 };
+}
+function finaleCrewFrac(f) {
+  return clamp01(Math.max(1, f.line.length) / 100);
+}
+function finaleFillFrac(f) {
+  const need = f.packNeed || Math.max(1, (f.line && f.line.length) || 1);
+  return clamp01((f.packDone || 0) / need);
+}
+function finaleSpotFullR(L) {
+  // At 100 crew this radius covers a whole painting.
+  return Math.hypot(L.left.w, L.left.h) * 0.55;
+}
+function finaleSpotRadius(f, L) {
+  const full = finaleSpotFullR(L);
+  const crewR = Math.max(22, full * finaleCrewFrac(f));
+  const pow = clamp01(f.beltPow || 0);
+  if (f.wrongT > 0) {
+    const on = Math.sin(S.t * 26) > 0;
+    return Math.max(8, crewR * (on ? 1 : 0.2));
+  }
+  if (f.phase === 'intro') {
+    return 8 + Math.sin(S.t * 7) * 2;
+  }
+  if (f.phase === 'charge') {
+    const pulse = 1 + Math.sin(S.t * 8) * 0.08 * pow;
+    return Math.max(8, crewR * (0.06 + 0.94 * pow) * pulse);
+  }
+  return Math.max(22, crewR);
+}
+function finaleSpotCenters(f, L) {
+  const u = clamp01(f.spot?.u ?? 0.5), v = clamp01(f.spot?.v ?? 0.45);
+  return {
+    u, v,
+    left: { x: L.left.x + u * L.left.w, y: L.left.y + v * L.left.h },
+    right: { x: L.right.x + u * L.right.w, y: L.right.y + v * L.right.h },
+  };
+}
+function veilPaintingSpot(side, cx, cy, r, fullR) {
+  // Pitch-black veil with a circular hole so painting art shows through the lamp.
+  // evenodd path — reliable; destination-out previously left some builds fully black.
+  if (r >= fullR * 0.98) return; // 100-crew: fully lit
+  r = Math.max(5, r);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(side.x, side.y, side.w, side.h);
+  ctx.clip();
+  ctx.beginPath();
+  ctx.rect(side.x - 1, side.y - 1, side.w + 2, side.h + 2);
+  ctx.moveTo(cx + r, cy);
+  ctx.arc(cx, cy, r, 0, Math.PI * 2, true);
+  ctx.fillStyle = '#000';
+  ctx.fill('evenodd');
+  // Soft falloff at the rim. Four stops rather than two, weighted toward the outside: a
+  // straight ramp from the half-radius reads as a grey disc with a hard shoulder, because
+  // the eye finds the point where the RATE of change jumps, not where the value does.
+  // The gradient and the arc are both fed from r so they cannot end up different sizes --
+  // a fill wider than its gradient smears the last stop outward, and a narrower one cuts
+  // the ramp off mid-slope and leaves a visible edge. Both have shipped here before.
+  const rim = ctx.createRadialGradient(cx, cy, Math.max(1, r * 0.34), cx, cy, r);
+  rim.addColorStop(0.00, 'rgba(0,0,0,0)');
+  rim.addColorStop(0.55, 'rgba(0,0,0,0.10)');
+  rim.addColorStop(0.82, 'rgba(0,0,0,0.34)');
+  rim.addColorStop(1.00, 'rgba(0,0,0,0.62)');
+  ctx.fillStyle = rim;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.28); ctx.fill();
+  ctx.globalCompositeOperation = 'lighter';
+  // Warm core, breathing very slightly. A lamp run off a generator being turned by a crowd
+  // should not be a perfectly steady disc, and the wobble is small on purpose: 4% at two
+  // slow rates that do not share a period, so it never settles into a visible pulse.
+  const live = 1 + Math.sin(S.t * 2.3) * 0.025 + Math.sin(S.t * 5.7) * 0.015;
+  const coreR = r * 0.55 * live;
+  const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
+  glow.addColorStop(0, 'rgba(255,214,150,0.26)');
+  glow.addColorStop(0.5, 'rgba(255,196,110,0.12)');
+  glow.addColorStop(1, 'rgba(255,180,80,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, 6.28); ctx.fill();
+  // Spill: the light does not stop dead at the hole. A wide, very faint halo reaching half
+  // again past the rim is most of what separates a lit lamp from a hole cut in a card.
+  const spill = ctx.createRadialGradient(cx, cy, r * 0.9, cx, cy, r * 1.5);
+  spill.addColorStop(0, 'rgba(255,190,110,0.07)');
+  spill.addColorStop(1, 'rgba(255,170,70,0)');
+  ctx.fillStyle = spill;
+  ctx.beginPath(); ctx.arc(cx, cy, r * 1.5, 0, 6.28); ctx.fill();
+  // Dust in the beam. Every mote's position comes from its own INDEX, never from the lamp's
+  // screen position -- hashing off cx would re-roll the whole field every time the lamp
+  // moved, which is the fault that made act three's trees flicker. They drift on the clock
+  // and hold still when it does, so a frozen shot is reproducible.
+  for (let i = 0; i < 14; i++) {
+    const h1 = hash(i * 12.9898), h2 = hash(i * 78.233 + 4.1), h3 = hash(i * 37.719 + 9.7);
+    const ang = h1 * 6.28 + S.t * (0.08 + h3 * 0.12);
+    const rad = r * (0.12 + h2 * 0.74);
+    const dx = cx + Math.cos(ang) * rad;
+    const dy = cy + Math.sin(ang) * rad * 0.82 + Math.sin(S.t * (0.5 + h3) + h1 * 6.28) * 3;
+    ctx.fillStyle = 'rgba(255,226,180,' + (0.05 + h3 * 0.10).toFixed(3) + ')';
+    ctx.beginPath(); ctx.arc(dx, dy, 0.7 + h2 * 1.1, 0, 6.28); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawFoundChecks(f, L) {
+  // Green ticks on both paintings so found diffs are not re-clicked
+  for (const d of f.diffs) {
+    if (!f.found.has(d.id)) continue;
+    for (const side of [L.left, L.right]) {
+      const sx = side.x + d.x * (side.w / FINALE_ART.w);
+      const sy = side.y + d.y * (side.h / FINALE_ART.h);
+      // A tick LANDS rather than appearing. Age is measured from when the mark was made, so
+      // the animation is per-mark and nine ticks do not all twitch together. Anything older
+      // than the beat draws exactly as it did before, which is why a still of a finished
+      // board is unchanged.
+      const age = S.t - ((f.foundAt && f.foundAt[d.id]) != null ? f.foundAt[d.id] : -9);
+      const beat = 0.34;
+      const k = clamp01(age / beat);
+      // overshoot to 1.22 and settle: a tick that only grows to size reads as a fade-in
+      const pop = age < 0 || age > beat ? 1 : 1 + Math.sin(k * Math.PI) * 0.22;
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.scale(pop, pop);
+      if (age >= 0 && age < beat) {
+        // a ring going out from under it, the way a struck thing rings
+        ctx.strokeStyle = 'rgba(120,245,170,' + (0.5 * (1 - k)).toFixed(3) + ')';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(0, 0, 11 + k * 16, 0, 6.28); ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(20, 80, 40, 0.75)';
+      ctx.beginPath(); ctx.arc(0, 0, 11, 0, 6.28); ctx.fill();
+      ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, 11, 0, 6.28); ctx.stroke();
+      ctx.strokeStyle = '#b8f5c8'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-5, 0); ctx.lineTo(-1.5, 4.5); ctx.lineTo(6, -5);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+function finaleConfirm(atU, atV) {
+  const f = S.finale;
+  if (!f) return false;
+  if (f.wrongT > 0) return false;
+  if (f.phase === 'charge') {
+    S.floaters.push({ sx: W / 2, sy: H * 0.42, text: 'WAIT - wheel still packing', life: 0.9, color: '#d4a84b' });
+    return false;
+  }
+  if (f.phase !== 'search') return false;
+  const L = finaleLayout();
+  const u = (atU != null) ? clamp01(atU) : clamp01(f.spot?.u ?? 0.5);
+  const v = (atV != null) ? clamp01(atV) : clamp01(f.spot?.v ?? 0.45);
+  if (atU != null) { f.spot.u = u; f.spot.v = v; f.spotVel = { u: 0, v: 0 }; }
+  const r = finaleSpotRadius(f, L);
+  const hitR = Math.max(r + 24, 48);
+  let hit = null, best = hitR;
+  for (const d of f.diffs) {
+    if (f.found.has(d.id)) continue;
+    const du = d.x / FINALE_ART.w, dv = d.y / FINALE_ART.h;
+    const dist = Math.hypot((u - du) * L.right.w, (v - dv) * L.right.h);
+    if (dist < best) { best = dist; hit = d; }
+  }
+  if (hit) {
+    f.found.add(hit.id);
+    (f.foundAt || (f.foundAt = {}))[hit.id] = S.t;
+    AU.tick(f.found.size / CFG.finale.findCount);
+    const spots = finaleSpotCenters(f, L);
+    S.floaters.push({ sx: spots.right.x, sy: spots.right.y - 18, text: 'MARKED', life: 0.65, color: '#d4a84b' });
+    if (f.found.size >= CFG.finale.findCount) { S.mode = 'win'; saveBest(f.line.length); }
+    return true;
+  }
+  finaleWrong();
+  return false;
+}
+function finaleWrong() {
+  const f = S.finale;
+  if (!f || f.phase !== 'search') return;
+  if (f.wrongT > 0) return;
+  f.flashWrong = 1.4;
+  f.wrongT = 1.7;
+  S.wrongFlash = 0.55;
+  S.shake = 10;
+  AU.fail();
+  const L = finaleLayout();
+  const r = f.line.pop();
+  if (r) {
+    r.state = 'gone'; r.doom = 'final'; r.deathT = S.t;
+    const slot = f.deck.find(d => d.r === r);
+    const sx = slot ? slot.x : L.deck.x + L.deck.w * 0.5;
+    const sy = L.deck.y - 2;
+    f.falling.push({ r, t: 0, x: sx, y: sy, vx: rand(-40, 40), vy: -80, rot: rand(-0.4, 0.4) });
+    f.deck = f.deck.filter(d => d.r !== r);
+    S.floaters.push({ sx: W / 2, sy: L.py + 56, text: r.name ? (r.name + ' FALLS') : 'ONE IS LOST', life: 1.35, color: '#ff6b6b', big: true });
+  }
+  if (f.line.length <= 0) S.mode = 'lose';
+}
+function finaleLayout() {
+  const pw = W - 8, ph = H - 8;
+  const px = 4, py = 4;
+  const gap = 16;
+  const sidePad = 20;
+  const paintW = Math.floor((pw - sidePad * 2 - gap) / 2); // ~448 on 960 (~+36%)
+  const deckTop = py + ph - 96;
+  const paintTop = py + 80; // room for title + status chips above
+  const paintH = Math.min(300, deckTop - paintTop - 22); // ~+40% height vs 214
+  const left = { x: px + sidePad, y: paintTop, w: paintW, h: paintH };
+  const right = { x: left.x + paintW + gap, y: paintTop, w: paintW, h: paintH };
+  const deck = { x: px + 32, y: deckTop, w: pw - 64, h: 36 };
+  const water = { x: px + 24, y: py + ph - 50, w: pw - 48, h: 38 };
+  const gen = { x: px + pw - 130, y: deckTop - 18, w: 86, h: 48 };
+  return { pw, ph, px, py, left, right, deck, water, gen };
+}
+function inkFill(c, x, y, w, h, r = 0) {
+  ctx.fillStyle = INK;
+  if (r) { roundRect(x - 1.2, y - 1.2, w + 2.4, h + 2.4, r + 1); ctx.fill(); }
+  else ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+  ctx.fillStyle = c;
+  if (r) { roundRect(x, y, w, h, r); ctx.fill(); }
+  else ctx.fillRect(x, y, w, h);
+}
+function paintActor(x, y, o = {}) {
+  const r = {
+    skin: o.skin || '#c4a07a', hair: o.hair || '#1b1519', shirt: o.shirt || '#c0392b',
+    pants: o.pants || '#2c3e50', style: o.style || 'short', jit: o.jit ?? (x * 0.13), height: 1,
+  };
+  const sc = o.scale || 0.92, a = o.alpha == null ? 1 : o.alpha;
+  ctx.fillStyle = `rgba(0,0,0,${0.32 * a})`;
+  ctx.beginPath(); ctx.ellipse(x + 3.2 * sc, y + 1.2, 7.2 * sc, 2.3 * sc, 0, 0, 6.28); ctx.fill();
+  drawFigure(r, x, y, o.phase || 0, sc, a);
+}
+function paintSmoke(x, y, s, t, a = 0.45) {
+  // static tableau smoke: t is a frozen seed, not live time
+  ctx.save(); ctx.globalAlpha = a;
+  for (let i = 0; i < 5; i++) {
+    const ox = Math.sin(t * 1.35 + i * 1.7) * (5 + i * 1.4);
+    const oy = -i * 8 - ((t * 12 + i * 6) % 28);
+    const g = ctx.createRadialGradient(x + ox, y + oy, 1, x + ox, y + oy, s * (1.15 - i * 0.1));
+    g.addColorStop(0, i % 2 ? 'rgba(190,175,160,0.55)' : 'rgba(110,100,95,0.5)');
+    g.addColorStop(1, 'rgba(40,35,35,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x + ox, y + oy, s * (1.15 - i * 0.1), 0, 6.28); ctx.fill();
+  }
+  ctx.restore();
+}
+function paintVignette(x, y, w, h, strength = 0.55) {
+  const g = ctx.createRadialGradient(x + w * 0.5, y + h * 0.4, w * 0.12, x + w * 0.5, y + h * 0.55, w * 0.78);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.55, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(6,3,10,${strength})`);
+  ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+}
+function paintCanvasGround(x, y, w, h, top, mid, bot) {
+  const g = ctx.createLinearGradient(x, y, x, y + h);
+  g.addColorStop(0, top); g.addColorStop(0.42, mid); g.addColorStop(1, bot);
+  ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+  ctx.globalAlpha = 0.09;
+  for (let i = 0; i < 70; i++) {
+    ctx.fillStyle = hash(i * 2.1 + y) > 0.55 ? '#000' : '#fff';
+    ctx.fillRect(x + hash(i * 3.3) * w, y + hash(i * 5.1 + 2) * h, 1.4 + hash(i) * 2.2, 1.2);
+  }
+  ctx.globalAlpha = 0.14;
+  for (let i = 0; i < 10; i++) {
+    ctx.strokeStyle = hash(i + y) > 0.5 ? 'rgba(255,230,180,0.22)' : 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 1; ctx.beginPath();
+    ctx.moveTo(x + hash(i * 4) * w, y + 10 + i * (h / 11));
+    ctx.quadraticCurveTo(x + w * 0.5, y + 18 + i * (h / 11), x + hash(i * 7) * w, y + 28 + i * (h / 11));
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+function paintShaft(x, y, w, h, a = 0.12) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createLinearGradient(x, y, x + w * 0.2, y + h);
+  g.addColorStop(0, `rgba(255,210,140,${a})`); g.addColorStop(1, 'rgba(255,180,80,0)');
+  ctx.fillStyle = g; ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w * 0.55, y + h); ctx.lineTo(x + w * 0.15, y + h); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function paintSil(x, y, sc = 1, a = 0.35) {
+  ctx.fillStyle = `rgba(8,6,10,${a})`;
+  ctx.beginPath(); ctx.ellipse(x, y - 10 * sc, 4 * sc, 5 * sc, 0, 0, 6.28); ctx.fill();
+  ctx.fillRect(x - 3.5 * sc, y - 6 * sc, 7 * sc, 10 * sc);
+  ctx.fillRect(x - 5 * sc, y + 3 * sc, 3.2 * sc, 8 * sc);
+  ctx.fillRect(x + 1.5 * sc, y + 3 * sc, 3.2 * sc, 8 * sc);
+}
+// Differences are painted INTO the tableau - muted, scene-native, never UI overlays.
+function drawDiffMark(d, x, y, on) {
+  if (!on) return;
+  const dx = x + d.x, dy = y + d.y, k = d.kind;
+  ctx.save();
+  ctx.globalAlpha = 0.82;
+  if (k === 'extraSmoke' || k === 'stackSmoke') {
+    paintSmoke(dx, dy + 4, 6, 1.9, 0.35);
+  } else if (k === 'goldClock' || k === 'goldBar' || k === 'diamond' || k === 'sunMoney' || k === 'coinStack') {
+    // nested brick of gold, same palette as vault bars - easy to miss
+    inkFill('#8a6a28', dx - 5, dy - 3, 10, 7, 1);
+    ctx.fillStyle = 'rgba(255,230,160,0.22)'; ctx.fillRect(dx - 3, dy - 1, 4, 2);
+  } else if (k === 'bossHat' || k === 'cigar' || k === 'tie' || k === 'bull') {
+    inkFill('#1a1210', dx - 6, dy - 1, 12, 3, 1);
+    ctx.fillStyle = 'rgba(90,30,30,0.55)'; ctx.fillRect(dx - 1, dy - 5, 3, 4);
+  } else if (k === 'missingWorker' || k === 'fallen' || k === 'kneel' || k === 'cough') {
+    ctx.fillStyle = 'rgba(12,8,8,0.35)';
+    ctx.beginPath(); ctx.ellipse(dx, dy + 3, 5, 1.8, 0.15, 0, 6.28); ctx.fill();
+  } else if (k === 'redBanner' || k === 'priceTag' || k === 'bill' || k === 'receipt') {
+    inkFill('#4a2420', dx - 7, dy - 4, 14, 8, 1);
+    ctx.fillStyle = 'rgba(180,140,60,0.28)'; ctx.fillRect(dx - 4, dy - 1, 8, 1.5);
+  } else if (k === 'bloodSpot' || k === 'inkblot' || k === 'puddle') {
+    ctx.fillStyle = k === 'bloodSpot' ? 'rgba(60,18,20,0.55)' : 'rgba(18,22,28,0.5)';
+    ctx.beginPath(); ctx.ellipse(dx, dy, 7, 3.5, 0.35, 0, 6.28); ctx.fill();
+  } else if (k === 'cage' || k === 'chain' || k === 'shackle') {
+    ctx.strokeStyle = 'rgba(90,95,100,0.55)'; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.arc(dx - 4, dy, 3.2, 0, 6.28); ctx.stroke();
+    ctx.beginPath(); ctx.arc(dx + 3, dy + 1, 3.2, 0, 6.28); ctx.stroke();
+  } else if (k === 'brokenGear' || k === 'filter' || k === 'pipe' || k === 'chimney' || k === 'percent') {
+    ctx.strokeStyle = 'rgba(110,95,75,0.55)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(dx, dy, 5.5, 0.4, 5.0); ctx.stroke();
+  } else if (k === 'arrowUp' || k === 'arrowDown' || k === 'crash' || k === 'chart') {
+    ctx.strokeStyle = k === 'arrowDown' || k === 'crash' ? 'rgba(100,40,40,0.55)' : 'rgba(40,80,55,0.5)';
+    ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(dx - 6, dy + 3); ctx.quadraticCurveTo(dx, dy - 5, dx + 6, dy + 2); ctx.stroke();
+  } else if (k === 'ledger' || k === 'fineprint') {
+    inkFill('#cbb89a', dx - 6, dy - 4, 12, 9, 1);
+    ctx.fillStyle = 'rgba(50,35,25,0.4)';
+    for (let i = 0; i < 3; i++) ctx.fillRect(dx - 4, dy - 2 + i * 2.5, 8 - i, 1);
+  } else if (k === 'chandelier' || k === 'wine' || k === 'roast' || k === 'mask') {
+    // candle drip / glass glint, not a gold disc
+    ctx.fillStyle = 'rgba(200,170,90,0.35)';
+    ctx.beginPath(); ctx.ellipse(dx, dy, 3, 5, 0, 0, 6.28); ctx.fill();
+    ctx.fillStyle = 'rgba(255,240,180,0.25)'; ctx.fillRect(dx - 1, dy - 3, 2, 3);
+  } else if (k === 'servant' || k === 'crumb' || k === 'rat' || k === 'boot' || k === 'tinCup') {
+    ctx.fillStyle = 'rgba(40,28,22,0.45)';
+    ctx.beginPath(); ctx.ellipse(dx, dy, 4, 2.5, 0.2, 0, 6.28); ctx.fill();
+  } else if (k === 'stamp') {
+    // faint rectangular ink pad on parchment
+    ctx.strokeStyle = 'rgba(100,30,30,0.4)'; ctx.lineWidth = 1.2;
+    ctx.strokeRect(dx - 7, dy - 5, 14, 10);
+    ctx.fillStyle = 'rgba(100,30,30,0.18)'; ctx.fillRect(dx - 6, dy - 4, 12, 8);
+  } else if (k === 'seal') {
+    // cracked wax drip - not a bright UI disc
+    ctx.fillStyle = 'rgba(90,25,28,0.5)';
+    ctx.beginPath(); ctx.ellipse(dx, dy, 5, 4, 0.3, 0, 6.28); ctx.fill();
+    ctx.fillStyle = 'rgba(90,25,28,0.35)';
+    ctx.beginPath(); ctx.ellipse(dx + 3, dy + 5, 2, 3, 0.2, 0, 6.28); ctx.fill();
+  } else if (k === 'quill') {
+    inkFill('#2a2018', dx - 1, dy - 8, 2, 14, 1);
+    inkFill('#8a7040', dx - 2, dy - 10, 5, 3, 1);
+  } else if (k === 'thumb' || k === 'tear') {
+    ctx.fillStyle = 'rgba(40,30,25,0.35)';
+    ctx.beginPath(); ctx.ellipse(dx, dy, 4, 5, 0.1, 0, 6.28); ctx.fill();
+  } else if (k === 'X') {
+    // scratched cancel mark in ink, thin
+    ctx.strokeStyle = 'rgba(50,25,25,0.45)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(dx - 5, dy - 5); ctx.lineTo(dx + 5, dy + 5);
+    ctx.moveTo(dx + 5, dy - 5); ctx.lineTo(dx - 5, dy + 5); ctx.stroke();
+  } else if (k === 'hourglass') {
+    ctx.strokeStyle = 'rgba(90,70,40,0.45)'; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.moveTo(dx - 4, dy - 6); ctx.lineTo(dx + 4, dy - 6);
+    ctx.lineTo(dx, dy); ctx.lineTo(dx + 4, dy + 6); ctx.lineTo(dx - 4, dy + 6); ctx.lineTo(dx, dy); ctx.stroke();
+  } else if (k === 'mansion' || k === 'safeCrack' || k === 'screen' || k === 'briefcase' || k === 'headset' || k === 'emptyPocket' || k === 'bird' || k === 'maskGas') {
+    inkFill('#2a221c', dx - 5, dy - 4, 10, 8, 1);
+    ctx.fillStyle = 'rgba(180,140,70,0.2)'; ctx.fillRect(dx - 2, dy - 1, 4, 3);
+  } else {
+    // default: soft soot fleck
+    ctx.fillStyle = 'rgba(20,14,12,0.4)';
+    ctx.beginPath(); ctx.ellipse(dx, dy, 4, 2.5, 0.25, 0, 6.28); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
+  // Scale authoring space (FINALE_ART) into the on-screen frame so larger panels get bigger art.
+  const RW = FINALE_ART.w, RH = FINALE_ART.h;
+  const ox = x, oy = y, ow = w, oh = h;
+  // Paintings are STATIC oil tableaux. `t` is ignored for motion; frozen seed only.
+  const ft = 1.7;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(ox, oy, ow, oh); ctx.clip();
+  ctx.translate(ox, oy);
+  ctx.scale(ow / RW, oh / RH);
+  x = 0; y = 0; w = RW; h = RH;
+  const id = scene.id;
+  const floorY = y + h - 26;
+
+  if (id === 'line') {
+    paintCanvasGround(x, y, w, h, '#1a1418', '#2a2226', '#0e0a0c');
+    for (let row = 0; row < 9; row++) {
+      for (let col = 0; col < 13; col++) {
+        const bx = x + 2 + col * 26 + (row % 2) * 13;
+        const by = y + 22 + row * 15;
+        ctx.fillStyle = hash(row * 17 + col) > 0.5 ? '#3a3034' : '#2c2428';
+        ctx.fillRect(bx, by, 24, 13);
+        ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(bx, by + 12, 24, 1);
+      }
+    }
+    inkFill('#100c10', x, y, w, 18);
+    paintShaft(x + 24, y + 18, 110, 150, 0.14);
+    paintShaft(x + 200, y + 30, 70, 90, 0.08);
+    const mach = (mx, my, mw, mh, col) => {
+      inkFill(col, mx, my, mw, mh, 3);
+      const shade = ctx.createLinearGradient(mx, my, mx + mw, my);
+      shade.addColorStop(0, 'rgba(255,255,255,0.06)'); shade.addColorStop(1, 'rgba(0,0,0,0.35)');
+      ctx.fillStyle = shade; ctx.fillRect(mx, my, mw, mh);
+      for (let i = 0; i < 4; i++) inkFill('#1b1519', mx + 8 + i * ((mw - 20) / 3), my + 8, 4, 4, 2);
+      inkFill('#1b1519', mx + mw * 0.42, my - 16, 9, 18, 1);
+    };
+    mach(x + 6, y + 68, 52, 72, '#353038');
+    mach(x + 66, y + 54, 56, 86, '#2a3038');
+    // frozen flywheel
+    const gx = x + 118, gy = y + 98;
+    ctx.strokeStyle = '#7a7278'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(gx, gy, 30, 0, 6.28); ctx.stroke();
+    ctx.strokeStyle = '#4a4448'; ctx.lineWidth = 2.2;
+    for (let i = 0; i < 6; i++) {
+      const a = 0.4 + i * Math.PI / 3;
+      ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx + Math.cos(a) * 28, gy + Math.sin(a) * 28); ctx.stroke();
+    }
+    inkFill('#1b1519', gx - 7, gy - 7, 14, 14, 7);
+    // forge - fixed glow, painted sparks
+    inkFill('#2a2228', x + 205, y + 52, 105, 98, 4);
+    ctx.fillStyle = 'rgba(255,90,20,0.42)';
+    ctx.beginPath(); ctx.ellipse(x + 255, y + 118, 34, 30, 0, 0, 6.28); ctx.fill();
+    ctx.fillStyle = 'rgba(255,220,90,0.5)';
+    ctx.beginPath(); ctx.ellipse(x + 255, y + 120, 14, 12, 0, 0, 6.28); ctx.fill();
+    for (let i = 0; i < 7; i++) {
+      ctx.fillStyle = 'rgba(255,200,80,0.55)';
+      ctx.fillRect(x + 240 + hash(i * 3) * 28, y + 88 + hash(i * 5) * 24, 2, 2);
+    }
+    paintSmoke(x + 38, y + 52, 8, ft, 0.45);
+    paintSmoke(x + 248, y + 48, 10, ft + 0.8, 0.55);
+    // static conveyor (no scroll)
+    inkFill('#0c0a0e', x + 4, y + 152, w - 8, 34, 3);
+    ctx.fillStyle = '#6a1e1e';
+    for (let bx = x + 8; bx < x + w - 10; bx += 18) ctx.fillRect(bx, y + 168, 10, 6);
+    ctx.fillStyle = '#a83232';
+    for (let bx = x + 17; bx < x + w - 10; bx += 18) ctx.fillRect(bx, y + 168, 4, 6);
+    const shirts = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#d35400', '#7f8c8d', '#16a085'];
+    for (let i = 0; i < 7; i++) {
+      if (altered && !found.has(3) && i === 2) continue; // missingWorker painted as absence
+      paintActor(x + 26 + i * 42, floorY - 2, {
+        shirt: shirts[i], pants: '#1a2430', hair: i % 2 ? '#2a1a12' : '#1b1519',
+        phase: 0.9 + i * 0.35, scale: 1.14, jit: i * 2.2, // frozen mid-stride pose
+      });
+    }
+    inkFill('#0c0a0e', x + 198, y + 46, 102, 4, 1);
+    paintActor(x + 252, y + 46, { skin: '#e8c8a2', shirt: '#121212', pants: '#050505', hair: '#3a2a1a', phase: 0, scale: 1.18 });
+    inkFill('#1b1519', x + 243, y + 24, 20, 5, 1);
+    inkFill('#1b1519', x + 247, y + 14, 12, 14, 1);
+  } else if (id === 'vault') {
+    paintCanvasGround(x, y, w, h, '#101612', '#1a241e', '#080e0c');
+    const cold = ctx.createLinearGradient(x, y, x + 150, y);
+    cold.addColorStop(0, 'rgba(40,70,55,0.4)'); cold.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = cold; ctx.fillRect(x, y, 160, h);
+    paintShaft(x + 175, y + 6, 120, 175, 0.18);
+    inkFill('#141e18', x + 8, y + 36, 122, 152, 5);
+    ctx.strokeStyle = '#3a5044'; ctx.lineWidth = 2.2;
+    for (let i = 0; i < 7; i++) {
+      ctx.beginPath(); ctx.moveTo(x + 20 + i * 15, y + 48); ctx.lineTo(x + 20 + i * 15, y + 174); ctx.stroke();
+    }
+    for (let i = 0; i < 3; i++) {
+      ctx.strokeStyle = '#5a6a60'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(x + 34 + i * 30, y + 170, 9, 3.2, 0, 0, 6.28); ctx.stroke();
+    }
+    for (let i = 0; i < 4; i++) {
+      paintActor(x + 30 + (i % 2) * 40, y + 108 + Math.floor(i / 2) * 38, {
+        shirt: '#4a5a62', pants: '#2a3438', skin: '#9a7858', hair: '#1a1410',
+        phase: 0.2 + i * 0.15, scale: 0.88, jit: i,
+      });
+    }
+    const vx = x + 226, vy = y + 110;
+    ctx.fillStyle = '#2a2418'; ctx.beginPath(); ctx.arc(vx, vy, 70, 0, 6.28); ctx.fill();
+    const vg = ctx.createRadialGradient(vx - 12, vy - 16, 8, vx, vy, 70);
+    vg.addColorStop(0, 'rgba(212,168,75,0.2)'); vg.addColorStop(1, 'rgba(0,0,0,0.35)');
+    ctx.fillStyle = vg; ctx.beginPath(); ctx.arc(vx, vy, 70, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = '#d4a84b'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(vx, vy, 64, 0, 6.28); ctx.stroke();
+    ctx.strokeStyle = 'rgba(212,168,75,0.4)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(vx, vy, 50, 0, 6.28); ctx.stroke();
+    for (let i = 0; i < 8; i++) {
+      const a = 0.2 + i * Math.PI / 4;
+      ctx.strokeStyle = 'rgba(212,168,75,0.5)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(vx, vy); ctx.lineTo(vx + Math.cos(a) * 50, vy + Math.sin(a) * 50); ctx.stroke();
+    }
+    inkFill('#1b1519', vx - 11, vy - 11, 22, 22, 11);
+    inkFill('#d4a84b', vx - 5, vy - 5, 10, 10, 5);
+    for (let i = 0; i < 9; i++) {
+      const gx = vx - 42 + (i % 3) * 28;
+      const gy = vy + 30 + Math.floor(i / 3) * 14;
+      inkFill('#b8923a', gx, gy, 18, 11, 2);
+      inkFill('#d4a84b', gx + 1, gy + 1, 14, 7, 1);
+      ctx.fillStyle = 'rgba(255,245,200,0.35)'; ctx.fillRect(gx + 3, gy + 2, 5, 3);
+    }
+    paintActor(vx + 58, floorY, { skin: '#e8c8a2', shirt: '#0e0e0e', pants: '#050505', hair: '#2a1a10', phase: 0, scale: 1.1 });
+  } else if (id === 'banquet') {
+    paintCanvasGround(x, y, w, h, '#241814', '#34241e', '#100a08');
+    inkFill('#3a1c1a', x, y + 18, w, 74);
+    ctx.fillStyle = 'rgba(255,210,130,0.16)';
+    ctx.beginPath(); ctx.ellipse(x + w / 2, y + 44, 82, 30, 0, 0, 6.28); ctx.fill();
+    inkFill('#1b1519', x + w / 2 - 5, y + 10, 10, 28, 1);
+    for (let i = -3; i <= 3; i++) {
+      inkFill('#d4a84b', x + w / 2 + i * 13 - 3, y + 36, 6, 10, 2);
+      ctx.fillStyle = 'rgba(255,230,160,0.55)';
+      ctx.beginPath(); ctx.arc(x + w / 2 + i * 13, y + 36, 3.2, 0, 6.28); ctx.fill();
+    }
+    inkFill('#4a3428', x + 32, y + 80, w - 64, 34, 4);
+    inkFill('#2a1c14', x + 36, y + 110, w - 72, 8, 2);
+    inkFill('#d4a84b', x + 68, y + 72, 16, 12, 2);
+    inkFill('#8e2a2a', x + 126, y + 68, 14, 16, 3);
+    inkFill('#f1c40f', x + 184, y + 74, 20, 12, 2);
+    inkFill('#ecf0f1', x + 238, y + 76, 10, 8, 2);
+    paintActor(x + 86, y + 80, { skin: '#e8c8a2', shirt: '#f1c40f', pants: '#141414', phase: 0.1, scale: 1.08 });
+    paintActor(x + 150, y + 78, { skin: '#e8c8a2', shirt: '#ecf0f1', pants: '#0a0a0a', phase: 0, scale: 1.12 });
+    paintActor(x + 214, y + 80, { skin: '#d4a882', shirt: '#c0392b', pants: '#141414', phase: 0.15, scale: 1.06 });
+    inkFill('#120e0c', x + 6, y + 130, w - 12, 76, 3);
+    for (let i = 0; i < 7; i++) {
+      if (altered && !found.has(7) && i === 3) continue;
+      paintActor(x + 24 + i * 42, floorY, {
+        shirt: '#3a3a3a', pants: '#1a1a1a', skin: '#9a7050', hair: '#1a1010',
+        phase: 0.4 + i * 0.2, scale: 0.84, jit: i * 3,
+      });
+    }
+  } else if (id === 'ticker') {
+    paintCanvasGround(x, y, w, h, '#080c12', '#10161e', '#04060a');
+    inkFill('#04080c', x + 8, y + 12, w - 16, 94, 6);
+    ctx.fillStyle = 'rgba(46,204,113,0.07)'; ctx.fillRect(x + 12, y + 16, w - 24, 86);
+    ctx.strokeStyle = '#1a3040'; ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(x + 16, y + 28 + i * 14); ctx.lineTo(x + w - 16, y + 28 + i * 14); ctx.stroke(); }
+    // frozen chart lines (not live)
+    ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 2.6; ctx.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const px = x + 18 + i * 18, py = y + 58 + Math.sin(ft + i * 0.55) * 14 - i * 0.5;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 2.2; ctx.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const px = x + 18 + i * 18, py = y + 54 + Math.cos(ft * 0.7 + i) * 9 + i * 2;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    inkFill('#2ecc71', x + 18, y + 20, 8, 8, 1);
+    inkFill('#c0392b', x + w - 34, y + 20, 8, 8, 1);
+    inkFill('#0c1016', x + 8, y + 110, w - 16, 12, 2);
+    ctx.fillStyle = '#a8842e';
+    for (let i = 0; i < 14; i++) ctx.fillRect(x + 14 + i * 22, y + 113, 12 + (i % 3) * 3, 5);
+    inkFill('#0e1218', x + 6, y + 126, w - 12, 80, 3);
+    for (let i = 0; i < 5; i++) {
+      paintActor(x + 36 + i * 52, y + 156, {
+        shirt: i % 2 ? '#1a1a2e' : '#243044', pants: '#0c0c0c', skin: '#c4a07a',
+        phase: 0.1 * i, scale: 0.92, jit: i,
+      });
+    }
+    for (let i = 0; i < 5; i++) {
+      if (altered && !found.has(6) && i === 1) continue;
+      paintActor(x + 48 + i * 48, floorY, {
+        shirt: '#6a7a82', pants: '#2c3e50', phase: 0.8 + i * 0.3, scale: 0.82, alpha: 0.92, jit: i + 9,
+      });
+    }
+  } else if (id === 'contract') {
+    paintCanvasGround(x, y, w, h, '#221c14', '#32281e', '#100c08');
+    paintShaft(x + 48, y + 6, 140, 115, 0.1);
+    inkFill('#14100c', x + 34, y + 14, 244, 152, 4);
+    inkFill('#dcc8a6', x + 42, y + 22, 228, 136, 3);
+    const paper = ctx.createLinearGradient(x + 42, y + 22, x + 270, y + 150);
+    paper.addColorStop(0, 'rgba(255,255,255,0.08)'); paper.addColorStop(1, 'rgba(80,50,30,0.12)');
+    ctx.fillStyle = paper; ctx.fillRect(x + 42, y + 22, 228, 136);
+    ctx.fillStyle = 'rgba(90,70,50,0.55)';
+    for (let i = 0; i < 9; i++) ctx.fillRect(x + 62, y + 40 + i * 11, 172 - (i % 4) * 16, 1.8);
+    ctx.strokeStyle = '#3a2a1a'; ctx.lineWidth = 1.6; ctx.beginPath();
+    ctx.moveTo(x + 68, y + 140);
+    for (let i = 0; i < 8; i++) ctx.lineTo(x + 76 + i * 14, y + 138 + Math.sin(i * 1.7) * 5);
+    ctx.stroke();
+    inkFill('#8e2a2a', x + 218, y + 122, 26, 26, 13);
+    ctx.fillStyle = 'rgba(241,196,15,0.65)'; ctx.beginPath(); ctx.arc(x + 231, y + 135, 6, 0, 6.28); ctx.fill();
+    // frozen quill
+    inkFill('#1b1519', x + 206, y + 72, 3, 34, 1);
+    inkFill('#d4a84b', x + 203, y + 70, 9, 6, 1);
+    ctx.strokeStyle = '#8d929a'; ctx.lineWidth = 2.2;
+    for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(x + 86 + i * 18, y + 172, 6, 0, 6.28); ctx.stroke(); }
+    paintActor(x + 64, floorY, { shirt: '#6a7a8a', pants: '#2c3e50', phase: 0.3, scale: 1.02 });
+    paintActor(x + 244, floorY - 4, { skin: '#e8c8a2', shirt: '#0e0e0e', pants: '#050505', phase: 0, scale: 1.16 });
+  } else {
+    paintCanvasGround(x, y, w, h, '#342c26', '#4a3c32', '#1e1610');
+    const sky = ctx.createLinearGradient(x, y, x, y + 100);
+    sky.addColorStop(0, '#524438'); sky.addColorStop(0.55, '#6a5848'); sky.addColorStop(1, '#3a3028');
+    ctx.fillStyle = sky; ctx.fillRect(x, y, w, 98);
+    ctx.fillStyle = 'rgba(220,140,60,0.28)';
+    ctx.beginPath(); ctx.arc(x + 258, y + 36, 24, 0, 6.28); ctx.fill();
+    inkFill('#2a2420', x + 8, y + 56, 56, 112, 2);
+    inkFill('#322c28', x + 70, y + 42, 64, 126, 2);
+    inkFill('#1f1a18', x + 146, y + 26, 48, 142, 2);
+    inkFill('#4a3a2a', x + 212, y + 50, 94, 42, 3);
+    inkFill('#3a2a1c', x + 228, y + 34, 60, 22, 2);
+    ctx.fillStyle = 'rgba(255,200,100,0.45)';
+    ctx.fillRect(x + 240, y + 62, 9, 11); ctx.fillRect(x + 260, y + 62, 9, 11);
+    inkFill('#151018', x + 22, y + 20, 11, 44, 1);
+    inkFill('#151018', x + 90, y + 10, 13, 42, 1);
+    inkFill('#151018', x + 158, y + 4, 12, 36, 1);
+    paintSmoke(x + 28, y + 18, 10, ft, 0.6);
+    paintSmoke(x + 96, y + 8, 12, ft + 0.5, 0.65);
+    paintSmoke(x + 164, y + 2, 11, ft + 1.1, 0.55);
+    inkFill('#181210', x, y + 162, w, 52);
+    for (let i = 0; i < 6; i++) paintSil(x + 26 + i * 48, floorY - 2, 0.95, 0.42);
+    for (let i = 0; i < 5; i++) {
+      paintActor(x + 38 + i * 52, floorY, {
+        skin: '#a07050', shirt: '#5d4037', pants: '#3e2723', hair: '#1a1010',
+        phase: 0.5 + i * 0.25, scale: 0.88, jit: i,
+      });
+    }
+  }
+
+  // Always paint differences into the altered canvas; finding them does not peel them off as UI.
+  if (altered) for (const d of diffs) drawDiffMark(d, x, y, true);
+  paintVignette(x, y, w, h, 0.72);
+  ctx.fillStyle = 'rgba(255,240,200,0.045)';
+  ctx.beginPath(); ctx.ellipse(x + w * 0.35, y + h * 0.2, w * 0.3, h * 0.12, -0.3, 0, 6.28); ctx.fill();
+  ctx.restore();
+  // ornate frame in screen space
+  ctx.strokeStyle = '#120e10'; ctx.lineWidth = 7; ctx.strokeRect(ox - 4, oy - 4, ow + 8, oh + 8);
+  ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 2; ctx.strokeRect(ox - 1, oy - 1, ow + 2, oh + 2);
+  ctx.strokeStyle = 'rgba(212,175,55,0.22)'; ctx.lineWidth = 1; ctx.strokeRect(ox + 5, oy + 5, ow - 10, oh - 10);
+  for (const [cx, cy] of [[ox - 1, oy - 1], [ox + ow + 1, oy - 1], [ox - 1, oy + oh + 1], [ox + ow + 1, oy + oh + 1]]) {
+    inkFill('#d4a84b', cx - 4, cy - 4, 8, 8, 2);
+  }
+}
+function updateFinale(dt) {
+  const f = S.finale;
+  const L = finaleLayout();
+  f.flashWrong = Math.max(0, f.flashWrong - dt);
+  f.genPulse = Math.max(0, f.genPulse - dt);
+
+  // Intro: red wall flash, then boss speech, then charge
+  if (f.phase === 'intro') {
+    f.introT += dt;
+    f.dreadBeat = (f.dreadBeat || 0) - dt;
+    if (f.dreadBeat <= 0) {
+      f.dreadBeat = f.introT < FINALE_INTRO_WALL ? 0.55 : 1.15;
+      AU.finaleDread(f.introT < FINALE_INTRO_WALL ? 1 : 0.55);
+    }
+    if (f.introT >= FINALE_INTRO_WALL + FINALE_INTRO_SPEECH) beginFinaleCharge(f);
+    return;
+  }
+
+  // screen-space FX
+  for (const p of f.fx) { p.life -= dt; p.vy += (p.k === 'drop' ? 520 : 40) * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+  f.fx = f.fx.filter(p => p.life > 0);
+  for (const r of f.ripples) { r.r += 38 * dt; r.life -= dt; }
+  f.ripples = f.ripples.filter(r => r.life > 0);
+
+  // falling bodies into the whirlpool
+  for (const fall of f.falling) {
+    fall.t += dt; fall.vy += 520 * dt; fall.x += fall.vx * dt; fall.y += fall.vy * dt; fall.rot += dt * 4;
+    if (!fall.splashed && fall.y >= L.water.y + 8) {
+      fall.splashed = true;
+      finaleFx(f, 'drop', fall.x, L.water.y + 10, { n: 14, sx: 8, vx: [-140, 140], vy: [-280, -90], life: [0.4, 0.95], c: '#bfe6ff' });
+      finaleFx(f, 'smoke', fall.x, L.water.y + 6, { n: 4, sx: 10, vx: [-30, 30], vy: [-40, -10], life: [0.5, 1], c: 'rgba(180,220,255,0.35)' });
+      f.ripples.push({ x: fall.x, y: L.water.y + 14, r: 4, life: 0.95 });
+      AU.thud();
+    }
+  }
+  f.falling = f.falling.filter(fall => fall.t < 2.2);
+
+  // Run to a fixed belt slot (right → left, even spacing). Arrive -> +1, STAY standing.
+  const live = f.phase !== 'intro';
+  const startX = L.deck.x - 70;
+  const beltLeft = L.deck.x + 36;
+  const beltRight = L.gen.x - 40;
+  const minGap = 100;
+  // Fast enough that the longest walk lands inside the boarding beat. The first one aboard
+  // has the furthest to go, so that walk is what sets this, not the last.
+  const runSpd = Math.max(340, (L.gen.x - 40 - (L.deck.x - 70)) / 0.42);
+  if (!f.packQueue) f.packQueue = [];
+  if (f.packDone == null) f.packDone = 0;
+  if (f.packNeed == null) f.packNeed = Math.max(1, f.line.length);
+  if (f.spawnI == null) f.spawnI = 0;
+  const nNeed = Math.max(1, f.packNeed);
+  const span = Math.max(40, beltRight - beltLeft);
+  const slotStep = nNeed <= 1 ? 0 : span / (nNeed - 1);
+  // Cadence is DERIVED from the generator's charge time, not a fixed gap. At a fixed gap a
+  // hundred survivors took thirty seconds to walk on -- more people made the climax slower,
+  // which is backwards: the crew is supposed to be the thing that powers the room. Now the
+  // whole line lands in chargeNeed either way, so a hundred pour on in about a second and a
+  // lone survivor walks the length of the belt by themselves.
+  // Boarding is theatre with a fixed length: the whole line gets aboard in BOARD seconds
+  // however many of them there are, so a hundred survivors pour on in a wave and a lone one
+  // walks it by themselves. It is deliberately NOT the generator's clock -- that is the
+  // stage that follows, and letting the walk stand in for it is what made more survivors
+  // mean a slower climax.
+  const BOARD = 0.55;
+  const cadence = Math.max(0.0005, BOARD / Math.max(1, nNeed));
+  f.spawnT = (f.spawnT == null ? cadence : f.spawnT) + dt;   // the first one does not wait
+  // A WHILE, not an if. At a hundred aboard the cadence is five milliseconds and a frame is
+  // sixteen, so admitting one per frame would cap the wave at sixty people a second and the
+  // walk would quietly become the clock again.
+  while (f.phase === 'charge' && f.packQueue.length && f.spawnT >= cadence) {
+    f.spawnT -= cadence;
+    {
+      const r = f.packQueue.shift();
+      // i=0 rightmost (near gen), then fill leftward
+      const targetX = beltRight - f.spawnI * slotStep;
+      f.deck.push({ r, i: f.spawnI, enter: 0, x: startX, arrived: false, targetX });
+      f.spawnI++;
+    }
+  }
+  for (const d of f.deck) {
+    const targetX = d.targetX != null ? d.targetX : beltRight;
+    if (!d.arrived) {
+      d.enter += dt;
+      if (d.x < startX + 1) d.x = startX;
+      d.x = Math.min(targetX, d.x + runSpd * dt);
+      if (d.x >= targetX - 2) {
+        d.x = targetX;
+        d.arrived = true;
+        f.packDone = (f.packDone || 0) + 1;
+        finaleFx(f, 'spark', targetX + 4, L.deck.y + 10, {
+          n: 3, sx: 6, vx: [-40, 40], vy: [-100, -20], life: [0.12, 0.3], c: '#ffe0a0',
+        });
+      }
+    } else {
+      d.x = targetX;
+    }
+  }
+  const targetPow = f.packNeed ? (f.packDone || 0) / f.packNeed : 0;
+  f.beltPow = (f.beltPow || 0) + (targetPow - (f.beltPow || 0)) * Math.min(1, dt * 2.8);
+  if (live && (f.phase === 'charge' || f.phase === 'search') && f.beltPow > 0.02) {
+    if (Math.random() < dt * (8 + 14 * f.beltPow)) {
+      finaleFx(f, 'spark', L.gen.x + 26, L.gen.y + 22, {
+        n: 1, sx: 18, sy: 14, vx: [-100, 100], vy: [-140, 40], life: [0.12, 0.35], c: pick(['#7fdbff', '#ffe0a0', '#fff']),
+      });
+    }
+  }
+
+  // Flashlight UV control — one cursor, mirrored as dual spots on both paintings
+  if (!f.spot) f.spot = { u: 0.5, v: 0.45 };
+  if (!f.spotVel) f.spotVel = { u: 0, v: 0 };
+  let mx = 0, my = 0;
+  if (f.phase === 'search' || f.phase === 'charge') {
+    if (HELD.ARROWLEFT || HELD.A) mx -= 1;
+    if (HELD.ARROWRIGHT || HELD.D) mx += 1;
+    if (HELD.ARROWUP || HELD.W) my -= 1;
+    if (HELD.ARROWDOWN || HELD.S) my += 1;
+  }
+  const accel = CFG.finale.cursorAccel || 4.5;
+  const maxSpd = CFG.finale.cursorSpeed || 1.15;
+  const fric = CFG.finale.cursorFriction || 10;
+  if (mx || my) {
+    const len = Math.hypot(mx, my) || 1;
+    f.spotVel.u += (mx / len) * accel * dt;
+    f.spotVel.v += (my / len) * accel * dt;
+  } else {
+    const damp = Math.exp(-fric * dt);
+    f.spotVel.u *= damp; f.spotVel.v *= damp;
+  }
+  let spd = Math.hypot(f.spotVel.u, f.spotVel.v);
+  if (spd > maxSpd) { f.spotVel.u *= maxSpd / spd; f.spotVel.v *= maxSpd / spd; spd = maxSpd; }
+  if (spd < 0.02 && !mx && !my) { f.spotVel.u = 0; f.spotVel.v = 0; }
+  f.spot.u = clamp01(f.spot.u + f.spotVel.u * dt);
+  f.spot.v = clamp01(f.spot.v + f.spotVel.v * dt);
+  const spots = finaleSpotCenters(f, L);
+  f.cursor.x = spots.right.x; f.cursor.y = spots.right.y;
+
+  f.wrongT = Math.max(0, (f.wrongT || 0) - dt);
+  if (f.phase === 'charge') {
+    f.chargeT += dt;
+    f.light = Math.min(1, 0.15 + finaleFillFrac(f) * 0.85);
+    if (Math.random() < dt * 8) {
+      finaleFx(f, 'spark', L.gen.x + 44, L.gen.y + 18, {
+        n: 2, sx: 10, sy: 6, vx: [-80, 80], vy: [-160, -40], life: [0.2, 0.45], c: pick(['#ffe0a0', '#7fdbff', '#fff']),
+      });
+      f.genPulse = 0.2;
+    }
+    if (finaleChargeProgress(f) >= 1) {
+      f.phase = 'search'; f.light = 1; f.genPulse = 0.5; f.beltPow = 1; AU.thud();
+      finaleFx(f, 'spark', L.gen.x + 44, L.gen.y + 10, { n: 16, sx: 20, vx: [-120, 120], vy: [-200, -40], life: [0.3, 0.7], c: '#ffe0a0' });
+    }
+  } else if (f.phase === 'search') {
+    f.light = 1;
+    f.searchT -= dt;
+    if (f.searchT <= 0) S.mode = 'lose';
+  }
+}
+
+// Kept as a thin alias so the old call sites cannot break: her note says finaleFail
+// survived on her branch for exactly this reason.
+function finaleFail() { finaleWrong(); }
+
 
 // ================================================================ update
 function update(dt) {
@@ -2554,14 +3558,7 @@ function update(dt) {
   // A held body is standing still, and an arc driven off x would hang it in the air for as
   // long as the gate holds it.
   for (const r of S.runners) { r.phase += dt * 14; if (r.held) r.hopTo = 0; r.squash = Math.max(0, r.squash - dt * 7); }
-  if (S.mode === 'finale') {
-    const f = S.finale;
-    f.timer -= dt;
-    for (const l of f.leaving) l.t += dt;
-    if (f.timer <= 0) finaleFail();
-    updateView(dt);
-    return;
-  }
+  if (S.mode === 'finale') { updateFinale(dt); updateView(dt); return; }
   if (S.mode === 'win' || S.mode === 'lose') { S.endT += dt; endEmbers(dt); }
   // he does not blink out of existence when the run ends under him: 128 units of band
   // disappearing between two frames reads as a crash, so he is sent away properly
@@ -2867,8 +3864,7 @@ function update(dt) {
   if (settled) {
     if (S.stats.arrived === 0) { S.mode = 'lose'; return; }
     const len = Math.min(11, CFG.finale.baseLen + Math.floor(S.stats.arrived / 20));
-    S.finale = { len, seq: makeSeq(len), idx: 0, attempts: S.stats.arrived, timer: CFG.finale.keyTime,
-                 line: S.runners.filter(r => r.state === 'arrived'), leaving: [] };
+    startFinale();
     S.mode = 'finale';
   }
 }
@@ -11029,11 +12025,10 @@ function drawFinish() {
       drawDancer(r, 0, 0, S.t, r.height || 1, 1);
       ctx.restore();
     }
-    // and they walk ON, through the gantry, rather than retreating toward the wall. The crowd
-  // has moved left to right for two and a half minutes; the one person who leaves should
-  // not be the only one who goes the other way.
-  for (const l of f.leaving) drawFigure(l.r, fx - 52 + l.t * 70, y + 4, l.t * 12, l.r.height || 1, Math.max(0, 1 - l.t / 1.2));
-    f.leaving = f.leaving.filter(l => l.t < 1.2);
+    // There was a second loop here drawing runners walking ON through the gantry, out of
+    // f.leaving. The last room replaced the QTE finale and took that field's only writer
+    // with it, so the read was left pointing at nothing and threw on the first frame the
+    // gate was drawn. Removed rather than revived: nothing populates it now.
   }
 }
 // The dance.
@@ -12777,19 +13772,367 @@ function drawDrill() {
   });
   ctx.restore();
 }
-// Deliberately NOT wrapped in atPanelScale, unlike the road and drill panels. The session
-// transplanting Linh's LastRoom is replacing this whole function with a full-screen
-// chamber that does not use panelFrame at all and hit-tests client pixels against its own
-// layout rects -- a live transform there would move the art and leave the clicks behind,
-// which fails silently rather than visibly. PANEL_SCALE is for the room panels' type.
-function drawFinalePanel() {
-  const f = S.finale, pw = 80 + f.len * 48;
-  const [px, py] = panelFrame(pw, `FINAL GATE   attempts left: ${f.attempts}`, '#f1c40f', 116);
-  drawKeyBoxes(f.seq, f.idx, px, py, pw);
-  const tw = pw - 56, frac = Math.max(0, f.timer / CFG.finale.keyTime);
-  ctx.fillStyle = '#333'; ctx.fillRect(px + 28, py + 96, tw, 6);
-  ctx.fillStyle = frac < 0.3 ? '#ff4646' : '#f1c40f'; ctx.fillRect(px + 28, py + 96, tw * frac, 6);
+function drawFinaleIntro(f) {
+  const t = f.introT;
+  const wall = t < FINALE_INTRO_WALL;
+  ctx.fillStyle = '#020104'; ctx.fillRect(0, 0, W, H);
+  if (wall) {
+    // heartbeat red alarm — scarier, slower thuds
+    const beat = Math.sin(t * 9) > 0.35 ? 1 : 0;
+    const flash = 0.08 + beat * 0.55 + Math.max(0, Math.sin(t * 22)) * 0.12;
+    ctx.fillStyle = `rgba(110,4,12,${flash})`; ctx.fillRect(0, 0, W, H);
+    // CRT / ledger scrape lines
+    ctx.save(); ctx.globalCompositeOperation = 'screen';
+    for (let i = 0; i < 14; i++) {
+      const yy = ((t * 90 + i * 38) % (H + 20)) - 10;
+      ctx.fillStyle = `rgba(255,30,30,${0.04 + beat * 0.1})`;
+      ctx.fillRect(0, yy, W, 2 + (i % 3));
+    }
+    ctx.restore();
+    // vignette crush
+    const vig = ctx.createRadialGradient(W / 2, H / 2, 40, W / 2, H / 2, H * 0.72);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, `rgba(0,0,0,${0.55 + beat * 0.25})`);
+    ctx.fillStyle = vig; ctx.fillRect(0, 0, W, H);
+    // judder title
+    const jx = beat ? (Math.sin(t * 60) * 4) : 0;
+    const jy = beat ? (Math.cos(t * 47) * 2) : 0;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.font = 'bold 56px monospace';
+    ctx.fillText('FINAL WALL', W / 2 + 4 + jx, H / 2 + 4 + jy);
+    ctx.fillStyle = beat ? '#ff4a4a' : '#e8c96a';
+    ctx.fillText('FINAL WALL', W / 2 + jx, H / 2 + jy);
+    ctx.fillStyle = `rgba(255,180,180,${0.35 + beat * 0.35})`; ctx.font = '13px monospace';
+    ctx.fillText('THE LEDGERS AWAIT', W / 2, H / 2 + 40);
+    ctx.fillStyle = 'rgba(180,40,40,0.45)'; ctx.font = '11px monospace';
+    ctx.fillText('NO EXIT  ·  NO APPEAL  ·  NO LIGHT', W / 2, H / 2 + 62);
+  } else {
+    // Boss address over dark chamber with twin pin lamps
+    const L = finaleLayout();
+    const u = clamp01((t - FINALE_INTRO_WALL) / FINALE_INTRO_SPEECH);
+    ctx.fillStyle = '#0a080c'; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+    ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.4; ctx.strokeRect(L.px + 4, L.py + 4, L.pw - 8, L.ph - 8);
+    drawFinaleScene(f.scene, L.left.x, L.left.y, L.left.w, L.left.h, false, f.diffs, f.found, S.t);
+    drawFinaleScene(f.scene, L.right.x, L.right.y, L.right.w, L.right.h, true, f.diffs, f.found, S.t);
+    const su = f.spot?.u ?? 0.5, sv = f.spot?.v ?? 0.45;
+    const pinR = 10 + Math.sin(S.t * 6) * 2;
+    const fullR = finaleSpotFullR(L);
+    veilPaintingSpot(L.left, L.left.x + su * L.left.w, L.left.y + sv * L.left.h, pinR, fullR);
+    veilPaintingSpot(L.right, L.right.x + su * L.right.w, L.right.y + sv * L.right.h, pinR, fullR);
+    ctx.fillStyle = '#c4b89a'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 16);
+    ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 16);
+
+    // oppressive red wash + spotlight on proprietor
+    ctx.fillStyle = 'rgba(70,8,14,0.32)'; ctx.fillRect(0, 0, W, H);
+    const spot = ctx.createRadialGradient(W / 2, H * 0.64, 16, W / 2, H * 0.72, 210);
+    spot.addColorStop(0, 'rgba(255,190,110,0.2)'); spot.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = spot; ctx.fillRect(0, 0, W, H);
+    const bx = W / 2, by = H * 0.74;
+    paintActor(bx, by, {
+      skin: '#e8c8a2', shirt: '#101010', pants: '#050505', hair: '#2a1a10',
+      phase: 0, scale: 2.05, jit: 99,
+    });
+    inkFill('#0a0a0a', bx - 22, by - 58, 44, 8, 1);
+    inkFill('#0a0a0a', bx - 14, by - 78, 28, 22, 2);
+    ctx.strokeStyle = '#d4a84b'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(bx, by - 28, 10, 0.2, Math.PI - 0.2); ctx.stroke();
+
+    const line = f.bossLine || FINALE_BOSS_LINES[0];
+    // Type in first ~35% of speech window, then hold so it can be read
+    const typeU = Math.min(1, u / 0.35);
+    const shown = Math.floor(line.length * typeU);
+    const text = line.slice(0, shown);
+    const boxH = 88;
+    ctx.fillStyle = 'rgba(6,2,8,0.9)';
+    roundRect(W / 2 - 300, 14, 600, boxH, 8); ctx.fill();
+    ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.5;
+    roundRect(W / 2 - 300, 14, 600, boxH, 8); ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 13px monospace';
+    ctx.fillText('THE PROPRIETOR', W / 2, 36);
+    ctx.fillStyle = '#f0e6d0'; ctx.font = '17px monospace';
+    ctx.fillText(text, W / 2, 62);
+    if (u > 0.45) {
+      ctx.fillStyle = `rgba(200,170,130,${0.35 + 0.35 * Math.sin(S.t * 3)})`;
+      ctx.font = '12px monospace';
+      ctx.fillText('run the generator — twin lamps grow with every body on the wheel', W / 2, 84);
+    }
+  }
+  ctx.textAlign = 'left';
 }
+function drawFinalePanel() {
+  const f = S.finale;
+  if (f.phase === 'intro') { drawFinaleIntro(f); return; }
+  const L = finaleLayout();
+  const light = finaleLightLevel(f);
+  const t = S.t;
+  const danger = f.phase === 'search' ? clamp01(1 - f.searchT / CFG.finale.searchTime) : (f.phase === 'blackout' ? 1 : 0.25);
+
+  // sealed chamber - near full bleed
+  ctx.fillStyle = `rgba(4,1,6,${0.88 + (1 - light) * 0.1})`; ctx.fillRect(0, 0, W, H);
+  const panelG = ctx.createLinearGradient(L.px, L.py, L.px, L.py + L.ph);
+  panelG.addColorStop(0, '#1a1218'); panelG.addColorStop(0.55, '#120e14'); panelG.addColorStop(1, '#0a080c');
+  ctx.fillStyle = panelG; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+  ctx.strokeStyle = '#1b1519'; ctx.lineWidth = 3; ctx.strokeRect(L.px + 1, L.py + 1, L.pw - 2, L.ph - 2);
+  ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.6; ctx.strokeRect(L.px + 4, L.py + 4, L.pw - 8, L.ph - 8);
+
+  // Capitalism danger vignette (stronger as clock dies / after wrong mark)
+  const pulse = 0.22 + danger * 0.45 + (f.flashWrong > 0 ? f.flashWrong * 0.5 : 0) + Math.sin(t * 3) * 0.03;
+  const vig = ctx.createRadialGradient(W / 2, H * 0.4, H * 0.15, W / 2, H * 0.5, H * 0.78);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(0.55, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, `rgba(90,8,12,${pulse})`);
+  ctx.fillStyle = vig; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+  // red edge bleed
+  ctx.save(); ctx.globalCompositeOperation = 'screen';
+  const edgeA = 0.08 + danger * 0.22 + f.flashWrong * 0.35;
+  ctx.fillStyle = `rgba(180,20,30,${edgeA})`;
+  ctx.fillRect(L.px, L.py, L.pw, 6);
+  ctx.fillRect(L.px, L.py + L.ph - 6, L.pw, 6);
+  ctx.fillRect(L.px, L.py, 6, L.ph);
+  ctx.fillRect(L.px + L.pw - 6, L.py, 6, L.ph);
+  ctx.restore();
+
+  // -- HUD: title + time + crew + found (one meter only — no duplicate bar)
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#e8c96a'; ctx.font = 'bold 18px monospace';
+  ctx.fillText(f.scene.title, W / 2, L.py + 26);
+  const mm = Math.floor(Math.max(0, f.searchT) / 60), ss = Math.floor(Math.max(0, f.searchT) % 60);
+  const chipY = L.py + 38;
+  const drawChip = (cx, label, val, col) => {
+    const text = label ? `${label} ${val}` : String(val);
+    const tw = Math.max(72, 18 + text.length * 8);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; roundRect(cx - tw / 2, chipY, tw, 24, 4); ctx.fill();
+    ctx.strokeStyle = col; ctx.lineWidth = 1.3; roundRect(cx - tw / 2, chipY, tw, 24, 4); ctx.stroke();
+    ctx.fillStyle = col; ctx.font = 'bold 13px monospace';
+    ctx.fillText(text, cx, chipY + 16);
+  };
+  const timerCol = f.searchT < 20 ? '#ff6b6b' : '#f1c40f';
+  drawChip(W / 2 - 130, '', `${mm}:${String(ss).padStart(2, '0')}`, timerCol);
+  drawChip(W / 2, `${f.found.size}/${CFG.finale.findCount}`, '', '#2ecc71');
+  drawChip(W / 2 + 130, 'CREW', f.line.length, '#ff8a80');
+
+  // paintings — then pitch-black veil with mirrored flashlight spots (the player control)
+  drawFinaleScene(f.scene, L.left.x, L.left.y, L.left.w, L.left.h, false, f.diffs, f.found, t);
+  drawFinaleScene(f.scene, L.right.x, L.right.y, L.right.w, L.right.h, true, f.diffs, f.found, t);
+  ctx.fillStyle = '#c4b89a'; ctx.font = 'bold 11px monospace';
+  ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 16);
+  ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 16);
+
+  const spots = finaleSpotCenters(f, L);
+  const spotR = finaleSpotRadius(f, L);
+  const fullR = finaleSpotFullR(L);
+  veilPaintingSpot(L.left, spots.left.x, spots.left.y, spotR, fullR);
+  veilPaintingSpot(L.right, spots.right.x, spots.right.y, spotR, fullR);
+  // soft ring on each beam so the control reads clearly
+  if (spotR < fullR * 0.98) {
+    ctx.save();
+    ctx.strokeStyle = f.flashWrong > 0 ? 'rgba(255,80,80,0.7)' : 'rgba(255,210,140,0.55)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(spots.left.x, spots.left.y, Math.max(4, spotR * 0.92), 0, 6.28); ctx.stroke();
+    ctx.beginPath(); ctx.arc(spots.right.x, spots.right.y, Math.max(4, spotR * 0.92), 0, 6.28); ctx.stroke();
+    ctx.restore();
+  }
+  drawFoundChecks(f, L);
+
+  if (f.phase === 'blackout') {
+    const beat = f.blackoutT < 0.28 ? 1 : f.blackoutT < 0.55 ? 2 : 3;
+    ctx.fillStyle = 'rgba(255,70,70,0.08)'; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+    ctx.fillStyle = '#ff6b6b'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+    ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 20);
+    ctx.fillText(`BLACKOUT  -  FRAME ${beat}/3`, W / 2, L.left.y + L.left.h / 2);
+    ctx.globalAlpha = 1;
+  } else if (f.phase === 'charge') {
+    const filled = f.packDone || 0;
+    const need = f.packNeed || f.line.length;
+    const frac = need ? filled / need : 0;
+    // Steady progress readout (no alpha flicker) + fill bar under the paintings
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    roundRect(W / 2 - 160, L.left.y + L.left.h / 2 - 28, 320, 52, 6); ctx.fill();
+    ctx.strokeStyle = '#d4a84b'; ctx.lineWidth = 1.2;
+    roundRect(W / 2 - 160, L.left.y + L.left.h / 2 - 28, 320, 52, 6); ctx.stroke();
+    ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(filled === 0 ? 'RUNNING THE GENERATOR…' : `RUNNING THE GENERATOR…  ${filled}/${need}`, W / 2, L.left.y + L.left.h / 2 - 6);
+    ctx.fillStyle = '#1b1519'; roundRect(W / 2 - 120, L.left.y + L.left.h / 2 + 6, 240, 8, 3); ctx.fill();
+    ctx.fillStyle = filled ? '#e67e22' : '#3a3034';
+    roundRect(W / 2 - 120, L.left.y + L.left.h / 2 + 6, 240 * frac, 8, 3); ctx.fill();
+  }
+
+  // -- generator pit --
+  // water
+  const wg = ctx.createLinearGradient(0, L.water.y, 0, L.water.y + L.water.h);
+  wg.addColorStop(0, '#1a4a62'); wg.addColorStop(0.5, '#0f3550'); wg.addColorStop(1, '#0a2030');
+  ctx.fillStyle = wg; ctx.fillRect(L.water.x, L.water.y, L.water.w, L.water.h);
+  ctx.fillStyle = 'rgba(180,230,255,0.12)';
+  for (let i = 0; i < 6; i++) {
+    const wx = L.water.x + 20 + i * (L.water.w / 6) + Math.sin(t * 2 + i) * 6;
+    ctx.fillRect(wx, L.water.y + 8 + Math.sin(t * 3 + i * 1.3) * 3, 28, 2);
+  }
+  // whirl undertow
+  ctx.strokeStyle = 'rgba(140,210,255,0.35)'; ctx.lineWidth = 1.5;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.ellipse(L.water.x + L.water.w * 0.55, L.water.y + 22, 22 + i * 14, 7 + i * 3, t * 1.8 + i, 0, 6.28);
+    ctx.stroke();
+  }
+  for (const r of f.ripples) {
+    ctx.globalAlpha = r.life;
+    ctx.strokeStyle = 'rgba(200,240,255,0.85)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(r.x, r.y, r.r * 1.5, r.r * 0.45, 0, 0, 6.28); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // deck / treadmill — idle until first runner steps on; speed scales with beltPow
+  const beltPow = clamp01(f.beltPow || 0);
+  const beltLive = beltPow > 0.01 && f.phase !== 'blackout';
+  const beltSpd = beltLive ? (35 + 200 * beltPow) : 0;
+  inkFill('#1e1a16', L.deck.x, L.deck.y, L.deck.w, L.deck.h, 4);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(L.deck.x + 2, L.deck.y + L.deck.h - 8, L.deck.w - 4, 6);
+  const plank = 26;
+  const beltOff = beltLive ? ((t * beltSpd) % plank) : 0;
+  for (let x = L.deck.x - plank + beltOff; x < L.deck.x + L.deck.w; x += plank) {
+    if (x + 4 >= L.deck.x + L.deck.w) continue;
+    const sx = Math.max(L.deck.x + 2, x + 2);
+    const pw = Math.min(plank - 4, L.deck.x + L.deck.w - sx - 2);
+    if (pw <= 2) continue;
+    inkFill('#4a4036', sx, L.deck.y + 3, pw, L.deck.h - 12, 2);
+    ctx.fillStyle = 'rgba(255,230,180,0.06)'; ctx.fillRect(sx, L.deck.y + 3, 3, L.deck.h - 12);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(sx + pw - 2, L.deck.y + 3, 2, L.deck.h - 12);
+  }
+  ctx.fillStyle = '#6a1818';
+  const edge = beltLive ? ((t * beltSpd * 1.15) % 18) : 0;
+  for (let x = L.deck.x + edge; x < L.deck.x + L.deck.w - 4; x += 18) ctx.fillRect(x, L.deck.y + L.deck.h - 7, 11, 4);
+  ctx.fillStyle = '#c0392b';
+  for (let x = L.deck.x + edge + 11; x < L.deck.x + L.deck.w - 4; x += 18) ctx.fillRect(x, L.deck.y + L.deck.h - 7, 4, 4);
+  if (beltLive) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 10; i++) {
+      const wy = L.deck.y + 6 + (i * 3.2 + t * 40) % (L.deck.h - 10);
+      const wx = L.deck.x + ((t * beltSpd * 0.7 + i * 70) % (L.deck.w + 40)) - 20;
+      ctx.strokeStyle = `rgba(200,220,255,${0.06 + beltPow * 0.1})`;
+      ctx.lineWidth = 1; ctx.beginPath();
+      ctx.moveTo(wx, wy); ctx.lineTo(wx - 28 - (i % 4) * 8, wy + (i % 2 ? 1 : -1)); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // generator: spinning dynamo wheel + corona
+  const gx = L.gen.x + 28, gy = L.gen.y + 24;
+  inkFill('#2c333c', L.gen.x, L.gen.y, L.gen.w, L.gen.h, 4);
+  inkFill('#1b1519', L.gen.x + 8, L.gen.y + 6, 40, 40, 20);
+  const spin = beltLive ? t * (2 + 7 * beltPow) : 0;
+  ctx.strokeStyle = beltLive ? '#7fdbff' : '#556070';
+  ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(gx, gy, 14, 0, 6.28); ctx.stroke();
+  ctx.strokeStyle = 'rgba(127,219,255,0.45)'; ctx.lineWidth = 1.6;
+  for (let i = 0; i < 6; i++) {
+    const a = spin + i * Math.PI / 3;
+    ctx.beginPath(); ctx.moveTo(gx + Math.cos(a) * 4, gy + Math.sin(a) * 4);
+    ctx.lineTo(gx + Math.cos(a) * 13, gy + Math.sin(a) * 13); ctx.stroke();
+  }
+  if (beltLive) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 3; i++) {
+      ctx.strokeStyle = `rgba(127,219,255,${0.08 + 0.1 * beltPow * Math.sin(t * 12 + i)})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(gx, gy, 18 + i * 7 + Math.sin(t * 9 + i) * 2, 0, 6.28); ctx.stroke();
+    }
+    ctx.strokeStyle = `rgba(180,230,255,${0.2 + f.genPulse + beltPow * 0.25})`; ctx.lineWidth = 1.4;
+    for (let i = 0; i < 4; i++) {
+      const a0 = spin * 1.3 + i * 1.7;
+      ctx.beginPath();
+      ctx.moveTo(gx + Math.cos(a0) * 14, gy + Math.sin(a0) * 14);
+      ctx.lineTo(gx + Math.cos(a0 + 0.4) * (22 + Math.sin(t * 20 + i) * 6), gy + Math.sin(a0 + 0.4) * (22 + Math.cos(t * 18 + i) * 5));
+      ctx.lineTo(gx + Math.cos(a0 + 0.9) * 16, gy + Math.sin(a0 + 0.9) * 16);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // tiny dynamo meter (machine only — not a second found/progress HUD)
+  ctx.fillStyle = '#1b1519'; ctx.fillRect(L.gen.x + 52, L.gen.y + 40, 32, 6);
+  ctx.fillStyle = f.phase === 'search' ? '#2ecc71' : '#e67e22';
+  ctx.fillRect(L.gen.x + 52, L.gen.y + 40, 32 * beltPow, 6);
+
+  ctx.fillStyle = '#9a9088'; ctx.font = '11px monospace'; ctx.textAlign = 'left';
+  // It used to read "waiting for the first body" off beltPow, which counts people who have
+  // ARRIVED at their slot. With the boarding wave that is zero for the first half second
+  // while twenty of them are visibly walking along the belt, so the line contradicted the
+  // picture directly underneath it. It reads the deck now: on the belt, then aboard.
+  ctx.fillText(f.phase === 'charge'
+    ? (f.deck.length === 0 ? 'waiting for the first body…'
+       : beltPow < 0.02 ? `${f.deck.length} coming aboard…`
+       : `wheel turning — lamps ${Math.round(beltPow * 100)}%`)
+    : f.phase === 'blackout'
+      ? 'lights failing - hold on'
+      : 'ARROWS / click move lamps  ·  SPACE or click to mark', L.deck.x, L.deck.y - 10);
+
+  // crew: FIXED world positions; run-in-place gait sells treadmill relative motion
+  const pack = f.deck.slice().sort((a, b) => a.x - b.x);
+  for (const d of pack) {
+    if (d.enter < 0 && d.x <= L.deck.x - 40) continue;
+    const working = d.arrived && f.phase !== 'blackout';
+    const entering = !d.arrived && d.enter >= 0;
+    // legs pump in place; body X does not travel
+    const phase = (working || entering) ? (t * 20 + d.i * 1.8) : (0.4 + d.i * 0.2);
+    const bob = (working || entering) ? -Math.abs(Math.sin(phase)) * 2.2 : 0;
+    const alpha = d.enter < 0 ? 0.35 : 1;
+    ctx.fillStyle = `rgba(0,0,0,${0.4 * alpha})`;
+    ctx.beginPath(); ctx.ellipse(d.x + 4, L.deck.y + L.deck.h - 1, 9, 2.5, 0, 0, 6.28); ctx.fill();
+    // hair / cloth tugged by wind toward the left (belt direction)
+    if (working) {
+      ctx.strokeStyle = 'rgba(200,210,230,0.18)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(d.x + 2, L.deck.y + L.deck.h - 22 + bob);
+      ctx.lineTo(d.x - 10 - Math.sin(t * 14 + d.i) * 3, L.deck.y + L.deck.h - 18 + bob); ctx.stroke();
+    }
+    ctx.save();
+    ctx.translate(d.x, L.deck.y + L.deck.h - 6 + bob);
+    if (working || entering) ctx.rotate(0.08);
+    drawFigure(d.r, 0, 0, phase, 1.15, alpha);
+    ctx.restore();
+  }
+
+  // falling bodies
+  for (const fall of f.falling) {
+    ctx.save();
+    ctx.translate(fall.x, fall.y);
+    ctx.rotate(fall.rot);
+    const alpha = fall.splashed ? Math.max(0, 1 - (fall.t - 0.35) / 1.5) : 1;
+    drawFigure(fall.r, 0, 0, fall.t * 10, 1, alpha);
+    ctx.restore();
+  }
+
+  // FX sparks / spray
+  for (const p of f.fx) {
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.fillStyle = p.c;
+    if (p.k === 'spark') {
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.life * 8);
+      ctx.fillRect(-1.5, -4, 3, 8); ctx.restore();
+    } else {
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r || 2, 0, 6.28); ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // flashlight cores (control indicator) — no separate crosshair
+  if (f.phase === 'search' || f.phase === 'charge') {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const core = f.flashWrong > 0 ? 'rgba(255,80,80,0.55)' : 'rgba(255,230,180,0.4)';
+    for (const c of [spots.left, spots.right]) {
+      ctx.fillStyle = core;
+      ctx.beginPath(); ctx.arc(c.x, c.y, Math.max(2, Math.min(6, spotR * 0.12)), 0, 6.28); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  if (f.flashWrong > 0) {
+    ctx.fillStyle = `rgba(255,30,30,${f.flashWrong * 0.32})`; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+  }
+  ctx.textAlign = 'left';
+}
+
 function drawTitle() {
   ctx.fillStyle = 'rgba(0,0,0,0.62)'; ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';
@@ -14441,7 +15784,7 @@ if (qs.has('end')) {
   const solve = qs.has('solve');
   for (let i = 0; i < 60 * 400 && S.mode === 'play'; i++) { update(1 / 60); if (solve) devSolve(); }
   if (S.mode === 'finale') {
-    if (qs.has('win')) { S.mode = 'win'; saveBest(S.finale.attempts); }
+    if (qs.has('win')) { S.mode = 'win'; saveBest(S.finale.line.length); }
     else for (let i = 0; i < 60 * 400 && S.mode === 'finale'; i++) update(1 / 60);
   }
   S.endT = 0; S.endEmb = []; S.endRoll = null;
@@ -14470,10 +15813,36 @@ if (qs.has('trap')) {
   S.endT = REEL.at + (+(qs.get('tt') || 0.8)) * roll.anim;
   S.t = +(qs.get('st') || 3.1);
 }
+// ?finale jumps to the last room. It used to build the OLD QTE state literal by hand, which
+// is how a dev shortcut rots: the real constructor moved on and this one silently kept
+// making a shape nothing reads any more (updateFinale died on f.fx the first frame). It
+// calls startFinale now, so it cannot drift again.
+//   &crew=N   how many made it -- the belt, the lamp radius and the charge time all read it
+//   &phase=search  skip the intro and the generator, for photographing the chamber
 if (qs.has('finale')) {
-  S.runners.slice(0, 12).forEach(r => { r.state = 'arrived'; });
-  S.stats.arrived = 12; S.cam = S.camMax; updateView(1);
-  S.finale = { len: 6, seq: makeSeq(6), idx: 2, attempts: 12, timer: 0.9, line: S.runners.slice(0, 12), leaving: [] }; S.mode = 'finale';
+  const crew = Math.max(1, Math.min(100, +(qs.get('crew') || 12)));
+  S.runners.slice(0, crew).forEach(r => { r.state = 'arrived'; });
+  S.stats.arrived = crew; S.cam = S.camMax; updateView(1);
+  startFinale();
+  //   &phase=charge|search   skip ahead to that stage, by RUNNING the room rather than by
+  //                          setting its fields: the charge is two stages now and writing
+  //                          chargeT alone left the belt empty and the lamp unlit.
+  //   &found=N               N differences already marked, for photographing the checks
+  //   &wrong=1               hold the wrong-answer flash
+  //   &st=N                  freeze the ambient clock so a flicker cannot move between shots
+  const ph = qs.get('phase');
+  if (ph === 'charge' || ph === 'search') {
+    beginFinaleCharge(S.finale);
+    if (ph === 'search') for (let i = 0; i < 60 * 40 && S.finale.phase !== 'search'; i++) updateFinale(1 / 60);
+  }
+  const pre = Math.min(CFG.finale.findCount - 1, +(qs.get('found') || 0));
+  for (let i = 0; i < pre; i++) if (S.finale.diffs[i]) S.finale.found.add(S.finale.diffs[i].id);
+  //   &ft=N   wind the ROOM's own clock N seconds, which is the one that moves the intro.
+  //           st= moves the ambient flicker and does nothing to the phases, so two shots at
+  //           different st were the same frame twice.
+  if (qs.has('ft')) { const n = Math.round(+qs.get('ft') * 60); for (let i = 0; i < n; i++) updateFinale(1 / 60); }
+  if (qs.has('wrong')) { S.finale.flashWrong = 1.2; S.finale.wrongT = 1.4; }
+  if (qs.has('st')) S.t = +qs.get('st');
 }
 // ?shot draws a single frame and never schedules another. Headless Chrome hangs on
 // this page otherwise: --virtual-time-budget never reaches an idle point while
@@ -14485,6 +15854,42 @@ if (qs.has('finale')) {
 // to stop at, so a still says nothing about whether the motion is right. With this, a
 // sweep of stills across one cycle does.
 if (qs.has('st')) S.t = +qs.get('st');
+
+// ---------------------------------------------------------------- the last room's pointer
+// The only mouse input in the game. The chamber is a search, and hunting ten small
+// discrepancies with four arrow keys is a different and much worse task than pointing at
+// them -- so the lamp follows the pointer, and a click marks. The keys still work for
+// anyone who prefers them; this is an addition, not a replacement.
+function canvasToGame(e) {
+  const r = cv.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (W / Math.max(1, r.width)),
+    y: (e.clientY - r.top) * (H / Math.max(1, r.height)),
+  };
+}
+function finalePointerAt(sx, sy, click) {
+  const f = S.finale;
+  if (!f || S.mode !== 'finale' || f.phase !== 'search' || f.wrongT > 0) return;
+  const L = finaleLayout();
+  let side = null;
+  if (sx >= L.left.x && sx <= L.left.x + L.left.w && sy >= L.left.y && sy <= L.left.y + L.left.h) side = L.left;
+  else if (sx >= L.right.x && sx <= L.right.x + L.right.w && sy >= L.right.y && sy <= L.right.y + L.right.h) side = L.right;
+  if (!side) return;
+  const u = clamp01((sx - side.x) / side.w);
+  const v = clamp01((sy - side.y) / side.h);
+  f.spot.u = u; f.spot.v = v; f.spotVel = { u: 0, v: 0 };
+  if (click) finaleConfirm(u, v);
+}
+// Guarded, because the headless tools hand the game a MOCK canvas that has no
+// addEventListener and no style. An unguarded listener here throws while the script is
+// still being evaluated, which takes out probe, drill-check, enc-check and the harness in
+// one go -- the game must never be the reason its own instruments cannot run.
+if (typeof cv.addEventListener === 'function') {
+  cv.addEventListener('pointerdown', e => { const p = canvasToGame(e); finalePointerAt(p.x, p.y, true); });
+  cv.addEventListener('pointermove', e => { if (!(e.buttons & 1)) return; const p = canvasToGame(e); finalePointerAt(p.x, p.y, false); });
+  if (cv.style) cv.style.touchAction = 'none';
+}
+
 if (qs.has('shot')) draw(); else requestAnimationFrame(frame);
 </script>
 </body>
