@@ -266,6 +266,14 @@ throwaway lines that found the first one. A check that has been run once, by han
 be run again. The reel is in the sweep because a sweep of the course never reaches it: the
 reel draws on an end screen only, and two of the three were in it.
 
+`tools/panel-check.js` — the two rows a puzzle panel shares between the verb and the frame:
+the title against the status, and the status against the arrival readout, which sit at
+opposite ends of one 376px row. It reads BOTH font sizes and every readout string out of
+`index.html`. It did not always: it carried 11px for both halves and a 22-character readout
+written down, so when the readout became 12px and 29 characters it went on reporting "no
+collisions" about a row with 77px of overlap in it, across four rooms. Anything in a tool
+that is a fact about the game has to be parsed from the game.
+
 `tools/room-check.js` — the keys-against-road arithmetic for every room, with the
 verdicts explained in its own header. Two things it checks that nothing else did:
 the cost in keys against the road at `CFG.scroll`, scored against a ceiling that
@@ -545,6 +553,17 @@ two, they ask different questions, and passing one says nothing about the other:
   nothing, paths a body cannot walk, objects drawn over openings, and numbers in
   one function that disagree with numbers in another.
 
+**Making something BIGGER is an art change, and it needs both of them.** This is not
+obvious, because a uniform scale looks like it cannot introduce anything. It can, in two
+ways. It exposes faults that were always there and too small to see -- a spade handle that
+had been drawn through its own panel title since the room was written; a mantrap whose two
+jaws overlapped by 56 units and drew both sets of teeth through each other; jaws that
+rotated DOWN through the plate they are hinged to. And it breaks things that were sized
+against the old dimensions: a status line and a readout that shared a row with 29px to
+spare, a death plate clamped against a shorter hint band, progress pips that fitted under a
+smaller caption. Twenty-three findings came out of two passes on one 34% enlargement, and
+most of them were older than the change.
+
 **When to call them: when the art is done, before you push, on the same
 screenshots.** Not at the start, not "next pass", and not only when something
 looks off -- the whole point is that these find what looking does not. Run them
@@ -757,6 +776,53 @@ settles the last gate in the crowd's favour, for the podium. `?trap=NAME&tt=0..1
 card still, which is the only way to photograph a vignette without playing a run in which
 somebody happens to die that way — `&wet=1` puts water under the fall, `&who=NAME` chooses
 whose body it is, `&st=N` freezes the ambient clock so a flicker cannot move between shots.
+
+`&st=N` works EVERYWHERE now, not only inside `?trap`, and it is the flag to reach for
+before reporting anything about an animation from a still. Anything whose look is a
+function of `S.t` -- lamp flicker, the press room's ghost fingertip, every idle loop -- is
+otherwise photographable only at whatever instant the setup happened to stop at, so one
+still says nothing about whether the motion is right. A sweep of stills across one cycle
+does: `?drill=7&st=0.3`, `&st=1.0`, `&st=1.6` and so on caught a fingertip pressing
+between two swatches and a mark appearing before the finger arrived, neither of which was
+visible in any single frame.
+
+`?start&skip=N&solve&open=VERB` arms and opens the next room of that kind ahead of the
+crowd. A panel is only on screen for the second or two it takes to beat the room, so
+photographing one AGAINST THE ROAD -- the only way to see how much of the world it hides --
+otherwise meant guessing a skip time and shooting until one happened to be up. It calls
+`armRoom`, not `state = 'armed'`: set by hand the panel drew its title as "ROOM null" and
+then threw on an `mg` that did not exist, which looks exactly like a layout bug in the
+thing being photographed.
+
+## Two more instruments, both from the panels
+
+`tools/cover-check.js` — how much of the crowd each mini-game panel hides while it is open,
+scoring `PANEL_SCALE` 1.00 and the current value on the SAME frames. This is the number
+that decides whether a bigger panel costs anything, and it is not one either side knows
+alone: a panel is screen space at a fixed top of 48, the runners are world space arriving
+through the camera. Run it before making any panel taller. A first pass at the press room
+stacked its legend above the keypad, which took it to ph 266: 60% of the crowd hidden on
+average and 100% on its worst frame, on a panel that looked perfectly fine in every
+screenshot. Widening it to 620 instead cost almost nothing, because the crowd sits near the
+middle of the screen. **Wide is nearly free; tall is not.**
+
+It was itself wrong first, in the way this file keeps warning about: binned on height alone
+it could not see width at all, and pronounced a 620-wide panel "the same as the sweeper" on
+the strength of 218 being near 210. It has two falsifiers now and needs both -- a forced
+scale and a forced width -- because a height-only bug passes a height-only falsifier.
+
+`tools/wire-check.js` — drives 4000 random cable rooms through the real `key()` using only
+the two keys a player has, and asserts every one reaches 'done', that each wire lands on a
+socket of its own colour, that no index runs past the end, and that a press after the last
+splice does nothing. The room auto-confirms now, which removed the only way to be wrong in
+it and with it the only thing that used to end a mis-aimed attempt; the failure it guards
+against is a room that cannot be finished at all, which neither a screenshot nor a bot run
+would show, since the bot presses `solveKey` and gets there whatever the rule is.
+
+**Every loop in it is bounded, including the ones in its own falsifier.** The first version
+had one that was not, and against a deliberately broken copy the check HUNG rather than
+failing -- which reads as a broken tool, not as a red line, and is worse than a check that
+passes.
 
 ## Design
 
