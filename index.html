@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '103 mini-games you can read';
+const BUILD = '104 the wages terminal';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -76,6 +76,7 @@ const CFG = {
     conveyor: { verb: 'levers', title: 'stop the conveyor',          hazard: 'machine', color: '#ff9a3c' },
     sweeper:  { verb: 'lights', title: 'shut down the sweeper',      hazard: 'machine', color: '#ff9a3c' },
     presses:  { verb: 'code',   title: 'unlock the press controls',  hazard: 'press',   color: '#ffd23c' },
+    calculation: { verb: 'calculation', title: 'clear the wages terminal', hazard: 'machine', color: '#ff9a3c' },
     wiring:   { verb: 'wires',  title: 'make the wiring safe',       hazard: 'machine', color: '#ff9a3c' },
     bridge:  { verb: 'keys', title: 'lower the drawbridge',   hazard: 'all',   color: '#ff4646' },
     winch:   { verb: 'bar',  title: 'crank the winch',        hazard: 'all',   color: '#ff4646' },
@@ -149,6 +150,20 @@ const CFG = {
     // machines belong. Interleaved with the existing crossings on lane 0.
     { x: 1750,  lane: 0, type: 'gears',    diff: 1 },
     { x: 2500,  lane: 0, type: 'conveyor', diff: 1 },
+    // The wages terminal, in the 800-unit gap between the conveyor and the winch, so the
+    // thinking room is met AFTER two easy machine rooms and BEFORE the sweeper, which is
+    // the hardest thing in the mill.
+    //
+    // warn 500 arms it 4.55s out and, unusually, most of that IS usable: the whole puzzle is
+    // panel chrome drawn at a fixed place on screen, and the edge tab exists so an armed
+    // off-screen room can be opened on its hotkey, so the sum can be read from the moment it
+    // arms. Road from arm to the first death is (500 + killFrom.machine 88) / 110 = 5.35s.
+    //
+    // The sums are still sized against the tighter 3.31s that the VISIBLE window gives (see
+    // the verb, which carries both numbers and why they differ). That is deliberate margin
+    // for a room you have to think in, not an accident -- but 5.35 is the honest ceiling if
+    // anyone ever argues for harder arithmetic here.
+    { x: 2900,  lane: 0, type: 'calculation', diff: 2, warn: 500 },
     // The sweeper makes you WATCH before it accepts a key, twice, and then type what you
     // saw. 900 was sized against the WATCH ALONE and so covered barely half the room.
     //
@@ -798,6 +813,192 @@ const VERBS = {
       // and a caption in there printed across their bars and across "N reach this in Xs",
       // which is the one readout that tells you whether to stay in the room or run.
       ctx.textAlign = 'left';
+    },
+  },
+  calculation: {
+    ph: 150,
+    takesDigits: true,
+    // The only room in the game whose cost is THINKING rather than fingers. Every other
+    // verb is dexterity or memory: align, repeat, watch, read the order off the art, time
+    // a marker, type a shown word. Here the answer is not on screen at all.
+    //
+    // THE SIZING IS THE WHOLE DESIGN, and room-check.js cannot do it. That tool counts
+    // keystrokes against road, and this room costs one or two -- it would score it trivial
+    // and bless the default 240. (It does not, in fact, score it at all: it has no cost
+    // model for this verb, prints one grey line and `continue`s without counting a bug, so
+    // a clean room-check run is silent about this room rather than approving it.)
+    //
+    // What the room actually costs is the sum. TWO budgets apply and they are not the same
+    // number, so say which before quoting either:
+    //
+    //   3.31s  the VISIBLE window, 0.36 * V.vw (Morgan's warn-is-not-the-players-budget
+    //          note). Measure the zoom rather than assuming the mill runs at 1 -- this room
+    //          does not. It stands at x 2900, the first unit of LANE_SPANS[1] = [2900, 5600],
+    //          so updateView counts lane 1 from cam ~1764 and the zoom is 0.95. V.vw =
+    //          960/0.95 = 1010, and 0.36 * 1010 = 364px = 3.31s.
+    //   5.35s  the REAL road here, (warn 500 + killFrom.machine 88) / 110. The visible-window
+    //          rule is about rooms you have to SEE to play -- one with a demo to watch, or a
+    //          hazard to read off the world. This room's puzzle is entirely panel chrome, the
+    //          panel draws at a fixed place on screen, and the edge tab exists so an armed
+    //          off-screen room can be opened on its hotkey. So the sum is readable from the
+    //          moment the room arms.
+    //
+    // The sums below are sized against 3.31, which is the conservative one. That is margin
+    // and not a bug -- but if anyone proposes harder arithmetic here, 5.35 is the ceiling to
+    // argue it against, not 3.31.
+    //
+    // So the sums are deliberately QUICK ones -- single-digit multiplication, exact
+    // division, add or take a single digit from a two-digit number -- sized at roughly 1.2
+    // to 2.0s of arithmetic plus about 0.5s reading and 0.4s typing. That fits 3.31s with a
+    // little left over. A harder sum here would not be a harder room, it would be an
+    // unplayable one, and no amount of `warn` can buy the time back.
+    now: m => (m.failed ? 'NOT THAT' : 'type the answer'),
+    // NO mention of entering. drawHud appends "ENTER holds the crowd at the gate" to this
+    // very line whenever a gate is armed, so a hint reading "it enters itself" put two
+    // instructions about the same key on one 12px row, and the other one is the true one:
+    // ENTER is unguarded in the play handler and toggles the gate straight through an open
+    // panel. Saying nothing about ENTER is the half of that fix which costs nothing.
+    hint: 'do the sum in your head and type the answer · BACKSPACE to fix',
+    // The bot needs the digits of the answer in order. After a wrong entry the next digit
+    // typed clears the box, so the bot starts again at the first digit rather than
+    // appending to rubbish.
+    solveKey(m) {
+      const s = String(m.answer), i = m.failed ? 0 : m.input.length;
+      return i < s.length ? s[i] : null;
+    },
+    // Generated BACKWARDS from the answer, so every question has a whole-number result in
+    // 0..100 and none of them can come out negative or fractional.
+    start(diff) {
+      const d = Math.max(1, Math.min(3, diff || 1));
+      const int = max => Math.floor(rand(0, max + 1));
+      const pick = arr => arr[Math.floor(rand(0, arr.length))];
+      // ONE POOL at diff 1 and 2, because the DRILL runs start(1). Giving the road four
+      // operators and the practice run only two meant half of all runs met '×' or '÷' for
+      // the first time live, inside the 3.31s window -- and answering first-sighting deaths
+      // is the entire reason the drill exists. '×' and '÷' are not scaled by diff anyway
+      // (both draw operands from 2..9), so diff 1 changes only the '+' and '−' ranges.
+      const ops = d < 3 ? ['+', '−', '×', '÷'] : ['×', '÷'];
+      const op = pick(ops);
+      let a, b, answer;
+      if (op === '+') {
+        answer = d === 1 ? 6 + int(13) : 22 + int(77);
+        b = 2 + int(Math.min(7, answer - 3)); a = answer - b;
+      } else if (op === '−') {
+        answer = d === 1 ? 2 + int(15) : 4 + int(59);
+        b = 2 + int(7); a = answer + b;
+      } else if (op === '×') {
+        a = 2 + int(7); b = 2 + int(7); answer = a * b;
+      } else {
+        // answer 2..9, not 2..11: the comment above claims both operands come from 2..9, and
+        // at int(9) the quotient reached 11, which is the only "quick" operator here that
+        // could hand back a two-digit answer and so cost two keystrokes where x costs one.
+        b = 2 + int(7); answer = 2 + int(7); a = b * answer;
+      }
+      return { a, b, op, answer, input: '', failed: false };
+    },
+    key(m, k) {
+      if (k === 'BACKSPACE') {
+        if (!m.input) return null;
+        // NOT 'ok'. The caller plays AU.tick(progress) on 'ok', which is the advance chirp
+        // and is pitched BY the progress it just undid -- a rising note for going backwards.
+        // The box emptying is feedback enough.
+        m.input = m.input.slice(0, -1); m.failed = false; return null;
+      }
+      if (!/^[0-9]$/.test(k)) return null;
+      if (m.failed) { m.input = ''; m.failed = false; }
+      // 2, not 3: every answer this verb can generate is at most two digits (the ranges in
+      // start() top out at 99), so a third character is unreachable and a cap of 3 was a
+      // guard against a state that cannot happen.
+      if (m.input.length >= 2) return null;
+      const next = m.input + k, s = String(m.answer);
+      m.input = next;
+      // No ENTER. The answer commits the moment the digits ARE the answer, which is the
+      // good idea in this room: one keystroke for a one-digit answer, two for two. It can
+      // only ever fire early in the player's favour -- a prefix that equals the answer is
+      // the answer -- but it is the thing most likely to read as a bug on first sight.
+      if (Number(next) === m.answer) return 'done';
+      // A live prefix is progress; anything else is wrong THE MOMENT it cannot lead to the
+      // answer, rather than silently at the end. Returning 'ok' here instead would earn the
+      // player a success tick for a wrong digit.
+      if (next.length < s.length && s.startsWith(next)) return 'ok';
+      m.failed = true; return 'wrong';
+    },
+    update() {},
+    // A two-state light, not a bar that fills. Every answer here is one or two digits, and
+    // the room fires 'done' the instant the typed digits ARE the answer -- so while the room
+    // is still unsolved `m.input.length` can only ever be 1. An `input.length / 3` gauge
+    // (copied from the press keypad, where the secret really is three keys) could therefore
+    // never read above a third, in the same chrome that fills honestly for every other verb.
+    //
+    // Still deliberately NOT keyed to the answer's own length: that would leak how many
+    // digits it has, which is half the guess on a 0..100 answer.
+    progress(m) { return m.failed ? 0 : (m.input.length ? 0.55 : 0); },
+    draw(m, px, py, pw) {
+      const cx = px + pw / 2, mid = py + 74;
+      // LAY THE EQUATION OUT BY MEASURED ADVANCES, never by assuming a monospace cell.
+      // Three of the four operators are NOT in the monospace face and fall back to one with
+      // a different advance. Measured at bold 30px: a digit, '+', '-' and '=' are all 18.06
+      // wide, but U+00D7 and U+00F7 are 36.12 and U+2212 is 54.19 -- two cells and three.
+      // As one centred string that put "63 − 7 =" at 180.6px against "11 + 3 =" at 144.5, so
+      // the whole sum jumped 36px sideways depending on which operator rolled. No still can
+      // show it, because every frame is correctly centred on its own; it appears only as the
+      // equation moving between questions. Measure each run and place it, and a fallback
+      // advance cannot shift anything else.
+      // EVERY PART OF THE INSTRUMENT IS AT A FIXED POSITION. The readout is sized for the
+      // widest equation this verb can generate rather than for the one on screen, so the
+      // plate, the readout and the field are the same size and place in every frame.
+      // Centring the run itself instead left a 9px jump -- exactly wa/2 -- because a
+      // one-digit first operand pulls everything left by half a digit, and a box you type
+      // into should not move when the question changes.
+      //
+      // The operator is at the operand's SIZE AND COLOUR. Drawn at 22px in a dimmer tone it
+      // was the least legible glyph on a panel whose entire cost is reading it, and the two
+      // that most need telling apart -- U+00D7 and U+00F7 -- were the ones being shrunk.
+      const numF = 'bold 30px monospace';
+      ctx.textAlign = 'left'; ctx.font = numF;
+      const wa = ctx.measureText(String(m.a)).width, wb = ctx.measureText(String(m.b)).width;
+      const wop = ctx.measureText(m.op).width, weq = ctx.measureText('=').width;
+      // 176 is 176 BY CHOICE, with margin. The widest reachable run measures 153.43 here --
+      // two digits + U+2212 + one digit (b is single-digit in every branch) + '=' + three 9px
+      // gaps -- but do not trim it to that, because those advances are environment-specific:
+      // the same U+2212 measured 54.19 in one headless Chrome and 18.06 in another. That is
+      // exactly why the code calls measureText at runtime instead of assuming a cell, and
+      // exactly why the reserve is generous rather than fitted to a number taken once.
+      const RW = 176, fw = 58, fh = 34, plateW = 12 + RW + 10 + fw + 12;
+      const plateX = cx - plateW / 2, rdX = plateX + 12, fx = plateX + 12 + RW + 10;
+      const by = mid - fh / 2, base = mid + 10;
+      // The plate is a real object: a lit bezel with an ink outline, holding two insets.
+      // A 30%-black tint with a 7%-white hairline satisfied the letter of "the panel has an
+      // object in it" without being one, and its fill came out within three units of the
+      // field's, so the field read as an outlined hole in the same slab rather than a well.
+      ctx.fillStyle = '#2b3040'; roundRect(plateX, by - 9, plateW, fh + 18, 6); ctx.fill();
+      ctx.strokeStyle = INK; ctx.lineWidth = 1.1; roundRect(plateX, by - 9, plateW, fh + 18, 6); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.13)'; ctx.fillRect(plateX + 4, by - 8, plateW - 8, 1.4);
+      ctx.fillStyle = '#121a22'; roundRect(rdX, by - 3, RW, fh + 6, 4); ctx.fill();
+      // the equation, right-aligned into the readout like a calculator display
+      let x = rdX + RW - 10 - (wa + wop + wb + weq + 27);
+      ctx.fillStyle = '#f1c40f'; ctx.fillText(String(m.a), x, base); x += wa + 9;
+      ctx.fillText(m.op, x, base); x += wop + 9;
+      ctx.fillText(String(m.b), x, base); x += wb + 9;
+      // '=' stays dimmer and grey: it is punctuation joining the question to the answer,
+      // where the operator is part of the sum the player has to read.
+      ctx.fillStyle = 'rgba(210,220,236,0.55)'; ctx.fillText('=', x, base);
+      ctx.fillStyle = '#05070c'; roundRect(fx, by, fw, fh, 4); ctx.fill();
+      ctx.strokeStyle = m.failed ? '#ff7777' : '#5ce1ff'; ctx.lineWidth = 1.5;
+      roundRect(fx, by, fw, fh, 4); ctx.stroke();
+      // Digits LEFT-ALIGNED at a fixed origin, so typing the second one does not shove the
+      // first sideways. Re-centring the contents on every keypress moved what was already
+      // in the box, which no field does.
+      const ix = fx + 9;
+      const wi = ctx.measureText(m.input).width;
+      if (m.input) { ctx.fillStyle = m.failed ? '#ff9a9a' : '#ffffff'; ctx.fillText(m.input, ix, base); }
+      // A blinking caret, NOT the '·' the press keypad uses -- there that glyph is a SLOT
+      // COUNTER (input.padEnd(3, '·')), so one dot in the same panel set says "one digit",
+      // and two digits is the normal answer in this room.
+      if (Math.sin(S.t * 7) > 0) {
+        ctx.fillStyle = m.failed ? 'rgba(255,154,154,0.85)' : 'rgba(92,225,255,0.9)';
+        ctx.fillRect(ix + wi + (m.input ? 3 : 0), by + 8, 2, fh - 16);
+      }
     },
   },
   wires: {
@@ -1683,9 +1884,17 @@ function reset() {
     const L = LOOKS[nm];
     if (L) { r.skin = L.skin; r.hair = L.hair; r.style = L.style; r.height = L.h; r.shirt = L.shirt; }
   });
-  CFG.rooms.forEach((r, i) => {
+  // `ord` is the crossing's position ALONG THE ROAD, not its position in the CFG.rooms array.
+  // CFG.rooms is grouped by act and by who authored what, not sorted by x -- it runs 1300,
+  // 1750, 2500, 2900, 4000, 5300, 5800 and then back to 2200 -- so the index numbered the
+  // rope bridge at x 2200 the ninth crossing and showed it between the second and the third.
+  // buildRoll already sorts the reel by real x, and the card prints "N% of the way" from the
+  // real x too, so the ordinal was the one number on that card computed a different way from
+  // everything beside it: it read "4th crossing" and "19% of the way" in the same 12px.
+  const byX = CFG.rooms.slice().sort((a, b) => a.x - b.x);
+  CFG.rooms.forEach(r => {
     const t = CFG.types[r.type];
-    S.rooms.push({ ...r, ord: i + 1, verb: t.verb, hazard: t.hazard, title: t.title, color: t.color,
+    S.rooms.push({ ...r, ord: byX.indexOf(r) + 1, verb: t.verb, hazard: t.hazard, title: t.title, color: t.color,
                    hot: null, mg: null, state: 'dormant', bridge: 0, deaths: 0, flash: 0, killT: 0,
                    slamT: rand(0, CFG.crusherPeriod) });
   });
@@ -1760,7 +1969,10 @@ function killRunner(r, how) {
 window.addEventListener('keydown', e => {
   if (e.repeat) return;
   const k = e.key.toUpperCase();
-  if (k === ' ' || k === 'ENTER') e.preventDefault();
+  // BACKSPACE joins these for the wages terminal, which is the first verb to read it. In
+  // older browsers an unswallowed BACKSPACE navigates the page back and takes the run with
+  // it; it is harmless in current Chrome, and it costs one token to not depend on that.
+  if (k === ' ' || k === 'ENTER' || k === 'BACKSPACE') e.preventDefault();
   // the machine puzzles are driven with the arrows; without this the browser
   // scrolls the page out from under the game while you play them
   if (k.startsWith('ARROW')) e.preventDefault();
@@ -1770,7 +1982,7 @@ window.addEventListener('keydown', e => {
   // Any key skips the opening; nobody wants to watch it twice. It skips TO the drill
   // rather than past it -- people mash space off the title, and landing on the road
   // having never seen a room is the thing the drill exists to prevent. Inside the drill
-  // ESC moves past the kind on screen; see drillKey for why it is one and not all eleven.
+  // ESC moves past the kind on screen; see drillKey for why it is one and not all twelve.
   if (S.mode === 'intro') {
     if (S.drill && !S.drill.done) { drillKey(k); return; }
     // Only SPACE and ENTER, and never an auto-repeat: holding a key down would otherwise
@@ -2280,7 +2492,7 @@ function drillKey(k) {
   // is the point of the room on the road, where failing it costs people and the crowd
   // walks on. Here it would hold the doors shut against a player who simply cannot drum
   // that fast, and a skip that dumps the whole drill is no answer for them. Tapping ESC
-  // eleven times is the cost to somebody replaying, which is the lighter of the two.
+  // twelve times is the cost to somebody replaying, which is the lighter of the two.
   if (k === 'ESCAPE') { d.phase = 'out'; return; }
   if (d.phase !== 'play') return;
   const v = VERBS[d.room.verb];
@@ -2501,10 +2713,18 @@ const footY = r => r.y + (r.dy + 22) * 0.3 * (r.stagger === undefined ? 1 : r.st
 function approaching(room) {
   let n = 0, maxX = -1e9;
   for (const r of S.runners) {
-    if (r.state !== 'run' || r.lane !== room.lane || r.x >= room.x + 8 || r.x < room.x - 700) continue;
+    if (r.state !== 'run' || r.lane !== room.lane || r.x >= room.x + killFrom(room) || r.x < room.x - 700) continue;
     n++; if (r.x > maxX) maxX = r.x;
   }
-  return { n, eta: n ? (room.x + 8 - maxX) / CFG.scroll : 99 };
+  // killFrom(room), NOT a literal 8. This was the one place left that still assumed the old
+  // flat 8 after CFG.killFrom was introduced -- its own comment says canReach asks the table
+  // "so the next hazard added cannot reintroduce the bug", and canReach and devSolve both do.
+  // A machine room kills at +88, so the panel's "N reach this in Xs" ran 80 units early:
+  // 0.73s at CFG.scroll, which is 22% of the whole budget of the room this readout matters
+  // most to, and it also dropped anyone already inside the machine out of the count while
+  // they were still alive and still going to die. Exact for 'all' and 'half', which is why
+  // it never showed.
+  return { n, eta: n ? (room.x + killFrom(room) - maxX) / CFG.scroll : 99 };
 }
 
 // ---------------------------------------------------------------- end sequence
@@ -2537,7 +2757,7 @@ function ordinal(n) {
 const PLACE = { bridge: 'drawbridge', winch: 'winch plank', rope: 'rope bridge',
   rickety: 'rickety bridge', crusher: 'crusher', gears: 'the drive train',
   conveyor: 'the conveyor', sweeper: 'the sweeper', presses: 'the presses',
-  wiring: 'live wiring', ditch: 'ditch and bank', thorn: 'thorn hedge',
+  wiring: 'live wiring', calculation: 'the wages terminal', ditch: 'ditch and bank', thorn: 'thorn hedge',
   mantrap: 'a mantrap', wall: 'the wall' };
 // where a runner's run ended, as a phrase and as a sort key along the course
 function doomOf(r) {
@@ -3540,7 +3760,7 @@ function tunnelSag(wx, lane) {
 // type tables, drawRails tested nothing and broke the track at every room, so 120 units of
 // rail went missing over the two crushers' perfectly solid floor. One predicate, read twice,
 // and the next room type added cannot make them drift apart again.
-const SOLID_TYPE = { thorn: 1, mantrap: 1, gears: 1, conveyor: 1, sweeper: 1, presses: 1, wiring: 1 };
+const SOLID_TYPE = { thorn: 1, mantrap: 1, gears: 1, conveyor: 1, sweeper: 1, presses: 1, wiring: 1, calculation: 1 };
 const SOLID_HAZ = { burst: 1, machine: 1, press: 1 };
 const roomIsGap = r => !SOLID_HAZ[r.hazard] && !SOLID_TYPE[r.type];
 // The stretches of a gallery floor that actually exist. The track already breaks on these;
@@ -10666,7 +10886,7 @@ function drawHud() {
     // nothing at all: there is no run to report and no drill to count through yet
   } else if (drilling) {
     // The pips take the space the course track has vacated rather than being tucked into a
-    // corner of it: eleven of them across 256px is 23px each, which is legible, and it is
+    // corner of it: twelve of them across 256px is 21.3px each, which is legible, and it is
     // the only progress reading in the bar so it cannot lose the eye to a brighter one.
     const tx = 690, tw = 256, d = S.drill, n = d.order.length, w = tw / n;
     for (let i = 0; i < n; i++) {
@@ -10732,9 +10952,9 @@ function drawHud() {
 // "keep the rhythm and the spade keeps cutting (ESC skips this one)".
 //
 // `sizeFrom` pins the type size to a string the caller chooses instead of to this line.
-// The drill shows eleven of these back to back and blast's hint plus the aside is 936px at
+// The drill shows twelve of these back to back and blast's hint plus the aside is 936px at
 // 13px, a hair over the limit, so that one panel alone dropped a step and the size visibly
-// flickered mid-sequence. Passing the longest line in the set makes all eleven agree.
+// flickered mid-sequence. Passing the longest line in the set makes all twelve agree.
 // Morgan, on the mini-games generally: "whatever is written is too small to read". This
 // line carries every instruction the game gives, so it was the worst offender.
 //
@@ -10919,9 +11139,9 @@ function atPanelScale(py0, body) {
   try { body(); } finally { ctx.restore(); }
 }
 // py0 exists for the drill. On the road one panel is open at a time and a fixed top edge
-// is right; in the drill eleven are swapped in sequence and the panel heights (150 up to
+// is right; in the drill twelve are swapped in sequence and the panel heights (150 up to
 // 218 for the keypads) made the box jump taller and back again mid-run. The drill passes a
-// top derived from a shared midline so all eleven read as one object being exchanged
+// top derived from a shared midline so all twelve read as one object being exchanged
 // rather than a box that keeps resizing. Default unchanged, so the road is.
 function panelFrame(pw, title, color, ph = 150, py0 = 48) {
   const px = W / 2 - pw / 2, py = py0;
@@ -11062,7 +11282,7 @@ function drawPanel(room) {
 // only after the last one. That still serves the replayer -- two presses a line is quick --
 // without letting one keypress off the title carry someone past the whole thing unseen.
 //
-// He sits UNDER the HUD, not over it. The HUD carries "DRILL n of 11" and its eleven pips,
+// He sits UNDER the HUD, not over it. The HUD carries "DRILL n of 12" and its twelve pips,
 // which is the only reading the player has of how much practice is left, so the band starts
 // at the HUD's lower edge rather than at the top of the canvas.
 //
@@ -11620,7 +11840,7 @@ function drawDrill() {
   const v = VERBS[d.room.verb], pw = panelWidth(d.room), ph = v.ph || 150;
   // The step count and the pips live in the HUD bar, drawn by drawHud in the space the
   // course track vacates. Two reasons they are not in here: the title slot is where the
-  // road writes "ROOM 6", which is the KEY YOU PRESS, and "6 of 11" in that exact place,
+  // road writes "ROOM 6", which is the KEY YOU PRESS, and "6 of 12" in that exact place,
   // font and centring would teach that 6 opens the sweeper -- in the one screen whose
   // whole purpose is that the picture matches the road. And a progress reading tucked
   // under the HUD's hairline loses the eye to the brighter 256px strip beside it.
@@ -12367,6 +12587,74 @@ const TRAPS = {
       reelPuffs(NIP.x - 6, NIP.y + 4, clamp01((t - 0.38) * 1.1), 'rgba(120,104,84,0.4)', 5, 14, 0.5);
     }
   } },
+  // The wages terminal. gy: GY.machine like every other mill room -- without an entry here
+  // reelKind fell back to 'dark', which is act two's BROKEN CAVE FLOOR at GY.gap, 90 units
+  // higher, drawn over the weaving shed's brick and captioned "the wages terminal". It also
+  // showed a body falling down a hole, on a room whose floor is solid (SOLID_HAZ.machine).
+  //
+  // Desk height deliberately: the case is 34 tall against the 74 of the world cabinet, so it
+  // reads as something you stand AT rather than another machine you are fed into.
+  calculation: { gy: GY.machine, draw(r, t) {
+    reelFloor('#2f2b38', '#413c4e');
+    // A standing KIOSK, not a desk: the case top is 34 units against a reel body of 38.7, so
+    // its working surface is chest-to-chin and you stand at it, which is what a pay window
+    // is. Dropping it to waist height was considered and refused -- at dy -24 the apron
+    // (dy+12 .. dy+21) leaves a three-unit knee-hole over the floor on fourteen-unit legs,
+    // which is a worse object than the one the height was complained about.
+    const dy = -34, x0 = -46, w = 92;
+    // legs first, behind the case. The height is written as two edges subtracted rather than
+    // as `-dy - 10`, which is the same number today and goes NEGATIVE the moment dy > -10.
+    ctx.fillStyle = '#2a2633';
+    ctx.fillRect(x0 + 7, dy + 10, 5, 0 - (dy + 10)); ctx.fillRect(x0 + w - 12, dy + 10, 5, 0 - (dy + 10));
+    // The top face is LIGHTER than the apron beneath it and carries a lit edge along dy.
+    // Reversed, this was the one object in the whole reel lit from underneath: reelSlab puts
+    // the light on top and every other vignette follows it.
+    // A FLAT FASCIA, not a tapered one. The face used to run (x0, dy+12) -> (x0+6, dy) ->
+    // (x0+w-6, dy) -> (x0+w, dy+12): near edge 92, far edge 80, which is a top surface drawn
+    // with a vanishing point this camera never occupies, and the only receding plane in the
+    // whole reel. The conveyor's hopper tapers the other way, wider at the top, which is a
+    // legitimate elevation. A pay window has its keys and its glass on a front panel.
+    ctx.fillStyle = '#4a4455'; ctx.fillRect(x0, dy, w, 12);
+    ctx.strokeStyle = INK; ctx.lineWidth = 0.9; ctx.strokeRect(x0, dy, w, 12);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(x0 + 2, dy, w - 4, 1.6);
+    ctx.fillStyle = '#393444'; ctx.fillRect(x0, dy + 12, w, 9);
+    // Keys LEFT, where the body comes down; readout RIGHT, where the head cannot cover it.
+    // One row, not a 3x2 grid: this is a strict side elevation and there is no camera
+    // position in one from which two rows of a keypad both read as rows.
+    ctx.fillStyle = '#6b5f3e';
+    for (let i = 0; i < 6; i++) ctx.fillRect(x0 + 9 + i * 5.5, dy + 7, 4, 3.5);
+    // The readout is the CARD'S EVENT: it is lit while the body is still standing and it goes
+    // out as they go down, which is the moment of death drawn as the thing the room is about.
+    // A dust puff was tried here first and was a regression -- five discs of floor dust landed
+    // on the key row in the key row's own hue, so it read as a swollen brass key rather than
+    // as an event, and it was 88% faded by the frame the card holds longest.
+    const dead = clamp01((t - 0.42) * 2.4), lit = 0.5 + 0.5 * Math.sin(S.t * 3);
+    ctx.fillStyle = '#10161c'; ctx.fillRect(x0 + 50, dy + 2, 38, 9);
+    ctx.fillStyle = `rgba(241,196,15,${(0.45 + 0.3 * lit) * (1 - dead)})`;
+    // Cells of two widths with a gap where the operator sits, so the display reads as an
+    // unanswered SUM rather than as four identical lamps -- the player saw an equation in
+    // this palette a second ago and the card should echo it.
+    for (const [cx0, cw] of [[53, 5], [59, 5], [67, 3], [73, 5], [81, 5]]) ctx.fillRect(x0 + cx0, dy + 4, cw, 5);
+    // THE SOLE ANCHOR IS DERIVED FROM THE ROTATION, never written beside it. reelFigure
+    // rotates about fy - 15, so turning by rot lifts the feet 15*(1 - cos rot); a hand-picked
+    // slide (dy + 12 + t * 21) did not account for that and the body never once touched the
+    // floor. It opened the card standing on nothing 20.6 units up, with 82 card pixels of
+    // daylight under the shoe. Fed from rot, the two cannot come apart again.
+    //
+    // 15 and NOT the 18.52 that (15 + REEL_SOLE*sc) makes the pivot-to-SOLE-LINE distance.
+    // That correction is right about the line and wrong about the picture: rotating a
+    // two-footed stance about a hip splits the feet, so one anchor cannot land both, and
+    // resolving the drawn shoe ink gives +1.6/+0.8 units of overlap at t=0 and +3.6/+0.2 at
+    // the end. 18.52 sits 1.17 lower and drives the front shoe 4.7 into the floor.
+    //
+    // The final lean is 0.49 rad and that number is DERIVED too: the crown resolves to
+    // -31.24*cos(rot) - 6.49, so clearing the fascia's top line at dy = -34 needs
+    // cos(rot) = 0.880. At the 0.84 it was, the head finished 5.5 units INSIDE the case and
+    // the last third of the card was a plank held at 48 degrees with both soles flat, which
+    // is the one pose a body cannot hold.
+    const rot = 0.18 + t * 0.31;
+    reelFigure(r, x0 + w * 0.40 - t * 13, 15 * (1 - Math.cos(rot)), 0, rot, 1);
+  } },
   conveyor: { gy: GY.machine, draw(r, t) {
     reelFloor('#2f2b38', '#413c4e');
     // The band ENDS AT -16, a third of the way left of centre, and everything downstream is
@@ -12827,7 +13115,10 @@ function reelScrim(top, h, a0, a1) {
   ctx.fillStyle = g; ctx.fillRect(top === 0 ? 0 : 0, top, W, h);
 }
 function drawDeathCard(card, sy, at, R) {
-  const r = card.r, trap = TRAPS[card.kind], t = clamp01(at / R.anim);
+  // `|| TRAPS.dark` because reelKind's fallback protects the PLAY path only: ?trap=NAME sets
+  // card.kind directly and bypasses it, so a name with no entry read trap.gy off undefined
+  // and threw inside draw(), which stops rAF rescheduling and freezes the game.
+  const r = card.r, trap = TRAPS[card.kind] || TRAPS.dark, t = clamp01(at / R.anim);
   ctx.save(); ctx.translate(0, sy);
   ctx.save();
   ctx.beginPath(); ctx.rect(0, 0, W, REEL.cardH); ctx.clip();
@@ -13181,7 +13472,7 @@ if (qs.has('intro')) {
   for (let i = 0; i < n && S.mode === 'intro'; i++) update(1 / 60);
 }
 // ?drill=N holds the drill on its Nth kind (1-based), centred and ready to play. Without
-// this a screenshot of the eleventh panel means beating ten puzzles on the way to it.
+// this a screenshot of the twelfth panel means beating eleven puzzles on the way to it.
 if (qs.has('drill')) {
   S.mode = 'intro';
   const c = I(); S.introT = c.deliver + c.settle;
