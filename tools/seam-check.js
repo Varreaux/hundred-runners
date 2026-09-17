@@ -100,10 +100,17 @@ eval(src + `
     // over an extent where it does not apply accuses the game of something it did not do.
     if (held && g.open < 1) {
       const lead2 = Math.max(...S.runners.filter(r => r.state === 'run').map(r => r.x), -Infinity);
-      // widest half-body toward the door: shoe/hair reach 6.8 at scale 1, x the tallest scale
-      const widest = 6.8 * 1.232;
-      if (isFinite(lead2) && lead2 + widest > FAC.seam - DOOR.jamb) {
-        overlapWorst = Math.max(overlapWorst, lead2 + widest - (FAC.seam - DOOR.jamb));
+      // The widest point of a body toward the door is NOT the shoe at 6.8 -- it is the curly
+      // style's outer curl at 7.70 (hx 0.55 + 4.3 + r 2.4 + 0.45 of stroke), times the tallest
+      // named runner's 1.232. And the leaf is shifted 1.4 toward the crowd by jolt on every
+      // strike, which this ignored entirely. Together those two made this report 2.5 units more
+      // margin than existed: it would have called a standoff of 41 clean while the leaf was
+      // already a unit into somebody's hair. Proving a check can fail proves the mechanism, not
+      // the threshold -- the threshold has to be derived like anything else.
+      const widest = 7.70 * 1.232;
+      const leafFace = FAC.seam - DOOR.half - 1.4;   // worst case: fully jolted toward them
+      if (isFinite(lead2) && lead2 + widest > leafFace) {
+        overlapWorst = Math.max(overlapWorst, lead2 + widest - leafFace);
       }
       // the leaf spans doorTop..doorBot in y and never leaves it, because opening is a
       // horizontal scale about the jamb rather than a rotation. If that ever becomes a rotate

@@ -2194,10 +2194,13 @@ const SEAM = {
   // the bodies, the barrier gets painted over the people it exists to stop. It was 26, which
   // put them nine units past the leaf's face. 40 was still short: a figure's half-width toward
   // the door is 6.8 at scale 1 and 8.4 at the tallest named runner's 1.232, so the biggest body
-  // still finished 0.9 units behind the leaf. 45 = DOOR.half 32.5 + 8.4 + 4 of daylight.
+  // still finished 0.9 units behind the leaf. 45 was measured with the wrong half-body and no
+  // jolt term: the widest point is not the shoe at 6.8 but the curly style's outer curl at
+  // 7.70, and `jolt` shifts the leaf 1.4 toward the crowd on every strike. That left 1.61 units
+  // of daylight, not the 4 this comment claimed. 47.4 = 32.5 + 7.70*1.232 + 1.4 + 4.
   // (DOOR.half is 32.5; 35 is DOOR.jamb, the opening. An earlier version of this comment named
   // the wrong one of the two, which is exactly how the five units went missing.)
-  standoff: 45,       // where the front of the file stands off the door's centre
+  standoff: 47.4,     // where the front of the file stands off the door's centre
   preHits: 2,         // damage taken before the drill starts; the rest is paced by the drill
   settle: 1.1,        // let the file pile up before he starts talking
   hits: 6,            // sledge strokes before it gives
@@ -2256,14 +2259,20 @@ function updateSeamGate(dt) {
   // tutorial while three sledges went on landing on it with no sound, no shake, no particles
   // and nothing changing. A cause with no consequence, about 1.6 times a second.
   const order = S.drill && S.drill.order ? S.drill.order.length : 0;
-  const target = g.phase === 'gather' || g.phase === 'boss' ? SEAM.preHits
-               : g.phase === 'drill' && order
-                 ? SEAM.preHits + Math.round((SEAM.hits - SEAM.preHits) * S.drill.idx / order)
-                 : SEAM.hits;
-  if (g.phase !== 'burst' && g.hits < target) {
+  g.target = g.phase === 'gather' || g.phase === 'boss' ? SEAM.preHits
+           : g.phase === 'drill' && order
+             ? SEAM.preHits + Math.round((SEAM.hits - SEAM.preHits) * S.drill.idx / order)
+             : SEAM.hits;
+  // The SWING always runs; only the DAMAGE is gated. Tying the clock to `g.hits < target`
+  // froze three sledges in mid-air for the whole of a player-paced speech -- target is pinned
+  // at preHits through 'boss', so the hammers reached it in 1.24s and then stood stopped
+  // overhead for however long the player took to read him, and again for most of every panel.
+  // That is the same fault the burst ramp was added to fix, at thirty times the duration.
+  if (g.phase !== 'burst') {
     g.swing += dt / SEAM.swing;
     if (g.swing >= 1) {
       g.swing -= 1;
+      if (g.hits >= g.target) { g.swing = 0; return; }   // still swinging, not yet biting
       g.hits++;
       g.jolt = 1; S.shake = Math.min(5, S.shake + 0.7);
       AU.clank();
@@ -2299,6 +2308,12 @@ function updateSeamGate(dt) {
     // will, so it is driven from here. The world it would otherwise run on is already held.
     if (S.drill && !S.drill.done) { updateDrill(dt); return; }
     S.drill = null;
+    // drillNext increments idx BEFORE the panel it shows, so while the last panel is up
+    // idx = order-1 and `target` tops out at 5 of 6 -- the sixth stroke only became available
+    // on the single frame after the drill finished, where it had about a 3% chance of landing
+    // before 'burst' blocked all further swinging. SEAM.hits was a 5 in practice and the
+    // comment claiming the sixth stroke opens the door was false. Now it is the sixth stroke.
+    g.hits = SEAM.hits; g.target = SEAM.hits;
     g.phase = 'burst'; g.t = 0; g.jolt = 1; S.shake = 6;
     // The break got less than a single strike did: every stroke fires AU.clank() and five
     // chips, and the thing they were all for happened in silence.
@@ -7789,15 +7804,20 @@ function drawSeamDoor(y) {
   // so it is part of the building and not a stripe painted on the door.
   const by = bot - hh * 0.19, bh = 10;   // 18 units is a 0.7m baulk, twice the leaf's own straps
   const barX0 = sx - DOOR.jamb - 15, barW = (DOOR.jamb + 15) * 2;
-  if (open < 0.02) {
-    ctx.save();
-    const jolt = g.jolt * 2.2;
-    // keepers, on the post faces, which is the thing it drops into
+  // The keepers are bolted to the posts and are the one part of the lock that is NOT being
+  // broken, so they are drawn outside the branch: inside it they vanished between two frames
+  // the instant the bar snapped, while both halves were still in the air. Same fault as the
+  // pintles, one object along.
+  if (open < 1) {
     for (const d of [-1, 1]) {
       ctx.fillStyle = INK; ctx.fillRect(sx + d * 42 - 9, by - bh / 2 - 5, 18, bh + 10);
       ctx.fillStyle = '#4a4653'; ctx.fillRect(sx + d * 42 - 7.6, by - bh / 2 - 3.6, 15.2, bh + 7.2);
       ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(sx + d * 42 - 7.6, by - bh / 2 - 3.6, 15.2, 1.4);
     }
+  }
+  if (open < 0.02) {
+    ctx.save();
+    const jolt = g.jolt * 2.2;
     // the shadow the bar casts ON the leaves, below it -- not a dark line inside its own rect
     // offset right, because everything else at this seam is lit from the mill's lamps on the
     // left; a shadow straight down is a third lighting model on one object
@@ -7814,11 +7834,14 @@ function drawSeamDoor(y) {
     // out was most of why the burst read as a slide. Two halves, turning as they fall.
     for (const d of [-1, 1]) {
       ctx.save();
-      ctx.translate(sx + d * 6, by);
-      ctx.rotate(d * open * 1.4);
-      // falls ONTO the sill, not through it: the drop is the distance to the threshold, which
-      // is derived from where the bar actually is rather than being a round number.
-      ctx.translate(d * open * 10, open * open * (bot - by - 3));
+      // The drop is hoisted OUT of the rotated frame and the tilt is capped. Inside the
+      // rotation, a 1.4 rad turn mapped the intended 20-unit fall to 13 down and 18 sideways,
+      // and swung a 44-unit half-bar through a floor 22 units below its pivot: the far corner
+      // finished 30 units under the deck. The door-falling-over fault had simply moved into
+      // the bar. A half-bar this long can tilt about 0.05 rad before its tip is through the
+      // sill, so it lies down rather than cartwheeling.
+      ctx.translate(sx + d * 6 + d * open * 10, by + open * open * (bot - by - 9));
+      ctx.rotate(d * open * 0.12);
       const hw = barW / 2 - 6;
       ctx.fillStyle = INK; ctx.fillRect(d < 0 ? -hw : 0, -bh / 2 - 1, hw, bh + 2);
       ctx.fillStyle = '#6a6f7c'; ctx.fillRect(d < 0 ? -hw + 1 : 1, -bh / 2, hw - 2, bh);
