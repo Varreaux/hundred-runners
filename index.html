@@ -2189,7 +2189,12 @@ function releaseGate(g, spread) {
 // Nothing here freezes the camera. It does not need to: the camera's limit is derived from the
 // rearmost live runner, so a stopped crowd stops it, and it never runs backwards.
 const SEAM = {
-  standoff: 26,       // where the front of the file stands off the leaf
+  // Measured from the door's CENTRE, so it must clear DOOR.half (35) and not just the seam,
+  // or the front of the file stands INSIDE the leaf's footprint -- and since the leaf is drawn
+  // after the bodies, the barrier is then painted over the people it is supposed to stop. It
+  // was 26, which put them 9 units past the leaf's near edge. 40 is DOOR.half, half a body
+  // and a hand's clearance, and it still leaves the hammer landing on the leaf.
+  standoff: 40,       // where the front of the file stands off the door's centre
   settle: 1.1,        // let the file pile up before he starts talking
   hits: 6,            // sledge strokes before it gives
   swing: 0.62,        // one stroke
@@ -2239,14 +2244,23 @@ function updateSeamGate(dt) {
   }
   g.t += dt;
   g.jolt = Math.max(0, g.jolt - dt * 3.4);
-  // the sledge, through every phase up to the burst
+  // The sledge. They keep swinging through the drill -- they have not given up -- but the
+  // JOLT and the BANG stop once the door has taken all the damage it is going to take.
+  // Guarded on `phase !== 'burst'` alone, this shook the screen and clanked on a 0.62s
+  // metronome for the whole of the tutorial, with nothing changing on the door: the player
+  // reads a panel through a scene that is banging at them for no reason any longer.
   if (g.phase !== 'burst') {
     g.swing += dt / SEAM.swing;
     if (g.swing >= 1) {
       g.swing -= 1;
-      if (g.hits < SEAM.hits) g.hits++;
-      g.jolt = 1; S.shake = Math.min(5, S.shake + 0.7);
-      AU.clank();
+      if (g.hits < SEAM.hits) {
+        g.hits++;
+        g.jolt = 1; S.shake = Math.min(5, S.shake + 0.7);
+        AU.clank();
+        // the only impact in the game that had no particles
+        emit('chip', 5, seamX() - DOOR.half, laneY(0) - 20,
+             { sx: 6, vx: [-120, -30], vy: [-90, 30], life: [0.3, 0.7], c: '#8b6a42' });
+      }
     }
   }
   if (g.phase === 'gather') {
@@ -7557,7 +7571,13 @@ function seamEdgePath() {
 // first time anybody moved a post, and a door that no longer fits its own hole is not
 // something a still would show you -- it just looks like a door.
 const DOOR = {
-  half: 35,           // inner face of each post, from the portal's post centres and width
+  // The portal's posts are centred at sx +/- 42 and are 14 wide, so the opening's inner faces
+  // are at +/- 35. The leaf stops 2.5 short of that ON PURPOSE: the gap is painted near-black
+  // before the leaves go down, which gives the door an outline that survives 0.70 zoom and the
+  // grain overlay. Its own 1-unit INK border does not -- 0.7 of an image pixel antialiases to a
+  // smudge. It also recovers 2.5 units of drawSeamPortal's reveal, which the shut leaf covered.
+  half: 32.5,         // the leaf, inset from the opening's 35 to leave a reveal each side
+  jamb: 35,           // the opening itself, off the portal's posts
   headroom: 4,        // under the soffit
   sill: 5,            // onto the stone threshold
   strap: [0.26, 0.74],// iron bands, as a fraction of the leaf's height
@@ -7578,14 +7598,21 @@ function drawSeamDoor(y) {
     // the jolt of a strike travels through the whole leaf, not just the spot that was hit
     const jolt = g.jolt * (1 - open);
     ctx.translate(sx + d * DOOR.half, bot);
-    ctx.rotate(d * open * 0.62);
-    ctx.translate(d * open * 26 + d * jolt * 1.4, open * open * 34);
+    // 2.1 rad, not 0.62. A door blown off its bar swings back against the wall; 35 degrees is
+    // a door left ajar, which is what this read as. And the translate no longer moves the
+    // PIVOT: it was carrying the hinge 26 units sideways and 34 DOWN, which put the bottom of
+    // each leaf below lane 0's deck -- planks lying in the floor rather than doors standing
+    // open. A hinge pin has a few units of slop and nothing more.
+    ctx.rotate(d * open * 2.1);
+    ctx.translate(d * open * 3 + d * jolt * 1.4, 0);
     const w = DOOR.half;                          // leaf reaches from its jamb to the centre
     const x0 = d < 0 ? 0 : -w;                    // local left edge of this leaf
     ctx.beginPath(); ctx.rect(x0 - 1, -hh - 1, w + 2, hh + 2); ctx.clip();
     // boards
     ctx.fillStyle = INK; ctx.fillRect(x0, -hh, w, hh);
-    ctx.fillStyle = '#4b3722'; ctx.fillRect(x0 + 1, -hh + 1, w - 2, hh - 2);
+    // #2e2419, not #4b3722. The post's plain tone is luminance 69.7 and the old leaf painted
+    // out at 62.2 and 76.3 -- both INSIDE the post's own range, so no value step existed.
+    ctx.fillStyle = '#2e2419'; ctx.fillRect(x0 + 1, -hh + 1, w - 2, hh - 2);
     const boards = 5, bw = (w - 2) / boards;
     for (let i = 0; i < boards; i++) {
       const bx = x0 + 1 + i * bw;
@@ -7601,8 +7628,15 @@ function drawSeamDoor(y) {
     }
     // the light from the mill side falls on the near face only
     const lg = ctx.createLinearGradient(0, -hh, 0, 0);
-    lg.addColorStop(0, 'rgba(255,232,190,0.10)'); lg.addColorStop(1, 'rgba(0,0,0,0.30)');
+    lg.addColorStop(0, 'rgba(255,232,190,0.10)'); lg.addColorStop(1, 'rgba(0,0,0,0.18)');
     ctx.fillStyle = lg; ctx.fillRect(x0, -hh, w, hh);
+    // The frame is SIDE-lit from the mill's lamps (drawSeamPortal lights px-7 and shadows
+    // px+3.4); the leaf was only top-lit, so it had no lit edge and no shadowed edge to echo
+    // the timber it hangs in. Two lighting models meeting at the jamb is the second reason
+    // the two fused. Both fills read off one variable so they cannot drift apart.
+    const edgeW = 4;
+    ctx.fillStyle = 'rgba(255,224,176,0.10)'; ctx.fillRect(x0, -hh, edgeW, hh);
+    ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(x0 + w - edgeW, -hh, edgeW, hh);
     // iron straps, hinged end thicker. Both bands read off DOOR.strap so they cannot drift
     // apart from the rivets that sit on them.
     for (const f of DOOR.strap) {
@@ -7620,14 +7654,23 @@ function drawSeamDoor(y) {
     // where the sledges are landing, and travel back toward the hinge.
     if (dmg > 0) {
       const edge = d < 0 ? x0 + w : x0;           // the centre edge of this leaf
-      ctx.strokeStyle = 'rgba(12,10,16,0.85)';
+      // PALE, not black. On a leaf darkened to #2e2419 a dark split is invisible under the
+      // grain; a split in timber shows the unweathered wood inside, which is lighter than the
+      // face. That is also what makes three strikes legible without widening the line.
+      ctx.strokeStyle = 'rgba(196,168,126,0.8)';
       for (let i = 0; i < Math.ceil(dmg * 5); i++) {
-        const t = hash(i * 4.7 + d) , sy = -hh + 12 + t * (hh - 24);
-        const reach = (0.25 + hash(i * 2.3) * 0.5) * w * Math.min(1, dmg * 1.4);
-        ctx.lineWidth = 1 + hash(i * 6.1) * 1.4;
+        // Every hash argument carries `d`. Without it both leaves got identical crack lengths,
+        // identical widths and identical kinks -- mirror-symmetric damage, which is the most
+        // artificial thing a destruction effect can do.
+        const t = hash(i * 4.7 + d * 1.7);
+        // Biased to a band around where the hammer actually lands, not spread over the whole
+        // leaf. The splits were averaging a body-height above the strike.
+        const sy = -30 - t * 46;
+        const reach = (0.25 + hash(i * 2.3 + d * 1.7) * 0.5) * w * Math.min(1, dmg * 1.4);
+        ctx.lineWidth = 1 + hash(i * 6.1 + d * 1.7) * 1.4;
         ctx.beginPath(); ctx.moveTo(edge, sy);
-        ctx.lineTo(edge - d * reach * 0.5, sy + (hash(i * 8.2) - 0.5) * 12);
-        ctx.lineTo(edge - d * reach, sy + (hash(i * 5.4) - 0.5) * 20);
+        ctx.lineTo(edge - d * reach * 0.5, sy + (hash(i * 8.2 + d * 1.7) - 0.5) * 12);
+        ctx.lineTo(edge - d * reach, sy + (hash(i * 5.4 + d * 1.7) - 0.5) * 20);
         ctx.stroke();
       }
       // and once it is nearly through, a hole you can see the dark behind
@@ -7637,7 +7680,10 @@ function drawSeamDoor(y) {
         ctx.beginPath();
         for (let i = 0; i <= 8; i++) {
           const a = i / 8 * 6.28, rr = hw * (0.6 + hash(i * 9.1) * 0.7);
-          const px = edge - d * (hw * 0.7) + Math.cos(a) * rr, py = -hh * 0.52 + Math.sin(a) * rr * 0.9;
+          // -hh * 0.52 was a constant, so both holes sat at exactly the same height, symmetric
+          // about the centre line -- and 63 units above the sill, while the hammer lands at 16.
+          const hy = -26 + (hash(d * 3.1) - 0.5) * 18;
+          const px = edge - d * (hw * 0.7) + Math.cos(a) * rr, py = hy + Math.sin(a) * rr * 0.9;
           i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
         }
         ctx.closePath(); ctx.fill();
@@ -7645,19 +7691,66 @@ function drawSeamDoor(y) {
     }
     ctx.restore();
   };
+  // The reveal, first, so the leaves sit in a black slot rather than butting timber onto
+  // timber. This is the single biggest legibility change: the frame and the leaf were the same
+  // hue (28-32 degrees), the same saturation and overlapping luminance, so there was no step
+  // of any kind along the jamb for the eye to catch.
+  ctx.fillStyle = '#0d0b12';
+  ctx.fillRect(sx - DOOR.jamb, top, DOOR.jamb - DOOR.half, hh);
+  ctx.fillRect(sx + DOOR.half, top, DOOR.jamb - DOOR.half, hh);
   leaf(-1); leaf(1);
+  // and a contact shadow where the leaf meets the stone. Everything else in this frame has
+  // occlusion shading; a door that touches the ground with no shadow line reads as a panel
+  // pasted over a hole, which is exactly what it read as.
+  if (open < 1) {
+    ctx.globalAlpha = 1 - open;
+    const cs = ctx.createLinearGradient(0, bot - 9, 0, bot);
+    cs.addColorStop(0, 'rgba(0,0,0,0)'); cs.addColorStop(1, 'rgba(0,0,0,0.5)');
+    ctx.fillStyle = cs; ctx.fillRect(sx - DOOR.jamb, bot - 9, DOOR.jamb * 2, 9);
+    ctx.globalAlpha = 1;
+  }
   // the lock: a drop bar across both leaves, and the hasp it sits in. It goes after the
   // leaves because it spans them -- it is the thing being broken, not part of either.
-  if (open < 1) {
+  // The drop bar. It has to OVERHANG the posts and drop into keepers on them, or it is a
+  // stripe painted on the door: it used to span sx-33 to sx+33 against posts whose inner faces
+  // are at 35, so it stopped two units short on both sides and engaged nothing. It is also
+  // off-centre now -- at exactly half height it made a third evenly-spaced grey band with the
+  // two straps, on a 29-unit pitch, and the door read as a ladder rather than as two hinges
+  // and a bar.
+  const by = bot - hh * 0.44, bh = 18;
+  const barX0 = sx - DOOR.jamb - 15, barW = (DOOR.jamb + 15) * 2;
+  if (open < 0.02) {
     ctx.save();
-    ctx.globalAlpha = 1 - open;
-    const by = bot - hh * 0.5, jolt = g.jolt * 2.2;
-    ctx.fillStyle = INK; ctx.fillRect(sx - DOOR.half + 2, by - 6 + jolt, DOOR.half * 2 - 4, 12);
-    ctx.fillStyle = '#3e3a46'; ctx.fillRect(sx - DOOR.half + 3, by - 5 + jolt, DOOR.half * 2 - 6, 10);
-    ctx.fillStyle = 'rgba(255,255,255,0.13)'; ctx.fillRect(sx - DOOR.half + 3, by - 5 + jolt, DOOR.half * 2 - 6, 1.8);
-    ctx.fillStyle = 'rgba(0,0,0,0.36)'; ctx.fillRect(sx - DOOR.half + 3, by + 3 + jolt, DOOR.half * 2 - 6, 2);
-    rivets(sx - DOOR.half + 9, sx + DOOR.half - 9, by + jolt, 14, 1.3, 'rgba(255,255,255,0.24)');
+    const jolt = g.jolt * 2.2;
+    // keepers, on the post faces, which is the thing it drops into
+    for (const d of [-1, 1]) {
+      ctx.fillStyle = INK; ctx.fillRect(sx + d * 42 - 9, by - bh / 2 - 5, 18, bh + 10);
+      ctx.fillStyle = '#4a4653'; ctx.fillRect(sx + d * 42 - 7.6, by - bh / 2 - 3.6, 15.2, bh + 7.2);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(sx + d * 42 - 7.6, by - bh / 2 - 3.6, 15.2, 1.4);
+    }
+    // the shadow the bar casts ON the leaves, below it -- not a dark line inside its own rect
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(sx - DOOR.half, by + bh / 2 + jolt, DOOR.half * 2, 4);
+    ctx.fillStyle = INK; ctx.fillRect(barX0, by - bh / 2 - 1 + jolt, barW, bh + 2);
+    ctx.fillStyle = '#6a6f7c'; ctx.fillRect(barX0 + 1, by - bh / 2 + jolt, barW - 2, bh);
+    ctx.fillStyle = 'rgba(255,255,255,0.20)'; ctx.fillRect(barX0 + 1, by - bh / 2 + jolt, barW - 2, 2.4);
+    ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.fillRect(barX0 + 1, by + bh / 2 - 2.6 + jolt, barW - 2, 2.6);
+    rivets(barX0 + 10, barX0 + barW - 10, by + jolt, 16, 1.4, 'rgba(255,255,255,0.26)');
     ctx.restore();
+  } else if (open < 1) {
+    // SNAPPED, not faded. Nothing in this world dissolves, and the thing being broken fading
+    // out was most of why the burst read as a slide. Two halves, turning as they fall.
+    for (const d of [-1, 1]) {
+      ctx.save();
+      ctx.translate(sx + d * 6, by);
+      ctx.rotate(d * open * 1.4);
+      ctx.translate(d * open * 10, open * open * 90);
+      const hw = barW / 2 - 6;
+      ctx.fillStyle = INK; ctx.fillRect(d < 0 ? -hw : 0, -bh / 2 - 1, hw, bh + 2);
+      ctx.fillStyle = '#6a6f7c'; ctx.fillRect(d < 0 ? -hw + 1 : 1, -bh / 2, hw - 2, bh);
+      ctx.fillStyle = 'rgba(255,255,255,0.20)'; ctx.fillRect(d < 0 ? -hw + 1 : 1, -bh / 2, hw - 2, 2.4);
+      ctx.restore();
+    }
   }
 }
 // The sledges. Three at the front of the file, out of step with each other, because three
@@ -7674,7 +7767,11 @@ function drawSeamHammers(y) {
     // is the leading hammer's and the others land around it.
     const ph = (g.swing + i * 0.34) % 1;
     // raised most of the stroke, down fast: the downswing is the last quarter
-    const a = ph < 0.75 ? -2.05 + (ph / 0.75) * 0.45 : -1.6 + ((ph - 0.75) / 0.25) * 2.05;
+    // The raise is half the stroke, not three quarters. At 0.75 the hammer spent most of every
+    // cycle at -2.05 rad -- head high and behind the shoulder, in clear air, exactly where
+    // drawRunners stacks the white name tags. The pose that says "hitting something" lasted
+    // 155ms out of 620. Now the downswing is half the cycle and it is what you see.
+    const a = ph < 0.5 ? -2.05 + (ph / 0.5) * 0.45 : -1.6 + ((ph - 0.5) / 0.5) * 2.05;
     // The world transform is already on the stack, so this draws in WORLD units and does not
     // touch it. An earlier version reached for setTransform and re-applied the world matrix
     // by hand afterwards, which is the thing CLAUDE.md warns about: anything that rebuilds the
@@ -7690,9 +7787,13 @@ function drawSeamHammers(y) {
     ctx.fillStyle = 'rgba(255,224,176,0.16)'; ctx.fillRect(-1.4, -1.4, 25, 0.9);
     // head
     ctx.fillStyle = INK; ctx.fillRect(21, -5.6, 11, 11.2);
-    ctx.fillStyle = '#4a4752'; ctx.fillRect(21.7, -4.9, 9.6, 9.8);
-    ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(21.7, -4.9, 9.6, 1.6);
+    ctx.fillStyle = '#585563'; ctx.fillRect(21.7, -4.9, 9.6, 9.8);
+    // A hard specular cap, not a wash. The head was #4a4752 against a #2a2431 mill interior
+    // and the crowd's own dark silhouettes -- nothing separated it from anything. This is the
+    // one bright thing on the object and it is what carries the swing at 0.70 zoom.
+    ctx.fillStyle = 'rgba(255,240,214,0.55)'; ctx.fillRect(21.7, -4.9, 9.6, 2);
     ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.fillRect(21.7, 2.6, 9.6, 2.3);
+    ctx.fillStyle = 'rgba(150,190,220,0.30)'; ctx.fillRect(21.7, 4.4, 9.6, 0.9);
     ctx.restore();
   });
 }
@@ -11301,7 +11402,12 @@ function drawHud() {
   // ...and it says WHICH doors. Rekeying `speaking` to cover the cave door handed this pill a
   // second context it was never written for: a hundred people stopped at the mouth of a mine
   // were being told they were waiting at the mill doors they left half the course ago.
-  else if (speaking) x = pill(x, 'SHIFT', S.seam.phase === 'boss' ? 'stopped at the cave door' : 'waiting at the doors', '#5ce1ff');
+  // At the cave door the pill JOINS the counters instead of replacing them. This is the
+  // longest the game ever stands still and it is the moment the player most wants to know how
+  // many are still alive; hiding RUNNING behind a caption was the opening's bargain, where
+  // three tallies of a run that has not started read as a report on nothing. Here it has.
+  else if (speaking && S.seam.phase === 'boss') { x = pill(x, 'RUNNING', String(S.runners.filter(r => r.state === 'run').length), '#8affbc'); x = pill(x, 'SHIFT', 'stopped at the cave door', '#5ce1ff'); }
+  else if (speaking) x = pill(x, 'SHIFT', 'waiting at the doors', '#5ce1ff');
   else {
     x = pill(x, 'RUNNING', alive, '#2ecc71');
     x = pill(x, 'LOST', S.stats.dead, '#ff6b6b');
