@@ -167,8 +167,16 @@ const OUT = eval(src + `
       const card = { r: who, wet: wet, kind: kind };
       const fig = EMPTY(), all = EMPTY(), ground = EMPTY();
       let apTop = Infinity, tall = 0, threw = null;
+      // S.t IS SWEPT, not left wherever the run before happened to stop. Several vignettes
+      // carry rotating parts -- the gears' wheels, the sweeper's drum, the press flywheel --
+      // whose bounding box changes with their phase, so a single sample measures whichever
+      // rotation the previous test happened to leave behind. That made this check flap: the
+      // gears passed at 155 and failed at 114 on builds whose reel code was byte-identical,
+      // because a change elsewhere altered how many frames ran before it. A verdict that
+      // depends on what ran before it is not a verdict.
       for (let s = 0; s <= 24 && !threw; s++) {
         const t = s / 24;
+        S.t = 3.1 + s * 0.37;
         const seen = [];
         drawFigure = function(r2, x, y, ph, sc, al) {
           const held = snap();

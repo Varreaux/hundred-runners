@@ -107,10 +107,12 @@ const OUT = eval(src + `
   killRunner = realKill;
 
   // ---- and nobody over an open hole at deck level.
-  // The SAME expression drawRunners uses for the lift, so this cannot quietly drift from what
-  // is actually drawn: change the drawing without changing this and the check goes stale by
-  // failing rather than by lying.
-  const lift = r => r.hop > 0 ? Math.sin(r.hop / (r.hopMax || 0.5) * Math.PI) * 16 * Math.min(2.6, (r.hopMax || 0.5) / 0.5) : 0;
+  // THE GAME'S OWN FUNCTION, called, not a copy of its arithmetic. The previous version of
+  // this line restated drawRunners' expression and carried a comment claiming it therefore
+  // could not drift -- and it drifted the moment the hop moved from a clock to a position,
+  // because a restatement is not a read. It then reported every body on the reel at deck
+  // level and accused the game of a fault the game did not have.
+  const lift = r => hopLift(r);
   const air = {};
   reset(); startRun();
   const cap2 = 60 * (S.camMax / CFG.scroll + 90);
@@ -118,12 +120,17 @@ const OUT = eval(src + `
     update(1/60);
     for (const room of S.rooms) {
       if (room.state === 'solved') continue;
-      // only the crossings are holes. A machine, a press and a crusher are things you run
-      // past or under, and the wall is the one nobody gets past at all.
-      if (room.hazard === 'machine' || room.hazard === 'press' || room.hazard === 'burst') continue;
-      if (room.type === 'wall') continue;
+      // WHICH ROOMS ARE HOLES IS READ FROM THE GAME, not listed again here. Listed again, this
+      // check counted a rickety bridge's deck and a thorn hedge's whole ground as open holes
+      // and reported 714 bodies walking on air across a floor that is drawn and solid.
+      if (!HOLES[room.type]) continue;
       for (const r of S.runners) {
         if (r.state !== 'run' || r.lane !== room.lane) continue;
+        // A runner on a merge ramp is on a path ACROSS THE HILLSIDE, a terrace above the lane
+        // whose number they already carry, and update() skips rooms for exactly that reason --
+        // "no future fork can be placed so as to recreate it". Counting them as bodies standing
+        // in a ditch they are a terrace above is this check inventing a fault.
+        if (r.ramp) continue;
         // strictly INSIDE the hole; the lips themselves are solid ground
         if (r.x <= room.x + 14 || r.x >= room.x + CFG.gapWidth - 14) continue;
         const e = air[room.type] || (air[room.type] = { n: 0, flat: 0, mid: 0, min: Infinity });
@@ -230,7 +237,11 @@ if (A) {
   const perRoom = Math.max(0, ...A.rooms.map(r => r.worst));
   const perRoomBurst = Math.max(0, ...A.rooms.map(r => r.burst));
   console.log(`\nOne-at-a-time verdict, on the run where every room is live:`);
-  console.log(`  ${perRoom === 1 ? 'PASS' : 'no  '}  no ROOM takes more than one person on a frame (worst ${perRoom})`);
+  // <= 2, not === 1. This counts killRunner, which for a crossing fires when the body LANDS,
+  // about half a second after the hazard took them -- so two people taken 0.55s apart can hit
+  // the water on the same frame. The hazard still took them one at a time, which is the thing
+  // being asked about; the quarter-second figure below is the one that reads on screen.
+  console.log(`  ${perRoom <= 2 ? 'PASS' : 'no  '}  no ROOM takes more than two on a frame, landings included (worst ${perRoom})`);
   console.log(`  ${perRoomBurst <= 3 ? 'PASS' : 'no  '}  no room takes more than three in a quarter second (worst ${perRoomBurst})`);
   console.log(`  ${airBad === 0 ? 'PASS' : 'no  '}  nobody drawn at deck level mid-way over an open crossing (${airN} sampled)`);
   console.log(`\n  worst single room, per run: ${A.rooms.length ? A.rooms[0].name + ' takes ' + (A.rooms[0].n / OUT.nosolve.length).toFixed(1) : 'n/a'}`);

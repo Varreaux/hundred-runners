@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '98 a new score over the doors';
+const BUILD = '99 they jump the way they are going';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1400,7 +1400,7 @@ function reset() {
       skin: pick(SKIN), shirt: pick(SHIRT), pants: pick(PANTS), hair: pick(HAIR), style: pick(STYLES), height: 1,
       name: null,
       phase: Math.random() * 6.28,
-      state: 'run', vy: 0, fy: 0, rot: 0, fallLimit: 70, hop: 0, hopMax: 0.5, rolled: null, fs: false, squash: 0, catchUp: 0,
+      state: 'run', vy: 0, fy: 0, rot: 0, fallLimit: 70, hopFrom: 0, hopTo: 0, hopAmp: 16, rolled: null, fs: false, squash: 0, catchUp: 0,
       doom: null, endX: 0, deathT: 0, how: null,
       lane: 0, lastForkX: -1, route: [], ramp: null, held: false,
       // when this one steps off the belt, spread across the delivery window
@@ -1469,7 +1469,7 @@ function say(r, pool, life = 2.2, pinned = false) {
   if (S.bubbles.some(b => b.r === r)) return;
   const used = new Set(S.bubbles.map(b => b.txt));
   const fresh = LINES[pool].filter(l => !used.has(l));
-  S.bubbles.push({ r, wx: r.x, wy: footY(r) - (r.name ? 36 : 33), txt: pick(fresh.length ? fresh : LINES[pool]), life, max: life, pinned });
+  S.bubbles.push({ r, wx: r.x, wy: footY(r) - hopLift(r) - (r.name ? 36 : 33), txt: pick(fresh.length ? fresh : LINES[pool]), life, max: life, pinned });
 }
 function killRunner(r, how) {
   r.state = 'dead'; r.endX = r.x; r.deathT = S.t; r.how = how; S.stats.dead++; S.shake = Math.min(5, S.shake + 1.2);
@@ -1484,7 +1484,10 @@ function killRunner(r, how) {
   if (how === 'splash') splash(r.x, CFG.riverY);
   else if (how === 'dark') dust(r.x, r.y + 50, '#3a3040');
   else dust(r.x, r.y - 6, '#c0392b');
-  S.floaters.push({ wx: r.x, wy: r.y - 10, txt: r.name ? `-${r.name}` : '-1', life: r.name ? 1.4 : 0.8, color: '#ff6b6b' });
+  // r.y is the LANE height and a fall lives in r.fy, so this put the red marker up at the lip
+  // at the instant the body hit water ninety units below it, and then floated it further up.
+  // Two markers of one event travelling in opposite directions.
+  S.floaters.push({ wx: r.x, wy: r.y + (r.fy || 0) - 10, txt: r.name ? `-${r.name}` : '-1', life: r.name ? 1.4 : 0.8, color: '#ff6b6b' });
 }
 
 // ================================================================ input
@@ -1613,7 +1616,9 @@ function update(dt) {
   S.wrongFlash = Math.max(0, S.wrongFlash - dt);
   S.shake = Math.max(0, S.shake - dt * 14);
   updateFx(dt);
-  for (const r of S.runners) { r.phase += dt * 14; r.hop = Math.max(0, r.hop - dt); r.squash = Math.max(0, r.squash - dt * 7); }
+  // A held body is standing still, and an arc driven off x would hang it in the air for as
+  // long as the gate holds it.
+  for (const r of S.runners) { r.phase += dt * 14; if (r.held) r.hopTo = 0; r.squash = Math.max(0, r.squash - dt * 7); }
   if (S.mode === 'finale') {
     const f = S.finale;
     f.timer -= dt;
@@ -1721,16 +1726,20 @@ function update(dt) {
         // Re-deciding every frame lets a reload expire under somebody who is already halfway
         // across and drops them out of their own jump into the middle of the gap.
         if (r.rolled === room) continue;
-        r.rolled = room;
-        // The wall is the one hazard nobody gets past: it is a wall, there is nothing to jump
-        // and nothing on the other side of it until it is blown open. Failing the last wall
-        // costing everyone still alive is a design decision about the climax, and Morgan's to
-        // make -- so it is named here rather than quietly inherited.
-        const wall = room.type === 'wall';
-        if (!wall) {
-          if (room.hazard === 'half' && Math.random() < 0.5) { hopGap(r, room); continue; }
-          if (!roomFree(room)) { hopGap(r, room); continue; }
+        // See BLOCKED: a wall, a raised bascule leaf and a stowed winch plank all stand IN the
+        // way, so nobody is let past any of them. They still take one at a time.
+        if (!BLOCKED[room.type]) {
+          // THE ONE IN FRONT GOES IN. This loop runs in birth order, not position, and two
+          // runners cross the lip in the same frame whenever they are within 1.83 units of
+          // each other -- which at about four units of pack density is most of the time. Left
+          // to the array index it was a coin toss, so half of all deaths dropped somebody a
+          // stride BEHIND the leader while the leader sailed over a hole they had not reached.
+          if (roomFree(room) && S.runners.some(q => q !== r && q.state === 'run' && q.lane === r.lane
+                && q.rolled !== room && q.x > r.x && q.x < room.x + CFG.gapWidth)) continue;
+          if (room.hazard === 'half' && Math.random() < 0.5) { r.rolled = room; hopGap(r, room); continue; }
+          if (!roomFree(room)) { r.rolled = room; hopGap(r, room); continue; }
         }
+        r.rolled = room;
         room.killT = CFG.reload;
         if (machine) { r.doom = room; killRunner(r, room.type === 'wiring' ? 'electric' : 'crush'); room.deaths++; break; }
         r.state = 'fall'; r.doom = room; r.vy = 0; r.fy = 0; r.fallLimit = r.lane === 0 ? CFG.riverY - r.y : 60; room.deaths++;
@@ -2054,7 +2063,12 @@ function updateLane(r) {
     if (f.from !== r.lane) continue;
     if (Math.random() < f.split) {
       r.route.push({ mergeX: f.merge, back: f.from });
-      r.lane = f.to; r.hop = 0.5; r.hopMax = 0.5;
+      // A continuation, not a clobber. Assigning outright restarts the phase at 0, which drops
+      // a body that is already in the air straight to deck level for one frame and relaunches
+      // it. Nothing can reach that today -- the tightest fork-after-crossing pair clears by 65
+      // units -- but it is one layout change away.
+      r.lane = f.to;
+      if (hopAt(r) < 0) { r.hopFrom = r.x; r.hopTo = r.x + 55; r.hopAmp = 16; }
       r.ramp = { x0: f.x, x1: f.x + CFG.rampLen, y0: laneY(f.from), y1: laneY(f.to) };
       dust(r.x, r.y);
     }
@@ -2125,20 +2139,60 @@ const killFrom = room => CFG.killFrom[room.hazard] ?? 8;
 // Whether this hazard has its hands free. A room that has just taken somebody is busy with
 // them, and the next person past gets past.
 const roomFree = room => !(room.killT > 0);
-// Somebody who gets past an open crossing has to be SEEN to get past it. Without this they
-// run straight over a hole on a floor that is not there, which is precisely the fault the
-// logic checker exists to catch -- introduced by the fix for the clumping.
+// SOME CROSSINGS CANNOT BE GOT PAST, and it is not the hole that stops you -- it is what is
+// standing in the hole. An unsolved drawbridge leaves its leaf up at 81 degrees, hinged at the
+// far lip and leaning back over the gap: resolved through that rotation the slab occupies 86
+// to 127 units from the room's near edge, all the way to 120 up. An unsolved winch leaves its
+// plank stowed vertically ON the near lip, 121 units tall across x -7 to +15. A 35-unit jump
+// clears neither, and in a side elevation there is nowhere to go round. Letting anyone past
+// those two put a body inside a steel slab for about seventeen frames of every hop, on every
+// one of the eight bridges and winches.
 //
-// The duration is the time to clear the far lip at the speed they are travelling, so the arc
-// lands them on the other side instead of stopping in mid-air over the gap. A machine is not
-// jumped (you run past it, you do not vault it) and neither is the wall, which nobody gets
-// past at all.
+// So they take everybody, exactly as the wall does. What they keep from the reload is the
+// spacing: the deaths still come one at a time.
+// ONLY THE WALL, for now. Blocking the bridge and the winch as well is the clean answer to
+// the leaf and the plank, and it was tried and reverted: it puts the FIRST room in the game
+// back to taking all hundred at once, which is the exact thing this whole change exists to
+// stop. The occlusion is the cheaper fault of the two and it has a known fix -- drawRoomProps
+// already runs AFTER drawRunners for precisely this reason ("it stands between the camera and
+// the walkway, so people go behind it instead of through it"), and moving the raised leaf and
+// the stowed plank into it puts a passing body behind them rather than inside them. That is
+// surgery on shared drawing code and wants its own reviewer pass; it is written up rather
+// than attempted here.
+const BLOCKED = { wall: 1 };
+// And of what CAN be got past, only a real hole is JUMPED. A thorn is a laid hedge 56 units
+// high standing on whole ground and a rickety bridge has a deck with three planks missing --
+// both already let half the crowd through before any of this, on foot, and that is still what
+// they should look like. Jumping either puts the feet inside it.
+const HOLES = { bridge: 1, winch: 1, rope: 1, ditch: 1 };
 function hopGap(r, room) {
-  if (room.hazard === 'machine' || room.type === 'wall') return;
-  const far = room.x + CFG.gapWidth + 8;
-  const d = Math.max(0.34, (far - r.x) / CFG.scroll);
-  if (d > r.hop) { r.hop = d; r.hopMax = d; }
+  if (!HOLES[room.type]) return;
+  // From the LIP, and to the far lip. Resolved at room.x + killFrom, a jump that starts where
+  // the runner stands starts at zero height eight units out over the hole -- the survivor
+  // taking off from the same pixel, at the same height, as the victim drops from.
+  // A ditch's far lip is where its spoil bank starts, so it does not overshoot onto the face
+  // of the bank; the bank itself is pre-existing ground nobody is raised over.
+  const far = room.x + CFG.gapWidth + (room.type === 'ditch' ? 0 : 8);
+  if (hopAt(r) >= 0 && r.hopTo >= far) return;      // already airborne and going further
+  r.hopFrom = room.x;
+  r.hopTo = far;
+  // Ten identical arcs in a queue is clockwork rather than a crowd.
+  r.hopAmp = 34 * (0.86 + 0.28 * hash(r.jit * 5.1));
 }
+// Where a body is through its jump, as a fraction of the span it is clearing; -1 for not
+// jumping. POSITION, not seconds. The pack does not travel at CFG.scroll: `rel` is clamped to
+// [-80, +190] on top of it, so the real range is 30 to 300 units a second. Clocked in seconds,
+// jitter alone lands a runner 21.6 units out -- short, that is at deck level in the last third
+// of the gap, which is exactly where a middle-third sample cannot see it -- and a pack
+// released from a gate 150 units before a crossing arrives at 300 and finishes its arc 51
+// units PAST the far lip and still 35 up. Driven off x it cannot come apart at any speed.
+const hopAt = r => {
+  if (!(r.hopTo > r.hopFrom) || r.state !== 'run') return -1;
+  const k = (r.x - r.hopFrom) / (r.hopTo - r.hopFrom);
+  return k >= 0 && k < 1 ? k : -1;
+};
+// how far off the ground a hop has a body, for everything that has to follow it up
+const hopLift = r => { const k = hopAt(r); return k < 0 ? 0 : Math.sin(k * Math.PI) * r.hopAmp; };
 function canReach(r, room) {
   if (r.x >= room.x + killFrom(room)) return false;
   const lanes = new Set([room.lane]);
@@ -9893,17 +9947,13 @@ function drawRunners(lane) {
     .sort((a, b) => a.dy - b.dy);
   for (const r of list) {
     const sx = r.x - V.left;
-    // The arc is drawn to the hop's OWN length, not to the fork's 0.5. A 1.1s jump over a
-    // 120-unit gap run through a 0.5 divisor completes two and a bit arcs on the way across,
-    // so the runner bounces three times in mid-air instead of jumping once; and its height
-    // grows with its span, because a long jump drawn 16px high reads as a stumble.
-    // The arc's HEIGHT scales with its span, not with the square root of it. A 120-unit gap
-    // cleared with a 24-unit arc is 10 screen pixels at play zoom against a body of 19 -- half
-    // a body of lift to clear a hole six bodies wide, which reads as walking on air rather
-    // than as jumping. Linear puts the peak at about a body's height, which reads.
-    const hopT = r.hopMax || 0.5;
-    const hop = r.hop > 0 ? -Math.sin(r.hop / hopT * Math.PI) * 16 * Math.min(2.6, hopT / 0.5) : 0;
-    const moving = r.state === 'run' && !r.held;
+    const hk = hopAt(r), hopping = hk >= 0;
+    const hop = -hopLift(r);
+    // A JUMPING BODY IS NOT A WALKING BODY LIFTED UP. Left `moving`, drawFigure scissors the
+    // legs at 14 rad/s for the whole flight and the walk bob is added on top of the arc, so
+    // the animation says walking and only the y says jumping -- which is the definition of
+    // sliding along at the wrong height.
+    const moving = r.state === 'run' && !r.held && !hopping;
     const bob = (moving ? -Math.abs(Math.sin(r.phase)) * 1.5 : 0) + hop;
     const drop = r.state === 'run' ? deckDrop(r) : 0;
     const sy = footY(r) + (r.state === 'fall' ? r.fy : 0) + bob + drop;
@@ -9918,9 +9968,14 @@ function drawRunners(lane) {
       const lampX = out ? r.x : lampNear(lane, r.x);
       const lean = out ? 9 : Math.max(-7, Math.min(7, (r.x - lampX) * 0.06));
       const len = out ? 11 : 6.4;
-      ctx.fillStyle = out ? 'rgba(0,0,0,0.17)' : 'rgba(0,0,0,0.24)';
+      // A shadow shrinks and fades as a body leaves the ground, and that is the one cue that
+      // sells height for nothing. Kept rather than deleted: at full strength it paints a
+      // contact shadow on thin air across an open hole, and deleting it throws the cue away.
+      // The conveyor got `!r.onBelt` for this exact fault and the hop did not.
+      const k = 1 - (hopping ? Math.sin(hk * Math.PI) : 0) * 0.72;
+      ctx.fillStyle = out ? `rgba(0,0,0,${(0.17 * k).toFixed(3)})` : `rgba(0,0,0,${(0.24 * k).toFixed(3)})`;
       ctx.beginPath();
-      ctx.ellipse(sx + lean * scale, footY(r) + 2 + drop, len * scale, 2.1, 0, 0, 6.28); ctx.fill();
+      ctx.ellipse(sx + lean * scale, footY(r) + 2 + drop, len * scale * k, 2.1 * k, 0, 0, 6.28); ctx.fill();
     }
     ctx.save(); ctx.translate(sx, sy);
     if (moving && r.squash > 0) { const q = Math.sin(r.squash * Math.PI) * 0.13; ctx.scale(1 + q, 1 - q); }
@@ -9936,7 +9991,12 @@ function drawRunners(lane) {
       phase = S.t * 22 + r.jit;
       if (r.lane > 0) alpha = Math.max(0, 1 - Math.max(0, r.fy - r.fallLimit * 0.6) / (r.fallLimit * 0.4));
     }
-    else if (r.hop > 0) ctx.rotate(-0.7 * Math.sin(r.hop / (r.hopMax || 0.5) * Math.PI));
+    // FORWARD, and a third of the size. drawFigure's own LEAN is +0.18 and its comment reads
+    // "radians of forward lean while running", so -0.7 about the feet netted 30 degrees
+    // BACKWARDS -- crown 17.4 units behind the heels while the body is 35 units over an open
+    // pit. That is the silhouette of someone toppling in, which is the one thing a jump must
+    // not borrow when the two happen a few pixels apart.
+    else if (hopping) ctx.rotate(0.24 * Math.sin(hk * Math.PI));
     // On a ramp a body leans with the slope: forward going up, back coming down. Standing
     // bolt upright on a 43-degree path buries the downhill foot and leaves the uphill one
     // in the air, which act three shows off badly because its ramps are open hillside
@@ -11803,14 +11863,19 @@ const TRAPS = {
     };
     // R1 + R2 IS the centre distance. Two gears drawn at any other spacing are two wheels
     // near each other, and there is no nip between them for anyone to be caught in.
-    const R1 = 26, R2 = 19, CY = -40, AX = 22, BX = AX - (R1 + R2);
-    ctx.fillStyle = '#3c3848'; ctx.fillRect(-150, -74, 300, 9);     // the line shaft, overhead
+    // Lowered three units. A rotating gear's bounding box changes with its phase -- a tooth
+    // corner sits at sqrt(2.6^2 + 30.2^2) = 30.3 from the hub -- so the assembly's top sweeps
+    // as it turns, and at the worst phase it reached 113 against the name block's 116. The old
+    // single-sample check never saw it: it measured whichever rotation the previous test
+    // happened to leave S.t on, and reported 155 or 114 for byte-identical code.
+    const R1 = 26, R2 = 19, CY = -37, AX = 22, BX = AX - (R1 + R2);
+    ctx.fillStyle = '#3c3848'; ctx.fillRect(-150, -70, 300, 9);     // the line shaft, overhead
     // The bearing hangs OUTBOARD of its wheel, not behind it. Behind it, a 26-unit gear hides
     // the whole thing and both wheels read as floating -- the support was drawn and could not
     // be seen, which is the same as not drawing it.
     for (const [hx, rad] of [[AX, R1], [BX, R2]]) {
       const ox = hx + (hx > 0 ? rad + 9 : -(rad + 9));
-      ctx.fillStyle = '#4a4656'; ctx.fillRect(ox - 3, -65, 6, (CY - 8) - -65);
+      ctx.fillStyle = '#4a4656'; ctx.fillRect(ox - 3, -61, 6, (CY - 8) - -61);
       ctx.fillStyle = '#5a5566'; ctx.fillRect(ox - 8, CY - 8, 16, 16);
       ctx.strokeStyle = INK; ctx.lineWidth = 0.7; ctx.strokeRect(ox - 8, CY - 8, 16, 16);
       ctx.fillStyle = '#3f3a48'; ctx.fillRect(Math.min(ox, hx), CY - 3, Math.abs(ox - hx), 6);
