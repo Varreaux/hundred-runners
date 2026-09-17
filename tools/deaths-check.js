@@ -106,41 +106,30 @@ const OUT = eval(src + `
   }
   killRunner = realKill;
 
-  // ---- and nobody over an open hole at deck level.
-  // THE GAME'S OWN FUNCTION, called, not a copy of its arithmetic. The previous version of
-  // this line restated drawRunners' expression and carried a comment claiming it therefore
-  // could not drift -- and it drifted the moment the hop moved from a clock to a position,
-  // because a restatement is not a read. It then reported every body on the reel at deck
-  // level and accused the game of a fault the game did not have.
-  const lift = r => hopLift(r);
-  const air = {};
+  // ---- AND NOBODY GETS PAST AN UNSOLVED ROOM.
+  // This replaces the old "nobody at deck level over an open hole" invariant, which existed
+  // only because a reloading hazard used to let people past it. Nobody is let past anything
+  // now, so the hole is never occupied -- and the thing that needs guarding instead is the
+  // rule Morgan actually asked for: a room you have not solved is not skipped.
+  const past = {};
   reset(); startRun();
   const cap2 = 60 * (S.camMax / CFG.scroll + 90);
   for (let i = 0; i < cap2 && S.mode === 'play'; i++) {
     update(1/60);
     for (const room of S.rooms) {
       if (room.state === 'solved') continue;
-      // WHICH ROOMS ARE HOLES IS READ FROM THE GAME, not listed again here. Listed again, this
-      // check counted a rickety bridge's deck and a thorn hedge's whole ground as open holes
-      // and reported 714 bodies walking on air across a floor that is drawn and solid.
-      if (!HOLES[room.type]) continue;
-      for (const r of S.runners) {
-        if (r.state !== 'run' || r.lane !== room.lane) continue;
-        // A runner on a merge ramp is on a path ACROSS THE HILLSIDE, a terrace above the lane
-        // whose number they already carry, and update() skips rooms for exactly that reason --
-        // "no future fork can be placed so as to recreate it". Counting them as bodies standing
-        // in a ditch they are a terrace above is this check inventing a fault.
-        if (r.ramp) continue;
-        // strictly INSIDE the hole; the lips themselves are solid ground
-        if (r.x <= room.x + 14 || r.x >= room.x + CFG.gapWidth - 14) continue;
-        const e = air[room.type] || (air[room.type] = { n: 0, flat: 0, mid: 0, min: Infinity });
-        const L = lift(r), frac = (r.x - room.x) / CFG.gapWidth;
-        e.n++; e.min = Math.min(e.min, L);
-        if (L < 4) { e.flat++; if (frac > 0.3 && frac < 0.7) e.mid++; }
+      // a press and a crusher are not barriers: you walk under them and they may miss you
+      if (room.hazard === 'press' || room.hazard === 'burst') continue;
+      const e = past[room.type] || (past[room.type] = { through: 0, spared: 0 });
+      for (const q of S.runners) {
+        if (q.state !== 'run' || q.lane !== room.lane || q.ramp) continue;
+        // just past the far edge, where somebody who skipped it would be
+        if (q.x <= room.x + CFG.gapWidth || q.x > room.x + CFG.gapWidth + 30) continue;
+        if (q.spared === room) e.spared++; else e.through++;
       }
     }
   }
-  out.air = air;
+  out.past = past;
   return out;
 })()
 `);
@@ -172,7 +161,7 @@ function analyse(runs) {
     // six deaths on one frame, and the tool accuses the game of a clump it did not draw.
     const seen = new Map();
     for (const d of r.log) {
-      const e = rooms.get(d.room) || { n: 0, ts: [], worst: 0, bursts: [] };
+      const e = rooms.get(d.room) || { n: 0, ts: [], worst: 0, bursts: [], gaps: [] };
       e.n++; e.ts.push(d.t);
       rooms.set(d.room, e);
       const s2 = seen.get(d.room) || { frames: new Map(), ts: [] };
@@ -188,12 +177,14 @@ function analyse(runs) {
       let b2 = 0;
       for (let i = 0; i < ts.length; i++) { let j = i; while (j < ts.length && ts[j] - ts[i] <= 0.25) j++; b2 = Math.max(b2, j - i); }
       e.bursts.push(b2);
+      // Gaps are differenced WITHIN a run and then pooled. Pooling the timestamps first and
+      // differencing after interleaves six runs of the same room on the same game clock, which
+      // manufactures gaps a fraction of the real one: it reported 0.05s against a true 0.117.
+      // Same per-run/pooled fault that was fixed for the frame counts and missed here.
+      for (let i = 1; i < ts.length; i++) if (ts[i] - ts[i - 1] > 1e-9) e.gaps.push(ts[i] - ts[i - 1]);
     }
   }
   for (const [name, e] of rooms) {
-    e.ts.sort((a, b) => a - b);
-    e.gaps = [];
-    for (let i = 1; i < e.ts.length; i++) if (e.ts[i] - e.ts[i - 1] > 1e-9) e.gaps.push(e.ts[i] - e.ts[i - 1]);
     e.burst = Math.max(0, ...e.bursts);
     e.name = name;
     allGaps.push(...e.gaps);
@@ -222,13 +213,13 @@ const A = report('nobody touches a key', OUT.nosolve);
 const B = report('the ranking bot clears rooms as it goes', OUT.solve);
 console.log('\nThe bot line is the ceiling for perfect play, not a report on how the game plays.');
 
-console.log('\n=== bodies strictly inside an OPEN crossing');
-console.log(`    ${'type'.padEnd(10)} ${'samples'.padStart(8)} ${'at deck level'.padStart(14)} ${'of those, mid-gap'.padStart(18)} ${'least lift'.padStart(11)}`);
+console.log('\n=== runners found PAST an unsolved room');
+console.log(`    ${'type'.padEnd(10)} ${'skipped it'.padStart(12)} ${'spared by the half rule'.padStart(24)}`);
 let airBad = 0, airN = 0;
-for (const [t, e] of Object.entries(OUT.air || {})) {
-  airN += e.n;
-  console.log(`    ${t.padEnd(10)} ${String(e.n).padStart(8)} ${String(e.flat).padStart(14)} ${String(e.mid).padStart(18)} ${e.min.toFixed(1).padStart(11)}`);
-  if (e.mid > 0) airBad++;
+for (const [t, e] of Object.entries(OUT.past || {})) {
+  airN += e.through + e.spared;
+  console.log(`    ${t.padEnd(10)} ${String(e.through).padStart(12)} ${String(e.spared).padStart(24)}`);
+  if (e.through > 0) airBad++;
 }
 
 if (A) {
@@ -243,6 +234,6 @@ if (A) {
   // being asked about; the quarter-second figure below is the one that reads on screen.
   console.log(`  ${perRoom <= 2 ? 'PASS' : 'no  '}  no ROOM takes more than two on a frame, landings included (worst ${perRoom})`);
   console.log(`  ${perRoomBurst <= 3 ? 'PASS' : 'no  '}  no room takes more than three in a quarter second (worst ${perRoomBurst})`);
-  console.log(`  ${airBad === 0 ? 'PASS' : 'no  '}  nobody drawn at deck level mid-way over an open crossing (${airN} sampled)`);
+  console.log(`  ${airBad === 0 ? 'PASS' : 'no  '}  nobody gets past a room they did not solve (${airN} sightings past a room)`);
   console.log(`\n  worst single room, per run: ${A.rooms.length ? A.rooms[0].name + ' takes ' + (A.rooms[0].n / OUT.nosolve.length).toFixed(1) : 'n/a'}`);
 }

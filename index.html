@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '100 the music starts with the crowd';
+const BUILD = '101 they queue at the edge and go in one at a time';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -93,17 +93,18 @@ const CFG = {
   // hazard -> how far into the room it starts killing; canReach asks this
   // instead of assuming 8, so the next hazard added cannot reintroduce the bug
   killFrom: { all: 8, half: 8, burst: 35, machine: 88, press: 1 },
-  // A hazard takes ONE person and then needs this long before it can take another, and
-  // anyone who reaches it while it is reloading GETS PAST. Morgan, 2026-09-17: the crowd
-  // runs in a clump and that is right, but every hazard used to resolve its whole clump at
-  // once -- measured at fifteen deaths inside a quarter second with a median of 0.02s
-  // between them. That is one event on screen rather than fifteen: you cannot count them,
-  // you cannot see who they were, and the tally simply jumps.
+  // NOBODY GETS PAST AN UNSOLVED ROOM. They stop at it, queue, and the room takes the one at
+  // the front every `reload` seconds. Morgan, 2026-09-17, twice: the first version let the
+  // people a reloading hazard could not take walk past it, which made a room cheaper but let
+  // the crowd skip a challenge he had not completed. What he asked for is the queue -- "very
+  // fast queuing where they die one at a time... instead of having 20 die in 0.1 seconds, you
+  // have one die every 0.1 seconds".
   //
-  // The pass-through is the half that makes a room less catastrophic rather than merely
-  // slower. Queueing them up to die one by one spreads the same loss over more seconds; it
-  // does not reduce it. tools/deaths-check.js measures both halves.
-  reload: 0.55,
+  // So the loss at an unsolved room is what it always was; what changes is that it arrives as
+  // a countable file of individuals instead of a clump vanishing between two frames. The
+  // player's lever is the same one the game is built on: solve the room and the whole queue
+  // walks. tools/deaths-check.js measures the rate and the clumping.
+  reload: 0.1,
   spikeCooldown: 3,      // real seconds before another death-spike slow-motion can fire
   // a fork sends `split` of the runners on tunnel `from` up a ramp into tunnel `to`; they come back at `merge`.
   // nested forks must merge before the fork they branched from.
@@ -1407,7 +1408,7 @@ function reset() {
       name: null,
       phase: Math.random() * 6.28,
       state: 'run', vy: 0, fy: 0, rot: 0, fallLimit: 70, hopFrom: 0, hopTo: 0, hopAmp: 16, rolled: null, fs: false, squash: 0, catchUp: 0,
-      doom: null, endX: 0, deathT: 0, how: null,
+      doom: null, endX: 0, deathT: 0, how: null, atRoom: null, spared: null,
       lane: 0, lastForkX: -1, route: [], ramp: null, held: false,
       // when this one steps off the belt, spread across the delivery window
       bornAt: (i / CFG.runnerCount) * CFG.intro.deliver,
@@ -1721,36 +1722,34 @@ function update(dt) {
       // Skipping rooms while the ramp is live makes the whole CLASS impossible rather than
       // moving it: no future fork can be placed so as to recreate it.
       if (r.ramp) continue;
+      // The runner loop only STOPS them. Which one the room takes is decided once per room in
+      // the room loop below, because a queue has a front and this loop runs in birth order:
+      // deciding it here made it a coin toss between whoever the array reached first, and
+      // half of all deaths took somebody a stride behind the person actually at the edge.
+      // STICKY. Once somebody is in a queue they stay in it until the room is solved or the
+      // room takes them. Recomputing membership from "is this runner at the line" each frame
+      // fought the spacing pass directly: the spacing holds the twentieth person eighty units
+      // back, that puts them behind the line, they drop out of the queue, the pack formation
+      // walks them forward again, and the whole file collapses onto the lip every frame.
+      const wasAt = r.atRoom;
+      r.atRoom = null;
       for (const room of S.rooms) {
         if (room.lane !== r.lane || room.state === 'solved') continue;
-        // the presses run on their own cadence in the room loop below
-        if (room.hazard === 'press') continue;
-        if (room.hazard === 'burst') continue;          // and the crusher on its own slam
-        const machine = room.hazard === 'machine';
-        if (r.x < room.x + killFrom(room) || r.x >= room.x + CFG.gapWidth) continue;
-        // ONE DECISION PER RUNNER PER ROOM, taken the moment they enter its killing zone.
-        // Re-deciding every frame lets a reload expire under somebody who is already halfway
-        // across and drops them out of their own jump into the middle of the gap.
-        if (r.rolled === room) continue;
-        // See BLOCKED: a wall, a raised bascule leaf and a stowed winch plank all stand IN the
-        // way, so nobody is let past any of them. They still take one at a time.
-        if (!BLOCKED[room.type]) {
-          // THE ONE IN FRONT GOES IN. This loop runs in birth order, not position, and two
-          // runners cross the lip in the same frame whenever they are within 1.83 units of
-          // each other -- which at about four units of pack density is most of the time. Left
-          // to the array index it was a coin toss, so half of all deaths dropped somebody a
-          // stride BEHIND the leader while the leader sailed over a hole they had not reached.
-          if (roomFree(room) && S.runners.some(q => q !== r && q.state === 'run' && q.lane === r.lane
-                && q.rolled !== room && q.x > r.x && q.x < room.x + CFG.gapWidth)) continue;
-          if (room.hazard === 'half' && Math.random() < 0.5) { r.rolled = room; hopGap(r, room); continue; }
-          if (!roomFree(room)) { r.rolled = room; hopGap(r, room); continue; }
+        if (room.hazard === 'press') continue;           // the presses keep their own rota
+        if (room.hazard === 'burst') continue;           // and the crusher its own slam
+        const line = holdLine(room);
+        if (r.x >= room.x + CFG.gapWidth) continue;
+        if (r.x < line - 2 && wasAt !== room) continue;
+        // A 'half' room spares half of its arrivals and always did -- a rickety bridge you
+        // might get over, a thorn you might push through. That is the room's own rule, decided
+        // once per runner, and it is not the queue's business. Everyone else stops.
+        if (room.hazard === 'half') {
+          if (r.rolled !== room) { r.rolled = room; r.spared = Math.random() < 0.5 ? room : null; }
+          if (r.spared === room) continue;
         }
-        r.rolled = room;
-        room.killT = CFG.reload;
-        if (machine) { r.doom = room; killRunner(r, room.type === 'wiring' ? 'electric' : 'crush'); room.deaths++; break; }
-        r.state = 'fall'; r.doom = room; r.vy = 0; r.fy = 0; r.fallLimit = r.lane === 0 ? CFG.riverY - r.y : 60; room.deaths++;
-        r.rotRate = rand(1.5, 3.5) * (Math.random() < 0.5 ? -1 : 1); r.vx0 = CFG.scroll * 0.3; r.rv0 = r.rotRate;
-        if (Math.random() < 0.35 && S.t - S.lastWordT > 0.4) { S.lastWordT = S.t; S.bubbles = S.bubbles.filter(b => b.r !== r); say(r, 'fall', 1.4, true); }
+        r.atRoom = room;
+        r.x = Math.min(r.x, line - 2);
+        r.held = true;
         break;
       }
     } else if (r.state === 'fall') {
@@ -1826,6 +1825,38 @@ function update(dt) {
     if (room.state === 'solved') room.bridge = Math.min(1, room.bridge + dt * 3.5);
     room.flash = Math.max(0, room.flash - dt * 1.8);
     room.killT = Math.max(0, room.killT - dt);
+    // ONE AT A TIME, OFF THE FRONT OF THE QUEUE. Resolved here rather than in the runner loop
+    // so that "the front" means the furthest forward, not the lowest array index.
+    if (room.state !== 'solved') {
+      // THE QUEUE STACKS BACK FROM THE EDGE. Clamping everyone to the lip put seventy people
+      // inside twenty-six units -- one body on top of another, which reads as a smudge rather
+      // than as a line of people waiting their turn. Each one is held behind the one in front
+      // instead, at a stride and a bit, jittered per runner so the file is not a comb.
+      const q = S.runners.filter(x => x.state === 'run' && x.atRoom === room).sort((a, b) => b.x - a.x);
+      let back = holdLine(room) - 2;
+      for (const p of q) {
+        if (p.x > back) p.x = back;
+        back = p.x - (4.6 + hash(p.jit * 3.7) * 2.4);
+      }
+      const front = room.killT <= 0 ? q[0] : null;
+      if (front) {
+        room.killT = CFG.reload; room.deaths++;
+        front.doom = room;
+        front.held = false; front.atRoom = null;
+        if (room.hazard === 'machine') killRunner(front, room.type === 'wiring' ? 'electric' : 'crush');
+        else {
+          // nudged over the edge, so they go INTO the gap rather than dropping down its face
+          front.x = Math.max(front.x, room.x + killFrom(room) + 5);
+          front.state = 'fall'; front.vy = 0; front.fy = 0;
+          front.fallLimit = front.lane === 0 ? CFG.riverY - front.y : 60;
+          front.rotRate = rand(1.5, 3.5) * (Math.random() < 0.5 ? -1 : 1);
+          front.vx0 = CFG.scroll * 0.3; front.rv0 = front.rotRate;
+          if (Math.random() < 0.35 && S.t - S.lastWordT > 0.4) {
+            S.lastWordT = S.t; S.bubbles = S.bubbles.filter(b => b.r !== front); say(front, 'fall', 1.4, true);
+          }
+        }
+      }
+    }
     // Line shafting runs on an accumulated angle rather than on the clock, so a bay can be
     // brought to rest. Scaling S.t by a rate makes the wheel JUMP the moment the rate
     // changes, because the phase is recomputed from scratch every frame; integrating a
@@ -2151,46 +2182,10 @@ const killFrom = room => CFG.killFrom[room.hazard] ?? 8;
 // Whether this hazard has its hands free. A room that has just taken somebody is busy with
 // them, and the next person past gets past.
 const roomFree = room => !(room.killT > 0);
-// SOME CROSSINGS CANNOT BE GOT PAST, and it is not the hole that stops you -- it is what is
-// standing in the hole. An unsolved drawbridge leaves its leaf up at 81 degrees, hinged at the
-// far lip and leaning back over the gap: resolved through that rotation the slab occupies 86
-// to 127 units from the room's near edge, all the way to 120 up. An unsolved winch leaves its
-// plank stowed vertically ON the near lip, 121 units tall across x -7 to +15. A 35-unit jump
-// clears neither, and in a side elevation there is nowhere to go round. Letting anyone past
-// those two put a body inside a steel slab for about seventeen frames of every hop, on every
-// one of the eight bridges and winches.
-//
-// So they take everybody, exactly as the wall does. What they keep from the reload is the
-// spacing: the deaths still come one at a time.
-// ONLY THE WALL, for now. Blocking the bridge and the winch as well is the clean answer to
-// the leaf and the plank, and it was tried and reverted: it puts the FIRST room in the game
-// back to taking all hundred at once, which is the exact thing this whole change exists to
-// stop. The occlusion is the cheaper fault of the two and it has a known fix -- drawRoomProps
-// already runs AFTER drawRunners for precisely this reason ("it stands between the camera and
-// the walkway, so people go behind it instead of through it"), and moving the raised leaf and
-// the stowed plank into it puts a passing body behind them rather than inside them. That is
-// surgery on shared drawing code and wants its own reviewer pass; it is written up rather
-// than attempted here.
-const BLOCKED = { wall: 1 };
-// And of what CAN be got past, only a real hole is JUMPED. A thorn is a laid hedge 56 units
-// high standing on whole ground and a rickety bridge has a deck with three planks missing --
-// both already let half the crowd through before any of this, on foot, and that is still what
-// they should look like. Jumping either puts the feet inside it.
-const HOLES = { bridge: 1, winch: 1, rope: 1, ditch: 1 };
-function hopGap(r, room) {
-  if (!HOLES[room.type]) return;
-  // From the LIP, and to the far lip. Resolved at room.x + killFrom, a jump that starts where
-  // the runner stands starts at zero height eight units out over the hole -- the survivor
-  // taking off from the same pixel, at the same height, as the victim drops from.
-  // A ditch's far lip is where its spoil bank starts, so it does not overshoot onto the face
-  // of the bank; the bank itself is pre-existing ground nobody is raised over.
-  const far = room.x + CFG.gapWidth + (room.type === 'ditch' ? 0 : 8);
-  if (hopAt(r) >= 0 && r.hopTo >= far) return;      // already airborne and going further
-  r.hopFrom = room.x;
-  r.hopTo = far;
-  // Ten identical arcs in a queue is clockwork rather than a crowd.
-  r.hopAmp = 34 * (0.86 + 0.28 * hash(r.jit * 5.1));
-}
+// WHERE THE QUEUE STOPS. A crossing halts them at its lip. A machine bay halts them at its
+// mouth and not at `killFrom.machine`, which is 88 units INSIDE the cabinet -- that number is
+// where the machinery starts killing, not anywhere a queue could stand.
+const holdLine = room => room.x + (room.hazard === 'machine' ? 4 : killFrom(room));
 // Where a body is through its jump, as a fraction of the span it is clearing; -1 for not
 // jumping. POSITION, not seconds. The pack does not travel at CFG.scroll: `rel` is clamped to
 // [-80, +190] on top of it, so the real range is 30 to 300 units a second. Clocked in seconds,
@@ -2203,7 +2198,8 @@ const hopAt = r => {
   const k = (r.x - r.hopFrom) / (r.hopTo - r.hopFrom);
   return k >= 0 && k < 1 ? k : -1;
 };
-// how far off the ground a hop has a body, for everything that has to follow it up
+// how far off the ground a hop has a body, for everything that has to follow it up. The only
+// hop left is the fork's skip up onto a ramp: nothing jumps a hazard any more.
 const hopLift = r => { const k = hopAt(r); return k < 0 ? 0 : Math.sin(k * Math.PI) * r.hopAmp; };
 function canReach(r, room) {
   if (r.x >= room.x + killFrom(room)) return false;
