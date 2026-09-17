@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '91 and then sweep for the rest of them';
+const BUILD = '92 rect-check goes green';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -6539,7 +6539,14 @@ function seamClip(side) {
   const e = FAC.seam - V.left;
   ctx.beginPath();
   // with the seam off screen the toothing is invisible, so a rect does the same job
-  if (!inView(FAC.seam, 640)) { ctx.rect(side < 0 ? far : e, top, side < 0 ? e - far : far - e, bot - top); return; }
+  // Both edges, then subtract. `e - far` goes negative once the camera is past about 14950,
+  // which is most of act three. A negative-width rect encloses the identical region under the
+  // nonzero winding rule, so this one is provably invisible -- and that is exactly why it is
+  // worth writing out: nothing will ever point at it, and the next edit inherits the trap.
+  if (!inView(FAC.seam, 640)) {
+    const a = side < 0 ? far : e, b = side < 0 ? e : far;
+    ctx.rect(Math.min(a, b), top, Math.abs(b - a), bot - top); return;
+  }
   ctx.moveTo(far, top);
   for (let y = top; y <= bot; y += 22) ctx.lineTo(seamXAt(y) - V.left, y);
   ctx.lineTo(far, bot); ctx.closePath();
@@ -8914,8 +8921,14 @@ function drawFeeder() {
   ctx.fillStyle = '#5a5366'; ctx.fillRect(mx1 - 48, ramY, 40, 28);
   ctx.fillStyle = 'rgba(222,230,244,0.22)'; ctx.fillRect(mx1 - 48, ramY, 40, 3);
   ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(mx1 - 48, ramY + 24, 40, 4);
-  ctx.fillStyle = '#413c4a'; ctx.fillRect(mx1 - 34, top + 36, 11, ramY - top - 36);
-  ctx.fillStyle = 'rgba(214,222,236,0.16)'; ctx.fillRect(mx1 - 34, top + 36, 3, ramY - top - 36);
+  // The rod runs from the ram head DOWN into the cylinder, and the ram head is above the
+  // housing, so `ramY - top - 36` is negative for the whole stroke: -46 at the top of it and
+  // -4 at the bottom. A negative height grows upward from its y, which put the fill exactly
+  // where it belongs -- right picture, and the arithmetic says the opposite of what happens.
+  // Written as the two ends it actually spans, which changes no pixel.
+  const rodTop = Math.min(ramY, top + 36), rodH = Math.abs(ramY - top - 36);
+  ctx.fillStyle = '#413c4a'; ctx.fillRect(mx1 - 34, rodTop, 11, rodH);
+  ctx.fillStyle = 'rgba(214,222,236,0.16)'; ctx.fillRect(mx1 - 34, rodTop, 3, rodH);
   // ---- steam
   ctx.fillStyle = '#3c3745'; ctx.fillRect(mx0 + 84, top - 32, 12, 22);
   ctx.fillStyle = '#4a4453'; ctx.fillRect(mx0 + 80, top - 38, 20, 8);
