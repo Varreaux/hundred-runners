@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '106 comments only, nothing to look at';
+const BUILD = '107 rooms open a little closer';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -28,11 +28,29 @@ const CFG = {
   // on screen, which is the whole of the view's reach, and he wanted proximity rather than
   // sight -- "not too close, but not the maximum, somewhere in the middle, halfway".
   //
-  // 0 is the old on-sight behaviour, 1 is the floor and nothing but the floor. 0.5 is the
-  // halfway he asked for. It is a fraction and not a distance on purpose: the view's reach
-  // is 0.36 * V.vw, which runs from 346 units at play zoom to 768 when act three pulls back
-  // to five lanes, so any distance written here would mean something different in each act.
-  armReach: 0.5,
+  // 0 is the old on-sight behaviour, 1 is the floor and nothing but the floor. It is a
+  // fraction and not a distance on purpose: the view's reach is 0.36 * V.vw, which runs from
+  // 346 units at play zoom to 886 when act three pulls back to five lanes, so any distance
+  // written here would mean something different in each act.
+  //
+  // 0.5 was the halfway he asked for first; he played it, liked the direction and asked for
+  // "just a bit closer", so 0.6. What that buys, from tools/arm-check.js:
+  //
+  //   act one    292 -> 281 units    act two  ~370 -> ~350    act three  ~570 -> ~520
+  //
+  // ACT ONE IS NEARLY AT ITS FLOOR AND THIS LEVER CANNOT MOVE IT MUCH. At play zoom the
+  // view reaches 346 units and the floor is CFG.armDist at 240, so the whole travel here is
+  // 106 units -- about a second -- and the same fraction that moves act three by 50 moves
+  // act one by 11. Going further means lowering the floor, which is solve time and not
+  // visibility, and tools/room-check.js is where that shows up.
+  //
+  // Where the next notches land, measured, so nobody has to guess:
+  //   0.6  every room ok               <- here
+  //   0.7  conveyor becomes hard at 2.54 keys/sec
+  //   1.0  six rooms hard, none impossible
+  // Hard is a difficulty judgement and Morgan's to make. Do not raise this past 0.6 on
+  // your own account; quote him the number instead.
+  armReach: 0.6,
   baseY: 400,             // floor of tunnel 0; each tunnel above is laneGap higher
   laneGap: 190,
   laneCount: 6,

@@ -138,7 +138,12 @@ function visibleWindows() {
   S.mode = 'play';
   for (let f = 0; f < 60 * 220 && S.mode === 'play'; f++) {
     const t = f / 60;
-    update(1/60); devSolve();
+    // update, then LOOK, then let the bot press. devSolve opens and clears a room in the
+    // same call, so sampling after it meant r.state was never observed as 'armed' -- the
+    // arming time came back undefined for 27 of the 34 rooms and this reported them as
+    // never armed. Nothing was wrong with the game; the bot had simply already been.
+    // tools/arm-check.js orders it this way for the same reason.
+    update(1/60);
     const right = V.left + V.vw;
     for (const r of S.rooms) {
       const k = r.type + '@' + r.x;
@@ -164,6 +169,7 @@ function visibleWindows() {
         probe = null;
       }
     }
+    devSolve();
   }
 })();
 `);
@@ -255,19 +261,34 @@ for (const r of rooms) {
   const f = cost[verb];
   if (!f) { console.log(`${r.type.padEnd(11)} ${r.diff}     -- no cost model for verb '${verb}'`); continue; }
   const c = f(r.diff);
-  // The road is what the player can ACT on. That is the visible window, OR the warn
-  // window where the room announces itself at the screen edge before it arrives -- an
-  // armed room off the right of the view now draws a tab with its hotkey, count and
-  // countdown, which is what makes `warn` mean anything at all. Measured over a run the
-  // tab fires for eight rooms and gives up to 12.32s of lead.
+  // THE ROAD IS FROM THE MOMENT THE ROOM ARMS, not from the moment it appears.
+  //
+  // This measured from first sight until 2026-09-17, which was right while a room armed as
+  // soon as it was on screen and became wrong the day it stopped. Morgan asked for rooms to
+  // arm on proximity rather than on sight (CFG.armReach), and from that build on the player
+  // could see a room for a second or more before being able to touch it -- so every
+  // "0 impossible, 0 hard" this printed afterwards was scored against a budget nobody had.
+  // It is the same fault as the note in Morgan's memory about warn, one layer along: a room
+  // arms at one place and can be worked at another, and only the later one is the player's.
+  //
+  // The off-screen tab does NOT extend this. It tells you a room is coming, with its hotkey
+  // and a countdown, which is worth having -- but you still cannot open the room until it
+  // arms, so the tab buys anticipation and not keystrokes. It is reported beside the verdict
+  // rather than added to it.
   //
   // Whether that tab exists is detected by watching the frame, not asserted here, so if it
   // is ever removed this tool notices on the next run instead of waiting for someone to
   // read a comment.
   const w = WIN[r.type + '@' + r.x];
   const road = r.warn || armDist;
-  // the warn window only counts for a room that was OBSERVED announcing itself off screen
-  const secs = w ? (w.tab ? Math.max(w.road, w.armed) : w.road) : road / scroll;
+  // A room that never armed before the pack reached it has no budget at all; say so rather
+  // than scoring a rate against zero and printing a plausible-looking IMPOSSIBLE.
+  if (w && !w.armed) {
+    console.log(`${r.type.padEnd(11)} ${r.diff}     ${w.zoom.toFixed(2)}   NEVER ARMED before the crowd arrived -- unusable`);
+    bugs++;
+    continue;
+  }
+  const secs = w ? w.armed : road / scroll;
   let verdict, rate = null;
   if (c.secs && c.defer) {
     // the cost is a duration you cannot hurry
@@ -288,3 +309,12 @@ console.log(`\n${bugs} impossible, ${hard} hard, ${offLane} off-lane.`);
 console.log('Impossible is a bug and must be fixed. Hard is a judgement: quote it to Morgan,');
 console.log('do not pad the room to make the number go away.');
 process.exit(bugs || offLane ? 1 : 0);
+
+// Proved it can fail, rather than only seen it pass -- which matters more here than usual,
+// because this file measured the WRONG WINDOW for four days and printed "0 impossible, 0
+// hard" the whole time. Against copies of index.html:
+//
+//   armDist 240 -> 70    conveyor IMPOSSIBLE at 3.36 keys/sec, 1 impossible
+//   armReach   -> 1.0    6 hard, 0 impossible (every room arming at its own floor)
+//
+// Run those two again if you change what `secs` is measured from.
