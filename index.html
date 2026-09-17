@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '94 a crossing takes one at a time';
+const BUILD = '95 the jaws let go of you, again';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -797,20 +797,39 @@ const VERBS = {
     },
   },
   lift: {
-    now: m => (m.holding ? (m.strain > 0.72 ? 'LET GO' : 'keep holding') : m.strain > 0.2 ? 'let the spring settle' : 'hold SPACE'),
-    hint: 'hold SPACE to force the jaws \u2014 let go before the spring bites, then take hold again',
-    // Hold until the strain is nearly up, let go, take hold again. The numbers matter:
-    // strain fills in 1/0.62 = 1.61s and the jaws open in 1/0.42 = 2.38s, so holding
-    // straight through ALWAYS bites before it succeeds. If that ordering ever inverts,
-    // the puzzle solves itself by leaning on the key and there is no puzzle.
+    now: m => (m.recoil > 0 ? 'the spring bit back'
+            : m.holding ? (m.strain > 0.72 ? 'LET GO' : 'keep holding')
+            : m.strain > 0.2 ? 'let the spring settle' : 'hold SPACE'),
+    hint: 'hold SPACE to force the jaws \u2014 let go before the gauge reaches the line, or the spring bites back',
+    // Hold until the strain is nearly up, let go, take hold again.
+    //
+    // THE ROOM USED TO DEAD-END, and Morgan found it: it read as broken because it was. A
+    // bite set m.holding = false. The harness cannot dispatch keyup, so a press has to TOGGLE
+    // the grip -- which means that for a player physically holding the key, the bite dropped
+    // the grip and no further keydown was ever coming. The jaws crept shut to zero and the key
+    // did nothing for ever, while the gauge read HOLD SPACE at somebody who was holding space.
+    // Measured: hold it down and never let go ended at open 0.00 after one snap, every
+    // difficulty.
+    //
+    // A bite now COSTS rather than stops. It takes most of the opening, resets the strain and
+    // runs a short recoil, and the GRIP SURVIVES, so a player leaning on the key watches the
+    // jaws climb, slam, and climb again instead of watching nothing happen.
+    //
+    // `keep` is DERIVED, not chosen. Leaning repeats a cycle that gains gain/build and keeps
+    // `keep` of the total, so it settles at keep*g/(1-keep) and PEAKS one gain above that; it
+    // wins the moment that peak reaches 1, which reduces to keep >= 1-g. Difficulty 1 is
+    // strictest, where one clean grip already gains 0.763, so keep must stay under 0.237
+    // everywhere. 0.4 was tried first and the room solved itself by leaning in two cycles --
+    // the exact failure this comment used to warn about. At 0.12 leaning settles at 0.10 and
+    // peaks at 0.87 on difficulty 1 and 0.70 on difficulty 4: worth trying, never enough.
     solveKey: m => (m.holding ? (m.strain > 0.72 ? ' ' : null) : m.strain < 0.2 ? ' ' : null),
     takesHold: true,
     start(diff) {
       // inputT is NOT optional for a verb that banks m.won: the deferred-win branch in
       // update() does Math.max(0, m.inputT - dt) and then tests <= 0, so leaving it
       // undefined makes that NaN, NaN <= 0 is false, and the room never clears at all.
-      return { open: 0, strain: 0, holding: false, snapped: 0, inputT: 0.3,
-               gain: 0.46 - 0.01 * diff, build: 0.56 + 0.03 * diff, ease: 1.6, slip: 0.26 };
+      return { open: 0, strain: 0, holding: false, snapped: 0, recoil: 0, inputT: 0.3,
+               gain: 0.46 - 0.01 * diff, build: 0.56 + 0.03 * diff, ease: 1.6, keep: 0.12 };
     },
     key(m, k) {
       if (k !== ' ') return null;
@@ -823,12 +842,16 @@ const VERBS = {
     },
     release(m, k) { if (k === ' ') m.holding = false; },
     update(m, dt) {
-      if (m.holding) {
+      m.recoil = Math.max(0, m.recoil - dt);
+      if (m.holding && m.recoil <= 0) {
         m.open = Math.min(1, m.open + m.gain * dt);
         m.strain = Math.min(1.35, m.strain + m.build * dt);
-        // held too long: the spring bites back and takes some of the opening with it
-        if (m.strain >= 1) { m.holding = false; m.snapped = 1; m.open = Math.max(0, m.open - m.slip); }
-      } else {
+        // Held too long. The spring bites back, takes most of the opening and has to settle
+        // before it can be worked again -- but the GRIP SURVIVES, so a player holding the key
+        // is still holding it afterwards. Dropping the grip here is what made the room
+        // unplayable for anybody whose finger was already down.
+        if (m.strain >= 1) { m.strain = 0; m.snapped = 1; m.recoil = 0.34; m.open = m.open * m.keep; }
+      } else if (!m.holding) {
         m.strain = Math.max(0, m.strain - m.ease * dt);
         m.open = Math.max(0, m.open - 0.06 * dt);       // barely creeps shut: progress is kept
       }
@@ -892,7 +915,11 @@ const VERBS = {
       // bright green and half on the dark track behind, so no single flat colour reads on
       // both and picking one by `danger` made the label disappear at its own midpoint.
       ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
-      const word = m.holding ? (danger > 0.72 ? 'LET GO' : 'HOLDING') : 'HOLD SPACE';
+      // SNAPPED has to be its own word. With the grip surviving a bite, the gauge otherwise
+      // reads HOLDING the instant after the spring slams the jaws, which describes the key and
+      // not the thing that just happened.
+      const word = m.recoil > 0 ? 'SNAPPED'
+                 : m.holding ? (danger > 0.72 ? 'LET GO' : 'HOLDING') : 'HOLD SPACE';
       ctx.fillStyle = 'rgba(10,14,12,0.85)';
       for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) ctx.fillText(word, cx + ox, by + 13 + oy);
       ctx.fillStyle = '#fff'; ctx.fillText(word, cx, by + 13);
