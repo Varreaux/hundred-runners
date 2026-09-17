@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '110 the mantrap: let go in the green';
+const BUILD = '111 the last room, and which games belong to which act';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -116,9 +116,17 @@ const CFG = {
   // course that ramp is 7% / 21% / 35% / 50% / 64% / 96%, and our three acts end at 38% and
   // 79% of ours -- so collapsing her six bands onto three acts is nearly the same line:
   //
-  //   act one   (the mill, to 5950)      ranks 0-2   lever, gear, slider, typing
-  //   act two   (the mountain, to 12290) ranks 0-4   + wiring, + trace
-  //   act three (the enclosure, beyond)  ranks 0-5   everything, mixed
+  //   act one   (the mill, to 5950)      ranks 0-3   lever, gear, slider, typing, + the
+  //                                                  machine rooms: wiring and the keypad
+  //   act two   (the mountain, to 12290) ranks 0-5   + trace, + calculation
+  //   act three (the enclosure, beyond)  ranks 0-5   its own rooms, mixed with the earlier
+  //
+  // The mill's ceiling is 3 rather than 2 because the machine rooms belong in the mill: a
+  // cable loom and a keypad are factory furniture, and moving them out for a difficulty
+  // number would put them somewhere no art exists for. Linh's ramp admits rank 3 at 50% of
+  // her course and our mill ends at 38% of ours, so this is a calibration and not a fudge --
+  // but it IS a judgement, and if Morgan wants the mill easier, lowering it to 2 is the
+  // single number to change.
   //
   // The rank is about PLACEMENT, not tuning -- her words. `diff` on each room is untouched
   // and still does what it always did. tools/act-check.js enforces this and explains the
@@ -133,10 +141,15 @@ const CFG = {
     rickety:  { family: 'Typo',        rank: 2, weight: 1 },
     wiring:   { family: 'Wiring',      rank: 3, weight: 1 },
     sweeper:  { family: 'Trace',       rank: 4, weight: 0.65 },
-    // Her sheet retires `presses` and puts Calculation at rank 5 in its place. Our presses
-    // room is being rewritten into that calculation room by another session, so it is left
-    // where it stands and carries the rank its replacement will have.
-    presses:  { family: 'Calculation', rank: 5, weight: 0.5 },
+    // Linh's Calculation room landed separately, at 6900 in the mountain. It is rank 5 on her
+    // sheet and that is where it sits.
+    calculation: { family: 'Calculation', rank: 5, weight: 0.5 },
+    // The presses room is NOT that room, and ranking it as though it were was wrong. Her
+    // sheet retires a three-digit fingerprint room; what is actually built here is the
+    // worn-key code, which is not one of her ten and carries no rating of hers. Ranked on
+    // what it costs a player -- read a keypad, deduce an order, type three digits -- which
+    // puts it beside Wiring rather than beside arithmetic.
+    presses:  { family: 'Code', rank: 3, weight: 1 },
     // Ours, added after her branch: the enclosure's own rooms. They are property rather
     // than machinery and have no family on her sheet, so they are ranked here by what they
     // cost a player -- a thorn hedge is a typing room, a ditch is a drumming room, a
@@ -344,7 +357,7 @@ CFG.roofTo = CFG.exit;
 // from the boundaries themselves rather than written down, so moving the seam or the mouth
 // moves the ramp with it instead of leaving it pointing at old ground.
 CFG.actAt = wx => (wx < CFG.roofFrom ? 1 : wx < CFG.exit ? 2 : 3);
-CFG.maxRankAt = wx => [2, 4, 5][CFG.actAt(wx) - 1];
+CFG.maxRankAt = wx => [3, 5, 5][CFG.actAt(wx) - 1];
 // Generator charge time from Linh's Document sheet: 1 worker 10.9s, 100 workers 1.0s.
 // The crew you arrive with is the resource that lights the chamber.
 CFG.finale.genTime = n => Math.max(1, 11 - 0.1 * Math.max(1, n));

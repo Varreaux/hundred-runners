@@ -89,19 +89,15 @@ eval(src + `
     const cap = CFG.maxRankAt(r.x);
     if (f.rank > cap) over.push(r.type + '@' + r.x + ' rank ' + f.rank + ' in act ' + CFG.actAt(r.x) + ' (max ' + cap + ')');
   }
-  // ONE named exception, with its reason, rather than a check that is simply red every run
-  // and so stops being read. NO BACKTICKS anywhere below this line: the whole block is
-  // inside a template literal, and a stray pair closes it and reopens it as code -- the
-  // error then points at the eval on line 46 and says nothing about where it really is.
-  // The presses room is the old three-digit fingerprint one. Linh's sheet
-  // RETIRES it and puts Calculation (rank 5) in its place, and another session is mid-rewrite
-  // turning it into exactly that room -- so moving it now would collide with work in flight,
-  // and ranking it lower to make this line go green would be padding the number rather than
-  // fixing the room. It is listed, explained, and the check below fails the moment it stops
-  // being the only one, so the excuse cannot outlive the reason for it.
-  const EXCEPT = { presses: 'being rewritten into Linh\\'s rank-5 calculation room by another session; where it ends up is theirs and Morgan\\'s to settle, not something to move underneath them' };
+  // The exception list is EMPTY, and that is the point of keeping the mechanism. It held one
+  // entry -- the presses room, ranked as Linh's Calculation because that is what her sheet
+  // retires it in favour of. The room that was actually built here is the worn-key code,
+  // which is not one of her ten; ranking it by what it costs a player put it inside the
+  // mill's ceiling and the excuse stopped being needed. An exception that can expire is
+  // worth more than one that cannot, so the check below still fails if one is left behind.
+  const EXCEPT = {};
   const unexcused = over.filter(o => !Object.keys(EXCEPT).some(t => o.startsWith(t + '@')));
-  ok('no room stands in an act that does not admit its rank, bar the listed exception',
+  ok('no room stands in an act that does not admit its rank',
      unexcused.length === 0,
      unexcused.length ? unexcused.join('; ') : rooms.length + ' rooms, all within their act\\'s ceiling');
   for (const t of Object.keys(EXCEPT)) {
