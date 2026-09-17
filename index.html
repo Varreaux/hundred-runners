@@ -2635,7 +2635,9 @@ const FINALE_SCENES = [
     id: 'line', title: 'THE LINE NEVER STOPS',
     diffs: [
       { x: 42, y: 48, kind: 'extraSmoke' }, { x: 118, y: 36, kind: 'goldClock' }, { x: 248, y: 52, kind: 'bossHat' },
-      { x: 70, y: 110, kind: 'missingWorker' }, { x: 160, y: 102, kind: 'redBanner' }, { x: 240, y: 120, kind: 'coinStack' },
+      // 70,110 was 120px from the worker this removes -- marking the gap you can SEE was a
+      // wrong answer and cost a body. It sits on the actor now.
+      { x: 110, y: 186, kind: 'missingWorker' }, { x: 160, y: 102, kind: 'redBanner' }, { x: 240, y: 120, kind: 'coinStack' },
       { x: 48, y: 168, kind: 'brokenGear' }, { x: 145, y: 162, kind: 'bloodSpot' }, { x: 220, y: 170, kind: 'cage' }, { x: 275, y: 90, kind: 'priceTag' },
     ],
   },
@@ -2652,7 +2654,7 @@ const FINALE_SCENES = [
     diffs: [
       { x: 50, y: 38, kind: 'chandelier' }, { x: 150, y: 42, kind: 'wine' }, { x: 255, y: 40, kind: 'roast' },
       { x: 64, y: 105, kind: 'servant' }, { x: 168, y: 100, kind: 'cigar' }, { x: 248, y: 112, kind: 'mask' },
-      { x: 45, y: 170, kind: 'crumb' }, { x: 135, y: 164, kind: 'kneel' }, { x: 225, y: 172, kind: 'rat' }, { x: 278, y: 92, kind: 'bill' },
+      { x: 45, y: 170, kind: 'crumb' }, { x: 150, y: 188, kind: 'kneel' }, { x: 225, y: 172, kind: 'rat' }, { x: 278, y: 92, kind: 'bill' },
     ],
   },
   {
@@ -2660,7 +2662,8 @@ const FINALE_SCENES = [
     diffs: [
       { x: 40, y: 36, kind: 'arrowUp' }, { x: 140, y: 44, kind: 'arrowDown' }, { x: 250, y: 38, kind: 'crash' },
       { x: 60, y: 98, kind: 'screen' }, { x: 160, y: 110, kind: 'headset' }, { x: 242, y: 105, kind: 'chart' },
-      { x: 48, y: 166, kind: 'fallen' }, { x: 148, y: 160, kind: 'briefcase' }, { x: 228, y: 170, kind: 'tie' }, { x: 272, y: 86, kind: 'bull' },
+      // 48,166 was 72px from the worker this removes; same fault as the line scene.
+      { x: 96, y: 188, kind: 'fallen' }, { x: 148, y: 160, kind: 'briefcase' }, { x: 228, y: 170, kind: 'tie' }, { x: 272, y: 86, kind: 'bull' },
     ],
   },
   {
@@ -2750,7 +2753,12 @@ function finaleLightLevel(f) {
 // the truth, so min() is the gate, and the light cannot run ahead of it any more.
 function finaleChargeProgress(f) {
   const boarded = finaleFillFrac(f);                                          // the crew getting aboard
-  const wound = clamp01(f.chargeT / Math.max(0.001, f.chargeNeed || 1));      // the flywheel winding up
+  // chargeT counts from the moment the charge phase began, which INCLUDES the boarding, so
+  // the flywheel arrived at the gate already part-wound and the room's light stepped 2.25x
+  // in the single frame the last person landed. boardT is stamped when the belt fills, so
+  // the flywheel starts from zero at the moment it actually starts turning.
+  const since = f.boardT != null ? Math.max(0, f.chargeT - f.boardT) : 0;
+  const wound = clamp01(since / Math.max(0.001, f.chargeNeed || 1));          // the flywheel winding up
   // Two stages, one number. Boarding is the first quarter of the way to light and the
   // generator does the rest, and it cannot finish before the belt is full. Writing it as a
   // single expression is the whole point: the light, the phase gate and the bar all read
@@ -2762,6 +2770,8 @@ function finaleChargeProgress(f) {
 function beginFinaleCharge(f) {
   f.phase = 'charge';
   f.chargeT = 0;
+  f.boardT = null;              // stamped when the belt fills; the flywheel winds from there
+  f.crew0 = Math.max(1, f.line.length);   // what the wheel is measured against, deaths included
   f.chargeNeed = CFG.finale.genTime(Math.max(1, f.line.length));
   f.light = 0;
   f.beltPow = 0;
@@ -2782,16 +2792,28 @@ function finaleFillFrac(f) {
   return clamp01((f.packDone || 0) / need);
 }
 function finaleSpotFullR(L) {
-  // At 100 crew this radius covers a whole painting.
-  return Math.hypot(L.left.w, L.left.h) * 0.55;
+  // Keyed to the painting's HEIGHT, not its diagonal. The diagonal gave 296 against a
+  // picture 300 tall, so from about 55 survivors the disc was already taller than the thing
+  // it was lighting and the lamp stopped reading as a lamp -- everything above that crew
+  // count looked the same. At 0.62 of the height the pool is generous at 100 and still has
+  // an edge you can see.
+  return L.left.h * 0.62;
 }
 function finaleSpotRadius(f, L) {
   const full = finaleSpotFullR(L);
-  const crewR = Math.max(22, full * finaleCrewFrac(f));
+  // Floor raised from 22. At 22 the readable art was about 15 units across -- a pinhole in a
+  // 448x300 picture, with ten things to find and ninety seconds to do it, and the found-ticks
+  // drawn larger than the light itself. 44 is a pool that shows one figure and the ground
+  // under it: five survivors should be a candle, not a keyhole.
+  const crewR = Math.max(44, full * finaleCrewFrac(f));
   const pow = clamp01(f.beltPow || 0);
   if (f.wrongT > 0) {
-    const on = Math.sin(S.t * 26) > 0;
-    return Math.max(8, crewR * (on ? 1 : 0.2));
+    // A SMOOTH dip, not a square wave. `Math.sin(S.t * 26) > 0` is a hard on/off at 4.14 Hz
+    // across both paintings -- the middle of the photosensitive-seizure band -- and it ran
+    // for 0.9s, twice as long as the red flash it was meant to accompany. The lamp dipping
+    // and recovering says the same thing about the generator without flashing anyone.
+    const dip = 0.55 + 0.45 * Math.sin(S.t * 11);
+    return Math.max(8, crewR * (0.45 + 0.55 * dip));
   }
   if (f.phase === 'intro') {
     return 8 + Math.sin(S.t * 7) * 2;
@@ -2800,7 +2822,7 @@ function finaleSpotRadius(f, L) {
     const pulse = 1 + Math.sin(S.t * 8) * 0.08 * pow;
     return Math.max(8, crewR * (0.06 + 0.94 * pow) * pulse);
   }
-  return Math.max(22, crewR);
+  return Math.max(44, crewR);
 }
 function finaleSpotCenters(f, L) {
   const u = clamp01(f.spot?.u ?? 0.5), v = clamp01(f.spot?.v ?? 0.45);
@@ -2813,7 +2835,14 @@ function finaleSpotCenters(f, L) {
 function veilPaintingSpot(side, cx, cy, r, fullR) {
   // Pitch-black veil with a circular hole so painting art shows through the lamp.
   // evenodd path — reliable; destination-out previously left some builds fully black.
-  if (r >= fullR * 0.98) return; // 100-crew: fully lit
+  // No early-out. It used to return here at 98% of full, which switched off the veil, the
+  // rim, the warm core, the spill and the dust in a single frame -- so the BEST outcome of a
+  // whole run produced the least light in the room, and it popped between 0.979 and 0.98.
+  // A flooded room should look flooded, so the veil thins toward nothing instead of vanishing.
+  // Capped at 0.55, not 0.85. Thinning the veil to 0.14 made the whole card bright and flat
+  // and the lamp vanished into it -- which moved the old pop rather than removing it, and
+  // still left the best outcome of a run with the least readable light.
+  const flood = clamp01((r - fullR * 0.75) / (fullR * 0.25)) * 0.647;
   r = Math.max(5, r);
   ctx.save();
   ctx.beginPath();
@@ -2823,7 +2852,12 @@ function veilPaintingSpot(side, cx, cy, r, fullR) {
   ctx.rect(side.x - 1, side.y - 1, side.w + 2, side.h + 2);
   ctx.moveTo(cx + r, cy);
   ctx.arc(cx, cy, r, 0, Math.PI * 2, true);
-  ctx.fillStyle = '#000';
+  // NOT black. The chamber wall is a warm near-black and this veil was #000, so the unlit
+  // painting was darker than the wall it hangs on -- and a dark canvas is never darker than
+  // its own room. That one value is why the lamp read as a hole cut in card rather than as
+  // light: there was nothing outside the hole for the light to be brighter THAN. At 0.93 a
+  // ghost of the tableau always survives, so the picture is dim rather than absent.
+  ctx.fillStyle = 'rgba(10,8,12,' + (0.93 * (1 - flood * 0.85)).toFixed(3) + ')';
   ctx.fill('evenodd');
   // Soft falloff at the rim. Four stops rather than two, weighted toward the outside: a
   // straight ramp from the half-radius reads as a grey disc with a hard shoulder, because
@@ -2832,10 +2866,11 @@ function veilPaintingSpot(side, cx, cy, r, fullR) {
   // a fill wider than its gradient smears the last stop outward, and a narrower one cuts
   // the ramp off mid-slope and leaves a visible edge. Both have shipped here before.
   const rim = ctx.createRadialGradient(cx, cy, Math.max(1, r * 0.34), cx, cy, r);
-  rim.addColorStop(0.00, 'rgba(0,0,0,0)');
-  rim.addColorStop(0.55, 'rgba(0,0,0,0.10)');
-  rim.addColorStop(0.82, 'rgba(0,0,0,0.34)');
-  rim.addColorStop(1.00, 'rgba(0,0,0,0.62)');
+  const sh = k => 'rgba(10,8,12,' + (k * (1 - flood * 0.85)).toFixed(3) + ')';
+  rim.addColorStop(0.00, sh(0));
+  rim.addColorStop(0.55, sh(0.10));
+  rim.addColorStop(0.82, sh(0.34));
+  rim.addColorStop(1.00, sh(0.62));
   ctx.fillStyle = rim;
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.28); ctx.fill();
   ctx.globalCompositeOperation = 'lighter';
@@ -2872,11 +2907,18 @@ function veilPaintingSpot(side, cx, cy, r, fullR) {
   }
   ctx.restore();
 }
-function drawFoundChecks(f, L) {
+function drawFoundChecks(f, L, spotR) {
   // Green ticks on both paintings so found diffs are not re-clicked
   for (const d of f.diffs) {
     if (!f.found.has(d.id)) continue;
+    // Radius 11 was a constant against a lamp that scales from 44 to 186, so at a small crew
+    // the UI was half the diameter of the light. And the tick on the ORIGINAL marks blank
+    // canvas -- there is nothing to see there -- so it is drawn at a third strength: enough
+    // not to re-scan it, not enough to become the picture.
+    const tickR0 = Math.max(5.5, Math.min(11, (spotR || 90) * 0.085));
     for (const side of [L.left, L.right]) {
+      const faint = side === L.left;
+      const tickR = (f.foundR && f.foundR[d.id]) || tickR0;
       const sx = side.x + d.x * (side.w / FINALE_ART.w);
       const sy = side.y + d.y * (side.h / FINALE_ART.h);
       // A tick LANDS rather than appearing. Age is measured from when the mark was made, so
@@ -2890,14 +2932,24 @@ function drawFoundChecks(f, L) {
       const pop = age < 0 || age > beat ? 1 : 1 + Math.sin(k * Math.PI) * 0.22;
       ctx.save();
       ctx.translate(sx, sy);
-      ctx.scale(pop, pop);
+      ctx.scale(pop * (tickR / 11), pop * (tickR / 11));
+      // The ink ring stays at FULL alpha on both sides. Dimming it with everything else made
+      // the ORIGINAL tick read ~30% smaller as well as fainter, so the two paintings differed
+      // in tick size everywhere -- and the panels are supposed to differ only where the
+      // puzzle says they do. 0.5 rather than 0.34 so a faint tick survives the lamp pool.
+      const faintA = 0.5;
       if (age >= 0 && age < beat) {
         // a ring going out from under it, the way a struck thing rings
         ctx.strokeStyle = 'rgba(120,245,170,' + (0.5 * (1 - k)).toFixed(3) + ')';
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(0, 0, 11 + k * 16, 0, 6.28); ctx.stroke();
       }
-      ctx.fillStyle = 'rgba(20, 80, 40, 0.75)';
+      // An INK outline, like every other body and machine in the game. Without it the disc
+      // was the only unoutlined object in the frame and read as form-validation UI.
+      ctx.strokeStyle = INK; ctx.lineWidth = 3.4;
+      ctx.beginPath(); ctx.arc(0, 0, 11, 0, 6.28); ctx.stroke();
+      ctx.globalAlpha = faint ? faintA : 1;
+      ctx.fillStyle = 'rgba(20, 80, 40, 0.82)';
       ctx.beginPath(); ctx.arc(0, 0, 11, 0, 6.28); ctx.fill();
       ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(0, 0, 11, 0, 6.28); ctx.stroke();
@@ -2905,6 +2957,7 @@ function drawFoundChecks(f, L) {
       ctx.beginPath();
       ctx.moveTo(-5, 0); ctx.lineTo(-1.5, 4.5); ctx.lineTo(6, -5);
       ctx.stroke();
+      ctx.globalAlpha = 1;
       ctx.restore();
     }
   }
@@ -2913,8 +2966,9 @@ function finaleConfirm(atU, atV) {
   const f = S.finale;
   if (!f) return false;
   if (f.wrongT > 0) return false;
+  if (f.winT > 0) return false;      // the puzzle is already won; the room is just finishing
   if (f.phase === 'charge') {
-    S.floaters.push({ sx: W / 2, sy: H * 0.42, text: 'WAIT - wheel still packing', life: 0.9, color: '#d4a84b' });
+    S.floaters.push({ sx: W / 2, sy: H * 0.42, txt: 'WAIT - wheel still packing', life: 0.9, color: '#d4a84b' });
     return false;
   }
   if (f.phase !== 'search') return false;
@@ -2923,7 +2977,16 @@ function finaleConfirm(atU, atV) {
   const v = (atV != null) ? clamp01(atV) : clamp01(f.spot?.v ?? 0.45);
   if (atU != null) { f.spot.u = u; f.spot.v = v; f.spotVel = { u: 0, v: 0 }; }
   const r = finaleSpotRadius(f, L);
-  const hitR = Math.max(r + 24, 48);
+  // CFG.finale.hitRadius was declared and never read anywhere in the file. Tolerance was
+  // max(lampRadius + 24, 48), and the lamp grows with the crew -- so from about 48 survivors
+  // the tolerance exceeded the distance from the worst corner of the painting to the nearest
+  // difference, and a wrong mark became arithmetically impossible. The final trial was ten
+  // presses of SPACE with the eyes shut, and nobody could be pushed into the water: the crew
+  // stopped being a resource that costs you something and started deleting the room.
+  //
+  // The lamp still helps, because that is the design -- more people, easier search -- but it
+  // is capped so it can never swallow the painting.
+  const hitR = Math.max(CFG.finale.hitRadius, Math.min(r * 0.35, 90));
   let hit = null, best = hitR;
   for (const d of f.diffs) {
     if (f.found.has(d.id)) continue;
@@ -2934,10 +2997,16 @@ function finaleConfirm(atU, atV) {
   if (hit) {
     f.found.add(hit.id);
     (f.foundAt || (f.foundAt = {}))[hit.id] = S.t;
+    // The tick's size is stamped when the mark is MADE. Sized live off the lamp it shrank
+    // whenever somebody died, and a mark already on the painting should not resize.
+    (f.foundR || (f.foundR = {}))[hit.id] = Math.max(5.5, Math.min(11, r * 0.085));
     AU.tick(f.found.size / CFG.finale.findCount);
     const spots = finaleSpotCenters(f, L);
-    S.floaters.push({ sx: spots.right.x, sy: spots.right.y - 18, text: 'MARKED', life: 0.65, color: '#d4a84b' });
-    if (f.found.size >= CFG.finale.findCount) { S.mode = 'win'; saveBest(f.line.length); }
+    S.floaters.push({ sx: spots.right.x, sy: spots.right.y - 18, txt: 'MARKED', life: 0.65, color: '#d4a84b' });
+    // The win used to be set in this same call, so drawFoundChecks' landing beat and the
+    // MARKED floater were never drawn for the mark that actually won -- the one moment the
+    // player most wants to see. It is held for a beat and settled in updateFinale.
+    if (f.found.size >= CFG.finale.findCount) { f.winT = 0.85; saveBest(f.line.length); }
     return true;
   }
   finaleWrong();
@@ -2947,28 +3016,50 @@ function finaleWrong() {
   const f = S.finale;
   if (!f || f.phase !== 'search') return;
   if (f.wrongT > 0) return;
-  f.flashWrong = 1.4;
-  f.wrongT = 1.7;
-  S.wrongFlash = 0.55;
+  if (f.winT > 0) return;           // nobody dies after the wall is beaten
+  // 1.7s of locked input and strobing lamp outlasted the 0.64s the body takes to reach the
+  // water, so the fall happened entirely inside the blackout. Shortened to cover the fall and
+  // stop. Linh's settled note is that a wrong mark must not RECHARGE the generator, which it
+  // still does not; the duration was not part of that.
+  // The flash is shorter than the fall now (0.45 against 0.62), so the body is in clear air
+  // for the part that matters. The input lock stays longer than the flash.
+  f.flashWrong = 0.45;
+  f.wrongT = 0.9;
+  // draw() lays rgba(255,40,40, wrongFlash * 0.6) over the WHOLE canvas, outside the chamber,
+  // which is why a red lamp fault was recolouring the pool and the letterbox. The three
+  // passes inside the panel were reduced and this one, the largest, was missed.
+  S.wrongFlash = 0.2;
   S.shake = 10;
   AU.fail();
   const L = finaleLayout();
-  const r = f.line.pop();
+  const near = f.deck.filter(d => d.arrived).sort((a, b) => b.x - a.x)[0];
+  const r = near ? (f.line.splice(f.line.indexOf(near.r), 1)[0] || f.line.pop()) : f.line.pop();
   if (r) {
     r.state = 'gone'; r.doom = 'final'; r.deathT = S.t;
     const slot = f.deck.find(d => d.r === r);
-    const sx = slot ? slot.x : L.deck.x + L.deck.w * 0.5;
+    // Off the END of the belt, not from where they were standing. A body dropped at the slot
+    // fell inside the deck rect and across the face of the drive drum for the first sixth of
+    // a second. People pushed off a conveyor leave at the end of it.
+    const sx = L.deck.x + L.deck.w + 6;
     const sy = L.deck.y - 2;
-    f.falling.push({ r, t: 0, x: sx, y: sy, vx: rand(-40, 40), vy: -80, rot: rand(-0.4, 0.4) });
+    // Taken from the slot NEAREST the generator rather than by popping the end of the line.
+  // f.line.pop() always took the last spawned, whose slot is the far left of the belt, so
+  // every body in a run fell from the same point 453 units from the drawn whirlpool and
+  // nothing ever went into the drain.
+  // vy -80 threw the body UP first, so for 0.57 of a 0.62s fall it hovered at belt height
+  // among the standing crew and only the last fifth was over water. Somebody pushed off a
+  // moving belt goes over the edge and down. The drift is toward the drum, which is where
+  // the drain is.
+  f.falling.push({ r, t: 0, x: sx, y: sy, vx: rand(4, 40), vy: -18, rot: rand(-0.4, 0.4) });
     f.deck = f.deck.filter(d => d.r !== r);
-    S.floaters.push({ sx: W / 2, sy: L.py + 56, text: r.name ? (r.name + ' FALLS') : 'ONE IS LOST', life: 1.35, color: '#ff6b6b', big: true });
+    S.floaters.push({ sx: W / 2, sy: L.py + 56, txt: r.name ? (r.name + ' FALLS') : 'ONE IS LOST', life: 1.35, color: '#ff6b6b', big: true });
   }
   if (f.line.length <= 0) S.mode = 'lose';
 }
 function finaleLayout() {
   const pw = W - 8, ph = H - 8;
   const px = 4, py = 4;
-  const gap = 16;
+  const gap = 30;   // the two mouldings need air between them or they read as one divider
   const sidePad = 20;
   const paintW = Math.floor((pw - sidePad * 2 - gap) / 2); // ~448 on 960 (~+36%)
   const deckTop = py + ph - 96;
@@ -2976,8 +3067,16 @@ function finaleLayout() {
   const paintH = Math.min(300, deckTop - paintTop - 22); // ~+40% height vs 214
   const left = { x: px + sidePad, y: paintTop, w: paintW, h: paintH };
   const right = { x: left.x + paintW + gap, y: paintTop, w: paintW, h: paintH };
-  const deck = { x: px + 32, y: deckTop, w: pw - 64, h: 36 };
-  const water = { x: px + 24, y: py + ph - 50, w: pw - 48, h: 38 };
+  // Meets the chamber wall at the left, as the water does, and stops at the generator at the
+  // right. It used to be px+32 .. px+pw-32, so both ends were finished rounded corners 28
+  // units short of the walls, hanging over open water with one pulley and no support -- and
+  // the generator sat 30 units INSIDE it, painting over the drum and both drive bands.
+  const deck = { x: px + 4, y: deckTop, w: (px + pw - 130) - (px + 4), h: 36 };
+  // Runs wall to wall and down to the floor. It used to be a floating blue rectangle 20 units
+  // short of each side with bare panel visible under it, and 38 deep against a body 45 tall --
+  // so a body could not fit in it and was drawn sinking through the pool floor and across the
+  // bottom frame at three-quarters opacity.
+  const water = { x: px + 4, y: deckTop + 40, w: pw - 8, h: (py + ph - 6) - (deckTop + 40) };
   const gen = { x: px + pw - 130, y: deckTop - 18, w: 86, h: 48 };
   return { pw, ph, px, py, left, right, deck, water, gen };
 }
@@ -3201,7 +3300,7 @@ function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
     for (let bx = x + 17; bx < x + w - 10; bx += 18) ctx.fillRect(bx, y + 168, 4, 6);
     const shirts = ['#c0392b', '#2980b9', '#27ae60', '#8e44ad', '#d35400', '#7f8c8d', '#16a085'];
     for (let i = 0; i < 7; i++) {
-      if (altered && !found.has(3) && i === 2) continue; // missingWorker painted as absence
+      if (altered && i === 2) continue;   // stays absent once found: the tick marks it, the body does not come back
       paintActor(x + 26 + i * 42, floorY - 2, {
         shirt: shirts[i], pants: '#1a2430', hair: i % 2 ? '#2a1a12' : '#1b1519',
         phase: 0.9 + i * 0.35, scale: 1.14, jit: i * 2.2, // frozen mid-stride pose
@@ -3276,7 +3375,7 @@ function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
     paintActor(x + 214, y + 80, { skin: '#d4a882', shirt: '#c0392b', pants: '#141414', phase: 0.15, scale: 1.06 });
     inkFill('#120e0c', x + 6, y + 130, w - 12, 76, 3);
     for (let i = 0; i < 7; i++) {
-      if (altered && !found.has(7) && i === 3) continue;
+      if (altered && i === 3) continue;   // stays absent once found: the tick marks it, the body does not come back
       paintActor(x + 24 + i * 42, floorY, {
         shirt: '#3a3a3a', pants: '#1a1a1a', skin: '#9a7050', hair: '#1a1010',
         phase: 0.4 + i * 0.2, scale: 0.84, jit: i * 3,
@@ -3308,13 +3407,13 @@ function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
     for (let i = 0; i < 14; i++) ctx.fillRect(x + 14 + i * 22, y + 113, 12 + (i % 3) * 3, 5);
     inkFill('#0e1218', x + 6, y + 126, w - 12, 80, 3);
     for (let i = 0; i < 5; i++) {
-      paintActor(x + 36 + i * 52, y + 156, {
+      paintActor(x + 36 + i * 52, y + 156, {   // FAR row -- smaller, see the scale below
         shirt: i % 2 ? '#1a1a2e' : '#243044', pants: '#0c0c0c', skin: '#c4a07a',
-        phase: 0.1 * i, scale: 0.92, jit: i,
+        phase: 0.1 * i, scale: 0.82, jit: i,
       });
     }
     for (let i = 0; i < 5; i++) {
-      if (altered && !found.has(6) && i === 1) continue;
+      if (altered && i === 1) continue;   // stays absent once found: the tick marks it, the body does not come back
       paintActor(x + 48 + i * 48, floorY, {
         shirt: '#6a7a82', pants: '#2c3e50', phase: 0.8 + i * 0.3, scale: 0.82, alpha: 0.92, jit: i + 9,
       });
@@ -3339,7 +3438,19 @@ function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
     inkFill('#1b1519', x + 206, y + 72, 3, 34, 1);
     inkFill('#d4a84b', x + 203, y + 70, 9, 6, 1);
     ctx.strokeStyle = '#8d929a'; ctx.lineWidth = 2.2;
-    for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(x + 86 + i * 18, y + 172, 6, 0, 6.28); ctx.stroke(); }
+    // These hung 16 above the floor at shoulder height on nothing, unshaded, and read as six
+    // empty radio buttons. They are shackles, so they lie ON the floor and carry an ink
+    // outline like everything else in the game.
+    for (let i = 0; i < 6; i++) {
+      ctx.save();
+      ctx.translate(x + 86 + i * 18, y + 188);
+      ctx.scale(1, 0.42);
+      ctx.strokeStyle = INK; ctx.lineWidth = 4.4;
+      ctx.beginPath(); ctx.arc(0, 0, 6, 0, 6.28); ctx.stroke();
+      ctx.strokeStyle = '#8d929a'; ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.arc(0, 0, 6, 0, 6.28); ctx.stroke();
+      ctx.restore();
+    }
     paintActor(x + 64, floorY, { shirt: '#6a7a8a', pants: '#2c3e50', phase: 0.3, scale: 1.02 });
     paintActor(x + 244, floorY - 4, { skin: '#e8c8a2', shirt: '#0e0e0e', pants: '#050505', phase: 0, scale: 1.16 });
   } else {
@@ -3382,9 +3493,21 @@ function drawFinaleScene(scene, x, y, w, h, altered, diffs, found, t) {
   ctx.strokeStyle = '#120e10'; ctx.lineWidth = 7; ctx.strokeRect(ox - 4, oy - 4, ow + 8, oh + 8);
   ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 2; ctx.strokeRect(ox - 1, oy - 1, ow + 2, oh + 2);
   ctx.strokeStyle = 'rgba(212,175,55,0.22)'; ctx.lineWidth = 1; ctx.strokeRect(ox + 5, oy + 5, ow - 10, oh - 10);
-  for (const [cx, cy] of [[ox - 1, oy - 1], [ox + ow + 1, oy - 1], [ox - 1, oy + oh + 1], [ox + ow + 1, oy + oh + 1]]) {
-    inkFill('#d4a84b', cx - 4, cy - 4, 8, 8, 2);
-  }
+  // These were four 8x8 gold squares at the corners -- with the two inner ones 12 apart they
+  // clustered into what read as the handles of a marquee selection, which is the single
+  // biggest reason the chamber looked like a debug screen. A moulding instead: lit along the
+  // top and left, shadowed along the bottom and right, from one light source, with a cast
+  // shadow on the wall so the picture hangs on something.
+  ctx.fillStyle = 'rgba(0,0,0,0.38)';
+  ctx.fillRect(ox - 2, oy + oh + 6, ow + 12, 5);
+  ctx.strokeStyle = 'rgba(255,226,170,0.42)'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(ox - 6, oy + oh + 5); ctx.lineTo(ox - 6, oy - 6); ctx.lineTo(ox + ow + 6, oy - 6);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath();
+  ctx.moveTo(ox + ow + 6, oy - 6); ctx.lineTo(ox + ow + 6, oy + oh + 5); ctx.lineTo(ox - 6, oy + oh + 5);
+  ctx.stroke();
 }
 function updateFinale(dt) {
   const f = S.finale;
@@ -3425,20 +3548,43 @@ function updateFinale(dt) {
 
   // Run to a fixed belt slot (right → left, even spacing). Arrive -> +1, STAY standing.
   const live = f.phase !== 'intro';
-  const startX = L.deck.x - 70;
+  // They start ON the belt. startX was L.deck.x - 70 = -34, off the left of a 960-wide canvas,
+  // so a body walked 70 units through the chamber wall with its contact shadow drawn on
+  // nothing before the deck began.
+  const startX = L.deck.x + 13;   // the whole figure AND its contact shadow land on the deck
   const beltLeft = L.deck.x + 36;
   const beltRight = L.gen.x - 40;
   const minGap = 100;
   // Fast enough that the longest walk lands inside the boarding beat. The first one aboard
   // has the furthest to go, so that walk is what sets this, not the last.
-  const runSpd = Math.max(340, (L.gen.x - 40 - (L.deck.x - 70)) / 0.42);
+  // 0.42 gave 1848 px/s -- 16.8 times CFG.scroll and two body-widths per frame, which is a
+  // blur rather than a walk. 1.5 gives about 520, fast but readable as running, and BOARD
+  // carries the timing as it was always meant to.
+  const runSpd = Math.max(340, (beltRight - startX) / 1.5);
   if (!f.packQueue) f.packQueue = [];
   if (f.packDone == null) f.packDone = 0;
   if (f.packNeed == null) f.packNeed = Math.max(1, f.line.length);
   if (f.spawnI == null) f.spawnI = 0;
   const nNeed = Math.max(1, f.packNeed);
   const span = Math.max(40, beltRight - beltLeft);
-  const slotStep = nNeed <= 1 ? 0 : span / (nNeed - 1);
+  // A figure is about 20 units wide with its shadow, so the belt really holds span/20. At
+  // 100 survivors the pitch was 7.2 and every body overlapped its neighbours by 64% -- an
+  // unreadable mash at exactly the moment the crowd you saved is supposed to be the reward.
+  // The line fills to capacity; the remainder is counted rather than drawn.
+  const PITCH = 20;
+  const cap = Math.max(1, Math.floor(span / PITCH));
+  const shown = Math.min(nNeed, cap);
+  // The QUEUE has to be capped too, not just the spacing. Capping the pitch alone gave slot
+  // 99 a target of x -1234, which every runner past the 36th reached on its first frame and
+  // counted as "arrived" -- so the belt filled instantly with sixty-four people standing far
+  // off the left of the canvas. The overflow waits off the belt and is counted instead.
+  if (f.packNeed > shown) f.packNeed = shown;
+  f.packWaiting = Math.max(0, f.line.length - shown);
+  // PITCH is the CAP on the gap, not just the input to the capacity sum. Spread evenly, five
+  // survivors stood 178 apart across the whole belt and read as five men choosing to stand
+  // far apart; packed at the drive end with the belt running away empty behind them, five
+  // reads as five.
+  const slotStep = Math.min(PITCH, shown <= 1 ? PITCH : span / (shown - 1));
   // Cadence is DERIVED from the generator's charge time, not a fixed gap. At a fixed gap a
   // hundred survivors took thirty seconds to walk on -- more people made the climax slower,
   // which is backwards: the crew is supposed to be the thing that powers the room. Now the
@@ -3455,7 +3601,7 @@ function updateFinale(dt) {
   // A WHILE, not an if. At a hundred aboard the cadence is five milliseconds and a frame is
   // sixteen, so admitting one per frame would cap the wave at sixty people a second and the
   // walk would quietly become the clock again.
-  while (f.phase === 'charge' && f.packQueue.length && f.spawnT >= cadence) {
+  while (f.phase === 'charge' && f.packQueue.length && f.spawnI < shown && f.spawnT >= cadence) {
     f.spawnT -= cadence;
     {
       const r = f.packQueue.shift();
@@ -3475,7 +3621,9 @@ function updateFinale(dt) {
         d.x = targetX;
         d.arrived = true;
         f.packDone = (f.packDone || 0) + 1;
-        finaleFx(f, 'spark', targetX + 4, L.deck.y + 10, {
+        // A footfall strikes at the surface. At deck.y+10 it was struck from 7 units INSIDE
+        // the slat block -- a spark coming out of the machine rather than off a boot.
+        finaleFx(f, 'spark', targetX + 4, L.deck.y + 3, {
           n: 3, sx: 6, vx: [-40, 40], vy: [-100, -20], life: [0.12, 0.3], c: '#ffe0a0',
         });
       }
@@ -3483,12 +3631,32 @@ function updateFinale(dt) {
       d.x = targetX;
     }
   }
-  const targetPow = f.packNeed ? (f.packDone || 0) / f.packNeed : 0;
+  // packDone was never decremented when a body went in the water, so the belt speed and the
+  // dynamo meter read 100% for ever while the lamp -- which reads f.line.length -- shrank.
+  // Two readings of how much crew is on the wheel, one of which ignored the deaths.
+  if (f.packDone > f.deck.length) f.packDone = f.deck.length;
+  // Reads the CREW, not the visible slots. Capped at 35 the meter and the belt speed were
+  // identical at 36 survivors and at 100, and each wrong mark cost 1/35 of the wheel but
+  // 1/100 of the lamp -- so the belt could empty and go dark while the lamp stayed full.
+  // TWO things multiplied, because there are two things to say: how much of the crew has
+  // boarded, and how much of it is still alive. Reading only the second gave 1.0 on the very
+  // first frame at every crew size -- the belt, the drum, the dynamo and the meter all ran at
+  // full with one survivor standing on them, under a caption claiming "lamps 100%" over a
+  // lamp at a quarter of full. The machine idles until the first body steps on, and slows
+  // every time one is thrown off.
+  // boardedFrac alone is 1.0 the moment everyone is on, whatever "everyone" happens to be --
+  // so one survivor drove the wheel exactly as hard as a hundred. The wheel reads the same
+  // ABSOLUTE fraction the lamp does, which already falls when somebody is thrown off, with a
+  // floor so a lone survivor turns it slowly rather than not at all.
+  const boardedFrac = clamp01((f.packDone || 0) / Math.max(1, f.packNeed || 1));
+  const targetPow = boardedFrac * Math.max(0.1, finaleCrewFrac(f));
   f.beltPow = (f.beltPow || 0) + (targetPow - (f.beltPow || 0)) * Math.min(1, dt * 2.8);
   if (live && (f.phase === 'charge' || f.phase === 'search') && f.beltPow > 0.02) {
     if (Math.random() < dt * (8 + 14 * f.beltPow)) {
       finaleFx(f, 'spark', L.gen.x + 26, L.gen.y + 22, {
-        n: 1, sx: 18, sy: 14, vx: [-100, 100], vy: [-140, 40], life: [0.12, 0.35], c: pick(['#7fdbff', '#ffe0a0', '#fff']),
+        // Halved upward: these reached 47 above the box, over the frames' shadow line, with
+        // nothing under them -- they read as a scratch on the lens rather than as sparks.
+        n: 1, sx: 18, sy: 14, vx: [-100, 100], vy: [-70, 20], life: [0.12, 0.35], c: pick(['#7fdbff', '#ffe0a0', '#fff']),
       });
     }
   }
@@ -3532,14 +3700,28 @@ function updateFinale(dt) {
       });
       f.genPulse = 0.2;
     }
+    if (f.boardT == null && finaleFillFrac(f) >= 1) f.boardT = f.chargeT;
     if (finaleChargeProgress(f) >= 1) {
-      f.phase = 'search'; f.light = 1; f.genPulse = 0.5; f.beltPow = 1; AU.thud();
-      finaleFx(f, 'spark', L.gen.x + 44, L.gen.y + 10, { n: 16, sx: 20, vx: [-120, 120], vy: [-200, -40], life: [0.3, 0.7], c: '#ffe0a0' });
+      // beltPow is NOT slammed to 1 here. Doing that overrode everything targetPow says about
+      // how big the crew is, so a lone survivor's wheel jumped to full power the instant the
+      // search began and stayed there -- which is the whole claim of the room, inverted.
+      f.phase = 'search'; f.light = 1; f.genPulse = 0.5; AU.thud();
+      finaleFx(f, 'spark', L.gen.x + 44, L.gen.y + 10, { // Halved to match its ambient sibling: at vy -200 this reached 82 units inside the
+      // right-hand painting, drawn over an oil canvas hanging on the wall above it.
+      n: 16, sx: 20, vx: [-90, 90], vy: [-95, -25], life: [0.18, 0.4], c: '#ffe0a0' });
     }
   } else if (f.phase === 'search') {
     f.light = 1;
-    f.searchT -= dt;
-    if (f.searchT <= 0) S.mode = 'lose';
+    // Once the tenth mark is made the clock stops and the room holds for a beat so the tick
+    // can land and the floater can be read. Losing on the timer during your own winning
+    // animation would be the worst frame in the game.
+    if (f.winT > 0) {
+      f.winT -= dt;
+      if (f.winT <= 0) S.mode = 'win';
+    } else {
+      f.searchT -= dt;
+      if (f.searchT <= 0) S.mode = 'lose';
+    }
   }
 }
 
@@ -13821,21 +14003,33 @@ function drawFinaleIntro(f) {
     veilPaintingSpot(L.left, L.left.x + su * L.left.w, L.left.y + sv * L.left.h, pinR, fullR);
     veilPaintingSpot(L.right, L.right.x + su * L.right.w, L.right.y + sv * L.right.h, pinR, fullR);
     ctx.fillStyle = '#c4b89a'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
-    ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 16);
-    ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 16);
+    // Baseline +16 put these at canvas 400, and a crowd standing at 438 has its crowns at
+    // 403 -- so the heads cut through the lettering and ALTERED read as AI TERED. They sit
+    // just inside the bottom of their own frames now, where nothing else is drawn.
+      // Same place as the panel's copy. This one kept the old inside-the-frame position, so the
+    // two words jumped 18 units and from inside the frames to below them at the handover.
+    ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 10);
+    ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 10);
 
     // oppressive red wash + spotlight on proprietor
     ctx.fillStyle = 'rgba(70,8,14,0.32)'; ctx.fillRect(0, 0, W, H);
     const spot = ctx.createRadialGradient(W / 2, H * 0.64, 16, W / 2, H * 0.72, 210);
     spot.addColorStop(0, 'rgba(255,190,110,0.2)'); spot.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = spot; ctx.fillRect(0, 0, W, H);
-    const bx = W / 2, by = H * 0.74;
+    // He stood at 408, which is 32 above the belt housing and 78 above the water -- a third
+    // floor height in a room that already had two. He stands on the belt the crowd will
+    // stand on, so the chamber he speaks in is the chamber you then play in.
+    // The same chamber, drawn cold: still belt, grey dynamo, empty meter, full pit. He stands
+    // on the belt the crowd will stand on, and now there is a belt under him and a generator
+    // for his line about the wheel to be about.
+    drawChamberBase(f, L, t, true);
+    const bx = W / 2, by = L.deck.y - 2;
     paintActor(bx, by, {
-      skin: '#e8c8a2', shirt: '#101010', pants: '#050505', hair: '#2a1a10',
+      skin: '#e8c8a2', shirt: '#2b2b33', pants: '#17171d', hair: '#2a1a10',   // separates from the wall; he had no torso at all before
       phase: 0, scale: 2.05, jit: 99,
     });
-    inkFill('#0a0a0a', bx - 22, by - 58, 44, 8, 1);
-    inkFill('#0a0a0a', bx - 14, by - 78, 28, 22, 2);
+    inkFill('#0a0a0a', bx - 22, by - 63, 44, 8, 1);
+    inkFill('#0a0a0a', bx - 14, by - 83, 28, 22, 2);
     ctx.strokeStyle = '#d4a84b'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(bx, by - 28, 10, 0.2, Math.PI - 0.2); ctx.stroke();
 
@@ -13844,122 +14038,39 @@ function drawFinaleIntro(f) {
     const typeU = Math.min(1, u / 0.35);
     const shown = Math.floor(line.length * typeU);
     const text = line.slice(0, shown);
-    const boxH = 88;
+    // The box spanned y 14..102 over paintings that start at 84, so the thing he is telling
+    // you to look at was the thing his words covered. Moved down into the empty lower half.
+    // Ends ABOVE the paintings. At y 14 with height 84 it ran to 98 and the frames start at
+    // 84, so the thing he is telling you to look at was the thing his words covered.
+    const boxY = 6, boxH = 72;
     ctx.fillStyle = 'rgba(6,2,8,0.9)';
-    roundRect(W / 2 - 300, 14, 600, boxH, 8); ctx.fill();
+    roundRect(W / 2 - 300, boxY, 600, boxH, 8); ctx.fill();
     ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.5;
-    roundRect(W / 2 - 300, 14, 600, boxH, 8); ctx.stroke();
+    roundRect(W / 2 - 300, boxY, 600, boxH, 8); ctx.stroke();
     ctx.textAlign = 'center';
     ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 13px monospace';
-    ctx.fillText('THE PROPRIETOR', W / 2, 36);
+    ctx.fillText('THE PROPRIETOR', W / 2, boxY + 20);
     ctx.fillStyle = '#f0e6d0'; ctx.font = '17px monospace';
-    ctx.fillText(text, W / 2, 62);
+    ctx.fillText(text, W / 2, boxY + 44);
     if (u > 0.45) {
       ctx.fillStyle = `rgba(200,170,130,${0.35 + 0.35 * Math.sin(S.t * 3)})`;
       ctx.font = '12px monospace';
-      ctx.fillText('run the generator — twin lamps grow with every body on the wheel', W / 2, 84);
+      ctx.fillText('run the generator — twin lamps grow with every body on the wheel', W / 2, boxY + 64);
     }
   }
   ctx.textAlign = 'left';
 }
-function drawFinalePanel() {
-  const f = S.finale;
-  if (f.phase === 'intro') { drawFinaleIntro(f); return; }
-  const L = finaleLayout();
-  const light = finaleLightLevel(f);
-  const t = S.t;
-  const danger = f.phase === 'search' ? clamp01(1 - f.searchT / CFG.finale.searchTime) : (f.phase === 'blackout' ? 1 : 0.25);
-
-  // sealed chamber - near full bleed
-  ctx.fillStyle = `rgba(4,1,6,${0.88 + (1 - light) * 0.1})`; ctx.fillRect(0, 0, W, H);
-  const panelG = ctx.createLinearGradient(L.px, L.py, L.px, L.py + L.ph);
-  panelG.addColorStop(0, '#1a1218'); panelG.addColorStop(0.55, '#120e14'); panelG.addColorStop(1, '#0a080c');
-  ctx.fillStyle = panelG; ctx.fillRect(L.px, L.py, L.pw, L.ph);
-  ctx.strokeStyle = '#1b1519'; ctx.lineWidth = 3; ctx.strokeRect(L.px + 1, L.py + 1, L.pw - 2, L.ph - 2);
-  ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.6; ctx.strokeRect(L.px + 4, L.py + 4, L.pw - 8, L.ph - 8);
-
-  // Capitalism danger vignette (stronger as clock dies / after wrong mark)
-  const pulse = 0.22 + danger * 0.45 + (f.flashWrong > 0 ? f.flashWrong * 0.5 : 0) + Math.sin(t * 3) * 0.03;
-  const vig = ctx.createRadialGradient(W / 2, H * 0.4, H * 0.15, W / 2, H * 0.5, H * 0.78);
-  vig.addColorStop(0, 'rgba(0,0,0,0)');
-  vig.addColorStop(0.55, 'rgba(0,0,0,0)');
-  vig.addColorStop(1, `rgba(90,8,12,${pulse})`);
-  ctx.fillStyle = vig; ctx.fillRect(L.px, L.py, L.pw, L.ph);
-  // red edge bleed
-  ctx.save(); ctx.globalCompositeOperation = 'screen';
-  const edgeA = 0.08 + danger * 0.22 + f.flashWrong * 0.35;
-  ctx.fillStyle = `rgba(180,20,30,${edgeA})`;
-  ctx.fillRect(L.px, L.py, L.pw, 6);
-  ctx.fillRect(L.px, L.py + L.ph - 6, L.pw, 6);
-  ctx.fillRect(L.px, L.py, 6, L.ph);
-  ctx.fillRect(L.px + L.pw - 6, L.py, 6, L.ph);
-  ctx.restore();
-
-  // -- HUD: title + time + crew + found (one meter only — no duplicate bar)
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#e8c96a'; ctx.font = 'bold 18px monospace';
-  ctx.fillText(f.scene.title, W / 2, L.py + 26);
-  const mm = Math.floor(Math.max(0, f.searchT) / 60), ss = Math.floor(Math.max(0, f.searchT) % 60);
-  const chipY = L.py + 38;
-  const drawChip = (cx, label, val, col) => {
-    const text = label ? `${label} ${val}` : String(val);
-    const tw = Math.max(72, 18 + text.length * 8);
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; roundRect(cx - tw / 2, chipY, tw, 24, 4); ctx.fill();
-    ctx.strokeStyle = col; ctx.lineWidth = 1.3; roundRect(cx - tw / 2, chipY, tw, 24, 4); ctx.stroke();
-    ctx.fillStyle = col; ctx.font = 'bold 13px monospace';
-    ctx.fillText(text, cx, chipY + 16);
-  };
-  const timerCol = f.searchT < 20 ? '#ff6b6b' : '#f1c40f';
-  drawChip(W / 2 - 130, '', `${mm}:${String(ss).padStart(2, '0')}`, timerCol);
-  drawChip(W / 2, `${f.found.size}/${CFG.finale.findCount}`, '', '#2ecc71');
-  drawChip(W / 2 + 130, 'CREW', f.line.length, '#ff8a80');
-
-  // paintings — then pitch-black veil with mirrored flashlight spots (the player control)
-  drawFinaleScene(f.scene, L.left.x, L.left.y, L.left.w, L.left.h, false, f.diffs, f.found, t);
-  drawFinaleScene(f.scene, L.right.x, L.right.y, L.right.w, L.right.h, true, f.diffs, f.found, t);
-  ctx.fillStyle = '#c4b89a'; ctx.font = 'bold 11px monospace';
-  ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 16);
-  ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 16);
-
-  const spots = finaleSpotCenters(f, L);
-  const spotR = finaleSpotRadius(f, L);
-  const fullR = finaleSpotFullR(L);
-  veilPaintingSpot(L.left, spots.left.x, spots.left.y, spotR, fullR);
-  veilPaintingSpot(L.right, spots.right.x, spots.right.y, spotR, fullR);
-  // soft ring on each beam so the control reads clearly
-  if (spotR < fullR * 0.98) {
-    ctx.save();
-    ctx.strokeStyle = f.flashWrong > 0 ? 'rgba(255,80,80,0.7)' : 'rgba(255,210,140,0.55)';
-    ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.arc(spots.left.x, spots.left.y, Math.max(4, spotR * 0.92), 0, 6.28); ctx.stroke();
-    ctx.beginPath(); ctx.arc(spots.right.x, spots.right.y, Math.max(4, spotR * 0.92), 0, 6.28); ctx.stroke();
-    ctx.restore();
-  }
-  drawFoundChecks(f, L);
-
-  if (f.phase === 'blackout') {
-    const beat = f.blackoutT < 0.28 ? 1 : f.blackoutT < 0.55 ? 2 : 3;
-    ctx.fillStyle = 'rgba(255,70,70,0.08)'; ctx.fillRect(L.px, L.py, L.pw, L.ph);
-    ctx.fillStyle = '#ff6b6b'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
-    ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 20);
-    ctx.fillText(`BLACKOUT  -  FRAME ${beat}/3`, W / 2, L.left.y + L.left.h / 2);
-    ctx.globalAlpha = 1;
-  } else if (f.phase === 'charge') {
-    const filled = f.packDone || 0;
-    const need = f.packNeed || f.line.length;
-    const frac = need ? filled / need : 0;
-    // Steady progress readout (no alpha flicker) + fill bar under the paintings
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    roundRect(W / 2 - 160, L.left.y + L.left.h / 2 - 28, 320, 52, 6); ctx.fill();
-    ctx.strokeStyle = '#d4a84b'; ctx.lineWidth = 1.2;
-    roundRect(W / 2 - 160, L.left.y + L.left.h / 2 - 28, 320, 52, 6); ctx.stroke();
-    ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
-    ctx.fillText(filled === 0 ? 'RUNNING THE GENERATOR…' : `RUNNING THE GENERATOR…  ${filled}/${need}`, W / 2, L.left.y + L.left.h / 2 - 6);
-    ctx.fillStyle = '#1b1519'; roundRect(W / 2 - 120, L.left.y + L.left.h / 2 + 6, 240, 8, 3); ctx.fill();
-    ctx.fillStyle = filled ? '#e67e22' : '#3a3034';
-    roundRect(W / 2 - 120, L.left.y + L.left.h / 2 + 6, 240 * frac, 8, 3); ctx.fill();
-  }
-
+// The chamber below the paintings: the pit, the water, the piers, the belt, the drive and
+// the generator. Lifted out of drawFinalePanel so the INTRO can draw the same room at
+// rest -- the proprietor used to stand on a belt that was not drawn and point at a
+// generator that did not exist, and the entire lower third appeared in one frame when
+// the phase changed. One copy, so the two cannot drift apart.
+//
+// `still` forces the machine cold: no scroll, no sparks, grey dynamo, empty meter.
+function drawChamberBase(f, L, t, still) {
+  const beltPow = still ? 0 : clamp01(f.beltPow || 0);
+  const beltLive = beltPow > 0.01 && f.phase !== 'blackout';
+  const beltSpd = beltLive ? (35 + 200 * beltPow) : 0;
   // -- generator pit --
   // water
   const wg = ctx.createLinearGradient(0, L.water.y, 0, L.water.y + L.water.h);
@@ -13974,24 +14085,58 @@ function drawFinalePanel() {
   ctx.strokeStyle = 'rgba(140,210,255,0.35)'; ctx.lineWidth = 1.5;
   for (let i = 0; i < 3; i++) {
     ctx.beginPath();
-    ctx.ellipse(L.water.x + L.water.w * 0.55, L.water.y + 22, 22 + i * 14, 7 + i * 3, t * 1.8 + i, 0, 6.28);
+    // Under the end of the belt the bodies come off, not at 55% of the pool. Three stroked
+    // ellipses at three angles also read as an atom, so this is concentric and flattened --
+    // an undertow, not a science icon.
+    ctx.ellipse(L.gen.x - 20, L.water.y + 20, 16 + i * 13, 4 + i * 2.4, 0, 0, 6.28);
     ctx.stroke();
   }
+  // Clipped to the pool. A ripple is rx = r.r * 1.5 and reached 28 units left of the water's
+  // edge and out past the gold border; the drop particles reached x -87, off the canvas.
+  // Water does not splash through a wall.
+  ctx.save();
+  ctx.beginPath(); ctx.rect(L.water.x, L.water.y, L.water.w, L.water.h); ctx.clip();
   for (const r of f.ripples) {
     ctx.globalAlpha = r.life;
     ctx.strokeStyle = 'rgba(200,240,255,0.85)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.ellipse(r.x, r.y, r.r * 1.5, r.r * 0.45, 0, 0, 6.28); ctx.stroke();
   }
   ctx.globalAlpha = 1;
+  ctx.restore();
 
   // deck / treadmill — idle until first runner steps on; speed scales with beltPow
-  const beltPow = clamp01(f.beltPow || 0);
-  const beltLive = beltPow > 0.01 && f.phase !== 'blackout';
-  const beltSpd = beltLive ? (35 + 200 * beltPow) : 0;
+  // Piers, drawn BEFORE the housing so the belt sits on them. A conveyor is the one object
+  // the room's whole premise rests on and it was the only thing in the game floating
+  // unsupported over open water -- which is why the bottom of the card read as a progress
+  // bar with planks drawn on it.
+  ctx.fillStyle = INK;
+  // A pit FLOOR, so the piers and the generator's legs have something to stand on instead of
+  // both stopping at slightly different heights in open water.
+  ctx.fillStyle = '#0b1a22';
+  ctx.fillRect(L.water.x, L.water.y + L.water.h - 8, L.water.w, 8);
+  ctx.fillStyle = 'rgba(200,225,240,0.07)';
+  ctx.fillRect(L.water.x, L.water.y + L.water.h - 8, L.water.w, 1.5);
+  const pierTop = L.deck.y + L.deck.h - 4, pierFoot = L.water.y + L.water.h - 8;
+  // The last pier is placed AT the drive end rather than wherever the pitch happens to stop.
+  // The busiest 56 units of belt, the head drum and the whole drive load were cantilevered
+  // off the previous one -- the one place a real conveyor must carry a bearing.
+  const piers = [];
+  for (let pxx = L.deck.x + 54; pxx < L.deck.x + L.deck.w - 40; pxx += 118) piers.push(pxx);
+  piers.push(L.deck.x + L.deck.w - 14);
+  for (const pxx of piers) {
+    ctx.fillRect(pxx - 4, pierTop, 9, pierFoot - pierTop);
+    ctx.fillRect(pxx - 11, pierTop - 2, 23, 5);
+  }
+  ctx.fillStyle = 'rgba(122,101,70,0.55)';
+  for (const pxx of piers) ctx.fillRect(pxx - 2.4, pierTop + 2, 3, pierFoot - pierTop - 6);
   inkFill('#1e1a16', L.deck.x, L.deck.y, L.deck.w, L.deck.h, 4);
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(L.deck.x + 2, L.deck.y + L.deck.h - 8, L.deck.w - 4, 6);
   const plank = 26;
-  const beltOff = beltLive ? ((t * beltSpd) % plank) : 0;
+  // NEGATED. The slats advanced in +x, the same direction the crew walked in and the same way
+  // drawFigure leans them -- so the floor carried the people it was supposed to be driven BY.
+  // A treadmill turned by people standing on it must scroll against them. Both reviewers
+  // caught this independently, one from the picture and one from the source.
+  const beltOff = beltLive ? (plank - ((t * beltSpd) % plank)) : 0;
   for (let x = L.deck.x - plank + beltOff; x < L.deck.x + L.deck.w; x += plank) {
     if (x + 4 >= L.deck.x + L.deck.w) continue;
     const sx = Math.max(L.deck.x + 2, x + 2);
@@ -14002,15 +14147,19 @@ function drawFinalePanel() {
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(sx + pw - 2, L.deck.y + 3, 2, L.deck.h - 12);
   }
   ctx.fillStyle = '#6a1818';
-  const edge = beltLive ? ((t * beltSpd * 1.15) % 18) : 0;
+  const edge = beltLive ? (18 - ((t * beltSpd * 1.15) % 18)) : 0;
   for (let x = L.deck.x + edge; x < L.deck.x + L.deck.w - 4; x += 18) ctx.fillRect(x, L.deck.y + L.deck.h - 7, 11, 4);
   ctx.fillStyle = '#c0392b';
   for (let x = L.deck.x + edge + 11; x < L.deck.x + L.deck.w - 4; x += 18) ctx.fillRect(x, L.deck.y + L.deck.h - 7, 4, 4);
   if (beltLive) {
-    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    // Clipped to the belt, for the reason written a few lines above about the ripples: these
+    // reached x -36 and were drawn across the chamber wall and out onto the letterbox.
+    ctx.save();
+    ctx.beginPath(); ctx.rect(L.deck.x, L.deck.y, L.deck.w, L.deck.h); ctx.clip();
+    ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < 10; i++) {
       const wy = L.deck.y + 6 + (i * 3.2 + t * 40) % (L.deck.h - 10);
-      const wx = L.deck.x + ((t * beltSpd * 0.7 + i * 70) % (L.deck.w + 40)) - 20;
+      const wx = L.deck.x + L.deck.w - ((t * beltSpd * 0.7 + i * 70) % (L.deck.w + 40)) + 20;
       ctx.strokeStyle = `rgba(200,220,255,${0.06 + beltPow * 0.1})`;
       ctx.lineWidth = 1; ctx.beginPath();
       ctx.moveTo(wx, wy); ctx.lineTo(wx - 28 - (i % 4) * 8, wy + (i % 2 ? 1 : -1)); ctx.stroke();
@@ -14020,12 +14169,50 @@ function drawFinalePanel() {
 
   // generator: spinning dynamo wheel + corona
   const gx = L.gen.x + 28, gy = L.gen.y + 24;
+  // THE DRIVE. The premise of the room is that the crowd turns the generator, and that was
+  // the one thing the picture did not show: a grey box overlapping the end of the belt, on
+  // no legs, with no shaft, drum or band between the belt and the dynamo. Drawn back to
+  // front -- drum, then band, then legs, then the box on top of them.
+  // Order matters here: legs, then the housing, THEN the drum and the bands on top of them.
+  // Drawn the other way round the box painted out the whole drive train -- 56% of the drum,
+  // all of one band and 85% of the other, so the change meant to show the crowd turning the
+  // machine was entirely hidden by the machine.
+  const legH = (L.water.y + L.water.h - 8) - (L.gen.y + L.gen.h - 2);   // same floor as the piers
+  ctx.fillStyle = INK;
+  ctx.fillRect(L.gen.x + 8, L.gen.y + L.gen.h - 2, 7, legH);
+  ctx.fillRect(L.gen.x + L.gen.w - 17, L.gen.y + L.gen.h - 2, 7, legH);
   inkFill('#2c333c', L.gen.x, L.gen.y, L.gen.w, L.gen.h, 4);
+  const drumX = L.deck.x + L.deck.w, drumY = L.deck.y + L.deck.h / 2;   // ON the end, so the slats wrap it
+  const drumR = L.deck.h * 0.46;
+  ctx.fillStyle = INK;
+  ctx.beginPath(); ctx.arc(drumX, drumY, drumR + 1.6, 0, 6.28); ctx.fill();
+  const drum = ctx.createLinearGradient(drumX - drumR, 0, drumX + drumR, 0);
+  drum.addColorStop(0, '#6b5a44'); drum.addColorStop(0.42, '#9a8259'); drum.addColorStop(1, '#4a3d2e');
+  ctx.fillStyle = drum;
+  ctx.beginPath(); ctx.arc(drumX, drumY, drumR, 0, 6.28); ctx.fill();
+  // spokes turning with the belt, so the drum and the slats agree about direction
+  ctx.strokeStyle = 'rgba(30,22,18,0.55)'; ctx.lineWidth = 1.6;
+  for (let i = 0; i < 4; i++) {
+    const a2 = -t * (beltSpd / Math.max(1, drumR)) + i * Math.PI / 2;
+    ctx.beginPath(); ctx.moveTo(drumX, drumY);
+    ctx.lineTo(drumX + Math.cos(a2) * drumR * 0.82, drumY + Math.sin(a2) * drumR * 0.82); ctx.stroke();
+  }
+  // the band from the drum up to the dynamo
+  // Two PARALLEL tangents, top-to-top and bottom-to-bottom, drawn from the drum's right side
+  // to the dynamo. They used to run from the top of the drum to the bottom of the dynamo --
+  // a V, not a loop -- and the first one started on the drum's far side, so it was painted
+  // straight across the drum's own face.
+  ctx.strokeStyle = '#2a2320'; ctx.lineWidth = 4.2;
+  ctx.beginPath(); ctx.moveTo(drumX + 1, drumY - drumR); ctx.lineTo(gx, gy - 14); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(drumX + 1, drumY + drumR); ctx.lineTo(gx, gy + 14); ctx.stroke();
+  // legs, reaching the floor rather than floating six units above the deck
+  ctx.fillStyle = INK;
+
   inkFill('#1b1519', L.gen.x + 8, L.gen.y + 6, 40, 40, 20);
   const spin = beltLive ? t * (2 + 7 * beltPow) : 0;
-  ctx.strokeStyle = beltLive ? '#7fdbff' : '#556070';
+  ctx.strokeStyle = beltLive ? '#d9b169' : '#556070';   // iron and amber, like every other machine in the run
   ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(gx, gy, 14, 0, 6.28); ctx.stroke();
-  ctx.strokeStyle = 'rgba(127,219,255,0.45)'; ctx.lineWidth = 1.6;
+  ctx.strokeStyle = 'rgba(217,177,105,0.5)'; ctx.lineWidth = 1.6;
   for (let i = 0; i < 6; i++) {
     const a = spin + i * Math.PI / 3;
     ctx.beginPath(); ctx.moveTo(gx + Math.cos(a) * 4, gy + Math.sin(a) * 4);
@@ -14053,8 +14240,145 @@ function drawFinalePanel() {
   ctx.fillStyle = '#1b1519'; ctx.fillRect(L.gen.x + 52, L.gen.y + 40, 32, 6);
   ctx.fillStyle = f.phase === 'search' ? '#2ecc71' : '#e67e22';
   ctx.fillRect(L.gen.x + 52, L.gen.y + 40, 32 * beltPow, 6);
+  return beltPow;
+}
+function drawFinalePanel() {
+  const f = S.finale;
+  if (f.phase === 'intro') { drawFinaleIntro(f); return; }
+  const L = finaleLayout();
+  const light = finaleLightLevel(f);
+  const t = S.t;
+  const danger = f.phase === 'search' ? clamp01(1 - f.searchT / CFG.finale.searchTime) : (f.phase === 'blackout' ? 1 : 0.25);
 
-  ctx.fillStyle = '#9a9088'; ctx.font = '11px monospace'; ctx.textAlign = 'left';
+  // sealed chamber - near full bleed
+  ctx.fillStyle = `rgba(4,1,6,${0.88 + (1 - light) * 0.1})`; ctx.fillRect(0, 0, W, H);
+  const panelG = ctx.createLinearGradient(L.px, L.py, L.px, L.py + L.ph);
+  panelG.addColorStop(0, '#1a1218'); panelG.addColorStop(0.55, '#120e14'); panelG.addColorStop(1, '#0a080c');
+  ctx.fillStyle = panelG; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+  ctx.strokeStyle = '#1b1519'; ctx.lineWidth = 3; ctx.strokeRect(L.px + 1, L.py + 1, L.pw - 2, L.ph - 2);
+  ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.6; ctx.strokeRect(L.px + 4, L.py + 4, L.pw - 8, L.ph - 8);
+
+  // Capitalism danger vignette (stronger as clock dies / after wrong mark)
+  const pulse = 0.22 + danger * 0.45 + (f.flashWrong > 0 ? f.flashWrong * 0.22 : 0) + Math.sin(t * 3) * 0.03;
+  const vig = ctx.createRadialGradient(W / 2, H * 0.4, H * 0.15, W / 2, H * 0.5, H * 0.78);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(0.55, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, `rgba(90,8,12,${pulse})`);
+  ctx.fillStyle = vig; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+  // red edge bleed
+  ctx.save(); ctx.globalCompositeOperation = 'screen';
+  const edgeA = 0.08 + danger * 0.22 + f.flashWrong * 0.16;
+  ctx.fillStyle = `rgba(180,20,30,${edgeA})`;
+  ctx.fillRect(L.px, L.py, L.pw, 6);
+  ctx.fillRect(L.px, L.py + L.ph - 6, L.pw, 6);
+  ctx.fillRect(L.px, L.py, 6, L.ph);
+  ctx.fillRect(L.px + L.pw - 6, L.py, 6, L.ph);
+  ctx.restore();
+
+  // -- HUD: title + time + crew + found (one meter only — no duplicate bar)
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#e8c96a'; ctx.font = 'bold 18px monospace';
+  ctx.fillText(f.scene.title, W / 2, L.py + 26);
+  const mm = Math.floor(Math.max(0, f.searchT) / 60), ss = Math.floor(Math.max(0, f.searchT) % 60);
+  const chipY = L.py + 38;
+  const drawChip = (cx, label, val, col, fixedW) => {
+    const text = label ? `${label} ${val}` : String(val);
+    const tw = fixedW || Math.max(72, 18 + text.length * 8);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; roundRect(cx - tw / 2, chipY, tw, 24, 4); ctx.fill();
+    ctx.strokeStyle = col; ctx.lineWidth = 1.3; roundRect(cx - tw / 2, chipY, tw, 24, 4); ctx.stroke();
+    ctx.fillStyle = col; ctx.font = 'bold 13px monospace';
+    ctx.fillText(text, cx, chipY + 16);
+  };
+  const timerCol = f.searchT < 20 ? '#ff6b6b' : '#f1c40f';
+  // The count went in as `label` with an empty `val`, so the chip built "6/10 " with a
+  // trailing space and the glyphs sat about 4 units left of centre. CREW was alarm red --
+  // the same red as a wrong answer -- for the number that is the player's reward; it is gold
+  // now, and all three are one width so the row does not shuffle as people die.
+  drawChip(W / 2 - 130, '', `${mm}:${String(ss).padStart(2, '0')}`, timerCol, 86);
+  drawChip(W / 2, '', `${f.found.size}/${CFG.finale.findCount}`, '#2ecc71', 86);
+  drawChip(W / 2 + 130, 'CREW', f.line.length, '#d4a84b', 86);
+
+  // paintings — then pitch-black veil with mirrored flashlight spots (the player control)
+  drawFinaleScene(f.scene, L.left.x, L.left.y, L.left.w, L.left.h, false, f.diffs, f.found, t);
+  drawFinaleScene(f.scene, L.right.x, L.right.y, L.right.w, L.right.h, true, f.diffs, f.found, t);
+  ctx.fillStyle = '#c4b89a'; ctx.font = 'bold 11px monospace';
+  // Baseline +16 put these at canvas 400, and a crowd standing at 438 has its crowns at
+  // 403 -- so the heads cut through the lettering and ALTERED read as AI TERED. They sit
+  // just inside the bottom of their own frames now, where nothing else is drawn.
+
+
+  const spots = finaleSpotCenters(f, L);
+  const spotR = finaleSpotRadius(f, L);
+  const fullR = finaleSpotFullR(L);
+  veilPaintingSpot(L.left, spots.left.x, spots.left.y, spotR, fullR);
+  veilPaintingSpot(L.right, spots.right.x, spots.right.y, spotR, fullR);
+  // soft ring on each beam so the control reads clearly
+  {   // the ring always draws: gating it off at 0.98 removed the last cue to where the lamp was
+    ctx.save();
+    ctx.strokeStyle = f.flashWrong > 0 ? 'rgba(255,80,80,0.34)' : 'rgba(255,210,140,0.20)';
+    // Wider and softer, and at the rim rather than inside it. A hairline stroke inside its own
+    // falloff reads as a lens or a porthole rim -- light does not have an outline -- and it
+    // was competing with the vault door's own gold rim at the same weight.
+    ctx.lineWidth = 3.2;
+    // Clipped to its own painting, each side separately. Unclipped, at crew 60 the ring's
+    // top sat 28 units above the picture and ran through the timer chips, reading as a wire
+    // hoop hanging in front of the chamber; at crew 100 it crossed into the other painting.
+    // A circle of light cannot leave the thing the light is falling on.
+    for (const [side, c] of [[L.left, spots.left], [L.right, spots.right]]) {
+      ctx.save();
+      ctx.beginPath(); ctx.rect(side.x, side.y, side.w, side.h); ctx.clip();
+      ctx.beginPath(); ctx.arc(c.x, c.y, Math.max(4, Math.min(spotR, side.h * 0.46)), 0, 6.28); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+  // Drawn AFTER the veil. Underneath it these survived at 7% at a small crew and 86% at a
+  // hundred -- a twelve-fold swing in the legibility of a fixed caption, decided by how many
+  // people lived. Baseline is clear of the tallest crown (397.3) by 3.3 units.
+  ctx.save();
+  ctx.fillStyle = 'rgba(214,198,160,0.92)'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 7);
+  ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 7);
+  ctx.restore();
+  drawFoundChecks(f, L, spotR);
+
+  if (f.phase === 'blackout') {
+    const beat = f.blackoutT < 0.28 ? 1 : f.blackoutT < 0.55 ? 2 : 3;
+    ctx.fillStyle = 'rgba(255,70,70,0.08)'; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+    ctx.fillStyle = '#ff6b6b'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+    ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 20);
+    ctx.fillText(`BLACKOUT  -  FRAME ${beat}/3`, W / 2, L.left.y + L.left.h / 2);
+    ctx.globalAlpha = 1;
+  } else if (f.phase === 'charge') {
+    const filled = f.packDone || 0;
+    const need = f.packNeed || f.line.length;
+    // finaleChargeProgress's own comment says the light, the phase gate and the bar all read
+    // it. The bar did not -- it read packDone/packNeed, which is only the BOARDING, so it
+    // stood at 100% from 0.6s of a 5s wait at crew 60, and from 0.4s of 10.9s at crew 1.
+    // filled/need stays for the "60/60" text, which really is about the boarding.
+    const frac = finaleChargeProgress(f);
+    const boxTop = L.left.y + L.left.h * 0.5 - 26;
+    // Steady progress readout (no alpha flicker) + fill bar under the paintings
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    roundRect(W / 2 - 170, boxTop, 340, 52, 6); ctx.fill();
+    ctx.strokeStyle = '#d4a84b'; ctx.lineWidth = 1.2;
+    roundRect(W / 2 - 170, boxTop, 340, 52, 6); ctx.stroke();
+    ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(filled === 0 ? 'RUNNING THE GENERATOR…'
+      : `RUNNING THE GENERATOR…  ${filled} of ${f.packNeed} aboard${f.packWaiting ? `, ${f.packWaiting} behind` : ''}`,
+      W / 2, boxTop + 22);
+    ctx.fillStyle = '#1b1519'; roundRect(W / 2 - 130, boxTop + 34, 260, 8, 3); ctx.fill();
+    ctx.fillStyle = filled ? '#e67e22' : '#3a3034';
+    roundRect(W / 2 - 130, boxTop + 34, 260 * frac, 8, 3); ctx.fill();
+  }
+
+  const beltPow = drawChamberBase(f, L, t, false);
+
+  // Moved off the belt entirely. At deck.y - 10 it was drawn at head height and at -26 it was
+  // still among the bodies -- the crowns sit 35 above the sole line, so there is no room over
+  // a full belt at all. It goes in the empty band under the chips, centred, where nothing
+  // else is drawn.
+  ctx.fillStyle = '#9a9088'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
   // It used to read "waiting for the first body" off beltPow, which counts people who have
   // ARRIVED at their slot. With the boarding wave that is zero for the first half second
   // while twenty of them are visibly walking along the belt, so the line contradicted the
@@ -14062,10 +14386,10 @@ function drawFinalePanel() {
   ctx.fillText(f.phase === 'charge'
     ? (f.deck.length === 0 ? 'waiting for the first body…'
        : beltPow < 0.02 ? `${f.deck.length} coming aboard…`
-       : `wheel turning — lamps ${Math.round(beltPow * 100)}%`)
+       : `wheel turning — lamps ${Math.round(finaleCrewFrac(f) * 100)}%`)
     : f.phase === 'blackout'
       ? 'lights failing - hold on'
-      : 'ARROWS / click move lamps  ·  SPACE or click to mark', L.deck.x, L.deck.y - 10);
+      : 'ARROWS / click move lamps  ·  SPACE or click to mark', W / 2, L.left.y - 8);
 
   // crew: FIXED world positions; run-in-place gait sells treadmill relative motion
   const pack = f.deck.slice().sort((a, b) => a.x - b.x);
@@ -14078,16 +14402,27 @@ function drawFinalePanel() {
     const bob = (working || entering) ? -Math.abs(Math.sin(phase)) * 2.2 : 0;
     const alpha = d.enter < 0 ? 0.35 : 1;
     ctx.fillStyle = `rgba(0,0,0,${0.4 * alpha})`;
-    ctx.beginPath(); ctx.ellipse(d.x + 4, L.deck.y + L.deck.h - 1, 9, 2.5, 0, 0, 6.28); ctx.fill();
+    // On the slat top, where the foot is: at deck.y+1 it was painted on the housing lip.
+    ctx.beginPath(); ctx.ellipse(d.x + 4, L.deck.y + 3, 9, 2.5, 0, 0, 6.28); ctx.fill();
     // hair / cloth tugged by wind toward the left (belt direction)
     if (working) {
       ctx.strokeStyle = 'rgba(200,210,230,0.18)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(d.x + 2, L.deck.y + L.deck.h - 22 + bob);
-      ctx.lineTo(d.x - 10 - Math.sin(t * 14 + d.i) * 3, L.deck.y + L.deck.h - 18 + bob); ctx.stroke();
+      // Head height, not chest height: the head centre is 29 above the sole line, and at -18
+      // this was drawn 4 below the shoulders.
+      ctx.beginPath(); ctx.moveTo(d.x + 2, L.deck.y - 29 + bob);
+      ctx.lineTo(d.x - 10 - Math.sin(t * 14 + d.i) * 3, L.deck.y - 25 + bob); ctx.stroke();
     }
     ctx.save();
-    ctx.translate(d.x, L.deck.y + L.deck.h - 6 + bob);
-    if (working || entering) ctx.rotate(0.08);
+    // The belt's carrying surface is the top of the slats, L.deck.y + 3, and finaleWrong
+    // already drops a body from L.deck.y - 2. This drew the crew from the BOTTOM of the
+    // housing instead, 32 units lower -- 71% of a 45-unit body below the surface it was
+    // standing on, with the slats crossing everyone from chest to shin, and a body
+    // teleporting 32 units upward the instant it was pushed off. One number now, the one
+    // the falling body already used.
+    ctx.translate(d.x, L.deck.y - 2 + bob);
+    // drawFigure already leans a body 0.18 rad forward; an extra 0.08 on top made 15 degrees
+    // pivoted about the ankles, which is a fall, not a stance.
+    if (entering) ctx.rotate(0.05);
     drawFigure(d.r, 0, 0, phase, 1.15, alpha);
     ctx.restore();
   }
@@ -14097,14 +14432,25 @@ function drawFinalePanel() {
     ctx.save();
     ctx.translate(fall.x, fall.y);
     ctx.rotate(fall.rot);
-    const alpha = fall.splashed ? Math.max(0, 1 - (fall.t - 0.35) / 1.5) : 1;
-    drawFigure(fall.r, 0, 0, fall.t * 10, 1, alpha);
+    // Faded against DEPTH, not against a 1.5s clock. On the clock it was still at 0.73 when
+    // it passed the pool floor and 0.72 crossing the bottom frame, so a three-quarters solid
+    // body was drawn sinking through the masonry. It is gone by the time the water is.
+    // Keyed to the HEAD, not the origin. A body reaches 31 units above its own origin, so
+    // fading over origin 486..526 had a half-transparent figure with its crown five units
+    // clear of the waterline.
+    // Keyed to the water SURFACE. The old key used +34, the crown offset of an upright body,
+    // on a body that spins at 4 rad/s -- so by the time the fade began the head was 22 units
+    // BELOW the origin, 38 units and ten frames after it went under, and the body was drawn
+    // fully opaque lying on the pit floor with its head across the gold frame.
+    const sunk = clamp01((fall.y - L.water.y) / 26);
+    const alpha = fall.splashed ? Math.max(0, 1 - sunk) : 1;
+    drawFigure(fall.r, 0, 0, fall.t * 10, 1.15, alpha);   // the same size they were standing
     ctx.restore();
   }
 
   // FX sparks / spray
   for (const p of f.fx) {
-    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.globalAlpha = Math.min(1, p.life * 3.4);   // actually fades out; it used to hold full for most of its life
     ctx.fillStyle = p.c;
     if (p.k === 'spark') {
       ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.life * 8);
@@ -14119,7 +14465,7 @@ function drawFinalePanel() {
   if (f.phase === 'search' || f.phase === 'charge') {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    const core = f.flashWrong > 0 ? 'rgba(255,80,80,0.55)' : 'rgba(255,230,180,0.4)';
+    const core = f.flashWrong > 0 ? 'rgba(255,90,90,0.95)' : 'rgba(255,236,196,0.92)';   // survives a lit panel
     for (const c of [spots.left, spots.right]) {
       ctx.fillStyle = core;
       ctx.beginPath(); ctx.arc(c.x, c.y, Math.max(2, Math.min(6, spotR * 0.12)), 0, 6.28); ctx.fill();
@@ -14128,7 +14474,30 @@ function drawFinalePanel() {
   }
 
   if (f.flashWrong > 0) {
-    ctx.fillStyle = `rgba(255,30,30,${f.flashWrong * 0.32})`; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+    // 0.32 stacked on top of S.wrongFlash, the vignette pulse and the edge bleed, which all
+    // add flashWrong as well. Four red passes at once flattened the whole chamber -- both
+    // paintings went featureless red, the crew went pink and the body falling was invisible.
+    // The punishment is the body, not a filter over it.
+    ctx.fillStyle = `rgba(255,30,30,${f.flashWrong * 0.13})`; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+  }
+
+  // The room's own floaters, drawn LAST. drawOverlays runs before this function and this
+  // function opens by filling the entire canvas, so every floater the last room pushed was
+  // painted over -- "NAME FALLS" has never once been seen, which is the whole emotional
+  // payload of a wrong mark. (They also pushed `text:` while every reader in the file uses
+  // `txt:`, so had the order been right they would have read "undefined".)
+  for (const fl of S.floaters) {
+    if (fl.life <= 0) continue;
+    const a2 = Math.min(1, fl.life * 1.6);
+    const fy = fl.sy - (1 - Math.min(1, fl.life)) * 18;
+    ctx.textAlign = 'center';
+    ctx.font = fl.big ? 'bold 26px monospace' : 'bold 15px monospace';
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillText(fl.txt, fl.sx + 1.5, fy + 1.5);
+    ctx.globalAlpha = a2;
+    ctx.fillStyle = fl.color || '#f0e6d0';
+    ctx.fillText(fl.txt, fl.sx, fy);
+    ctx.globalAlpha = 1;
   }
   ctx.textAlign = 'left';
 }
@@ -15549,7 +15918,11 @@ function drawEnd() {
 
   // the rank is stamped into the corner once the climb is over
   if (win && S.finale && T > R.end + 0.5) {
-    const left = S.finale.attempts;
+    // `attempts` was a field of the OLD key-mashing finale and is assigned nowhere in the file.
+  // `undefined >= 50` is false at every rung, so every win in the game -- one survivor or a
+  // hundred -- printed "undefined survivors" and RANK D. saveBest already banks the right
+  // quantity two lines away in finaleConfirm.
+  const left = (S.finale && S.finale.line) ? S.finale.line.length : 0;
     const rank = left >= 50 ? 'S' : left >= 30 ? 'A' : left >= 15 ? 'B' : left >= 5 ? 'C' : 'D';
     const line = { S: 'the mountain never touched them', A: 'a good day under the rock', B: 'they will talk about this', C: 'the mountain remembers', D: 'barely' }[rank];
     const sp = clamp01((T - R.end - 0.5) / 0.42), k = easeBack(sp);
@@ -15841,7 +16214,19 @@ if (qs.has('finale')) {
   //           st= moves the ambient flicker and does nothing to the phases, so two shots at
   //           different st were the same frame twice.
   if (qs.has('ft')) { const n = Math.round(+qs.get('ft') * 60); for (let i = 0; i < n; i++) updateFinale(1 / 60); }
-  if (qs.has('wrong')) { S.finale.flashWrong = 1.2; S.finale.wrongT = 1.4; }
+  //   &fall=T  force a real wrong mark and hold T seconds into the fall. The reviewers could
+  //            not confirm anything about a body in flight because no dev flag produced one:
+  //            &wrong only set the flash. This drives the actual finaleWrong.
+  if (qs.has('fall')) {
+    const hold = +(qs.get('fall') || 0.3);
+    finaleWrong();
+    const n = Math.round(hold * 60);
+    // S.wrongFlash is decayed in update(), which this loop does not call -- so it stayed
+    // pinned and every &fall screenshot carried a red wash the real game clears. An
+    // instrument inventing the fault it is photographing.
+    for (let i = 0; i < n; i++) { updateFinale(1 / 60); S.wrongFlash = Math.max(0, S.wrongFlash - 1 / 60); }
+  }
+  if (qs.has('wrong')) { S.finale.flashWrong = 0.75; S.finale.wrongT = 0.9; }
   if (qs.has('st')) S.t = +qs.get('st');
 }
 // ?shot draws a single frame and never schedules another. Headless Chrome hangs on
@@ -15869,7 +16254,7 @@ function canvasToGame(e) {
 }
 function finalePointerAt(sx, sy, click) {
   const f = S.finale;
-  if (!f || S.mode !== 'finale' || f.phase !== 'search' || f.wrongT > 0) return;
+  if (!f || S.mode !== 'finale' || f.phase !== 'search' || f.wrongT > 0 || f.winT > 0) return;
   const L = finaleLayout();
   let side = null;
   if (sx >= L.left.x && sx <= L.left.x + L.left.w && sy >= L.left.y && sy <= L.left.y + L.left.h) side = L.left;

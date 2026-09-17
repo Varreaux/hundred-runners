@@ -38,15 +38,20 @@ const FAULTS = [
    s => s.replace('  return 0.07 + progress * 0.62 + flicker * (0.35 + progress);',
                   '  return 0.07 + progress * 1.6 + flicker * (0.35 + progress);')],
 
-  ['a crew of   1 charges',
+  ['a crew of   1 winds the flywheel',
    'let the flywheel start winding before the crew is aboard, so the charge is the walk',
    s => s.replace('  return boarded * 0.25 + (boarded >= 1 ? wound * 0.75 : 0);',
                   '  return Math.max(boarded, wound);')],
 
-  ['a crew of 100 charges',
-   'the other bug it shipped with: let the belt admit only one runner per frame',
-   s => s.replace('  while (f.phase === \'charge\' && f.packQueue.length && f.spawnT >= cadence) {',
-                  '  if (f.phase === \'charge\' && f.packQueue.length && f.spawnT >= cadence) {')],
+  // Re-aimed. The original fault turned the spawn WHILE into an IF, capping boarding at one
+  // person per frame -- but once the belt was capped at 35 slots the cadence became about one
+  // per frame anyway, so the fault stopped changing anything and the assertion went green for
+  // a reason that had nothing to do with it. It now removes the belt-capacity guard, which is
+  // the fault that actually shipped in this work: slot 99 got a target of x -1234, reached it
+  // on its first frame, and counted as aboard.
+  ['a crew of 100 all stands ON the belt',
+   'remove the belt-capacity guard so the overflow is given slots off the end of the deck',
+   s => s.replace('f.spawnI < shown && f.spawnT >= cadence', 'f.spawnT >= cadence')],
 
   ['every survivor is standing on the belt when the search begins',
    'start the search while the crew is still walking, at a tenth of the charge',
@@ -75,11 +80,11 @@ const FAULTS = [
 
   ['a wrong mark costs exactly one body',
    'stop a wrong mark taking anybody off the belt',
-   s => s.replace('  const r = f.line.pop();', '  const r = f.line[f.line.length - 1];')],
+   s => s.replace('f.line.splice(f.line.indexOf(near.r), 1)[0]', 'f.line[f.line.indexOf(near.r)]')],
 
   ['a wrong mark does NOT send the room back to charging',
    'send the room back to the generator on a wrong mark, the thing her notes say not to do',
-   s => s.replace('  f.flashWrong = 1.4;\n  f.wrongT = 1.7;', '  f.flashWrong = 1.4;\n  f.wrongT = 1.7;\n  f.phase = \'charge\'; f.chargeT = 0; f.packDone = 0;')],
+   s => s.replace('  f.flashWrong = 0.45;\n  f.wrongT = 0.9;', '  f.flashWrong = 0.75;\n  f.wrongT = 0.9;\n  f.phase = \'charge\'; f.chargeT = 0; f.packDone = 0;')],
 
   ['a wrong mark locks the input while it flashes',
    'accept marks during the wrong-answer flash',
@@ -91,13 +96,21 @@ const FAULTS = [
 
   ['nine of ten does not win',
    'win two marks early',
-   s => s.replace('    if (f.found.size >= CFG.finale.findCount) { S.mode = \'win\';',
-                  '    if (f.found.size >= CFG.finale.findCount - 2) { S.mode = \'win\';')],
+   s => s.replace('    if (f.found.size >= CFG.finale.findCount) { f.winT = 0.85;',
+                  '    if (f.found.size >= CFG.finale.findCount - 2) { f.winT = 0.85;')],
+
+  ['the tenth mark holds a beat so the last tick can land',
+   'win in the same call that makes the mark, so the winning tick is never drawn',
+   s => s.replace("{ f.winT = 0.85; saveBest(f.line.length); }", '{ S.mode = \'win\'; saveBest(f.line.length); }')],
+
+  ['and the search clock stops during that beat',
+   'let the search clock keep running through the winning animation',
+   s => s.replace('    if (f.winT > 0) {', '    if (false) {')],
 
   ['the tenth mark beats the wall',
    'require one more difference than the room ever paints, so the wall can never be beaten',
-   s => s.replace('    if (f.found.size >= CFG.finale.findCount) { S.mode = \'win\';',
-                  '    if (f.found.size >= CFG.finale.findCount + 1) { S.mode = \'win\';')],
+   s => s.replace('    if (f.found.size >= CFG.finale.findCount) { f.winT = 0.85;',
+                  '    if (f.found.size >= CFG.finale.findCount + 1) { f.winT = 0.85;')],
 
   ['losing the last body loses the room',
    'let the room carry on after the last survivor has gone',
@@ -133,7 +146,7 @@ const FAULTS = [
 
   ['the win banks the crew that is still standing',
    'bank nothing when the wall is beaten',
-   s => s.replace('{ S.mode = \'win\'; saveBest(f.line.length); }', '{ S.mode = \'win\'; }')],
+   s => s.replace('{ f.winT = 0.85; saveBest(f.line.length); }', '{ f.winT = 0.85; }')],
 ];
 
 let proved = 0, unproven = 0;

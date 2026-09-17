@@ -102,14 +102,28 @@ eval(src + `
 
   // ------------------------------------------------------------ the charge, at three crew sizes
   // genTime is the design: one worker 10.9s, a hundred 1.0s. The belt used to ignore it.
+  // The charge is two stages: the crew board, THEN the flywheel winds. genTime describes the
+  // second stage only, so this measures the second stage. It used to measure the total and
+  // pass, which was luck -- the flywheel was already part-wound by the time the belt filled,
+  // and the logic pass found the room's light stepping 2.25x in the single frame that
+  // finished. Fixing that made the total boarding + genTime and this assertion went red for
+  // the right reason.
   for (const crew of [1, 12, 100]) {
     charging(crew);
     const want = CFG.finale.genTime(crew);
     let t = 0;
     run(60, () => { if (F().phase === 'search') return 'stop'; t += 1/60; });
-    ok('a crew of ' + String(crew).padStart(3) + ' charges in about the ' + want.toFixed(1) + 's genTime says',
-       F().phase === 'search' && Math.abs(t - want) <= Math.max(0.6, want * 0.25),
-       'took ' + t.toFixed(2) + 's');
+    const board = F().boardT || 0;
+    ok('a crew of ' + String(crew).padStart(3) + ' winds the flywheel in the ' + want.toFixed(1) + 's genTime says',
+       F().phase === 'search' && Math.abs((t - board) - want) <= Math.max(0.35, want * 0.12),
+       'boarded in ' + board.toFixed(2) + 's, then wound for ' + (t - board).toFixed(2) + 's');
+    // The bound is 2.2s, not 1.0. Boarding is the spawn cadence (BOARD, 0.55s) PLUS the walk,
+    // and the walk used to be 1848 px/s -- 16.8 times the speed these same bodies run at for
+    // the whole game, two body-widths a frame, a blur rather than a gait. Slowing it to about
+    // 520 buys a readable walk and costs a second. What the assertion is really for is that
+    // boarding stays bounded and does not scale with the crew: it is the same at 1 and at 100.
+    ok('a crew of ' + String(crew).padStart(3) + ' gets aboard inside the boarding beat',
+       board > 0 && board <= 2.2, board.toFixed(2) + 's to get ' + crew + ' aboard');
   }
 
   function searching(crew) {
@@ -156,6 +170,27 @@ eval(src + `
     const arrived = F().deck.filter(d => d.arrived).length;
     ok('every survivor is standing on the belt when the search begins',
        arrived === 24 && F().line.length === 24, arrived + ' standing of ' + F().line.length);
+    // Nobody may stand off the belt. This is here because capping the drawn PITCH without
+    // capping the queue gave slot 99 a target of x -1234, which it reached on its first
+    // frame and counted as arrived -- the belt filled instantly with people standing far off
+    // the canvas, and every timing assertion stayed green because the phase still flipped.
+    for (const crew of [1, 2, 60, 100]) {
+      charging(crew);
+      run(30, () => { if (F().phase === 'search') return 'stop'; });
+      const L = finaleLayout();
+      const off = F().deck.filter(d => d.x < L.deck.x - 1 || d.x > L.deck.x + L.deck.w + 1);
+      const pitch = F().deck.length > 1
+        ? Math.min(...F().deck.slice(1).map((d, i) => Math.abs(d.x - F().deck[i].x)).filter(v => v > 0))
+        : 99;
+      ok('a crew of ' + String(crew).padStart(3) + ' all stands ON the belt, no closer than a body apart',
+         off.length === 0 && pitch >= 18,
+         F().deck.length + ' drawn' + (F().packWaiting ? ' (+' + F().packWaiting + ' waiting)' : '') +
+         ', tightest gap ' + (pitch === 99 ? 'n/a' : pitch.toFixed(1)) +
+         (off.length ? ', ' + off.length + ' OFF THE BELT' : ''));
+    }
+
+    charging(24);
+    run(30, () => { if (F().phase === 'search') return 'stop'; });
     const before = F().deck.map(d => d.x);
     run(3);
     const moved = F().deck.some((d, i) => Math.abs(d.x - before[i]) > 0.5);
@@ -224,6 +259,57 @@ eval(src + `
        g.found.size + ' found once it had cleared');
   }
 
+  // ------------------------------------------------------------ what the room SAYS
+  {
+    const g = searching(30);
+    S.floaters.length = 0;
+    const d = g.diffs[0];
+    g.spot.u = d.x / FINALE_ART.w; g.spot.v = d.y / FINALE_ART.h;
+    finaleConfirm();
+    // Every floater this room pushed used the key text: while every reader in the file uses
+    // txt:, so a death would have announced itself as the literal word "undefined" -- and it
+    // was painted over anyway, because the panel fills the whole canvas after drawOverlays has
+    // run. Nobody had ever seen one. A floater with no text is not a floater.
+    ok('a mark says something the player can actually read',
+       S.floaters.length > 0 && S.floaters.every(fl => typeof fl.txt === 'string' && fl.txt.length),
+       S.floaters.length + ' pushed: ' + S.floaters.map(fl => JSON.stringify(fl.txt)).join(', '));
+
+    S.floaters.length = 0;
+    g.wrongT = 0;
+    const who = g.line[g.line.length - 1];
+    finaleWrong();
+    // Most of the hundred are unnamed -- CFG.names holds 26 -- so the room says ONE IS LOST
+    // for them, which is correct. What must never happen is silence, or the word undefined.
+    const named = S.floaters.some(fl => typeof fl.txt === 'string' &&
+      (fl.txt.indexOf('FALLS') >= 0 || fl.txt.indexOf('ONE IS LOST') >= 0));
+    ok('a death says who, or says that someone, was lost', named,
+       S.floaters.map(fl => JSON.stringify(fl.txt)).join(', ') || 'nothing was pushed');
+  }
+
+  // ------------------------------------------------------------ the crew IS the machine
+  // The room's whole argument is that the crowd you saved is the power source. Both ends have
+  // been wrong in turn: reading the capped slot count made 36 survivors and 100 identical,
+  // and reading survivors-over-starting-crew made ONE survivor read as a machine at 100%.
+  {
+    const pows = {};
+    for (const crew of [1, 100]) {
+      charging(crew);
+      run(40, () => { if (F().phase === 'search') return 'stop'; });
+      pows[crew] = F().beltPow;
+    }
+    ok('one survivor does not drive the wheel as hard as a hundred',
+       pows[1] < pows[100] * 0.5 || pows[1] < 0.5,
+       'beltPow ' + pows[1].toFixed(2) + ' at crew 1 against ' + pows[100].toFixed(2) + ' at crew 100');
+  }
+  {
+    const g = searching(40);
+    const before = g.beltPow;
+    for (let i = 0; i < 8; i++) { g.wrongT = 0; finaleWrong(); run(0.2); }
+    run(2);
+    ok('throwing bodies off the belt slows the wheel', g.beltPow < before - 0.05,
+       'beltPow ' + before.toFixed(2) + ' -> ' + g.beltPow.toFixed(2) + ' after 8 deaths');
+  }
+
   // ------------------------------------------------------------ winning and losing
   {
     const g = searching(30);
@@ -232,11 +318,29 @@ eval(src + `
       g.spot.u = list[i].x / FINALE_ART.w; g.spot.v = list[i].y / FINALE_ART.h;
       finaleConfirm();
     }
-    ok('nine of ten does not win', S.mode === 'finale' && g.found.size === CFG.finale.findCount - 1,
-       g.found.size + ' found, mode ' + S.mode);
+    // NO BACKTICKS in this block -- it lives inside a template literal and a stray pair
+    // closes it, with the error pointing at the eval and not at the line. Testing the mode
+    // alone stopped being enough once the win was held for a beat: an
+    // early win sets winT and leaves the mode alone, so the assertion passed under a build
+    // that wins at eight. It has to say the win has not been TRIGGERED, not merely that it
+    // has not landed.
+    ok('nine of ten does not win', S.mode === 'finale' && !g.winT && g.found.size === CFG.finale.findCount - 1,
+       g.found.size + ' found, mode ' + S.mode + ', winT ' + (g.winT || 0));
     const last = list[CFG.finale.findCount - 1];
     g.spot.u = last.x / FINALE_ART.w; g.spot.v = last.y / FINALE_ART.h;
     finaleConfirm();
+    // The win is deliberately held for a beat so the tenth tick can land and be read -- it
+    // used to be set in the same call that made the mark, so the one animation the player
+    // most wants to see was the one that never drew. Both halves are asserted: it must NOT
+    // have won yet, and it must win shortly after.
+    ok('the tenth mark holds a beat so the last tick can land',
+       S.mode === 'finale' && g.winT > 0 && g.found.size === CFG.finale.findCount,
+       'winT ' + (g.winT || 0).toFixed(2) + 's, mode ' + S.mode);
+    const clockBefore = g.searchT;
+    run(0.5);
+    ok('and the search clock stops during that beat', Math.abs(g.searchT - clockBefore) < 0.001,
+       'clock held at ' + g.searchT.toFixed(2));
+    run(1.0);
     ok('the tenth mark beats the wall', S.mode === 'win', 'mode ' + S.mode + ', ' + g.found.size + ' found');
     ok('the win banks the crew that is still standing', loadBest() >= g.line.length,
        'best ' + loadBest() + ', standing ' + g.line.length);
