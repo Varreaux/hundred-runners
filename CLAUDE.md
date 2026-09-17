@@ -226,6 +226,21 @@ It earned itself twice on the same fault, which is now written up below: a rect 
 given as an expression that came out NEGATIVE, so ironwork grew upward out of the top of
 the card. Neither instance was visible in the source or in a still.
 
+`tools/rect-check.js` — every rectangle the game draws, checked for a negative or non-finite
+dimension. A few seconds. It wraps `fillRect`, `strokeRect`, `rect` and `clearRect`, sweeps
+30s of the opening, the whole course at 140-unit steps with somebody in every lane, a solved
+run through the finale, and all sixteen closing-reel vignettes across their whole clock, and
+reports every offending call BY CALL SITE with its script line.
+
+By call site and not by value, deliberately: keyed on the value, one fault whose number
+varies fragments into an entry per number and buries a rarer second one, which is exactly the
+reporting bug the audio mock hit.
+
+Three instances in one day, in two people's code, is why this is a tool and not the twenty
+throwaway lines that found the first one. A check that has been run once, by hand, will not
+be run again. The reel is in the sweep because a sweep of the course never reaches it: the
+reel draws on an end screen only, and two of the three were in it.
+
 `tools/room-check.js` — the keys-against-road arithmetic for every room, with the
 verdicts explained in its own header. Two things it checks that nothing else did:
 the cost in keys against the road at `CFG.scroll`, scored against a ceiling that
@@ -455,14 +470,31 @@ from `index.html` with the `'use strict'` line removed.
   syntax check, a sixty-game harness run and a glance at the frame. Feed both
   from one constant so they cannot disagree, and whenever you change one, look at
   the other.
-- **A rect height that is an ARITHMETIC EXPRESSION can come out negative, and a negative
-  height grows the rect UPWARD.** Twice in one session, on a crusher's ram rod and on a pair
-  of gear hangers, and both times the result stood fifty pixels off the top of the card with
-  nothing in the source to say so — `fillRect(x, -74, 8, by - 74 + 74)` looks like arithmetic
-  and is a sign error. Canvas does not complain. Write the two y values the thing spans and
-  subtract them: `fillRect(x, top, 8, bottom - top)`. A tool that measures through the
-  transform stack finds these; reading does not, and neither does a screenshot, because the
-  object is simply somewhere else in the frame and reads as absent rather than as wrong.
+- **A rect dimension that is an ARITHMETIC EXPRESSION can come out negative, and a negative
+  dimension grows the rect the other way.** Canvas does not complain. `fillRect(x, -74, 8,
+  by - 74 + 74)` looks like arithmetic and is a sign error; `fillRect(sx - 8 * dir, y, 8 *
+  dir, 4.5)` looks like a mirror and is one too. Write the two edges the thing spans and
+  subtract them: `fillRect(x, top, 8, bottom - top)`.
+
+  **The worst case DRAWS THE RIGHT PICTURE, and that is the one to fear.** The buffer stop's
+  head timber ran at width -8 on every leftward run, 138 times in a single sweep of the
+  course — and because its x was mirrored by the same `dir`, the two errors cancelled and the
+  timber landed exactly where it was meant to. Nothing ever pointed at it. The two in the
+  closing reel threw ironwork clean off the top of the card and at least announced
+  themselves. A trap that produces a correct frame is worse than one that does not, because
+  the next person to touch that line inherits it silently.
+
+  **And writing the warning down does not protect you from it.** A third instance was found
+  by `tools/rect-check.js` in the crusher's ram rod — in the very line the comment about this
+  fault was written on. The comment said write the two y values and subtract; the line did
+  write the two y values and subtract; it was still negative, because the two values CROSS
+  OVER partway through the animation. A block 34 units deep with its top at -82 telescoped
+  eight units into a beam whose underside was -74, and the rod between them came out at -8.
+  It landed invisibly, behind the beam.
+
+  Reading does not find these, and neither does a screenshot: the object is simply somewhere
+  else in the frame, which reads as absent rather than as wrong, or it is in the right place
+  by accident. Sweep for them — see `tools/rect-check.js`.
 
 - **Non-ASCII and emoji in object keys** need a JavaScript `\u{...}` escape. A
   Python-style `\U` produces a key that silently never matches. Named runners
