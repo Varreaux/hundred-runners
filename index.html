@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '95 the jaws let go of you, again';
+const BUILD = '96 a face to work at';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3244,6 +3244,11 @@ function lampNear(lane, wx) {
   }
   return best === null ? wx : best;
 }
+// Where mineFabric put floor-to-ceiling timber this frame, so mineProps does not stand a pit
+// prop inside a portal set. Two placers on pitches of 300 and 232 with jitter WILL collide
+// over a few thousand units; each was testing rooms, gates and forks and neither was testing
+// the other. Cleared per gallery, filled by the fabric, read by mineClear.
+let TIMBER_AT = [];
 const CAVE_CLEAR = 104;
 const PROPS = ['cart', 'prop', 'tools', 'crates', 'spoil', 'barrow', 'keg', 'prop', 'sacks', 'rope', 'ladder'];
 // What tends to be left beside what. A cart stands at a face with the spoil it is being
@@ -3257,6 +3262,7 @@ const COMPANY = { cart: 'spoil', prop: 'tools', tools: 'spoil', crates: 'keg',
 // ramp is CFG.rampLen long and its deck is opaque and drawn later, so a pit prop at f.x+104
 // loses its top to it; the span is tested, not the two endpoints.
 function mineClear(wx, lane) {
+  for (const t of TIMBER_AT) if (Math.abs(t - wx) < 52) return false;
   for (const r of S.rooms) {
     if (r.lane !== lane) continue;
     if (wx > r.x - 30 - CAVE_CLEAR && wx < r.x + 150 + CAVE_CLEAR) return false;
@@ -3270,9 +3276,20 @@ function mineClear(wx, lane) {
 }
 // A contact shadow under everything that stands on the floor. Without it a cart floats, and
 // a floating cart is the first thing a reviewer finds.
+// A shadow points away from its light. drawRunners has leaned every runner's shadow off the
+// nearest lamp for a long time; every prop's was a centred ellipse, so in one frame a person
+// leaned and the barrow beside him did not, which flattens the prop back into a sticker.
+// Set by mineProps from the same lampNear the crowd uses.
+let PROP_LEAN = 0;
 function standShadow(x, y, w) {
   ctx.fillStyle = 'rgba(0,0,0,0.34)';
-  ctx.beginPath(); ctx.ellipse(x, y, w, 3.2, 0, 0, 6.28); ctx.fill();
+  // Leaned by OFFSETTING and stretching the ellipse, not by ctx.transform. The headless
+  // canvas mock implements no transform at all, so the transform version threw out of draw()
+  // in every tool the moment a prop was on screen -- the game would have been fine in a
+  // browser and unbuildable everywhere else.
+  ctx.beginPath();
+  ctx.ellipse(x + PROP_LEAN * 7, y, w * (1 + Math.abs(PROP_LEAN) * 0.4), 3.2, 0, 0, 6.28);
+  ctx.fill();
 }
 // ---------------------------------------------------------------- the fabric of a working
 // Things that RUN the length of a gallery rather than stand about in it. Morgan, on act two:
@@ -3283,9 +3300,82 @@ function standShadow(x, y, w) {
 // Everything here is drawn by rockCorridor, before mineProps, so the standing props are in
 // front of it and the crowd is in front of them. Anything touching the roof reads tunnelSag,
 // never CFG.tunnelH, for the same reason the pit prop does.
+// ---------------------------------------------------------------- the face
+// Nowhere in six galleries was rock being removed. The art critic ranked that above every
+// other thing on its list, and it is right: a mine is a place where stone is being taken out,
+// and a corridor with props in it is a corridor with props in it.
+//
+// A face is the working END of a drive: fresh stone, lighter than the weathered wall because
+// it was broken this shift; the shot holes drilled for the next round; the muck that came
+// down from the last one; and the tools that did it, put down where they were used.
+function mineFace(px, y, lane, seed) {
+  const sx = px - V.left;
+  if (sx < -140 || sx > V.vw + 140) return;
+  const cy = y - CFG.tunnelH, H = CFG.tunnelH - tunnelSag(px, lane);
+  const d = CFG.laneCount > 1 ? lane / (CFG.laneCount - 1) : 0;
+  const w = 104;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(sx - w / 2, cy, w, CFG.tunnelH + 1); ctx.clip();
+  // fresh stone: LIGHTER than the wall behind it, because that is what a new break looks
+  // like. The wall runs rgb(30,23,35) deep to rgb(82,69,87) high, so this is derived from
+  // the same ramp and lifted, rather than being a colour that only works on one lane.
+  ctx.fillStyle = `rgb(${72 + d * 46 | 0},${62 + d * 40 | 0},${78 + d * 44 | 0})`;
+  ctx.beginPath();
+  ctx.moveTo(sx - w / 2, y);
+  for (let i = 0; i <= 7; i++) {
+    const t = i / 7, hx = sx - w / 2 + t * w;
+    ctx.lineTo(hx, cy + 6 + Math.sin(t * 5.4 + seed) * 9 + hash(seed + i) * 12);
+  }
+  ctx.lineTo(sx + w / 2, y); ctx.closePath(); ctx.fill();
+  // facets: the angular planes a round leaves behind
+  for (let i = 0; i < 7; i++) {
+    const fx = sx - w / 2 + hash(seed + i * 2.3) * w, fy = cy + 18 + hash(seed + i * 3.1) * (H - 46);
+    const fw = 12 + hash(seed + i * 1.7) * 22;
+    ctx.fillStyle = i % 2 ? 'rgba(255,240,214,0.09)' : 'rgba(0,0,0,0.16)';
+    ctx.beginPath();
+    ctx.moveTo(fx, fy); ctx.lineTo(fx + fw, fy - fw * 0.36); ctx.lineTo(fx + fw * 0.7, fy + fw * 0.5);
+    ctx.closePath(); ctx.fill();
+  }
+  // the shot holes for the next round: a cut in the middle, relievers round it
+  for (let i = 0; i < 7; i++) {
+    const a = i / 7 * 6.283, r = i === 0 ? 0 : 20 + hash(seed + i) * 9;
+    const hx = sx + Math.cos(a) * r, hy = cy + H * 0.46 + Math.sin(a) * r * 0.7;
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.beginPath(); ctx.ellipse(hx, hy, 3.4, 4.2, 0, 0, 6.28); ctx.fill();
+    ctx.fillStyle = 'rgba(255,240,214,0.13)';                    // the drill dust under each
+    ctx.beginPath(); ctx.ellipse(hx, hy + 5.4, 4.4, 1.6, 0, 0, 6.28); ctx.fill();
+  }
+  ctx.restore();
+  // the muck from the last round, heaped against the foot of the face
+  ctx.fillStyle = `rgb(${54 + d * 50 | 0},${45 + d * 44 | 0},${60 + d * 50 | 0})`;
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(sx - 46, y - 1);
+  ctx.quadraticCurveTo(sx - 20, y - 26, sx + 6, y - 21);
+  ctx.quadraticCurveTo(sx + 30, y - 25, sx + 48, y - 1);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,214,150,0.15)';
+  ctx.beginPath(); ctx.moveTo(sx - 22, y - 16); ctx.lineTo(sx - 2, y - 22); ctx.lineTo(sx + 8, y - 14); ctx.closePath(); ctx.fill();
+  for (let i = 0; i < 4; i++) {                                   // a few loose lumps off it
+    const lx = sx - 56 - hash(seed + i * 5.1) * 26, ly = y - 2 - hash(seed + i * 2.9) * 5;
+    ctx.fillStyle = `rgb(${60 + d * 48 | 0},${50 + d * 42 | 0},${66 + d * 48 | 0})`;
+    ctx.beginPath(); ctx.ellipse(lx, ly, 3 + hash(seed + i) * 4, 2.4 + hash(seed + i * 1.3) * 2.6, hash(seed + i) * 3, 0, 6.28); ctx.fill();
+  }
+  // and the tools that did it, put down at the foot rather than stood in a corner
+  drawTools(sx + 62, y, seed * 1.9);
+}
 function mineFabric(wx0, wx1, y, lane) {
   const lo = Math.max(wx0, FAC.seam + 40), hi = Math.min(wx1, CFG.exit - 40);
   if (hi <= lo) return;
+  TIMBER_AT = [];
+  // A face every 1400 units or so, where the rock is actually being taken out.
+  for (let wx = Math.floor(lo / 1400) * 1400; wx < hi + 1400; wx += 1400) {
+    if (hash(wx * 0.009 + lane * 6.7) < 0.42) continue;
+    const fx = wx + (hash(wx * 0.033 + lane) - 0.5) * 600;
+    if (fx < lo + 90 || fx > hi - 90 || !mineClear(fx, lane)) continue;
+    mineFace(fx, y, lane, wx * 0.011 + lane);
+    TIMBER_AT.push(fx);                      // nothing else stands in the muck
+  }
   const cy = y - CFG.tunnelH;
   const x0 = Math.max(-20, lo - V.left), x1 = Math.min(V.vw + 20, hi - V.left);
   if (x1 <= x0) return;
@@ -3313,6 +3403,7 @@ function mineFabric(wx0, wx1, y, lane) {
     if (hash(wx * 0.017 + lane * 8.1) < 0.46) continue;
     const px = wx + (hash(wx * 0.041 + lane) - 0.5) * 120;
     if (px < lo + 40 || px > hi - 40 || !mineClear(px, lane)) continue;
+    TIMBER_AT.push(px);
     const sx = px - V.left;
     if (sx < -60 || sx > V.vw + 60) continue;
     const H = CFG.tunnelH - tunnelSag(px, lane) - 4;      // same rule as a pit prop: meet the rock
@@ -3431,6 +3522,16 @@ function drawLadder(x, y, seed, lane, wx) {
   for (const s of [-1, 1]) {
     ctx.beginPath(); ctx.moveTo(x + s * w / 2, y - 1); ctx.lineTo(x + s * w / 2 - lean, y - H); ctx.stroke();
   }
+  // The manway it climbs to. Without this it is a nine-rung climb to unbroken rock, which is
+  // what the art pass found: the comment claimed a ladder stopping short of the opening it
+  // serves is a prop rather than a way up, and there was no opening anywhere in the mountain.
+  const hx = x - lean, hy = y - H;
+  ctx.fillStyle = '#17121c';
+  ctx.beginPath(); ctx.ellipse(hx, hy + 3, 18, 7.5, 0, 0, 6.28); ctx.fill();
+  ctx.fillStyle = '#5b4632';                                  // lip timbers round the hole
+  ctx.fillRect(hx - 21, hy - 1, 42, 4.5);
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.4; ctx.strokeRect(hx - 21, hy - 1, 42, 4.5);
+  ctx.fillStyle = 'rgba(255,214,150,0.14)'; ctx.fillRect(hx - 21, hy - 1, 42, 1.5);
   const rungs = Math.max(3, Math.round(H / 15));
   for (let i = 1; i < rungs; i++) {
     const t = i / rungs, ry = y - 1 - t * (H - 1), rx = x - lean * t;
@@ -3463,7 +3564,10 @@ function mineProps(wx0, wx1, y, lane) {
   for (let wx = first; wx < hi + STEP; wx += STEP) {
     if (wx < lo - STEP || wx > hi) continue;
     const h = hash(wx * 0.021 + lane * 3.3);
-    if (h < 0.42) continue;                                  // most gaps stay empty
+    // 58% of a 232 pitch was a shelf of curios: about nine standing props per gallery per
+    // screen, times six lanes. The comment always said a long stretch of nothing was the
+    // target; the number said the opposite.
+    if (h < 0.62) continue;
     const jitter = (hash(wx * 0.053 + lane) - 0.5) * STEP * 0.5;
     const px = wx + jitter;
     if (px < lo + 30 || px > hi - 30 || !mineClear(px, lane)) continue;
@@ -3476,12 +3580,18 @@ function mineProps(wx0, wx1, y, lane) {
     // corridor, however good each object is.
     const mate = hash(wx * 0.11 + lane * 4.7) > 0.46 ? COMPANY[kind] : null;
     const pair = [[px, kind]];
-    if (mate) pair.push([px + (hash(wx * 0.19 + lane) > 0.5 ? 1 : -1) * (26 + hash(wx * 0.23) * 20), mate]);
+    // 26 to 46 units apart is 10 to 18 screen pixels at this zoom: the pair merged into one
+    // blob instead of reading as two things left near each other.
+    if (mate) pair.push([px + (hash(wx * 0.19 + lane) > 0.5 ? 1 : -1) * (58 + hash(wx * 0.23) * 34), mate]);
     for (const [gx, gk] of pair) {
       if (gx < lo + 30 || gx > hi - 30 || !mineClear(gx, lane)) continue;
       const gsx = gx - V.left;
       if (gsx < -90 || gsx > V.vw + 90) continue;
       const seed = gx * 0.013 + lane;
+      PROP_LEAN = Math.max(-0.55, Math.min(0.55, (gx - lampNear(lane, gx)) * 0.007));
+      // A ladder needs a level above it to reach. Where there is none it becomes something
+      // that does not claim to go anywhere.
+      if (gk === 'ladder' && !(lane + 1 < CFG.laneCount && laneAt(lane + 1, gx))) gk = 'sacks';
       if (gk === 'cart') drawCart(gsx, y, seed);
       else if (gk === 'prop') drawPitProp(gsx, y, seed, lane, gx);
       else if (gk === 'tools') drawTools(gsx, y, seed);

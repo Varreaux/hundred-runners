@@ -42,9 +42,32 @@ eval(src + `
     // camera never advances and the later acts are never drawn. A probe that reports
     // "no exception" having never executed act three is worse than no probe: pass 'solve'
     // to drive the bot and actually get there.
-    for(let i=0;i<${SECS}*60 && S.mode!=='win' && S.mode!=='lose';i++){ update(1/60); if(${SOLVE}) devSolve(); }
-    draw();
-    console.log('no exception; mode', S.mode, '| cam', S.cam.toFixed(0), 'of', S.camMax, '| running', S.runners.filter(r=>r.state==='run').length);
+    // DRAW EVERY FRAME, not only the last one. This used to update in a loop and draw once at
+    // the end, so the only frame whose DRAWING was ever tested was the frame it happened to
+    // stop on. The headline of this file says it reports the first exception out of update()
+    // or draw(); it did, for update(), and for draw() it covered one frame in SECS*60.
+    //
+    // Found the hard way: a crash in the cave's props threw on play 75 solve, which stops
+    // inside the cave, and reported NO EXCEPTION on play 130 solve, which stops past it in
+    // act three. The longer run looked like the safer one and was the blinder one. Every
+    // green quoted off this tool for a day was a verdict on a single frame.
+    // Every 6th frame, ten a second of game time. Drawing all of them is the honest maximum
+    // and costs 50s for a 130s run, which is no longer a tool you reach for while iterating;
+    // drawing one is what caused the problem above. Ten a second keeps the whole journey
+    // covered for about eight seconds of wall clock.
+    //
+    // What this does NOT cover, said plainly so nobody quotes it for more than it is: an
+    // exception that exists on a single frame and not the five around it. Art faults persist
+    // for as long as the thing is on screen, which is seconds, so they are caught; a crash on
+    // one exact frame of one animation may not be.
+    const EVERY = 6;
+    let drawn = 0;
+    for(let i=0;i<${SECS}*60 && S.mode!=='win' && S.mode!=='lose';i++){
+      update(1/60); if(${SOLVE}) devSolve();
+      if (i % EVERY === 0) { draw(); drawn++; }
+    }
+    draw(); drawn++;                       // and always the frame it finished on
+    console.log('no exception in', drawn, 'frames drawn; mode', S.mode, '| cam', S.cam.toFixed(0), 'of', S.camMax, '| running', S.runners.filter(r=>r.state==='run').length);
   } catch(e) { console.log('THREW:', e.message); console.log(e.stack.split('\\n').slice(0,6).join('\\n')); }
 })();
 `);
