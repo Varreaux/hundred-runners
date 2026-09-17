@@ -71,10 +71,22 @@ eval(src + `
                   : (m.pos >= m.zone && m.pos <= m.zone + m.zoneW ? ' ' : null);
           if (k != null) {
             nextPress = t + 1/rate;
-            // a hold verb is toggled by keydown and must be let go of, or the spring bites
-            if (held) { lift(held); held = null; }
-            press(k);
-            if (VERBS[d.room.verb].takesHold && k === ' ' && d.room.mg.holding) held = k;
+            // A HOLD VERB HAS TWO ANSWERS AND solveKey GIVES THE SAME KEY FOR BOTH: SPACE
+            // means take hold when you are not holding and let go when you are. This used to
+            // lift the key and then press it in the same breath, and since a press TOGGLES
+            // the grip, the release was undone by the press on the same frame -- the bot
+            // never once let go. It got away with it only because the spring biting used to
+            // drop the grip for it, so the tool was relying on the very dead-end that made
+            // the room unplayable for a person. With that gone it held the key for ever and
+            // reported the drill stalled, which is a tool accusing a game of the tool's bug.
+            const hold = VERBS[d.room.verb].takesHold && k === ' ';
+            if (hold && d.room.mg.holding) {
+              if (held) { lift(held); held = null; } else { press(k); }   // let go
+            } else {
+              if (held) { lift(held); held = null; }
+              press(k);
+              if (hold && d.room.mg.holding) held = k;                    // took hold
+            }
           }
         }
       } else if (d && d.done && !log.closed) {
