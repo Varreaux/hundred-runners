@@ -43,6 +43,7 @@ eval(src + `
   let maxFileSpread = 0, minFileSpread = Infinity;
   let biggestJumpOnRelease = 0, prevX = null, releaseFrame = -1;
   let passedSeam = false, frameOfBurstDone = -1;
+  let overlapWorst = 0, belowDeck = -Infinity;
 
   // DERIVED, not written down: long enough for the whole course plus the hold.
   const frames = 60 * (S.camMax / CFG.scroll + 180);
@@ -84,6 +85,31 @@ eval(src + `
       }
     }
     if (g.phase === 'done' && S.runners.some(r => r.state === 'run' && r.x > FAC.seam + 200)) passedSeam = true;
+
+    // THE DOOR MUST NOT BE PAINTED OVER A PERSON, AND MUST NOT GO THROUGH THE FLOOR.
+    // Both of these shipped. The leaf is drawn after the bodies -- correctly, because a barrier
+    // people are painted over is not a barrier -- which means the instant its drawn extent
+    // reaches a runner, the runner disappears behind it. And an earlier burst rotated the leaf
+    // in the picture plane, which for a frontal elevation is a door falling over: three of four
+    // corners finished up to 59 units BELOW the deck, lying across the front twenty runners,
+    // for the ten seconds the seam stayed in view. Neither is visible in a still -- a body
+    // half-painted-out just looks like a body behind something.
+    // Only while the door is actually THERE. Measured across 'done' as well, this reported a
+    // 9653-unit overlap, which is just the crowd running past the seam after the door has gone
+    // -- the same mistake as measuring camera drift across the settle: an invariant checked
+    // over an extent where it does not apply accuses the game of something it did not do.
+    if (held && g.open < 1) {
+      const lead2 = Math.max(...S.runners.filter(r => r.state === 'run').map(r => r.x), -Infinity);
+      // widest half-body toward the door: shoe/hair reach 6.8 at scale 1, x the tallest scale
+      const widest = 6.8 * 1.232;
+      if (isFinite(lead2) && lead2 + widest > FAC.seam - DOOR.jamb) {
+        overlapWorst = Math.max(overlapWorst, lead2 + widest - (FAC.seam - DOOR.jamb));
+      }
+      // the leaf spans doorTop..doorBot in y and never leaves it, because opening is a
+      // horizontal scale about the jamb rather than a rotation. If that ever becomes a rotate
+      // again, this is the number that moves.
+      belowDeck = Math.max(belowDeck, doorBot(laneY(0)) - laneY(0));
+    }
   }
 
   const A = (ok, msg) => { (ok ? notes : fails).push((ok ? 'ok   ' : 'FAIL ') + msg); };
@@ -99,6 +125,13 @@ eval(src + `
   A(maxFileSpread > 60, 'the crowd stands in a FILE, not a heap (deepest ' + maxFileSpread.toFixed(0) + ' units)');
   A(biggestJumpOnRelease < 40, 'nobody is teleported by the release (biggest jump ' + biggestJumpOnRelease.toFixed(1) + ' units)');
   A(passedSeam, 'the door opens and the crowd goes through');
+  A(overlapWorst <= 0, 'the door is never painted over a person (worst overlap ' + overlapWorst.toFixed(1) + ' units)');
+  // HONEST SCOPE: this reads the door's DECLARED extent (doorTop..doorBot) against the deck.
+  // It does NOT see what the leaf transform does to that extent, so it would not catch a
+  // ctx.rotate being put back -- which is exactly the bug that put three corners 59 units under
+  // the floor. Catching that needs a recording canvas that honours the transform stack, like
+  // reel-check's. Until then this guards the constants and says so rather than implying more.
+  A(belowDeck <= 0, 'the DECLARED door extent sits above the deck, constants only (deepest ' + (belowDeck === -Infinity ? 0 : belowDeck).toFixed(1) + ' units)');
 
   console.log('');
   notes.forEach(n => console.log('  ' + n));

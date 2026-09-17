@@ -2189,12 +2189,16 @@ function releaseGate(g, spread) {
 // Nothing here freezes the camera. It does not need to: the camera's limit is derived from the
 // rearmost live runner, so a stopped crowd stops it, and it never runs backwards.
 const SEAM = {
-  // Measured from the door's CENTRE, so it must clear DOOR.half (35) and not just the seam,
-  // or the front of the file stands INSIDE the leaf's footprint -- and since the leaf is drawn
-  // after the bodies, the barrier is then painted over the people it is supposed to stop. It
-  // was 26, which put them 9 units past the leaf's near edge. 40 is DOOR.half, half a body
-  // and a hand's clearance, and it still leaves the hammer landing on the leaf.
-  standoff: 40,       // where the front of the file stands off the door's centre
+  // Measured from the door's CENTRE, so it must clear DOOR.half and not just the seam, or the
+  // front of the file stands INSIDE the leaf's footprint -- and since the leaf is drawn after
+  // the bodies, the barrier gets painted over the people it exists to stop. It was 26, which
+  // put them nine units past the leaf's face. 40 was still short: a figure's half-width toward
+  // the door is 6.8 at scale 1 and 8.4 at the tallest named runner's 1.232, so the biggest body
+  // still finished 0.9 units behind the leaf. 45 = DOOR.half 32.5 + 8.4 + 4 of daylight.
+  // (DOOR.half is 32.5; 35 is DOOR.jamb, the opening. An earlier version of this comment named
+  // the wrong one of the two, which is exactly how the five units went missing.)
+  standoff: 45,       // where the front of the file stands off the door's centre
+  preHits: 2,         // damage taken before the drill starts; the rest is paced by the drill
   settle: 1.1,        // let the file pile up before he starts talking
   hits: 6,            // sledge strokes before it gives
   swing: 0.62,        // one stroke
@@ -2244,23 +2248,28 @@ function updateSeamGate(dt) {
   }
   g.t += dt;
   g.jolt = Math.max(0, g.jolt - dt * 3.4);
-  // The sledge. They keep swinging through the drill -- they have not given up -- but the
-  // JOLT and the BANG stop once the door has taken all the damage it is going to take.
-  // Guarded on `phase !== 'burst'` alone, this shook the screen and clanked on a 0.62s
-  // metronome for the whole of the tutorial, with nothing changing on the door: the player
-  // reads a panel through a scene that is banging at them for no reason any longer.
-  if (g.phase !== 'burst') {
+  // The sledge, PACED BY THE DRILL, so that SEAM.hits means what it says: the sixth stroke is
+  // the one that opens the door. On a free 0.62s metronome g.hits reached SEAM.hits at t=3.72s
+  // -- 2.6s into the speech, before the drill had even started -- and the burst is gated on the
+  // drill finishing, so the door then stood fully battered, hole and all, through the whole
+  // tutorial while three sledges went on landing on it with no sound, no shake, no particles
+  // and nothing changing. A cause with no consequence, about 1.6 times a second.
+  const order = S.drill && S.drill.order ? S.drill.order.length : 0;
+  const target = g.phase === 'gather' || g.phase === 'boss' ? SEAM.preHits
+               : g.phase === 'drill' && order
+                 ? SEAM.preHits + Math.round((SEAM.hits - SEAM.preHits) * S.drill.idx / order)
+                 : SEAM.hits;
+  if (g.phase !== 'burst' && g.hits < target) {
     g.swing += dt / SEAM.swing;
     if (g.swing >= 1) {
       g.swing -= 1;
-      if (g.hits < SEAM.hits) {
-        g.hits++;
-        g.jolt = 1; S.shake = Math.min(5, S.shake + 0.7);
-        AU.clank();
-        // the only impact in the game that had no particles
-        emit('chip', 5, seamX() - DOOR.half, laneY(0) - 20,
-             { sx: 6, vx: [-120, -30], vy: [-90, 30], life: [0.3, 0.7], c: '#8b6a42' });
-      }
+      g.hits++;
+      g.jolt = 1; S.shake = Math.min(5, S.shake + 0.7);
+      AU.clank();
+      // At the STRIKE, not at the hinge edge. This was emitting 16.4 units to the left of the
+      // nearest blow with vx carrying the chips further away still.
+      emit('chip', 5, seamLine() + 25, laneY(0) - 16,
+           { sx: 6, vx: [-120, -30], vy: [-90, 30], life: [0.3, 0.7], c: '#8b6a42' });
     }
   }
   if (g.phase === 'gather') {
@@ -7575,7 +7584,9 @@ const DOOR = {
   // are at +/- 35. The leaf stops 2.5 short of that ON PURPOSE: the gap is painted near-black
   // before the leaves go down, which gives the door an outline that survives 0.70 zoom and the
   // grain overlay. Its own 1-unit INK border does not -- 0.7 of an image pixel antialiases to a
-  // smudge. It also recovers 2.5 units of drawSeamPortal's reveal, which the shut leaf covered.
+  // smudge. It does NOT recover any of drawSeamPortal's lit reveal, which an earlier version of
+  // this comment claimed: that reveal is at world 5917..5924 and the leaf plus this slot cover
+  // all of it. The slot earns its place as a value step along the jamb and for nothing else.
   half: 32.5,         // the leaf, inset from the opening's 35 to leave a reveal each side
   jamb: 35,           // the opening itself, off the portal's posts
   headroom: 4,        // under the soffit
@@ -7598,13 +7609,17 @@ function drawSeamDoor(y) {
     // the jolt of a strike travels through the whole leaf, not just the spot that was hit
     const jolt = g.jolt * (1 - open);
     ctx.translate(sx + d * DOOR.half, bot);
-    // 2.1 rad, not 0.62. A door blown off its bar swings back against the wall; 35 degrees is
-    // a door left ajar, which is what this read as. And the translate no longer moves the
-    // PIVOT: it was carrying the hinge 26 units sideways and 34 DOWN, which put the bottom of
-    // each leaf below lane 0's deck -- planks lying in the floor rather than doors standing
-    // open. A hinge pin has a few units of slop and nothing more.
-    ctx.rotate(d * open * 2.1);
-    ctx.translate(d * open * 3 + d * jolt * 1.4, 0);
+    // NOT a rotation. drawSeamPortal is a frontal elevation of a doorway -- two jambs, a head
+    // tree, a soffit, a reveal -- and a leaf hung on a VERTICAL pintle, seen face on, opens by
+    // foreshortening: it narrows onto its own post. ctx.rotate turns it in the picture plane
+    // instead, which is a door falling over. At 0.62 rad that read as a slide; the art critic
+    // was right that 0.62 was too small and raising it to 2.1 made it far worse, because the
+    // fault was never the angle. At 2.1 three of the four corners of each leaf finish between
+    // 31 and 59 units BELOW lane 0's deck, lying across the front twenty runners, and they stay
+    // there for the ten seconds the seam remains in view. The origin is already on the hinge
+    // jamb for both leaves, so a horizontal scale collapses each one onto its own post.
+    ctx.translate(d * jolt * 1.4, 0);
+    ctx.scale(Math.max(0.08, Math.cos(open * 1.4)), 1);
     const w = DOOR.half;                          // leaf reaches from its jamb to the centre
     const x0 = d < 0 ? 0 : -w;                    // local left edge of this leaf
     ctx.beginPath(); ctx.rect(x0 - 1, -hh - 1, w + 2, hh + 2); ctx.clip();
@@ -7645,10 +7660,10 @@ function drawSeamDoor(y) {
       ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(x0, sy - 4, w, 1.4);
       ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.fillRect(x0, sy + 2.6, w, 1.4);
       rivets(x0 + 5, x0 + w - 5, sy, 11, 1.15, 'rgba(255,255,255,0.20)');
-      // the hinge pintle, on the jamb edge
-      const hx = d < 0 ? x0 + 2 : x0 + w - 2;
-      ctx.fillStyle = '#26232c'; ctx.beginPath(); ctx.arc(hx, sy, 3.4, 0, 6.28); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.beginPath(); ctx.arc(hx - 0.8, sy - 0.8, 1.2, 0, 6.28); ctx.fill();
+      // The PINTLE is not drawn here. It is the one part of a door that is fixed to the
+      // building, and drawn inside the leaf's own space it travelled with the leaf -- ending up
+      // 59 and 130 units from the jamb it hangs on, with no hardware left on the frame at all.
+      // It is drawn in world space below, after both leaves, so it stays on the post.
     }
     // damage, growing with the count of strikes. Splits start at the meeting edge, which is
     // where the sledges are landing, and travel back toward the hinge.
@@ -7665,7 +7680,10 @@ function drawSeamDoor(y) {
         const t = hash(i * 4.7 + d * 1.7);
         // Biased to a band around where the hammer actually lands, not spread over the whole
         // leaf. The splits were averaging a body-height above the strike.
-        const sy = -30 - t * 46;
+        // A standing body cannot swing a sledge above its own shoulder. The blows land at
+        // world y ~386 and the splits were spread uniformly over the leaf's whole height,
+        // averaging 1.2 body heights above the hand that makes them.
+        const sy = -hh * 0.06 - t * hh * 0.18;
         const reach = (0.25 + hash(i * 2.3 + d * 1.7) * 0.5) * w * Math.min(1, dmg * 1.4);
         ctx.lineWidth = 1 + hash(i * 6.1 + d * 1.7) * 1.4;
         ctx.beginPath(); ctx.moveTo(edge, sy);
@@ -7682,13 +7700,17 @@ function drawSeamDoor(y) {
           const a = i / 8 * 6.28, rr = hw * (0.6 + hash(i * 9.1) * 0.7);
           // -hh * 0.52 was a constant, so both holes sat at exactly the same height, symmetric
           // about the centre line -- and 63 units above the sill, while the hammer lands at 16.
-          const hy = -26 + (hash(d * 3.1) - 0.5) * 18;
+          // -hh*0.52 put the breach 67.9 above the deck -- 41 above the crown of the person
+          // hitting it, where no pose can reach.
+          const hy = -hh * 0.13 + (hash(d * 3.1) - 0.5) * 14;
           const px = edge - d * (hw * 0.7) + Math.cos(a) * rr, py = hy + Math.sin(a) * rr * 0.9;
           i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
         }
         ctx.closePath(); ctx.fill();
       }
     }
+    // turning away from the lamps that light the mill side
+    if (open > 0) { ctx.fillStyle = 'rgba(0,0,0,' + (0.55 * open).toFixed(3) + ')'; ctx.fillRect(x0, -hh, w, hh); }
     ctx.restore();
   };
   // The reveal, first, so the leaves sit in a black slot rather than butting timber onto
@@ -7699,6 +7721,12 @@ function drawSeamDoor(y) {
   ctx.fillRect(sx - DOOR.jamb, top, DOOR.jamb - DOOR.half, hh);
   ctx.fillRect(sx + DOOR.half, top, DOOR.jamb - DOOR.half, hh);
   leaf(-1); leaf(1);
+  // the pintles, in WORLD space, on the jambs, whatever the leaves are doing
+  for (const f of DOOR.strap) for (const d of [-1, 1]) {
+    const hx = sx + d * (DOOR.jamb - 2), hy = bot - hh + hh * f;
+    ctx.fillStyle = '#26232c'; ctx.beginPath(); ctx.arc(hx, hy, 3.4, 0, 6.28); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.beginPath(); ctx.arc(hx - 0.8, hy - 0.8, 1.2, 0, 6.28); ctx.fill();
+  }
   // and a contact shadow where the leaf meets the stone. Everything else in this frame has
   // occlusion shading; a door that touches the ground with no shadow line reads as a panel
   // pasted over a hole, which is exactly what it read as.
@@ -7717,7 +7745,12 @@ function drawSeamDoor(y) {
   // off-centre now -- at exactly half height it made a third evenly-spaced grey band with the
   // two straps, on a 29-unit pitch, and the door read as a ladder rather than as two hinges
   // and a bar.
-  const by = bot - hh * 0.44, bh = 18;
+  // 0.19 of the leaf, not 0.44 or 0.5. At half height the bar sat 65.5 units above the deck --
+  // 1.46 body heights, about 2.55m -- 39 units above the crown of anybody standing at it. No
+  // one could have put it there and no one could lift it off. This is 23 units up, a real
+  // drop-bar height, and it is riveted to the POSTS rather than bridging the two leaves only,
+  // so it is part of the building and not a stripe painted on the door.
+  const by = bot - hh * 0.19, bh = 18;
   const barX0 = sx - DOOR.jamb - 15, barW = (DOOR.jamb + 15) * 2;
   if (open < 0.02) {
     ctx.save();
@@ -7744,7 +7777,9 @@ function drawSeamDoor(y) {
       ctx.save();
       ctx.translate(sx + d * 6, by);
       ctx.rotate(d * open * 1.4);
-      ctx.translate(d * open * 10, open * open * 90);
+      // falls ONTO the sill, not through it: the drop is the distance to the threshold, which
+      // is derived from where the bar actually is rather than being a round number.
+      ctx.translate(d * open * 10, open * open * (bot - by - 3));
       const hw = barW / 2 - 6;
       ctx.fillStyle = INK; ctx.fillRect(d < 0 ? -hw : 0, -bh / 2 - 1, hw, bh + 2);
       ctx.fillStyle = '#6a6f7c'; ctx.fillRect(d < 0 ? -hw + 1 : 1, -bh / 2, hw - 2, bh);
@@ -7772,28 +7807,46 @@ function drawSeamHammers(y) {
     // drawRunners stacks the white name tags. The pose that says "hitting something" lasted
     // 155ms out of 620. Now the downswing is half the cycle and it is what you see.
     const a = ph < 0.5 ? -2.05 + (ph / 0.5) * 0.45 : -1.6 + ((ph - 0.5) / 0.5) * 2.05;
+    // g.swing stops advancing the instant the phase turns to 'burst', so without this the three
+    // sledges hung frozen mid-air for the whole 0.9s the door was coming apart and then vanished
+    // between two frames. They come down to rest instead.
+    const aa = g.phase === 'burst' ? a + (0.62 - a) * clamp01(g.open) : a;
     // The world transform is already on the stack, so this draws in WORLD units and does not
     // touch it. An earlier version reached for setTransform and re-applied the world matrix
     // by hand afterwards, which is the thing CLAUDE.md warns about: anything that rebuilds the
     // transform stack rather than nesting inside it gets the scale wrong somewhere and then
     // blames the geometry. Local coords here are exactly toScreen's, before its zoom:
     // x = wx - V.left, y = the world y.
+    // The pivot is the SHOULDER. footY - 30 put it 34.1 above the sole against a 35.2-unit
+    // body -- 1.1 units below the crown, so the whole sledge lived above the head and stayed a
+    // fifth of a body height from the nearest hand at every point in the stroke. drawFigure's
+    // shoulder is footY - 17.5, and the hammer scales with the body that swings it.
+    const sc = (r.name ? 1.1 : 1) * (r.height || 1);
     ctx.save();
-    ctx.translate(r.x - V.left, footY(r) - 30);
-    ctx.rotate(a);
+    ctx.translate(r.x - V.left, footY(r) - 17.5 * sc);
+    ctx.rotate(aa);
+    ctx.scale(sc, sc);
+    // arms, in the swung frame, so they track the haft instead of hanging at the sides. A held
+    // runner has moving=false, so drawFigure gives both arms an idle sway while a sledge goes
+    // through two radians beside them -- three people swinging nothing, next to three hammers
+    // swung by nobody.
+    ctx.strokeStyle = r.skin; ctx.lineWidth = 3.1; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-6.5, 3.2); ctx.lineTo(7, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-5.5, 1.4); ctx.lineTo(13, 0); ctx.stroke();
     // haft
     ctx.fillStyle = INK; ctx.fillRect(-1.9, -1.9, 26, 3.8);
     ctx.fillStyle = '#7a5a34'; ctx.fillRect(-1.4, -1.4, 25, 2.8);
     ctx.fillStyle = 'rgba(255,224,176,0.16)'; ctx.fillRect(-1.4, -1.4, 25, 0.9);
     // head
-    ctx.fillStyle = INK; ctx.fillRect(21, -5.6, 11, 11.2);
-    ctx.fillStyle = '#585563'; ctx.fillRect(21.7, -4.9, 9.6, 9.8);
+    // 11 x 11.2 units at 38.9mm a unit is a 43cm cube -- a mallet, not a sledge. A sledge head
+    // is about 300 x 80mm, which is 7.7 x 2.1. Rounded up a little so it survives 0.70 zoom.
+    ctx.fillStyle = INK; ctx.fillRect(21, -2.4, 9.4, 4.8);
+    ctx.fillStyle = '#585563'; ctx.fillRect(21.6, -1.8, 8.2, 3.6);
     // A hard specular cap, not a wash. The head was #4a4752 against a #2a2431 mill interior
     // and the crowd's own dark silhouettes -- nothing separated it from anything. This is the
     // one bright thing on the object and it is what carries the swing at 0.70 zoom.
-    ctx.fillStyle = 'rgba(255,240,214,0.55)'; ctx.fillRect(21.7, -4.9, 9.6, 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.fillRect(21.7, 2.6, 9.6, 2.3);
-    ctx.fillStyle = 'rgba(150,190,220,0.30)'; ctx.fillRect(21.7, 4.4, 9.6, 0.9);
+    ctx.fillStyle = 'rgba(255,240,214,0.55)'; ctx.fillRect(21.6, -1.8, 8.2, 1.2);
+    ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.fillRect(21.6, 0.9, 8.2, 0.9);
     ctx.restore();
   });
 }
