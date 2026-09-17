@@ -19,6 +19,30 @@ Morgan (GitHub login `Varreaux`). Read this before editing.
   no-cache headers. Do not point him at any other port. If you run your own
   server for screenshots, keep it to yourself and say so.
 
+### Check your OWN screenshot port, not just his
+
+We apply the served-BUILD check religiously to 8765 and almost never to the port we are
+photographing. **A 200 proves a server, not YOUR server.** A session started python on a
+port another worktree already held, the EADDRINUSE went into /dev/null, the curl came back
+200, and it photographed somebody else's build for an hour. The cost was not the wasted
+frames: it then spent a long stretch hunting for a room it had just moved, through a pixel
+sampler and a script deriving the on-screen rect from the game's own transform, and
+concluded the room might be invisible at cave zoom. It was not. The build being served
+still had that room in act one. Two reviewers read those frames, and every finding that
+came from the images was void while every finding that came from the code stood.
+
+`tools/shoot.sh` now refuses to shoot unless the port serves a byte-identical index.html,
+so using it is the fix. If you roll your own shot loop, do the same check; the ports around
+8790-8850 are crowded enough that collision is not a remote risk.
+
+**Compare by HASH, not by BUILD.** Two worktrees sit at the same BUILD for the whole gap
+between one session's rebase and their next bump, so a matching stamp proves very little --
+and while iterating on art the file is usually uncommitted, which no stamp reflects at all.
+
+And when the port is not yours, **do not kill it.** Same rule as for processes:
+`lsof -nP -iTCP:<port> -sTCP:LISTEN -t | xargs -I% lsof -a -p % -d cwd` says whose it is.
+Pick a free port instead.
+
 ### Pushing is not delivering. Pull into his checkout yourself.
 
 **8765 serves `/Users/morgan/dev/first_game_jam`. Pushing puts work on origin and
