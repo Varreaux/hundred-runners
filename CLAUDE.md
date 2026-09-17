@@ -344,6 +344,15 @@ since the harness has its own inline bot and only `?start&solve` reaches the
 other one. None of those greens were wrong, they were about something else. Say
 what your run covers when you report it, in the same breath as the result.
 
+**"Both halves are present" and "both halves work together" are two different claims, and a
+grep only makes the first one.** After a stale index reverted six hunks of somebody else's
+verb inside a commit, the merged file was checked two ways: markers grepped out of the source
+(`recoil` seven times, the new hint, `roomFree`, `hopGap`, `reload`) and then the behaviour
+run (`drill-check`, `deaths-check`). Both were reported in one breath, which reads as though
+the grep carried the weight. It does not: a marker count proves the lines are in the file and
+says nothing about a grip that survives a bite meeting a crossing that reloads. Run both, and
+report them as two sentences.
+
 **Prove a check can fail before you trust it passing.** A check that has only
 ever been seen to pass tells you nothing about the check, only about the build.
 The cost is one deliberately broken copy and a few minutes, and it turns a claim
@@ -554,6 +563,20 @@ shots of the same trap disagreeing about how many leaves a drawbridge had — th
 conditional in the code, it was a re-shoot landing between two of its reads, and it cost it
 a finding. Take the screenshots, then leave both the shots and the file alone until the
 report is in. Waiting is cheaper than a report you cannot act on.
+
+**Between two sessions, ANNOUNCE THE WINDOW rather than freezing the file.** The rule above
+is written from inside one session and quietly assumes nobody else is landing. Neither of us
+can freeze a file the other is committing to, so the half that actually works across sessions
+is a message -- "reviewers reading index.html for the next twenty minutes" -- which the other
+session can act on. "I have frozen it" is something only one session can do, and the other
+finds out afterwards, from a report whose line numbers have moved.
+
+And do not let a peer sit idle holding a file for you unless the risk is real. One offered to
+hold index.html for a thirty-minute pass whose reviewers were reading `hopGap`, `drawRunners`
+and a folder of screenshots, while their own work was act two's galleries and timber sets:
+nothing either of them touched could collide. Name the functions your pass is actually
+reading and let them judge. If the answer is "I am going into the same function", that is
+when to wait.
 
 The loop is: screenshot eight to ten fixed moments, hand them the paths plus the
 relevant drawing function names, fix everything they find, re-shoot, repeat until
