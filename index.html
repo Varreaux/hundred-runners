@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '101 they queue at the edge and go in one at a time';
+const BUILD = '102 behind the ironwork, and a quicker three';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1034,7 +1034,16 @@ const VERBS = {
 // the two halves of the same clock, and they were two hardcoded 0.7s sitting in different
 // functions. Change one of a pair like that and the lamps go on drifting out of step with
 // the demo's own end while every check still passes.
-const SWEEP = { lead: 0.55, flash: 0.45, lit: 0.66, len: 3 };
+// Morgan, 2026-09-17: show the three faster, the player does not have long. lead 0.55 to
+// 0.40 and flash 0.45 to 0.30 takes the whole demo from 1.90s to 1.30s, a third off.
+//
+// `lit` is the share of each flash the lamp is ON, and it is the number that stops this going
+// further. At flash 0.30 and lit 0.60 a digit is lit for 0.18s and dark for 0.12s -- eleven
+// frames and seven at 60fps. The gap is what tells two flashes of the SAME digit apart, and a
+// sequence of three drawn from nine will repeat a digit adjacently about one time in nine, so
+// it has to survive that case rather than the average one. Below about five frames dark they
+// read as one long flash and the round becomes unreadable through no fault of the player.
+const SWEEP = { lead: 0.40, flash: 0.30, lit: 0.60, len: 3 };
 function lightRound(m) {
   // Morgan, 2026-09-16: one round, three numbers, flashing a little faster. It was two
   // rounds of three-to-five at 0.7s a flash, which measured 8.6s of the drill's 29s on
@@ -8299,11 +8308,59 @@ function drawTower(x, y, w, h, mill) {
   ctx.fillStyle = 'rgba(255,255,255,0.09)'; ctx.fillRect(x - 2, y - 4, w + 4, 1.6);
 }
 // Things that stand between the camera and the walkway, drawn after the crowd.
+// In the mill the crossings are steel plate and wire rope; in the rock, timber and hemp.
+// Hoisted because the back pass and the front pass both draw parts of the same crossing, and
+// a second copy in the front pass would be two palettes that agree until somebody edits one.
+function roomMaterial(wx) {
+  return inMill(wx)
+    ? { mill: 1, deck: '#6c7483', deckLo: '#373c46', slat: '#272c35', post: '#4a4e58', line: '#9aa3b2', hub: '#3a3f49' }
+    : { mill: 0, deck: '#8b5a2b', deckLo: '#4a2f14', slat: '#5c3a1a', post: '#6e4b2a', line: '#c9b27a', hub: '#3a2d20' };
+}
 function drawRoomProps(lane) {
   for (const room of S.rooms) {
-    if (room.lane !== lane || room.type !== 'winch' || !inView(room.x, 240)) continue;
-    const y = laneY(lane), sx = room.x - V.left;
+    if (room.lane !== lane || !inView(room.x, 240)) continue;
+    if (room.type !== 'winch' && room.type !== 'bridge') continue;
+    const y = laneY(lane), sx = room.x - V.left, gw = CFG.gapWidth, b = room.bridge;
+    const M = roomMaterial(room.x);
     const prog = room.mg && room.state === 'armed' ? VERBS[room.verb].progress(room.mg) : 0;
+    // THE RAISED LEAF, moved here out of the back pass. Standing up it crosses x 86..127 of the
+    // gap and reaches 120 units, and bodies were drawn straight over it -- 4188 body-frames
+    // inside the slab across one unsolved run, nineteen at once at worst. Drawn after the crowd
+    // it occludes them instead, which is what the winch tower below has always done.
+    if (room.type === 'bridge') {
+      const ang = Math.PI * 0.45 * (1 - b);
+      ctx.save(); ctx.translate(sx + gw, y); ctx.rotate(ang);
+      ctx.fillStyle = INK; ctx.fillRect(-gw - 1, -7.2, gw + 2, 22.4);
+      ctx.fillStyle = M.deckLo; ctx.fillRect(-gw, 2, gw, 12);
+      ctx.fillStyle = M.deck; ctx.fillRect(-gw, -6, gw, 8);
+      ctx.fillStyle = M.slat; for (let i = 0; i < gw; i += 16) ctx.fillRect(-gw + i, -6, 2, 20);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(-gw, -6, gw, 2);
+      ctx.restore();
+      // axle on the tower face, chain as links down to the plank tip
+      const axX = sx + gw + 4, axY = y - 112;
+      ctx.beginPath(); ctx.moveTo(axX, axY); ctx.lineTo(sx + gw - Math.cos(ang) * gw, y - Math.sin(ang) * gw);
+      ctx.strokeStyle = INK; ctx.lineWidth = 3.6; ctx.setLineDash([]); ctx.stroke();
+      ctx.strokeStyle = '#b0b0c4'; ctx.lineWidth = 2; ctx.setLineDash([3, 2.5]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(axX, axY, 6.4, 0, 6.28); ctx.fill();
+      ctx.fillStyle = M.hub; ctx.beginPath(); ctx.arc(axX, axY, 5, 0, 6.28); ctx.fill();
+      ctx.strokeStyle = M.line; ctx.lineWidth = 1.5;
+      for (let i = 0; i < 3; i++) { const a = b * 6 + i * Math.PI / 3; ctx.beginPath(); ctx.moveTo(axX - Math.cos(a) * 4.5, axY - Math.sin(a) * 4.5); ctx.lineTo(axX + Math.cos(a) * 4.5, axY + Math.sin(a) * 4.5); ctx.stroke(); }
+      ctx.fillStyle = M.hub; ctx.beginPath(); ctx.arc(axX, axY, 2.4, 0, 6.28); ctx.fill();
+      continue;                                          // a bridge has no winch gear
+    }
+    // and the stowed plank, for the same reason, before its own tower
+    {
+      const a = -Math.PI / 2 * (1 - b), tipX = sx + Math.cos(a) * gw, tipY = y + Math.sin(a) * gw;
+      ctx.save(); ctx.translate(sx, y); ctx.rotate(a);
+      ctx.fillStyle = INK; ctx.fillRect(-1, -7.2, gw + 2, 22.4);
+      ctx.fillStyle = M.deckLo; ctx.fillRect(0, 2, gw, 12);
+      ctx.fillStyle = M.deck; ctx.fillRect(0, -6, gw, 8);
+      ctx.fillStyle = M.slat; for (let i = 0; i < gw; i += 16) ctx.fillRect(i, -6, 2, 20);
+      ctx.restore();
+      ctx.beginPath(); ctx.moveTo(sx - 12, y - 46); ctx.quadraticCurveTo((sx - 12 + tipX) / 2, (y - 46 + tipY) / 2 + 8 * (1 - prog), tipX + Math.sin(a) * 6, tipY - Math.cos(a) * 6);
+      ctx.strokeStyle = INK; ctx.lineWidth = 3.4; ctx.stroke();
+      ctx.strokeStyle = M.line; ctx.lineWidth = 1.8; ctx.stroke();
+    }
     const spin = prog * 6 + room.bridge * 6;
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.beginPath(); ctx.ellipse(sx - 17, y + 2, 20, 4.4, 0, 0, 6.28); ctx.fill();
@@ -8333,9 +8390,7 @@ function drawRoom(room, y) {
   const sx = room.x - V.left, gw = CFG.gapWidth;
   const b = room.bridge, prog = room.mg && room.state === 'armed' ? VERBS[room.verb].progress(room.mg) : 0;
   // in the mill the crossings are steel plate and wire rope; in the rock, timber and hemp
-  const M = inMill(room.x)
-    ? { mill: 1, deck: '#6c7483', deckLo: '#373c46', slat: '#272c35', post: '#4a4e58', line: '#9aa3b2', hub: '#3a3f49' }
-    : { mill: 0, deck: '#8b5a2b', deckLo: '#4a2f14', slat: '#5c3a1a', post: '#6e4b2a', line: '#c9b27a', hub: '#3a2d20' };
+  const M = roomMaterial(room.x);
   if (room.hazard !== 'burst') {
     const depth = room.lane === 0 ? CFG.riverY - y : 60;
     const pit = ctx.createLinearGradient(0, y, 0, y + depth);
@@ -8356,39 +8411,14 @@ function drawRoom(room, y) {
   }
   if (room.type === 'bridge') {
     drawTower(sx + gw + 4, y - 122, 26, 122, M.mill);
-    const ang = Math.PI * 0.45 * (1 - b);
-    ctx.save(); ctx.translate(sx + gw, y); ctx.rotate(ang);
-    ctx.fillStyle = INK; ctx.fillRect(-gw - 1, -7.2, gw + 2, 22.4);
-    ctx.fillStyle = M.deckLo; ctx.fillRect(-gw, 2, gw, 12);
-    ctx.fillStyle = M.deck; ctx.fillRect(-gw, -6, gw, 8);
-    ctx.fillStyle = M.slat; for (let i = 0; i < gw; i += 16) ctx.fillRect(-gw + i, -6, 2, 20);
-    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(-gw, -6, gw, 2);
-    ctx.restore();
-    // axle on the tower face, chain as links down to the plank tip
-    const axX = sx + gw + 4, axY = y - 112;
-    ctx.beginPath(); ctx.moveTo(axX, axY); ctx.lineTo(sx + gw - Math.cos(ang) * gw, y - Math.sin(ang) * gw);
-    ctx.strokeStyle = INK; ctx.lineWidth = 3.6; ctx.setLineDash([]); ctx.stroke();
-    ctx.strokeStyle = '#b0b0c4'; ctx.lineWidth = 2; ctx.setLineDash([3, 2.5]); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(axX, axY, 6.4, 0, 6.28); ctx.fill();
-    ctx.fillStyle = M.hub; ctx.beginPath(); ctx.arc(axX, axY, 5, 0, 6.28); ctx.fill();
-    ctx.strokeStyle = M.line; ctx.lineWidth = 1.5; for (let i = 0; i < 3; i++) { const a = b * 6 + i * Math.PI / 3; ctx.beginPath(); ctx.moveTo(axX - Math.cos(a) * 4.5, axY - Math.sin(a) * 4.5); ctx.lineTo(axX + Math.cos(a) * 4.5, axY + Math.sin(a) * 4.5); ctx.stroke(); }
-    ctx.fillStyle = M.hub; ctx.beginPath(); ctx.arc(axX, axY, 2.4, 0, 6.28); ctx.fill();
+    // THE LEAF IS DRAWN IN THE FRONT PASS, after the crowd. Raised it stands across x 86..127
+    // of the gap and 120 units up, and a body passing there was drawn OVER it: measured across
+    // an unsolved run, 4188 body-frames inside the slab, up to 19 at once. Behind it they read
+    // as passing behind ironwork, which is what the winch tower has always done.
   } else if (room.type === 'winch') {
     // The tower itself is drawn in the front pass, after the crowd: it stands between the
     // camera and the walkway, so people go behind it instead of through it.
-    {
-      // plank stowed upright against the tower, cranked down over the gap
-      const a = -Math.PI / 2 * (1 - b), tipX = sx + Math.cos(a) * gw, tipY = y + Math.sin(a) * gw;
-      ctx.save(); ctx.translate(sx, y); ctx.rotate(a);
-      ctx.fillStyle = INK; ctx.fillRect(-1, -7.2, gw + 2, 22.4);
-      ctx.fillStyle = M.deckLo; ctx.fillRect(0, 2, gw, 12);
-      ctx.fillStyle = M.deck; ctx.fillRect(0, -6, gw, 8);
-      ctx.fillStyle = M.slat; for (let i = 0; i < gw; i += 16) ctx.fillRect(i, -6, 2, 20);
-      ctx.restore();
-      ctx.beginPath(); ctx.moveTo(sx - 12, y - 46); ctx.quadraticCurveTo((sx - 12 + tipX) / 2, (y - 46 + tipY) / 2 + 8 * (1 - prog), tipX + Math.sin(a) * 6, tipY - Math.cos(a) * 6);
-      ctx.strokeStyle = INK; ctx.lineWidth = 3.4; ctx.stroke();
-      ctx.strokeStyle = M.line; ctx.lineWidth = 1.8; ctx.stroke();
-    }
+    // The plank is drawn in the front pass too, with the tower, and for the same reason.
   } else if (room.type === 'rope' || room.type === 'rickety') {
     ctx.fillStyle = INK; ctx.fillRect(sx - 6.2, y - 45.2, 7.4, 45.2); ctx.fillRect(sx + gw - 1.2, y - 45.2, 7.4, 45.2);
     ctx.fillStyle = M.post; ctx.fillRect(sx - 5, y - 44, 5, 44); ctx.fillRect(sx + gw, y - 44, 5, 44);
