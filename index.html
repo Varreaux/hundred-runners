@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '97 he waits rather than goes';
+const BUILD = '98 a new score over the doors';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1060,7 +1060,7 @@ const MUSIC = {
   intro: null, bed: null, armed: false,
   // Morgan's own filenames, kept as he saved them so that dropping a replacement in with
   // the same name just works. Encoded because they contain spaces.
-  SRC: { intro: 'Hundred%20Intro%20Mastered.m4a', bed: 'Hundred%20Loop%20Mastered%202.wav' },
+  SRC: { intro: 'Hundred%20Intro%20New.wav', bed: 'Hundred%20Loop%20New.wav' },
   make(src) {
     try { const a = new Audio(src); a.preload = 'auto'; a.volume = 0.62; return a; } catch (e) { return null; }
   },
