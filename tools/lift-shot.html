@@ -1,0 +1,71 @@
+<!doctype html>
+<!-- Hold the mantrap's panel in one state of the strain gauge.
+       tools/lift-shot.html?got=1&g=0.78&hold=1&shot
+
+     Why this exists. The gauge is a moving target: the needle crosses the band in about a
+     fifth of a second and the verdict word lives half a second, so the states that matter
+     most -- the frame you are meant to release on, and the frame after you got it wrong --
+     are the two a screenshot is least likely to catch. ?drill=N reaches the panel and then
+     plays it at its own speed, which photographs whatever moment the shutter fell on.
+
+     Parameters, all optional:
+       got   0..3   clean pulls banked; also sets the jaws, since open follows got
+       g     0..1   where the needle is
+       hold  0/1    whether the key is down
+       rec   secs   recoil left after a snap (drives the SNAPPED word)
+       vd    secs   verdict left, with hit=1 for CLEAN and late=1 for TOO FAR
+       hit   0/1
+       late  0/1
+       snap  0..1   the jaws' own slam flash
+
+     It paints its own failure, for the reason the bench does: a page that throws leaves an
+     empty canvas, and an empty canvas is indistinguishable from a composition problem.
+     NO BACKTICKS BELOW THIS LINE: the whole bench is inside a template literal. -->
+<html><head><meta charset="utf-8"><title>liftshot</title>
+<style>html,body{margin:0;background:#0d0f16}canvas{display:block}</style></head>
+<body><canvas id="c" width="960" height="540"></canvas>
+<script>
+const req = new XMLHttpRequest();
+req.open('GET', '../index.html', false); req.send();
+const o = '<' + 'script>', cl = '<' + '/script>';
+const game = req.responseText.split(o)[1].split(cl)[0].replace("'use strict';", '');
+const bench = `
+  const Q2 = new URLSearchParams(location.search);
+  const num = (k, d) => (Q2.has(k) ? +Q2.get(k) : d);
+  S.mode = 'intro';
+  const c = I(); S.introT = c.deliver + c.settle;
+  for (let i = 0; i < 60 * 40 && !S.drill; i++) { update(1 / 60); if (S.boss) bossAdvance(); }
+  // Walk to the LIFT panel by looking for it, not by counting to a remembered index: the
+  // drill's order is built from CFG.rooms and moves whenever somebody adds a room type.
+  for (let g = 0; S.drill && S.drill.room && S.drill.room.verb !== 'lift' && g < 8000; g++) {
+    S.drill.phase = 'out'; S.drill.pos = -1; update(1 / 60);
+  }
+  S.drill.phase = 'play'; S.drill.pos = 0;
+  for (let i = 0; i < 30; i++) update(1 / 60);       // let the panel finish sliding in
+  const m = S.drill.room.mg;
+  m.got = num('got', 0);
+  m.open = m.got / m.pulls;                          // open only ever follows got
+  // update() banks the win off got, and this bench sets got AFTER the frames it runs -- so
+  // without this a fully-opened trap photographs with the bar still reading HOLD SPACE, and
+  // the picture accuses the game of a branch that is actually there.
+  if (m.got >= m.pulls) m.won = true;
+  m.gauge = num('g', 0);
+  m.holding = num('hold', 0) ? true : false;
+  m.recoil = num('rec', 0);
+  m.verdict = num('vd', 0);
+  m.hit = num('hit', 0);
+  m.late = num('late', 0);
+  m.snapped = num('snap', 0);
+  S.t = num('st', 3.1);                              // freeze the ambient clock between shots
+  draw();
+`;
+try { (0, eval)(game + bench); }
+catch (e) {
+  const cv = document.getElementById('c'), g = cv.getContext('2d');
+  g.fillStyle = '#2a0d12'; g.fillRect(0, 0, cv.width, cv.height);
+  g.fillStyle = '#ff6b6b'; g.font = 'bold 20px monospace';
+  g.fillText('LIFTSHOT FAILED', 24, 48);
+  g.font = '14px monospace';
+  String(e && e.stack || e).split('\n').slice(0, 8).forEach((l, i) => g.fillText(l.slice(0, 96), 24, 84 + i * 20));
+}
+</script></body></html>

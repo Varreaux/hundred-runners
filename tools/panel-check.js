@@ -56,7 +56,21 @@ eval(src + `
     for (let d = 1; d <= 5; d++) { try { states.push(v.start(d)); } catch(e){} }
     let longest = '';
     for (const m of states) {
-      for (const probe of [m, Object.assign({}, m, {holding:true, strain:0.9}), Object.assign({}, m, {holding:true, strain:0.1}), Object.assign({}, m, {stage:1}), Object.assign({}, m, {stage:2, arm:0}), Object.assign({}, m, {watch:false}), Object.assign({}, m, {pulling:true}), Object.assign({}, m, {failed:true})]) {
+      // THE PROBES HAVE TO NAME FIELDS THE VERBS STILL HAVE. "strain" was lift's, and when
+      // that room was rewritten around a needle and a band the two strain probes went on
+      // passing while exercising nothing: they set a key no verb reads, so both collapsed
+      // onto the same branch of now() as the bare state and the longest string went unfound.
+      // A probe list is a claim about what states exist, and it goes stale silently.
+      for (const probe of [m,
+        Object.assign({}, m, {holding:true, gauge:0.40}),            // lift, needle climbing
+        Object.assign({}, m, {holding:true, gauge:m.zone}),          // lift, needle in the band
+        Object.assign({}, m, {holding:true, gauge:0.97}),            // lift, past the band
+        Object.assign({}, m, {recoil:0.2}),                          // lift, the spring bit
+        Object.assign({}, m, {verdict:0.4, hit:1}),                  // lift, a clean pull
+        Object.assign({}, m, {verdict:0.4, hit:0, late:1}),          // lift, too far
+        Object.assign({}, m, {stage:1}), Object.assign({}, m, {stage:2, arm:0}),
+        Object.assign({}, m, {watch:false}), Object.assign({}, m, {pulling:true}),
+        Object.assign({}, m, {failed:true})]) {
         let txt=''; try { txt = v.now(probe) || ''; } catch(e){}
         if (txt.length > longest.length) longest = txt;
       }

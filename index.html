@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '109 they take the cave door off its hinges';
+const BUILD = '110 the mantrap: let go in the green';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1268,67 +1268,135 @@ const VERBS = {
   },
   lift: {
     now: m => (m.recoil > 0 ? 'the spring bit back'
-            : m.holding ? (m.strain > 0.72 ? 'LET GO' : 'keep holding')
-            : m.strain > 0.2 ? 'let the spring settle' : 'hold SPACE'),
-    hint: 'hold SPACE to force the jaws \u2014 let go before the gauge reaches the line, or the spring bites back',
-    // Hold until the strain is nearly up, let go, take hold again.
+            : m.holding ? (Math.abs(m.gauge - m.zone) <= m.half ? 'LET GO NOW' : m.gauge > m.zone ? 'too far' : 'keep holding')
+            : m.verdict > 0 ? (m.hit ? 'good \u2014 again' : m.late ? 'too far' : 'too soon') : 'hold SPACE'),
+    hint: 'hold SPACE to force the jaws \u2014 let go while the needle is in the green, three times',
+    // HOLD, AND LET GO IN THE GREEN. Morgan, 2026-09-17: the old rule was "stay under the
+    // line", which is a rule about a thing NOT happening and gave the player nothing to aim
+    // at -- he read it three times and it still did not make sense. The nature is the same,
+    // the target is now a thing you can see: a band near the end of the travel, and you stop
+    // the needle inside it. Three clean releases open the jaws.
     //
-    // THE ROOM USED TO DEAD-END, and Morgan found it: it read as broken because it was. A
-    // bite set m.holding = false. The harness cannot dispatch keyup, so a press has to TOGGLE
-    // the grip -- which means that for a player physically holding the key, the bite dropped
-    // the grip and no further keydown was ever coming. The jaws crept shut to zero and the key
-    // did nothing for ever, while the gauge read HOLD SPACE at somebody who was holding space.
-    // Measured: hold it down and never let go ended at open 0.00 after one snap, every
-    // difficulty.
+    // It is a BAND and not a sliver, whatever it feels like to play: 24.5% of the bar at
+    // difficulty 1 and 21.6% at difficulty 4. Calling it a sliver in a comment is how the
+    // next person to size it starts from the wrong picture.
     //
-    // A bite now COSTS rather than stops. It takes most of the opening, resets the strain and
-    // runs a short recoil, and the GRIP SURVIVES, so a player leaning on the key watches the
-    // jaws climb, slam, and climb again instead of watching nothing happen.
+    // WHY IT IS NOT AT THE VERY END. There has to be room to overshoot, or "too far" and
+    // "the end of the gauge" are the same event and the only mistake available is being
+    // early. The band is centred at 0.78 and the needle runs to 1.0, so past the band there
+    // is about 114ms of rope before the spring bites.
     //
-    // `keep` is DERIVED, not chosen. Leaning repeats a cycle that gains gain/build and keeps
-    // `keep` of the total, so it settles at keep*g/(1-keep) and PEAKS one gain above that; it
-    // wins the moment that peak reaches 1, which reduces to keep >= 1-g. Difficulty 1 is
-    // strictest, where one clean grip already gains 0.763, so keep must stay under 0.237
-    // everywhere. 0.4 was tried first and the room solved itself by leaning in two cycles --
-    // the exact failure this comment used to warn about. At 0.12 leaning settles at 0.10 and
-    // peaks at 0.87 on difficulty 1 and 0.70 on difficulty 4: worth trying, never enough.
-    solveKey: m => (m.holding ? (m.strain > 0.72 ? ' ' : null) : m.strain < 0.2 ? ' ' : null),
+    // THE TWO MISTAKES COST DIFFERENT THINGS, and that asymmetry is the whole lesson of the
+    // room: let go early and you lose only the time, hold too long and the spring takes a
+    // third of the opening back. So it pays to push, and it stops paying sharply.
+    //
+    // A PRESS STILL TOGGLES THE GRIP, and that is not a style choice. The test bot and the
+    // drill driver can dispatch keydown and nothing else -- they have no way to let go -- so
+    // a design that can only be released by keyup is one no harness can ever solve, and the
+    // room would read as impossible in every run. Real keyup releases too, via `release`.
+    //
+    // AND THE GRIP SURVIVES A BITE, which is the fix for the dead-end Morgan found before:
+    // clearing `holding` on a bite means a player whose finger is already down never sends
+    // another keydown, and the room ignores the key for ever. Leaning on it now watches the
+    // needle climb, slam, and climb again -- punished, never stuck.
+    solveKey: m => (m.holding ? (Math.abs(m.gauge - m.zone) <= m.half * 0.5 ? ' ' : null) : ' '),
     takesHold: true,
     start(diff) {
       // inputT is NOT optional for a verb that banks m.won: the deferred-win branch in
       // update() does Math.max(0, m.inputT - dt) and then tests <= 0, so leaving it
       // undefined makes that NaN, NaN <= 0 is false, and the room never clears at all.
-      return { open: 0, strain: 0, holding: false, snapped: 0, recoil: 0, inputT: 0.3,
-               gain: 0.46 - 0.01 * diff, build: 0.56 + 0.03 * diff, ease: 1.6, keep: 0.12 };
+      // `half` is sized in SECONDS and converted, not picked as a bar width: what the hand
+      // has to hit is a moment, and a fixed bar width would be a different moment at every
+      // needle speed. The number that matters is the HALF-band, because that is the timing
+      // error the room forgives: 148ms at difficulty 1 down to 110ms at 4.
+      //
+      // The first version ran 0.24s down to 0.15s, i.e. +/-75ms at the hardest, and
+      // tools/lift-check.js showed a hand aiming at the middle of the band and arriving
+      // 120ms late overshooting on EVERY attempt -- 42 misses in a row, the jaws never
+      // opened. That is not a hard room, it is a room whose target is smaller than a hand's
+      // own timing error, and no amount of practice reaches it.
+      //
+      // ZONE IS 0.78, NOT 0.80. Morgan: "obviously it can't be at the very, very end". Past
+      // the band there has to be real rope, or overshooting and running out of travel are
+      // the same event and the only mistake the room can ever show you is being early. At
+      // 0.78 the band closes at 0.888 of the travel, leaving about 114ms of rope after it.
+      // `got` IS THE PROGRESS AND `open` ONLY FOLLOWS IT. Adding 1/3 to a fraction three
+      // times does not reliably reach 1: the first version also crept the fraction shut at
+      // 0.06/s between pulls, so three clean releases landed on 0.997, `m.open >= 1` never
+      // fired, and the jaws sat wide open on a room that could not be finished. A count of
+      // successes is an integer and cannot drift; the jaws are an animation of it.
+      const rate = 0.78 + 0.05 * diff;
+      // `at` is WHERE THE NEEDLE WAS WHEN THE KEY CAME UP, kept after the gauge resets, so
+      // the verdict frames can show it. Without it a release at 0.40 and one at 0.95 drew the
+      // identical empty bar with a different word on it -- the one frame that could teach this
+      // room, spending it on a word.
+      return { open: 0, got: 0, gauge: 0, at: 0, holding: false, snapped: 0, recoil: 0, inputT: 0.3,
+               verdict: 0, hit: 0, late: 0,
+               rate, zone: 0.78, half: rate * (0.32 - 0.025 * diff) / 2, pulls: 3 };
     },
     key(m, k) {
       if (k !== ' ') return null;
-      // A press TOGGLES the grip, and keyup releases it too. Both, deliberately: holding
-      // the key is the natural way to play it, but the test bot can only dispatch
-      // keydown -- it has no way to let go -- so a release-only design is one the bot can
-      // never solve, and the room would read as impossible in every harness run.
-      m.holding = !m.holding;
-      return m.open >= 1 ? 'done' : 'ok';
+      // MASHING AFTER A SNAP IS THE MOST NATURAL THING A PLAYER DOES, and the room used to
+      // answer it with a verdict on an act they had not performed: during the 0.3s recoil the
+      // grip is still held and the gauge is at zero, so a press ran letGo on a needle that had
+      // not moved, scored TOO SOON, and dropped the grip the comment below says survives. Two
+      // further presses to get back to where they already were.
+      if (m.recoil > 0) return 'ok';
+      if (m.holding) VERBS.lift.letGo(m); else { m.holding = true; m.gauge = 0; m.verdict = 0; }
+      // `got`, not `open`: open is an eased animation of the pull count that only approaches
+      // its target, so a test on it is one that fires late or, with any decay at all, never.
+      // The last pull is usually banked on the key coming UP anyway, so update() carries the
+      // real win -- this line only catches the case where a second keydown was the release.
+      return m.got >= m.pulls ? 'done' : 'ok';
     },
-    release(m, k) { if (k === ' ') m.holding = false; },
+    release(m, k) { if (k === ' ' && m.holding) VERBS.lift.letGo(m); },
+    // ONE resolution, whether the hand came off the key or a second press toggled it off.
+    // Two copies of this drift, and the one the bot reaches is not the one the player does.
+    letGo(m) {
+      m.holding = false;
+      m.at = m.gauge;                                   // for the ghost needle on the verdict
+      m.hit = Math.abs(m.gauge - m.zone) <= m.half ? 1 : 0;
+      m.late = m.gauge > m.zone ? 1 : 0;
+      m.verdict = 0.5;
+      if (m.hit) m.got = Math.min(m.pulls, m.got + 1);
+      m.gauge = 0;
+    },
     update(m, dt) {
       m.recoil = Math.max(0, m.recoil - dt);
+      m.verdict = Math.max(0, m.verdict - dt);
       if (m.holding && m.recoil <= 0) {
-        m.open = Math.min(1, m.open + m.gain * dt);
-        m.strain = Math.min(1.35, m.strain + m.build * dt);
-        // Held too long. The spring bites back, takes most of the opening and has to settle
-        // before it can be worked again -- but the GRIP SURVIVES, so a player holding the key
-        // is still holding it afterwards. Dropping the grip here is what made the room
-        // unplayable for anybody whose finger was already down.
-        if (m.strain >= 1) { m.strain = 0; m.snapped = 1; m.recoil = 0.34; m.open = m.open * m.keep; }
-      } else if (!m.holding) {
-        m.strain = Math.max(0, m.strain - m.ease * dt);
-        m.open = Math.max(0, m.open - 0.06 * dt);       // barely creeps shut: progress is kept
+        m.gauge += m.rate * dt;
+        // Past the end of the travel. The spring bites and has to settle -- and the GRIP
+        // SURVIVES, so a finger already down is still holding.
+        //
+        // MISSING COSTS THE ATTEMPT AND NOT A BANKED PULL. Morgan's rule for this room was
+        // "if you miss it, then you have to try again", and that is the whole penalty: the
+        // recoil, the slam and the climb back up. Taking a banked pull away as well made it
+        // a random walk -- a hand that hits one release in three loses ground for ever and
+        // the room is unwinnable, which is the dead-end this rewrite was meant to remove.
+        // THE RED AND THE WORD DIE WITH THE RECOIL, all three on one clock. They used to run
+        // 0.3, 0.5 and 0.5 seconds, and `draw` tests recoil-then-verdict while `now` tests
+        // recoil-then-holding -- so for 0.2s after the spring let go, the bar read TOO FAR in
+        // red, the jaws were still red, the needle was climbing again, and the status line
+        // said "keep holding". Two readouts computed from one state, in opposite orders,
+        // saying opposite things.
+        if (m.gauge >= 1) {
+          m.gauge = 0; m.at = 1; m.snapped = 1; m.recoil = 0.3;
+          m.verdict = m.recoil; m.hit = 0; m.late = 1;
+        }
       }
-      m.snapped = Math.max(0, m.snapped - dt * 2);
-      // The jaws come apart while a key is DOWN, so the moment of winning is not a
-      // keypress. Bank it here or the win waits for a press that may never come.
-      if (m.open >= 1) m.won = true;
+      // The jaws are an ANIMATION OF `got`, not the score itself: they swing toward the pull
+      // count so a clean release reads as the trap visibly giving, rather than as a lamp
+      // changing colour. Nothing is read back off this number.
+      m.open += (m.got / m.pulls - m.open) * Math.min(1, dt * 7);
+      m.snapped = Math.max(0, m.snapped - dt * 3.34);   // 0.3s, the recoil, not 0.5
+      // The jaws come apart while a key is DOWN -- and, now, on the key coming UP, since a
+      // clean release is what banks a pull. Either way the moment of winning is not a
+      // keypress, so it is banked here or the win waits for a press that may never come.
+      // Tested on `got`, never on `open`: `open` is an eased animation that only approaches
+      // its target, so `open >= 1` is a condition that can be arbitrarily late and, with any
+      // decay at all, never true.
+      if (m.got >= m.pulls) m.won = true;
       // And tick the banked win down HERE. The deferred-clear branch in update() only
       // decrements inputT for a room the player has CLOSED -- an open one is expected to
       // tick in its own verb, the way lights does. Without this the jaws would open fully
@@ -1338,82 +1406,192 @@ const VERBS = {
     },
     progress(m) { return m.open; },
     draw(m, px, py, pw) {
-      const cx = px + pw / 2, cy = py + 104;
-      // A trap seen from the side: a base plate on the ground, two jaws hinged at its ends
-      // that swing APART as it opens. The first version drew two mirrored arcs of one
-      // circle, which reads as a broken ring rather than as something with jaws.
-      const ang = m.open * 1.32;                         // up to about 75 degrees each
+      const cx = px + pw / 2;
+      // THE JAWS WERE RUNNING BACKWARDS, and both reviewers found it from opposite ends -- the
+      // logic check by comparing this against the game's two other drawings of the same trap,
+      // the art critic by saying that at rest it reads as a bed of nails rather than as
+      // anything shut. They were the same fault.
+      //
+      // A mantrap is SHUT with its jaws up and its teeth meshed through the leg, and SET with
+      // them laid flat and the teeth pointing at the sky. So "force the jaws open" means
+      // forcing them DOWN, and m.open = 0 has to be the clamped pose. The old code hinged at
+      // cx +/- JAW, ran each blade INWARD, and swung them up and apart on m.open -- so nothing
+      // banked drew two flat bars meeting at the centre with ten spikes pointing upward
+      // (enclosing no area at all, the pose of a trap waiting for a foot), and three clean
+      // pulls drew a 51-unit gaping V, a shape neither of the other two drawings ever makes.
+      // The first clean pull made the trap look like it had just CLOSED.
+      //
+      // Built the way TRAPS.mantrap builds it in the closing reel: hinge near the centre,
+      // blade OUTWARD, teeth on the biting edge only, and the angle driven by how far it still
+      // has to go. scale(dir, 1) mirrors rather than negating the angle, so one set of local
+      // coordinates serves both jaws and they cannot be given different geometry by accident.
+      const SC = 1.3, cy = py + 110;
+      // THE SNAP IS A MOVEMENT, NOT A COLOUR. It used to tint the jaws pink and leave them at
+      // the angle they were already at, so the most violent thing in the room read as a
+      // palette swap. `shown` drives them shut on the bite and lets them come back as
+      // m.snapped decays, without touching m.open, which is the score's own animation.
+      const shown = m.open * (1 - m.snapped * 0.85);
+      const ang = (1 - shown) * 1.44;                    // 0 = laid flat, 1.44 = clamped shut
+      // 1.3, and sat lower. The trap is the SUBJECT of a room called "force the jaws open" and
+      // it was the smallest, dimmest object in the panel -- 88 units under a 230-unit gauge.
+      // py + 62 to py + 118 is what there is: the gauge's bottom edge is py + 59 and
+      // panelGauges puts its arrival readout at py + 125.
+      ctx.save(); ctx.translate(cx, cy); ctx.scale(SC, SC); ctx.translate(-cx, -cy);
       ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(cx - 44, cy + 2, 88, 4);
       ctx.fillStyle = '#6b5a48'; ctx.fillRect(cx - 40, cy - 4, 80, 7);   // the plate
       ctx.fillStyle = 'rgba(255,244,214,0.16)'; ctx.fillRect(cx - 40, cy - 4, 80, 1.6);
-      // ONE number for the hinge offset and the jaw length, so the two tips meet at the
-      // centre and cannot be made to pass through each other. They did: the hinges were at
-      // cx +/- 34 and each jaw ran 62 from its hinge, so at m.open = 0 the left jaw
-      // occupied cx-34..cx+28 and the right cx+34..cx-28 -- 56 units of mutual overlap,
-      // with both sets of six teeth drawn through each other. It read as one toothed bar,
-      // and as an object it could not exist.
-      const JAW = 34;
-      // The spring goes on the plate BEFORE the jaws, so the jaws paint over it. Drawn last
-      // it lay across the teeth -- a dark band through the middle of the white spikes, at
-      // lineWidth 3 over #dfe6f0 -- which is the one place in the object it cannot be.
+      const JAW = 30;
+      // THE SPRING RUNS PLATE-END TO PLATE-END AND SITS ON THE PLATE. It used to span cx +/- 20
+      // with its trough line at cy - 9, which left both ends stopping short of anything and
+      // the whole zigzag floating 3.5 units clear of the plate -- attached to nothing at either
+      // end, storing no force, and yet turning red on the bite as though it had done the
+      // biting. At lineWidth 3 a trough centred on cy - 5.5 puts its lower ink on cy - 4, the
+      // plate's top surface.
+      //
+      // ITS SENSE WAS ALREADY RIGHT and the art pass asked for it to be inverted. Refused:
+      // `13 - open * 8` is TALL at open = 0 and FLAT at open = 1, and for a leaf spring flat
+      // IS compressed. The trap shut is a spring that has already done its work; the trap
+      // forced apart is a spring loaded, which is why letting go of it hurts. Driven off
+      // `shown` rather than m.open now, so the bite moves it.
       ctx.strokeStyle = m.snapped > 0 ? '#ff7a7a' : '#4e5763'; ctx.lineWidth = 3;
       ctx.beginPath();
-      const sh = 13 - m.open * 8;
-      for (let i = 0; i <= 8; i++) ctx.lineTo(cx - 20 + i * 5, cy - 9 - (i % 2 ? 0 : sh * 0.5));
+      const sh = 13 - shown * 8;
+      for (let i = 0; i <= 12; i++) ctx.lineTo(cx - 32 + i * (64 / 12), cy - 5.5 - (i % 2 ? 0 : sh * 0.5));
       ctx.stroke();
       for (const dir of [-1, 1]) {
         ctx.save();
-        ctx.translate(cx + dir * JAW, cy - 3);
-        // dir * ang, not dir * -ang. A jaw runs from its hinge toward the centre, at local
-        // (dir * -JAW, 0); under the old sign both tips rotated DOWNWARD, so at full open
-        // each one was 34 * sin(75) = 32.8 units below its own hinge -- through the base
-        // plate at cy + 3, through its cast shadow, and into the floor the player is
-        // standing on, drawn over both. A trap opens by swinging its jaws up and apart.
-        ctx.rotate(dir * ang);
+        ctx.translate(cx + dir * 8, cy - 3);
+        ctx.scale(dir, 1);
+        ctx.rotate(-ang);
         const col = m.snapped > 0 ? '#ff7a7a' : '#aeb8c6';
-        // the jaw itself, a flat bar with teeth along its inner edge
+        // the blade, running outward from the hinge
         ctx.fillStyle = col;
         ctx.beginPath();
-        ctx.moveTo(0, 0); ctx.lineTo(dir * -6, -6); ctx.lineTo(dir * -JAW, -6); ctx.lineTo(dir * -JAW, 0);
+        ctx.moveTo(0, 0); ctx.lineTo(6, -6); ctx.lineTo(JAW, -6); ctx.lineTo(JAW, 0);
         ctx.closePath(); ctx.fill();
+        // An edge light on the biting face and a shade under it, from the same upper-left
+        // source the plate's highlight implies. The plate was lit and cast a shadow while the
+        // jaws were flat fills, so one object was drawn in two shading languages and the flat
+        // half was the moving, important one.
+        ctx.fillStyle = 'rgba(255,248,232,0.20)'; ctx.fillRect(6, -6, JAW - 6, 1.5);
+        ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(6, -1.4, JAW - 6, 1.4);
+        // teeth on the biting edge only, so that clamped they face each other across the gap
+        // and laid flat they stand up off the plate, which is what a set trap looks like
         ctx.fillStyle = m.snapped > 0 ? '#ffb2b2' : '#dfe6f0';
-        // five teeth, the last of them ending ON the tip rather than 25 units past it
         for (let i = 1; i <= 5; i++) {
-          const tx = dir * -(5 + i * 5.2);
-          ctx.beginPath(); ctx.moveTo(tx - 3, -6); ctx.lineTo(tx + 3, -6); ctx.lineTo(tx, -16); ctx.closePath(); ctx.fill();
+          const tx = 4 + i * 4.6;
+          ctx.beginPath(); ctx.moveTo(tx - 2.4, -6); ctx.lineTo(tx + 2.4, -6); ctx.lineTo(tx, -12); ctx.closePath(); ctx.fill();
         }
         ctx.fillStyle = '#7f8a99'; ctx.beginPath(); ctx.arc(0, 0, 5, 0, 6.28); ctx.fill();   // the hinge
         ctx.restore();
       }
+      ctx.restore();
 
-      // THE STRAIN GAUGE. This is the puzzle: hold while it is green, let go before the
-      // line, take hold again. It is the biggest, brightest thing in the panel for that
-      // reason, and the line you must stay under is drawn on it rather than described.
-      const bw = Math.min(230, pw - 80), bx = cx - bw / 2, by = py + 40, bh = 19;
+      // THE GAUGE, AND THE BAND YOU HAVE TO STOP IN. The old version drew a fill you had to
+      // keep UNDER a line, which is a rule about a thing not happening: there was nothing on
+      // the bar to aim at, and the room read as arbitrary for exactly that reason. The target
+      // is drawn now -- a green sliver near the top, with the overshoot painted red after it
+      // so the cost of being greedy is on the bar rather than in a sentence.
+      // THE LAMPS SIT BESIDE THE TRACK, NOT UNDER IT, and the track gives up the width for
+      // them so the pair stays centred. Under the bar they were in the jaws' way -- at full
+      // open the teeth reach py + 67 and the lamp row centred at py + 69 -- and the needle
+      // crossed the middle lamp at gauge 0.5 on every single pull, which reads as that lamp
+      // flickering, i.e. as a false score.
+      const LAMPS = 34, GAP = 10;
+      const grpW = Math.min(230, pw - 80), bw = grpW - LAMPS - GAP;
+      const bx = cx - grpW / 2, by = py + 40, bh = 19;
+      const at = v => bx + bw * Math.max(0, Math.min(1, v));
+      const z0 = at(m.zone - m.half), z1 = at(m.zone + m.half);
+      const inZone = m.holding && Math.abs(m.gauge - m.zone) <= m.half;
+      const past = m.holding && m.gauge > m.zone + m.half;
       ctx.fillStyle = '#20262f'; roundRect(bx, by, bw, bh, 9); ctx.fill();
-      const danger = Math.min(1, m.strain);
-      ctx.fillStyle = danger > 0.78 ? '#ff5a5a' : danger > 0.55 ? '#f1c40f' : '#6ee7a0';
-      // A roundRect narrower than its own corner diameter cannot resolve two 9-radius
-      // corners and comes out as a wedge, so at rest the empty gauge showed a green sliver
-      // jammed in its left end that read as a drawing fault. Below one bar-height of fill
-      // there is nothing to draw.
-      if (bw * danger >= bh) { roundRect(bx, by, bw * danger, bh, 9); ctx.fill(); }
-      ctx.fillStyle = '#fff'; ctx.fillRect(bx + bw * 0.78, by - 4, 2.4, bh + 8);
-      // the word goes INSIDE the bar. Above it, it landed on the panel's header rule; below
-      // it, on the trap. There is no free row in a panel this size, so it does not need one.
-      // White with a dark edge, because the word straddles the fill: half of it sits on
-      // bright green and half on the dark track behind, so no single flat colour reads on
-      // both and picking one by `danger` made the label disappear at its own midpoint.
-      ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
-      // SNAPPED has to be its own word. With the grip surviving a bite, the gauge otherwise
-      // reads HOLDING the instant after the spring slams the jaws, which describes the key and
-      // not the thing that just happened.
-      const word = m.recoil > 0 ? 'SNAPPED'
-                 : m.holding ? (danger > 0.72 ? 'LET GO' : 'HOLDING') : 'HOLD SPACE';
+      // EVERYTHING INSIDE THE TRACK IS CLIPPED TO IT. The red tail was a square-cornered rect
+      // running to bx + bw over a 9-radius roundRect, so its corners stood proud of the track
+      // outline and the bar's right end read as blunt where its left end read as round -- an
+      // asymmetry nobody chose. Clipping also keeps the band's own edges off the caps.
+      ctx.save(); roundRect(bx, by, bw, bh, 9); ctx.clip();
+      // the rope past the band, so "too far" is a place and not a surprise
+      ctx.fillStyle = m.won ? 'rgba(255,90,90,0.07)' : 'rgba(255,90,90,0.22)';
+      ctx.fillRect(z1, by, bx + bw - z1, bh);
+      // THE BAND IS THE ONLY GREEN ON THE BAR. What used to sit beside it was a travel fill
+      // -- a solid 240px block growing from the left cap to the needle -- and it was both the
+      // largest and the loudest shape in the panel. Area beats line: the eye read the growing
+      // block, and a block growing rightward says FILL ME, which points at 1.0 and not at the
+      // 0.78 you have to stop on. That is the same "watch this rise" affordance Morgan
+      // rejected three times in the old strain gauge, redrawn in a different colour. What is
+      // left of it is a dim hairline, enough to say the needle has come from the left.
+      ctx.fillStyle = 'rgba(226,232,240,0.13)';
+      ctx.fillRect(bx + 2, by + bh / 2 - 1, Math.max(0, at(m.gauge) - bx - 2), 2);
+      ctx.fillStyle = m.won ? 'rgba(110,231,160,0.10)' : 'rgba(110,231,160,0.30)';
+      ctx.fillRect(z0, by, z1 - z0, bh);
+      // Rails top and bottom, and END CAPS. The band's two vertical edges are the only two
+      // numbers in the room -- the earliest you may let go and the latest -- and they were
+      // the softest marks on the bar, an alpha step with nothing drawn on it.
+      ctx.fillStyle = m.won ? 'rgba(110,231,160,0.25)' : '#6ee7a0';
+      ctx.fillRect(z0, by, z1 - z0, 2.5); ctx.fillRect(z0, by + bh - 2.5, z1 - z0, 2.5);
+      ctx.fillRect(z0, by, 2, bh); ctx.fillRect(z1 - 2, by, 2, bh);
+      // where the needle starts, so which way it travels is not something you learn by pressing
+      ctx.fillStyle = 'rgba(226,232,240,0.22)'; ctx.fillRect(bx + 3, by + 4, 2, bh - 8);
+      ctx.restore();
+      // THE NEEDLE IS A POINTER ABOVE THE TRACK, and it is white wherever it stands. It used
+      // to turn #8effc0 inside the band -- three greens within about 30 luminance, so it was
+      // sharpest while the player was doing nothing and nearly invisible on the one frame
+      // they have to act. Contrast inverted against importance. The head sits on the dark
+      // panel between the header rule at py + 30 and the track at py + 40, where nothing else
+      // is drawn, so it reads at every position without fighting what is under the bar.
+      const needle = (v, alpha, col) => {
+        const nx = Math.max(bx + 4, Math.min(bx + bw - 4, at(v)));
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = 'rgba(8,10,16,0.85)';
+        ctx.beginPath(); ctx.moveTo(nx - 5.4, by - 7); ctx.lineTo(nx + 5.4, by - 7); ctx.lineTo(nx, by + 3); ctx.closePath(); ctx.fill();
+        ctx.fillRect(nx - 2.1, by - 7, 4.2, bh + 8);
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.moveTo(nx - 4, by - 6.2); ctx.lineTo(nx + 4, by - 6.2); ctx.lineTo(nx, by + 1.6); ctx.closePath(); ctx.fill();
+        ctx.fillRect(nx - 1.1, by - 6, 2.2, bh + 6);
+        ctx.globalAlpha = 1;
+      };
+      // THE GHOST IS WHERE THE KEY CAME UP. Without it the verdict frames are an empty track
+      // with a word on it, and a release at 0.40 draws the same picture as one at 0.95 -- the
+      // single frame that could teach this room, spending it on a word.
+      if (m.verdict > 0 && !m.holding) needle(m.at, 0.5, m.hit ? '#8effc0' : '#ff9a9a');
+      // and the live one, only while it is really travelling: during the recoil after a bite
+      // the grip deliberately survives with the gauge at zero, which used to draw a white tick
+      // hanging off the outside of the left cap -- a rendering fault, not "back to the start".
+      if (m.holding && m.recoil <= 0) needle(m.gauge, 1, '#fff');
+      ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left';
+      // The verdict is its own word and outlives the frame it happened on: a release resolves
+      // in one frame, and at 60fps a flash that lasts one frame is a flash nobody sees.
+      //
+      // TOO FAR HAS TO BE SAYABLE WHILE STILL HOLDING. The bar said HOLDING with the needle
+      // sitting in the red and the status line in the same panel saying "too far": the panel
+      // contradicted itself at the one moment the warning matters, and gave the identical
+      // neutral word at 0.35 as it did one frame from the spring.
+      //
+      // And OPEN, because a solved room drew its own opening state -- three lamps lit, jaws
+      // wide, and a bar reading HOLD SPACE at a player who has finished.
+      const word = m.won ? 'OPEN'
+                 : m.recoil > 0 ? 'SNAPPED'
+                 : m.verdict > 0 ? (m.hit ? 'CLEAN' : m.late ? 'TOO FAR' : 'TOO SOON')
+                 : m.holding ? (inZone ? 'LET GO' : past ? 'TOO FAR' : 'HOLDING') : 'HOLD SPACE';
+      // LEFT-ALIGNED, not centred. Centred it landed on at(0.5) and cut the track in half at
+      // a mark that means nothing, inviting the eye to read the midpoint as a landmark; it
+      // was also the loudest instruction in the panel and the furthest from the band it was
+      // about. Against the left cap it labels the bar instead of marking a place on it, and
+      // at 10px monospace the longest word clears z0 by a wide margin.
+      const wx = bx + 7;
       ctx.fillStyle = 'rgba(10,14,12,0.85)';
-      for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) ctx.fillText(word, cx + ox, by + 13 + oy);
-      ctx.fillStyle = '#fff'; ctx.fillText(word, cx, by + 13);
-      ctx.textAlign = 'left';
+      for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) ctx.fillText(word, wx + ox, by + 13 + oy);
+      ctx.fillStyle = m.won || (m.verdict > 0 && m.hit) || inZone ? '#8effc0'
+                    : past || (m.verdict > 0 && !m.hit) ? '#ff9a9a' : '#fff';
+      ctx.fillText(word, wx, by + 13);
+      // THREE PULLS, as three uprights beside the track rather than three dots under it. At
+      // 3.4 units they were the least legible score on the screen -- smaller than the drill
+      // pips in the HUD -- for the one piece of state the jaws alone could not tell you.
+      for (let i = 0; i < m.pulls; i++) {
+        const lx = bx + bw + GAP + i * 13;
+        ctx.fillStyle = i < m.got ? '#6ee7a0' : 'rgba(226,232,240,0.18)';
+        roundRect(lx, by + 2.5, 8, bh - 5, 2); ctx.fill();
+      }
     },
   },
   blast: {
@@ -2125,17 +2303,29 @@ window.addEventListener('keydown', e => {
 // nothing else has to know keyup exists. A verb whose panel closes mid-hold never gets its
 // release, which is why every hold verb also decays its own state in update().
 window.addEventListener('keyup', e => {
-  // The drill plays the same verbs, so a hold started in the drill needs its release
-  // too -- without this the mantrap and the charge can never be let go of in there.
-  // The drill is checked FIRST, not second. There are two drills now and the later one runs
-  // inside mode 'play', where S.active is null -- ordered the other way round, a hold started
-  // in the cave door's drill would never be handed its release and the mantrap could not be
-  // let go of in there. Keyed off the drill existing rather than off the mode, for that reason.
-  const room = S.drill && !S.drill.done ? S.drill.room
-             : S.mode === 'play' ? S.active : null;
-  if (!room) return;
-  const v = VERBS[room.verb];
-  if (v.takesHold && v.release) v.release(room.mg, e.key.toUpperCase());
+  // A KEYUP IS A GLOBAL EVENT AND HAS TO REACH EVERY ROOM THAT COULD BE HOLDING, not just the
+  // selected one. It used to go to S.active alone, and a hold survived being navigated away
+  // from: grip the mantrap, press another room's hotkey, let go, and the keyup arrives while a
+  // different room is active, so nothing clears the flag -- update() runs only the selected
+  // room's verb, so the gauge freezes mid-bar instead of running on to the bite. Re-open the
+  // room and it reads HOLDING with a needle standing where it stopped and no key down; the
+  // next SPACE resolves that stale gauge and scores a verdict on an act nobody performed --
+  // a free banked pull if it froze inside the band. Found by the logic pass, not by playing,
+  // because it takes two armed rooms to reach.
+  //
+  // THE DRILL IS STILL CHECKED FIRST, and that ordering is not incidental: there are two
+  // drills now and the later one runs inside mode 'play', where S.active is null. Ordered the
+  // other way round, a hold started in the cave door's drill would never be handed its
+  // release and the mantrap could not be let go of in there. Keyed off the drill existing
+  // rather than off the mode, for that reason.
+  const k = e.key.toUpperCase();
+  const letGoOf = room => {
+    if (!room || !room.mg) return;
+    const v = VERBS[room.verb];
+    if (v && v.takesHold && v.release) v.release(room.mg, k);
+  };
+  if (S.drill && !S.drill.done) letGoOf(S.drill.room);
+  else if (S.mode === 'play') for (const room of S.rooms) letGoOf(room);
 });
 function toggleGate() {
   const holding = S.gates.find(g => g.state === 'holding');
@@ -2627,8 +2817,15 @@ function update(dt) {
     if (room.hazard === 'burst' && room.state !== 'solved') {
       const before = room.slamT; room.slamT += dt;
       if (before < 0.78 && room.slamT >= 0.78 && inView(room.x, 120)) {
-        emit('grit', 7, room.x + 60, laneY(room.lane) - CFG.tunnelH + 16, { sx: 26, vx: [-12, 12], vy: [20, 70], life: [0.4, 0.7], c: '#9a8d80' });
-        emit('chip', 3, room.x + 60, laneY(room.lane) - CFG.tunnelH + 16, { sx: 22, vx: [-24, 24], vy: [10, 40], life: [0.5, 0.9], c: '#6f6459' });
+        // THE DUST COMES OFF WHAT IS ACTUALLY THERE. Both burst rooms run this branch -- the
+        // crusher in act two, which is inside a tunnel, and the mantrap in act three, which
+        // is out in open country -- and the height was CFG.tunnelH - 16, i.e. 114 units above
+        // the lane. Right for a crusher's crown coming down off the roof; for the mantrap it
+        // was grit and chips bursting out of a tunnel ceiling that does not exist there, two
+        // and a half body heights over a trap lying on the ground.
+        const burstY = laneY(room.lane) - (room.type === 'mantrap' ? 6 : CFG.tunnelH - 16);
+        emit('grit', 7, room.x + 60, burstY, { sx: 26, vx: [-12, 12], vy: [20, 70], life: [0.4, 0.7], c: '#9a8d80' });
+        emit('chip', 3, room.x + 60, burstY, { sx: 22, vx: [-24, 24], vy: [10, 40], life: [0.5, 0.9], c: '#6f6459' });
       }
       if (before < 1.0 && room.slamT >= 1.0) {
         if (inView(room.x, 0)) AU.thud();
@@ -9685,9 +9882,23 @@ function drawEncRoom(room, y) {
   const solved = room.state === 'solved';
   if (room.type === 'mantrap') {
     // no gap: the ground is whole, and the thing on it shuts on a cycle
-    const t = (S.t % CFG.crusherPeriod) / CFG.crusherPeriod;
-    const shut = solved ? 1 : t < 0.72 ? 0 : Math.sin((t - 0.72) / 0.28 * Math.PI);
-    const open = solved ? 46 : 46 * (1 - shut);
+    // THE KILL AND THE PICTURE RUN ON ONE CLOCK NOW. The victim is taken when room.slamT
+    // crosses 1.0 (see update), and this used to animate off S.t -- two independent phases,
+    // since slamT is seeded rand(0, CFG.crusherPeriod) per room at reset. The offset between
+    // them was a constant uniform in [0, 1.6) for the whole run, mean 0.8s, so on most runs
+    // somebody died at a trap that was visibly doing nothing and the jaws moved later at
+    // another trap that killed nobody. The grit is emitted on the kill clock, so the dust and
+    // the death already agreed and only the picture was adrift.
+    //
+    // And the window is re-centred so the extreme lands ON the kill: it peaked at phase 0.86
+    // against a kill at 0.625, i.e. 0.376s late even at zero offset.
+    const t = room.slamT / CFG.crusherPeriod;
+    const shut = solved ? 1 : t < 0.485 ? 0 : Math.sin((t - 0.485) / 0.28 * Math.PI);
+    // `solved ? 46` used to override the `solved ? 1` on the line above it, which existed to
+    // drive exactly this to zero -- so a solved mantrap drew at the identical geometry to an
+    // armed one and only its stroke colour changed. Three clean pulls in the panel moved the
+    // jaws of the thing they claim to control by nothing at all.
+    const open = 46 * (1 - shut);
     ctx.fillStyle = 'rgba(0,0,0,0.22)';
     ctx.fillRect(sx + 8, y + 1, gw - 16, 4);
     for (const dir of [-1, 1]) {

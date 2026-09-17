@@ -236,11 +236,22 @@ const cost = {
                  const per = rate - decay / 5;
                  return per <= 0 ? { keys: Infinity, kind: 'alt', note: 'slumps faster than it cuts' }
                                  : { keys: Math.ceil(1 / per), kind: 'alt', note: 'alternating; it slumps back if you stop' }; },
-  lift:   d => { const gain = 0.46 - 0.01 * d, build = 0.56 + 0.03 * d, ease = 1.6;
-                 const hold = 0.72 / build, per = gain * hold, cool = 0.72 / ease;
-                 const cycles = Math.ceil(1 / per);
-                 return { secs: cycles * (hold + cool), defer: true,
-                          note: `${cycles} holds of ${hold.toFixed(2)}s, ${cool.toFixed(2)}s between` }; },
+  // NOT MODELLED HERE, ON PURPOSE. This row used to restate the mantrap's arithmetic --
+  // gain, build and ease, three constants of the old strain gauge -- and when that room was
+  // rewritten around a needle and a band, none of those three existed in the verb any more.
+  // The row did not go blank or throw. It went on printing "3 holds of 1.06s, 0.45s between,
+  // 4.5s fixed, ok" about a room that now costs 2.4s, in a format identical to the rows that
+  // are true. A model that copies numbers out of a verb is a second copy of that verb, and
+  // the copy is the one nobody updates.
+  //
+  // It is also the wrong shape of question. This tool asks what a room costs in KEYS against
+  // the road; the mantrap takes six presses at every difficulty and what it actually costs is
+  // the time three needles take to climb. Counting its keys would measure nothing.
+  //
+  // tools/lift-check.js drives the real key(), release() and update() under three hands and
+  // measures the road from a run. Returning null here prints the same "no cost model" row
+  // that calculation gets, which is an admission rather than a fiction.
+  lift:   () => ({ skip: 'six presses at every difficulty; the cost is time, not keys -- run tools/lift-check.js' }),
   blast:  d => ({ keys: (3 + Math.min(2, Math.floor(d / 2))) + 5 + 1, kind: 'distinct',
                   secs: 0.45, note: 'charge, pay out the fuse, fire' }),
 };
@@ -261,6 +272,11 @@ for (const r of rooms) {
   const f = cost[verb];
   if (!f) { console.log(`${r.type.padEnd(11)} ${r.diff}     -- no cost model for verb '${verb}'`); continue; }
   const c = f(r.diff);
+  // A MODEL IS ALLOWED TO DECLINE, and a row that says so must not look like a row that
+  // knows. See COST.lift: the alternative is a confident number about a room this tool
+  // cannot see, which is how the mantrap printed a verdict of 'ok' against arithmetic
+  // copied from three constants the verb had already stopped having.
+  if (c && c.skip) { console.log(`${r.type.padEnd(11)} ${r.diff}     -- not modelled: ${c.skip}`); continue; }
   // THE ROAD IS FROM THE MOMENT THE ROOM ARMS, not from the moment it appears.
   //
   // This measured from first sight until 2026-09-17, which was right while a room armed as
