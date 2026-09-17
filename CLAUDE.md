@@ -117,6 +117,31 @@ sound for hours and the one question that mattered took him ten seconds.
    for a steam hammer this way, its own message saying nothing about it. Run
    `git diff --cached --stat` before every commit; a file hundreds of lines larger
    than you expected is the tell.
+
+   **Three things learned the hard way on 2026-09-17, when a commit titled for a hazard
+   change also reverted somebody else's mantrap fix and their drill-check fix.** Neither
+   file was edited and neither was added. Staging by explicit path was followed to the
+   letter and did not help.
+
+   - **A soft reset moves HEAD and LEAVES THE INDEX ALONE.** Anything staged earlier in the
+     session is still staged, and adding two named paths afterwards does not unstage it. It
+     is the obvious way to squash a few WIP commits, and it silently carries whatever was in
+     the index at the time. Naming what you want is not knowing what is there. Check that
+     the index is empty before you stage, and expect it to be.
+   - **A check you run and do not read is not a check.** The stat DID print
+     `tools/drill-check.js | 20 +----` and the commit went out in the same breath. The
+     command ran, the output was on the screen, and nobody looked at it.
+   - **The stat is not enough when the stray rides inside a file you were legitimately
+     editing.** The same commit also showed `index.html | 146 ++++----`, which looked
+     exactly like the 146 lines of hazard work it was supposed to contain -- so the tell
+     read as expected and six reverted lift hunks hid inside it. A SIZE CANNOT TELL YOU
+     WHOSE LINES THEY ARE. Only the content can: read the staged diff of that one file
+     before committing, or the patch for that path afterwards, counting hunks and looking
+     for any you did not write. Fifteen hunks in a change you know is nine is the real tell.
+
+   And when it happens anyway: say so, and say how long it was on origin. Half of this was
+   found in four minutes and reported; the other half was found by the person whose work it
+   was, from that message. A silent fix would have left them to find it in a week.
 5. **Never write "mine" or "I" into a commit message.** Every commit on this
    branch carries Varreaux as author, so a first-person pronoun identifies
    nobody and actively misleads: "same fault as the sweeper, mine" meant the
