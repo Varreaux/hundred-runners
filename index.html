@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '96 a face to work at';
+const BUILD = '97 he waits rather than goes';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -10627,6 +10627,7 @@ function startBoss(script, auto, onGone) {
   S.boss = {
     script: script || BOSS_SCRIPT, auto: !!auto, onGone: onGone || null,
     line: 0, ch: 0, dwell: 0, t: 0, inK: 0, outK: 0, gone: false,
+    duck: 0,                          // 0 fully on screen, 1 tucked away behind the HUD
     laugh: 0, blink: 0, nextBlink: 1.4 + Math.random() * 2.6, spin: S.t * 0.26,
     leaving: false, wrapFor: -1, wrap: [],
   };
@@ -10651,9 +10652,19 @@ function updateBoss(dt) {
   }
   // The script does not advance itself. A line types out and then waits, however long
   // that takes; nothing here is on a timer the player cannot see.
-  // A room is the game; he is a joke over the top of it. If one arms while he is talking
-  // he goes, mid-sentence, rather than covering the panel that says which room it is.
-  if (b.auto && !b.leaving && S.active) b.leaving = true;
+  // HE DUCKS, HE DOES NOT LEAVE. A room is the game and he must never cover the panel that
+  // says which room it is -- but he used to answer that by going for good the instant
+  // S.active was set, and opening a room is the commonest keypress in the game. Morgan,
+  // playing: hitting keys just closes it, and it should not be possible to bypass him by
+  // accident. So while a panel is open the band slides away behind the HUD and HIS CLOCK
+  // STOPS; when it closes he slides back and carries on from the same character. Nothing is
+  // lost, the panel is never covered, and no key dismisses him at all.
+  // He is only ever drawn during the opening or the run, so a ducked one must not survive
+  // into the finale or an ending and wait there for a panel that will never close.
+  if (S.mode !== 'intro' && S.mode !== 'play') b.leaving = true;
+  const ducking = b.auto && !b.leaving && !!S.active;
+  b.duck = Math.max(0, Math.min(1, b.duck + (ducking ? dt : -dt) / BOSS.slide));
+  if (ducking || b.duck >= 1) return;                   // clock held while he is out of the way
   const line = b.script[b.line];
   if (line) {
     if (b.ch < line.t.length) {
@@ -10725,7 +10736,10 @@ function drawBoss() {
   const b = S.boss;
   if (!b || b.gone) return;
   const ease = k => 1 - (1 - k) * (1 - k);
-  const k = ease(b.inK) * (1 - ease(b.outK));
+  // duck rides alongside the arrival and the departure: all three multiply, so he tucks away
+  // and comes back without either of the other two losing its place.
+  const k = ease(b.inK) * (1 - ease(b.outK)) * (1 - ease(b.duck));
+  if (k <= 0.001) return;
   const by = BOSS.y - (1 - k) * (BOSS.y + BOSS.h + 14);   // arrives from above the canvas
   ctx.save();
   ctx.translate(0, by - BOSS.y);
