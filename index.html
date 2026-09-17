@@ -351,6 +351,12 @@ function makeSeq(n) {
   return s;
 }
 function roundRect(x, y, w, h, r) {
+  // A radius larger than half the box cannot be drawn, and the arcTo chain does not fail --
+  // it collapses into a wedge and fills it. An empty strain gauge, roundRect(bx, by, 0, 19,
+  // 9), painted a 9x9 green corner that read as a trap already under load. Every progress
+  // bar in the file is roundRect(x, y, w, 5, 3) too, and spends most of its life with w
+  // under 6. Clamping here fixes the whole class at once.
+  r = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
   ctx.beginPath(); ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
@@ -557,7 +563,10 @@ const VERBS = {
       // progress pips for the round the player is part way through
       for (let i = 0; i < m.seq.length; i++) {
         ctx.fillStyle = !m.watch && i < m.idx ? '#2ecc71' : '#3d4256';
-        ctx.beginPath(); ctx.arc(cx + (i - (m.seq.length - 1) / 2) * 14, py + 175, 4, 0, 6.28); ctx.fill();
+        // 166, not 175: the arrival readout above the gauges is 12px now and its cap top
+        // lands around py + ph - 34, which on this panel's 210 is py + 176. At py + 175 the
+        // pips sat inside it.
+        ctx.beginPath(); ctx.arc(cx + (i - (m.seq.length - 1) / 2) * 14, py + 166, 4, 0, 6.28); ctx.fill();
       }
       ctx.textAlign = 'left';
     },
@@ -652,16 +661,25 @@ const VERBS = {
       // every frame made the example assert the consequence -- here are three prints, they
       // differ -- which is exactly the thing the player was already failing to reason from.
       // Appearing under the finger shows the CAUSE: the press is what leaves the grease.
-      // The travel takes press 0 to 0.4545 (min(1, press * 2.2)), so the dip has to peak
-      // after that or the finger presses hardest between two swatches. It used to peak at
-      // press 0.19, which is sy(stop) + 15.2 -- four units below the swatch it was aiming
-      // at, every time.
+      // ONE TIMELINE FOR ALL FOUR THINGS, because they were three separate curves that
+      // disagreed about when the press happens -- the finger arrived at 0.45, the dip peaked
+      // at 0.70 over the NEXT row, and the mark finished appearing at 0.32 under nothing at
+      // all, so the legend showed marks materialising on their own beside a hovering finger.
+      // That is the opposite of the thing it exists to demonstrate.
+      //
+      // Each stop is one unit of `press`, spent in four parts:
+      //   0.00 - 0.35  travel, from wherever it was to this row, still lifted
+      //   0.35 - 0.55  come down onto the mark
+      //   0.55 - 0.75  held down, and the mark appears in this window
+      //   0.75 - 1.00  lift off, leaving it behind
       const walk = (S.t % 4) / 4 * 3, stop = Math.min(2, Math.floor(walk)), press = walk - stop;
-      const dip = Math.max(0, 1 - Math.abs((press - 0.7) * 5));
+      const travel = clamp01(press / 0.35);              // 1 once it has arrived
+      const dip = clamp01((press - 0.35) / 0.2) * (1 - clamp01((press - 0.75) / 0.25));
       for (let r2 = 0; r2 < 3; r2++) {
         const y2 = sy(r2);
-        // 0 before the finger arrives, fading in across its press, solid once it has gone
-        const born = r2 < stop ? 1 : r2 > stop ? 0 : clamp01((press - 0.12) * 5);
+        // 0 before the finger arrives, appearing while it is HELD DOWN, solid once it has
+        // gone -- so the grease is left by the press rather than turning up beside it
+        const born = r2 < stop ? 1 : r2 > stop ? 0 : clamp01((press - 0.55) / 0.2);
         ctx.font = 'bold 12px monospace'; ctx.textAlign = 'left';
         ctx.fillStyle = 'rgba(210,220,236,' + (0.28 + born * 0.47).toFixed(2) + ')';
         ctx.fillText(['1st', '2nd', '3rd'][r2], Lx + 26, y2 + 4);
@@ -683,15 +701,26 @@ const VERBS = {
       // lands ON Lx, over its own mark, with a nail so it is a finger and not an egg.
       // stop is clamped to 2 but the travel was not, so for the last 0.73s of every loop
       // the finger slid on to sy(3) = py + 184 and hung out of the box onto the step row.
-      const fy = sy(Math.min(2, stop + Math.min(1, press * 2.2)));
-      const fx = Lx - 24 + dip * 24;
+      // stop - 1 + travel, so beat N travels from swatch N-1 INTO swatch N and then presses
+      // it. At min(2, stop + travel) the third beat was clamped flat: the finger sat parked
+      // on the last swatch for the whole beat and never arrived anywhere, so that mark always
+      // appeared under a stationary finger.
+      const fy = sy(Math.max(0, stop - 1 + travel));
+      // ALWAYS ON THE COLUMN. The travel is expressed by moving DOWN it and by being lifted
+      // off the page, never by swinging out to one side and back: a finger that approaches
+      // horizontally reads as a separate object drifting past a column of marks, and for
+      // most of every stop its pad sat clear of the mark it was supposed to be making.
+      const fx = Lx;
       // A fingertip coming down from the upper left: a short tapered shaft into a rounded
       // pad with a nail on it. The shaft is 26 units and stops, rather than running to the
       // panel edge -- at full width it was a 130-unit slab of flat cream straight across
       // the legend and read as a plank lying on the prints, not as a hand.
+      // lifted while travelling, down on the page while pressing
+      const lift = (1 - dip) * 11;
       ctx.save();
-      ctx.globalAlpha = 0.40 + dip * 0.40;
+      ctx.globalAlpha = 0.42 + dip * 0.38;
       ctx.fillStyle = '#e4d2b6';
+      ctx.translate(0, -lift);
       ctx.beginPath();
       ctx.moveTo(fx - 3, fy - 8);
       ctx.quadraticCurveTo(fx - 18, fy - 17, fx - 27, fy - 21);
@@ -704,9 +733,10 @@ const VERBS = {
       ctx.beginPath(); ctx.ellipse(fx - 2.6, fy - 4.2, 4.4, 2.8, -0.42, 0, 6.28); ctx.fill();
       ctx.restore();
       // the rule between the example and the thing it is an example of, on the midpoint of
-      // the two columns' edges rather than hard against the left one
+      // the two columns' edges -- the legend box ends at px + 284 and the leftmost key
+      // starts at px + 406, so that is px + 345, not the 336 a first pass rounded it to
       ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(px + 336, py + 44); ctx.lineTo(px + 336, py + 184); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(px + 345, py + 44); ctx.lineTo(px + 345, py + 184); ctx.stroke();
 
       ctx.textAlign = 'center';
       // Empty slots as underscores rather than middots: three 20px middots read as specks
@@ -719,18 +749,23 @@ const VERBS = {
       // pointing at anything, and they say it while empty, which underscores did not.
       // The word REJECTED goes in the step line, not here: it is twice the width of the
       // slots and setting it here would either overflow them or shrink the digits.
+      // ON THE KEYS' OWN PITCH AND WIDTH. Three 34-wide cells on a pitch of 38 over a grid
+      // of 44-wide keys on a pitch of 50 put every cell edge in the middle of a key column,
+      // which reads as misregistered printing rather than as a header for the grid. Both
+      // numbers come from the keypad below, one line apart, so they cannot drift again.
+      const KEY_W = 44, KEY_PITCH = 50;
       for (let s2 = 0; s2 < 3; s2++) {
-        const sx3 = Kx - 38 + s2 * 38, got = m.input[s2];
-        ctx.fillStyle = 'rgba(255,255,255,0.03)'; roundRect(sx3 - 17, py + 34, 34, 30, 5); ctx.fill();
+        const sx3 = Kx - KEY_PITCH + s2 * KEY_PITCH, got = m.input[s2];
+        ctx.fillStyle = 'rgba(255,255,255,0.03)'; roundRect(sx3 - KEY_W / 2, py + 34, KEY_W, 30, 5); ctx.fill();
         ctx.strokeStyle = m.failed ? 'rgba(255,119,119,0.55)'
                         : got ? 'rgba(92,225,255,0.75)' : 'rgba(92,225,255,0.22)';
-        ctx.lineWidth = got ? 1.6 : 1; roundRect(sx3 - 17, py + 34, 34, 30, 5); ctx.stroke();
+        ctx.lineWidth = got ? 1.6 : 1; roundRect(sx3 - KEY_W / 2, py + 34, KEY_W, 30, 5); ctx.stroke();
         if (got) { ctx.fillStyle = '#5ce1ff'; ctx.font = 'bold 20px monospace'; ctx.fillText(got, sx3, py + 56); }
       }
       for (let i = 0; i < 9; i++) {
         const d = String(i + 1), rank = m.wear[d];
         const marked = rank !== undefined, used = marked && m.input.includes(d);
-        const x = Kx - 72 + (i % 3) * 50, y = py + 66 + Math.floor(i / 3) * 38;
+        const x = Kx - KEY_PITCH - KEY_W / 2 + (i % 3) * KEY_PITCH, y = py + 66 + Math.floor(i / 3) * 38;
         ctx.fillStyle = '#2a2d3a'; roundRect(x, y, 44, 32, 5); ctx.fill();
         // The whole key face darkens with wear, not just the print on it. The print alone
         // separated first from third at a glance but not second from third, and second
@@ -768,7 +803,9 @@ const VERBS = {
   wires: {
     // join() clears m.pulling on the last splice too, so without the first clause the
     // solved room spent its final frames telling the player to start again.
-    now: m => (m.idx >= m.left.length ? 'all safe' : !m.pulling ? 'pull a live wire with \u2192' : 'walk the sockets \u2191\u2193 \u2014 it joins itself'),
+    // Short, because panelStep and panelGauges share the bottom row and 376px of it. The
+    // full sentence lives in hint, which has the whole width of the canvas.
+    now: m => (m.idx >= m.left.length ? 'all safe' : !m.pulling ? 'pull a live wire with \u2192' : '\u2191\u2193 \u2014 it joins itself'),
     hint: '→ pull the live wire · ↑↓ walk the sockets · it connects the moment the colours meet',
     // Two states per wire: pulled or not. Pull, then walk the sockets; the splice makes
     // itself the instant the colour under the cursor matches the wire in hand. There is no
@@ -957,7 +994,12 @@ const VERBS = {
       ctx.lineTo(cx + w * 0.45, BANK - 2 + d); ctx.lineTo(cx - w * 0.45, BANK - 2 + d);
       ctx.closePath(); ctx.fill();
       // the spade, swinging to whichever side was last pressed
-      const side = m.last === 'ARROWRIGHT' ? 1 : -1;
+      // m.last starts null, and `m.last === 'ARROWRIGHT' ? 1 : -1` read that as "left", so the
+      // opening frame drew the spade on the left under a bright cyan arrow saying press
+      // LEFT. Pressing left is accepted and the spade does not move, so the first press of
+      // the room looks dead. Resting on the right puts the tool opposite the key you are
+      // being asked for, which is what every later frame does.
+      const side = m.last === 'ARROWLEFT' ? -1 : 1;
       const lift = Math.sin(m.swing * Math.PI) * 16;
       const hx = cx + side * (30 + lift * 0.5), hy = BANK - 6 - lift;
       ctx.strokeStyle = '#8a6a44'; ctx.lineWidth = 3.4;
@@ -1063,10 +1105,23 @@ const VERBS = {
       // with both sets of six teeth drawn through each other. It read as one toothed bar,
       // and as an object it could not exist.
       const JAW = 34;
+      // The spring goes on the plate BEFORE the jaws, so the jaws paint over it. Drawn last
+      // it lay across the teeth -- a dark band through the middle of the white spikes, at
+      // lineWidth 3 over #dfe6f0 -- which is the one place in the object it cannot be.
+      ctx.strokeStyle = m.snapped > 0 ? '#ff7a7a' : '#4e5763'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      const sh = 13 - m.open * 8;
+      for (let i = 0; i <= 8; i++) ctx.lineTo(cx - 20 + i * 5, cy - 9 - (i % 2 ? 0 : sh * 0.5));
+      ctx.stroke();
       for (const dir of [-1, 1]) {
         ctx.save();
         ctx.translate(cx + dir * JAW, cy - 3);
-        ctx.rotate(dir * -ang);
+        // dir * ang, not dir * -ang. A jaw runs from its hinge toward the centre, at local
+        // (dir * -JAW, 0); under the old sign both tips rotated DOWNWARD, so at full open
+        // each one was 34 * sin(75) = 32.8 units below its own hinge -- through the base
+        // plate at cy + 3, through its cast shadow, and into the floor the player is
+        // standing on, drawn over both. A trap opens by swinging its jaws up and apart.
+        ctx.rotate(dir * ang);
         const col = m.snapped > 0 ? '#ff7a7a' : '#aeb8c6';
         // the jaw itself, a flat bar with teeth along its inner edge
         ctx.fillStyle = col;
@@ -1082,13 +1137,7 @@ const VERBS = {
         ctx.fillStyle = '#7f8a99'; ctx.beginPath(); ctx.arc(0, 0, 5, 0, 6.28); ctx.fill();   // the hinge
         ctx.restore();
       }
-      // the spring at the centre, flattening as the jaws come apart. Darker than the jaws,
-      // not lighter: at #7d8794 over #aeb8c6 it was invisible on the thing it lies across.
-      ctx.strokeStyle = m.snapped > 0 ? '#ff7a7a' : '#4e5763'; ctx.lineWidth = 3;
-      ctx.beginPath();
-      const sh = 13 - m.open * 8;
-      for (let i = 0; i <= 8; i++) ctx.lineTo(cx - 20 + i * 5, cy - 9 - (i % 2 ? 0 : sh * 0.5));
-      ctx.stroke();
+
       // THE STRAIN GAUGE. This is the puzzle: hold while it is green, let go before the
       // line, take hold again. It is the biggest, brightest thing in the panel for that
       // reason, and the line you must stay under is drawn on it rather than described.
@@ -1096,7 +1145,11 @@ const VERBS = {
       ctx.fillStyle = '#20262f'; roundRect(bx, by, bw, bh, 9); ctx.fill();
       const danger = Math.min(1, m.strain);
       ctx.fillStyle = danger > 0.78 ? '#ff5a5a' : danger > 0.55 ? '#f1c40f' : '#6ee7a0';
-      roundRect(bx, by, bw * danger, bh, 9); ctx.fill();
+      // A roundRect narrower than its own corner diameter cannot resolve two 9-radius
+      // corners and comes out as a wedge, so at rest the empty gauge showed a green sliver
+      // jammed in its left end that read as a drawing fault. Below one bar-height of fill
+      // there is nothing to draw.
+      if (bw * danger >= bh) { roundRect(bx, by, bw * danger, bh, 9); ctx.fill(); }
       ctx.fillStyle = '#fff'; ctx.fillRect(bx + bw * 0.78, by - 4, 2.4, bh + 8);
       // the word goes INSIDE the bar. Above it, it landed on the panel's header rule; below
       // it, on the trap. There is no free row in a panel this size, so it does not need one.
@@ -1174,10 +1227,11 @@ const VERBS = {
           ctx.fillStyle = '#c4762e'; ctx.beginPath(); ctx.arc(hx, hy, 8.5, 0, 6.28); ctx.fill();
           ctx.fillStyle = '#e8a04a'; ctx.beginPath(); ctx.arc(hx - 2, hy - 2, 3.4, 0, 6.28); ctx.fill();
         }
-        // +26 and not +30: at +30 the baseline sat 2 units BELOW the bottom of the face,
-        // so every letter had its caps on the rock and its feet off it. And #6e7a8e on a
-        // #4a4048 face is barely a separation, on the letters you have not pressed yet --
-        // which are the only ones you need to read.
+        // +26 and not +30: at +30 the baseline sat py + 90 against a face ending at py + 92,
+        // so the descenders and the whole visual weight of the row crowded its bottom edge
+        // with 2 units to spare. At +26 the baseline is 6 clear and the caps 15 inside. And
+        // #6e7a8e on a #4a4048 face is barely a separation, on the letters you have not
+        // pressed yet -- which are the only ones you need to read.
         ctx.textAlign = 'center'; ctx.font = 'bold 15px monospace';
         ctx.fillStyle = h.charged ? '#6ee7a0' : (m.stage === 0 && i === m.idx) ? '#5ce1ff' : '#a9b2c4';
         ctx.fillText(h.k, hx, hy + 26);
@@ -1200,7 +1254,7 @@ const VERBS = {
       if (m.stage === 2) {
         const live = m.arm <= 0;
         ctx.fillStyle = m.fired ? '#6ee7a0' : live ? '#ff5a5a' : '#5a4148';
-        roundRect(cx - 34, py + 88, 68, 18, 5); ctx.fill();
+        roundRect(cx - 34, FACE + faceH + 2, 68, 18, 5); ctx.fill();
         ctx.fillStyle = '#12161c'; ctx.textAlign = 'center'; ctx.font = 'bold 13px monospace';
         ctx.fillText(live ? 'SPACE' : '\u2022 \u2022 \u2022', cx, py + 101);
       }
@@ -2202,7 +2256,16 @@ function updateDrill(dt) {
   const d = S.drill;
   d.flash = Math.max(0, d.flash - dt * 2.2);
   if (d.phase === 'in') { d.pos = Math.max(0, d.pos - dt / DRILL.in); if (d.pos <= 0) d.phase = 'play'; return; }
-  if (d.phase === 'out') { d.pos -= dt / DRILL.out; if (d.pos <= -1) drillNext(); return; }
+  // Step to -1, DRAW that frame, then advance. Stepping past -1 and swapping immediately
+  // meant the last frame the outgoing panel was drawn on was whatever pos the frame rate
+  // happened to land on: -0.96 at 60fps leaves 49px of it on screen, and dt is clamped at
+  // 0.05, so at 30fps it is -0.87 and 230px -- 41% of the panel blinking out at once. The
+  // span is right at exactly -1; the loop just never got there.
+  if (d.phase === 'out') {
+    if (d.pos <= -1) { drillNext(); return; }
+    d.pos = Math.max(-1, d.pos - dt / DRILL.out);
+    return;
+  }
   const v = VERBS[d.room.verb];
   v.update(d.room.mg, dt);
   // the sweeper, the mantrap and the charge bank a win on their own clock rather than
@@ -10628,10 +10691,20 @@ function drawHud() {
     let hint = (ENC.inside(S.cam + CFG.packFront) ? 'the land is being fenced \u2014 keep them moving' : 'watch the tunnels ahead');
     const armed = S.rooms.filter(r => r.state === 'armed');
     const gate = S.gates.find(g => g.state === 'armed' || g.state === 'holding');
-    if (S.active) hint = VERBS[S.active.verb].hint + '   (ESC to close)';
+    // The aside goes in hintBar's own `note` slot rather than being glued onto the text.
+    // Concatenated, it was an ordinary run of words: the wrap broke "(ESC to close)" across
+    // a line, which reads as a typesetting accident, and both halves came out at full
+    // instruction brightness because only `note` is dimmed.
+    let note = null;
+    if (S.active) { hint = VERBS[S.active.verb].hint; note = '(ESC to close)'; }
     else if (armed.length) hint = `press ${armed.map(r => r.hot).sort().join(' or ')} to open a flashing room`;
-    if (gate) hint += gate.state === 'holding' ? '   ENTER releases the gate' : '   ENTER holds the crowd at the gate';
-    hintBar(hint);
+    if (gate) note = (note ? note + '   ' : '') + (gate.state === 'holding' ? 'ENTER releases the gate' : 'ENTER holds the crowd at the gate');
+    // And a sizeFrom, for the same reason the drill has one: without it the band changes
+    // height the instant a room opens or closes, so the bottom of the screen jumps 20px
+    // every time -- which is the flicker that argument exists to prevent. The longest line
+    // the road can assemble is the longest verb hint, its aside, and the gate clause.
+    const longestHint = Object.values(VERBS).reduce((a, v) => (v.hint && v.hint.length > a.length ? v.hint : a), '');
+    hintBar(hint, note, longestHint + '    (ESC to close)   ENTER holds the crowd at the gate');
   }
   // the drill runs during the intro and needs the same line: what this room wants, and
   // the way out for anyone who has played before
@@ -10677,8 +10750,11 @@ function drawHud() {
 // would cost the instructions. So the size is fixed and the LINE COUNT gives instead.
 const HINT_FS = 17, HINT_LH = 20, HINT_PAD = 7;
 // The tallest the band ever gets, for anything that has to stay clear of it. Two lines is
-// the practical worst case: the longest instruction the game can assemble is the mantrap's
-// hint plus "(ESC to close)" plus the gate clause, 136 characters, which wraps to two.
+// the practical worst case: the longest instruction the game can assemble is BLAST's hint
+// (93 characters, the longest in the table) plus "(ESC to close)" plus the gate clause, so
+// 146, and at 17px monospace a line holds about 91. That leaves 36 characters of slack, not
+// a lot; a hint past roughly 165 would make this three lines while the death plate's clamp
+// went on assuming two.
 const hintBandH = () => HINT_PAD * 2 + 2 * HINT_LH;
 // A space that wrap() will not break on. The aside travels as ONE word with the four
 // spaces that separate it from the instruction, so it cannot be split across a line and
@@ -10724,7 +10800,9 @@ function hintBar(text, note, sizeFrom) {
   const band = HINT_PAD * 2 + n * HINT_LH;
   ctx.fillStyle = 'rgba(8,10,18,0.6)'; ctx.fillRect(0, H - band, W, band);
   ctx.textAlign = 'left';
-  const top = H - band + HINT_PAD;
+  // centred in the band, so a one-line hint in a band sized for two does not sit against
+  // the top with an empty row under it -- which is six of the eleven drill panels
+  const top = H - band + HINT_PAD + (n - rows.length) * HINT_LH / 2;
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i], cut = row.indexOf(HINT_NB);
     const head = cut < 0 ? row : row.slice(0, cut);
@@ -10809,22 +10887,25 @@ function drawKeyBoxes(chars, idx, px, py, pw) {
 // WHAT LIMITS THIS IS NOT THE CANVAS, IT IS THE CROWD. A panel is opaque and sits over the
 // road, so every unit it grows is road you cannot watch while you work -- and watching the
 // crowd is the game. There is a great deal of canvas left (the tallest panel reaches 340 of
-// 540, and the hint band does not start until 506); the cost is entirely in what is
+// 540, and the hint band does not start until 486); the cost is entirely in what is
 // covered. tools/cover-check.js scores that directly, at scale 1.00 against the current
-// value, on the same frames:
+// value, on the same frames. Its shapes, in its own order, ph then pw:
 //
-//   420x150, nine of the eleven rooms    4.1% of the crowd hidden -> 6.3%
-//   420x176, dig                         4.5% -> 11.5%
-//   420x210, the sweeper                 6.4% -> 18.6%
-//   620x218, the press keypad            6.7% -> 19.1%
+//   150 x 420, eight of the eleven verbs    about  6-7% of the crowd hidden -> 9-10%
+//   176 x 420, dig                                 7%   -> 14%
+//   210 x 420, the sweeper                        10%   -> 21%
+//   218 x 620, the press keypad                   10%   -> 22%
 //
-// Those move a point or two between runs -- the game calls Math.random() in about thirty
-// places -- so reproduce on the shape, not the digits. Run the tool before raising this or
-// before making any panel BIGGER IN HEIGHT. A first pass at the press room stacked its
-// legend above the keypad, at 420x266: 18.2% -> 60.0%, and 100% of the crowd on its worst
-// frame, for a panel that looked perfectly fine in every screenshot. Widening it instead
-// cost almost nothing, because the crowd sits near the middle of the screen and a panel's
-// outer thirds cover very few people. Wide is nearly free. Tall is not.
+// Read those as the SHAPE and not as digits: the game calls Math.random() in about thirty
+// places, so five runs of one build gave 4.1, 5.2, 6.5, 6.5 and 6.9 for the first row. What
+// reproduces is the ratio, a little over 2x, and the ordering.
+//
+// Run the tool before raising this, and before making any panel BIGGER IN HEIGHT. A first
+// pass at the press room stacked its legend above the keypad, at 266 x 420: 18% -> 60%, and
+// 100% of the crowd on its worst frame, for a panel that looked perfectly fine in every
+// screenshot. Widening it to 620 instead cost almost nothing, because the crowd sits near
+// the middle of the screen and a panel's outer thirds cover very few people. Wide is nearly
+// free. Tall is not.
 const PANEL_SCALE = 1.34;
 // Wrap a panel's whole draw in that scale, about its top centre -- top, not middle, so a
 // panel grows downward from where it already starts rather than climbing into the HUD.
@@ -10847,9 +10928,12 @@ function panelFrame(pw, title, color, ph = 150, py0 = 48) {
   // a cast shadow, so the panel sits over the world instead of being cut into it
   ctx.fillStyle = 'rgba(0,0,0,0.38)'; roundRect(px + 3, py + 6, pw, ph, 12); ctx.fill();
   const g = ctx.createLinearGradient(0, py, 0, py + ph);
-  g.addColorStop(0, 'rgba(26,30,44,0.97)');
-  g.addColorStop(0.18, 'rgba(15,18,28,0.97)');
-  g.addColorStop(1, 'rgba(9,10,17,0.97)');
+  // Opaque. At 0.97 a speech bubble underneath showed through as a pale bar with legible
+  // dark text on it, inside the one box whose job is to be read -- and it reads as a smudge
+  // or a render fault rather than as a bubble, because nothing else in the panel moves.
+  g.addColorStop(0, '#1a1e2c');
+  g.addColorStop(0.18, '#0f121c');
+  g.addColorStop(1, '#090a11');
   ctx.fillStyle = g; roundRect(px, py, pw, ph, 12); ctx.fill();
   // a header strip in the room's own colour, then a hairline under it
   ctx.save(); roundRect(px, py, pw, ph, 12); ctx.clip();
@@ -10902,8 +10986,12 @@ function panelGauges(room, px, py, pw, ph) {
   // puzzle progress
   ctx.fillStyle = 'rgba(255,255,255,0.09)'; roundRect(bx, by, bw, 5, 3); ctx.fill();
   ctx.fillStyle = '#5ce1ff'; roundRect(bx, by, bw * prog, 5, 3); ctx.fill();
-  // time before the first of them walks in, capped at six seconds of bar
-  const t = Math.min(1, eta / 6);
+  // Time before the first of them walks in, capped at six seconds of bar -- and DEAD when
+  // there is no first of them. approaching() returns eta 99 for an empty lane, which capped
+  // to a full bar in the safe green, so a room nobody was walking into showed the maximum
+  // possible reading directly under the words saying nobody was walking into it. The drill's
+  // copy of this bar always drew it empty; the road's contradicted its own caption.
+  const t = n ? Math.min(1, eta / 6) : 0;
   const urgent = eta < 1.6;
   ctx.fillStyle = 'rgba(255,255,255,0.09)'; roundRect(bx, by + 9, bw, 5, 3); ctx.fill();
   ctx.fillStyle = urgent ? (Math.sin(S.t * 14) > 0 ? '#ff5a5a' : '#ff9a9a') : eta < 3 ? '#f1c40f' : '#6ee7a0';
@@ -10913,10 +11001,12 @@ function panelGauges(room, px, py, pw, ph) {
   // decorative title over it -- the smallest type in the frame.
   ctx.font = 'bold 12px monospace'; ctx.textAlign = 'right';
   ctx.fillStyle = urgent ? '#ff8a8a' : 'rgba(210,220,236,0.78)';
-  // "they have all passed this one", not "nobody left to save here": the second is
-  // arithmetically true -- nobody is walking INTO this room -- and prints over a deck with
-  // forty people on it, so it reads as the game being wrong about its own screen.
-  ctx.fillText(n ? `${n} reach this in ${eta.toFixed(1)}s` : 'they have all passed this one', px + pw - 22, by - 5);
+  // "nobody is coming here", not "nobody left to save here": the second is arithmetically
+  // true -- nobody is walking INTO this room -- and prints over a deck with forty people on
+  // it, so it reads as the game being wrong about its own screen. Short, too: this string
+  // and the verb's status share a 376px row, and every character here is one the status
+  // cannot have. tools/panel-check.js scores that pair and reads both out of this file.
+  ctx.fillText(n ? `${n} reach this in ${eta.toFixed(1)}s` : 'nobody is coming here', px + pw - 22, by - 5);
   ctx.textAlign = 'left';
 }
 // One width, read by both the room panel and the drill panel. The keys and word verbs
@@ -11572,7 +11662,10 @@ function drawDrill() {
   ctx.fillStyle = 'rgba(255,255,255,0.09)'; roundRect(bx, by, bw, 5, 3); ctx.fill();
   ctx.fillStyle = col; roundRect(bx, by, bw * clamp01(v.progress(d.room.mg)), 5, 3); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.09)'; roundRect(bx, by + 9, bw, 5, 3); ctx.fill();
-  ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right';
+  // 12px, matching panelGauges. The drill exists to teach the player to read the road
+  // panel, so printing the same readout in the same slot at a smaller size taught them to
+  // read something the road does not show.
+  ctx.font = 'bold 12px monospace'; ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(210,220,236,0.45)';
   ctx.fillText('nobody on the road yet', px + pw - 22, by - 5);
   ctx.textAlign = 'left';
@@ -13162,6 +13255,12 @@ if (qs.has('finale')) {
 // this page otherwise: --virtual-time-budget never reaches an idle point while
 // requestAnimationFrame keeps rescheduling, so the screenshot never lands. It also
 // makes a shot reproducible, which matters when two of them are being compared.
+// ?st=N freezes the clock at N seconds before the single frame is drawn. Anything whose
+// look is a function of S.t -- lamp flicker, the press room's ghost finger, every idle
+// animation -- is otherwise unphotographable except at whatever instant the setup happened
+// to stop at, so a still says nothing about whether the motion is right. With this, a
+// sweep of stills across one cycle does.
+if (qs.has('st')) S.t = +qs.get('st');
 if (qs.has('shot')) draw(); else requestAnimationFrame(frame);
 </script>
 </body>
