@@ -3086,6 +3086,12 @@ function draw() {
   // BEFORE its runners (or it washes a pale film over the faces of the crowd standing
   // in it, which is what it did: light in front of the people it is lighting).
   for (let k = CFG.laneCount - 1; k >= 0; k--) { drawLane(k); if (k === 0) drawDoorSpill(); drawRunners(k); if (k === 0) { drawFeeder(); drawStairRail(); } drawRoomProps(k); for (const g of S.gates) drawGate(g, k, true); }
+  // The cave door, for the same reason the gate bars are drawn here: a closed barrier that
+  // the crowd is painted over is not a barrier. Its FRAME went down with lane 0's ground,
+  // behind the bodies, because the frame is the hole they are standing in. The sledges go
+  // last of the three so a hammer head lands on the leaf's face rather than behind it.
+  drawSeamDoor(laneY(0));
+  drawSeamHammers(laneY(0));
   drawFinish();
   if (S.mode === 'play' || S.mode === 'finale') drawFx();
   ctx.restore();
@@ -7538,6 +7544,158 @@ function seamEdgePath() {
   ctx.beginPath();
   for (let y = -2600; y <= CFG.worldBottom + 500; y += 22) ctx.lineTo(seamXAt(y) - V.left, y);
 }
+// ---------------------------------------------------------------- the cave door, drawn
+// The leaf that hangs in drawSeamPortal's timber frame. The FRAME is drawn with lane 0's
+// ground, behind the bodies, because it is the hole in the wall and the crowd stands in it.
+// The LEAF is drawn after them, for the reason already written above the lane loop: a closed
+// gate that people are drawn over is not a barrier. The sledges go on after the leaf again,
+// so a hammer head lands on its face instead of disappearing behind it.
+//
+// Every number here is read off the portal rather than restated. The posts are centred at
+// sx +/- 42 and are 14 wide, so the clear opening is 70; the soffit sits at y - tunnelH and
+// the sill top at y - 6. Written down instead, this would part company with the frame the
+// first time anybody moved a post, and a door that no longer fits its own hole is not
+// something a still would show you -- it just looks like a door.
+const DOOR = {
+  half: 35,           // inner face of each post, from the portal's post centres and width
+  headroom: 4,        // under the soffit
+  sill: 5,            // onto the stone threshold
+  strap: [0.26, 0.74],// iron bands, as a fraction of the leaf's height
+};
+const doorTop = y => y - CFG.tunnelH + DOOR.headroom;
+const doorBot = y => y - DOOR.sill;
+function drawSeamDoor(y) {
+  const g = S.seam;
+  if (g.phase === 'off') return;
+  if (!inView(FAC.seam, 300)) return;
+  const sx = FAC.seam - V.left;
+  const top = doorTop(y), bot = doorBot(y), hh = bot - top;
+  const dmg = g.hits / SEAM.hits;                 // 0 fresh, 1 about to give
+  const open = g.phase === 'done' ? 1 : g.open;   // 0 shut, 1 blown
+  // one leaf, hinged on its own jamb, drawn in its own space so the burst is a rotation
+  const leaf = d => {
+    ctx.save();
+    // the jolt of a strike travels through the whole leaf, not just the spot that was hit
+    const jolt = g.jolt * (1 - open);
+    ctx.translate(sx + d * DOOR.half, bot);
+    ctx.rotate(d * open * 0.62);
+    ctx.translate(d * open * 26 + d * jolt * 1.4, open * open * 34);
+    const w = DOOR.half;                          // leaf reaches from its jamb to the centre
+    const x0 = d < 0 ? 0 : -w;                    // local left edge of this leaf
+    ctx.beginPath(); ctx.rect(x0 - 1, -hh - 1, w + 2, hh + 2); ctx.clip();
+    // boards
+    ctx.fillStyle = INK; ctx.fillRect(x0, -hh, w, hh);
+    ctx.fillStyle = '#4b3722'; ctx.fillRect(x0 + 1, -hh + 1, w - 2, hh - 2);
+    const boards = 5, bw = (w - 2) / boards;
+    for (let i = 0; i < boards; i++) {
+      const bx = x0 + 1 + i * bw;
+      ctx.fillStyle = i % 2 ? 'rgba(0,0,0,0.16)' : 'rgba(255,224,176,0.05)';
+      ctx.fillRect(bx, -hh + 1, bw, hh - 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.42)'; ctx.fillRect(bx + bw - 1.2, -hh + 1, 1.2, hh - 2);
+      // grain
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      for (let k = 0; k < 6; k++) {
+        const gy = -hh + 6 + k * (hh - 12) / 6 + hash(i * 3.1 + k) * 4;
+        ctx.fillRect(bx + 1, gy, bw - 3, 0.9);
+      }
+    }
+    // the light from the mill side falls on the near face only
+    const lg = ctx.createLinearGradient(0, -hh, 0, 0);
+    lg.addColorStop(0, 'rgba(255,232,190,0.10)'); lg.addColorStop(1, 'rgba(0,0,0,0.30)');
+    ctx.fillStyle = lg; ctx.fillRect(x0, -hh, w, hh);
+    // iron straps, hinged end thicker. Both bands read off DOOR.strap so they cannot drift
+    // apart from the rivets that sit on them.
+    for (const f of DOOR.strap) {
+      const sy = -hh + hh * f;
+      ctx.fillStyle = '#33303a'; ctx.fillRect(x0, sy - 4, w, 8);
+      ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(x0, sy - 4, w, 1.4);
+      ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.fillRect(x0, sy + 2.6, w, 1.4);
+      rivets(x0 + 5, x0 + w - 5, sy, 11, 1.15, 'rgba(255,255,255,0.20)');
+      // the hinge pintle, on the jamb edge
+      const hx = d < 0 ? x0 + 2 : x0 + w - 2;
+      ctx.fillStyle = '#26232c'; ctx.beginPath(); ctx.arc(hx, sy, 3.4, 0, 6.28); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.beginPath(); ctx.arc(hx - 0.8, sy - 0.8, 1.2, 0, 6.28); ctx.fill();
+    }
+    // damage, growing with the count of strikes. Splits start at the meeting edge, which is
+    // where the sledges are landing, and travel back toward the hinge.
+    if (dmg > 0) {
+      const edge = d < 0 ? x0 + w : x0;           // the centre edge of this leaf
+      ctx.strokeStyle = 'rgba(12,10,16,0.85)';
+      for (let i = 0; i < Math.ceil(dmg * 5); i++) {
+        const t = hash(i * 4.7 + d) , sy = -hh + 12 + t * (hh - 24);
+        const reach = (0.25 + hash(i * 2.3) * 0.5) * w * Math.min(1, dmg * 1.4);
+        ctx.lineWidth = 1 + hash(i * 6.1) * 1.4;
+        ctx.beginPath(); ctx.moveTo(edge, sy);
+        ctx.lineTo(edge - d * reach * 0.5, sy + (hash(i * 8.2) - 0.5) * 12);
+        ctx.lineTo(edge - d * reach, sy + (hash(i * 5.4) - 0.5) * 20);
+        ctx.stroke();
+      }
+      // and once it is nearly through, a hole you can see the dark behind
+      if (dmg >= 0.66) {
+        const hw = (dmg - 0.66) * 3 * 13;
+        ctx.fillStyle = '#0b0910';
+        ctx.beginPath();
+        for (let i = 0; i <= 8; i++) {
+          const a = i / 8 * 6.28, rr = hw * (0.6 + hash(i * 9.1) * 0.7);
+          const px = edge - d * (hw * 0.7) + Math.cos(a) * rr, py = -hh * 0.52 + Math.sin(a) * rr * 0.9;
+          i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        }
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    ctx.restore();
+  };
+  leaf(-1); leaf(1);
+  // the lock: a drop bar across both leaves, and the hasp it sits in. It goes after the
+  // leaves because it spans them -- it is the thing being broken, not part of either.
+  if (open < 1) {
+    ctx.save();
+    ctx.globalAlpha = 1 - open;
+    const by = bot - hh * 0.5, jolt = g.jolt * 2.2;
+    ctx.fillStyle = INK; ctx.fillRect(sx - DOOR.half + 2, by - 6 + jolt, DOOR.half * 2 - 4, 12);
+    ctx.fillStyle = '#3e3a46'; ctx.fillRect(sx - DOOR.half + 3, by - 5 + jolt, DOOR.half * 2 - 6, 10);
+    ctx.fillStyle = 'rgba(255,255,255,0.13)'; ctx.fillRect(sx - DOOR.half + 3, by - 5 + jolt, DOOR.half * 2 - 6, 1.8);
+    ctx.fillStyle = 'rgba(0,0,0,0.36)'; ctx.fillRect(sx - DOOR.half + 3, by + 3 + jolt, DOOR.half * 2 - 6, 2);
+    rivets(sx - DOOR.half + 9, sx + DOOR.half - 9, by + jolt, 14, 1.3, 'rgba(255,255,255,0.24)');
+    ctx.restore();
+  }
+}
+// The sledges. Three at the front of the file, out of step with each other, because three
+// people hitting a door in perfect unison reads as one animation played three times.
+function drawSeamHammers(y) {
+  const g = S.seam;
+  if (g.phase === 'off' || g.phase === 'done') return;
+  if (!inView(FAC.seam, 300)) return;
+  const front = S.runners.filter(r => r.state === 'run' && r.lane === 0)
+                         .sort((a, b) => b.x - a.x).slice(0, SEAM.hammers);
+  front.forEach((r, i) => {
+    // Each one carries its own phase, offset by a third of a stroke and nudged per person so
+    // they never line up. `g.swing` is the shared clock, so the strike that shakes the door
+    // is the leading hammer's and the others land around it.
+    const ph = (g.swing + i * 0.34) % 1;
+    // raised most of the stroke, down fast: the downswing is the last quarter
+    const a = ph < 0.75 ? -2.05 + (ph / 0.75) * 0.45 : -1.6 + ((ph - 0.75) / 0.25) * 2.05;
+    // The world transform is already on the stack, so this draws in WORLD units and does not
+    // touch it. An earlier version reached for setTransform and re-applied the world matrix
+    // by hand afterwards, which is the thing CLAUDE.md warns about: anything that rebuilds the
+    // transform stack rather than nesting inside it gets the scale wrong somewhere and then
+    // blames the geometry. Local coords here are exactly toScreen's, before its zoom:
+    // x = wx - V.left, y = the world y.
+    ctx.save();
+    ctx.translate(r.x - V.left, footY(r) - 30);
+    ctx.rotate(a);
+    // haft
+    ctx.fillStyle = INK; ctx.fillRect(-1.9, -1.9, 26, 3.8);
+    ctx.fillStyle = '#7a5a34'; ctx.fillRect(-1.4, -1.4, 25, 2.8);
+    ctx.fillStyle = 'rgba(255,224,176,0.16)'; ctx.fillRect(-1.4, -1.4, 25, 0.9);
+    // head
+    ctx.fillStyle = INK; ctx.fillRect(21, -5.6, 11, 11.2);
+    ctx.fillStyle = '#4a4752'; ctx.fillRect(21.7, -4.9, 9.6, 9.8);
+    ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(21.7, -4.9, 9.6, 1.6);
+    ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.fillRect(21.7, 2.6, 9.6, 2.3);
+    ctx.restore();
+  });
+}
 function seamClip(side) {
   const top = -2600, bot = CFG.worldBottom + 500, far = side < 0 ? -9000 : 40000;
   const e = FAC.seam - V.left;
@@ -11140,7 +11298,10 @@ function drawHud() {
   // actually happening, and carries the step count so the panel title does not have to.
   if (drilling) x = pill(x, 'DRILL', `${S.drill.idx + 1} of ${S.drill.order.length}`, '#5ce1ff');
   // no count while he talks: the shift is standing still and a number would be a tally
-  else if (speaking) x = pill(x, 'SHIFT', 'waiting at the doors', '#5ce1ff');
+  // ...and it says WHICH doors. Rekeying `speaking` to cover the cave door handed this pill a
+  // second context it was never written for: a hundred people stopped at the mouth of a mine
+  // were being told they were waiting at the mill doors they left half the course ago.
+  else if (speaking) x = pill(x, 'SHIFT', S.seam.phase === 'boss' ? 'stopped at the cave door' : 'waiting at the doors', '#5ce1ff');
   else {
     x = pill(x, 'RUNNING', alive, '#2ecc71');
     x = pill(x, 'LOST', S.stats.dead, '#ff6b6b');
@@ -13768,6 +13929,28 @@ if (qs.has('intro')) {
 }
 // ?drill=N holds the drill on its Nth kind (1-based), centred and ready to play. Without
 // this a screenshot of the twelfth panel means beating eleven puzzles on the way to it.
+// ?seam=gather|boss|drill|burst holds the cave door sequence at one phase, and ?seam alone
+// stops at the first of them. Screenshots of it are otherwise nearly impossible to take: the
+// bot now waves the proprietor off and solves the drill, so ?start&skip walks straight past
+// the whole thing in a second or two of game time, and the phase you wanted is gone.
+// ?hits=N sets how far through the door is, for shooting the damage without waiting for it.
+if (qs.has('seam')) {
+  const want = qs.get('seam') || 'gather';
+  startRun();
+  // DERIVED from the course, not written down: far enough to walk from the yard to the seam
+  // at CFG.scroll with room to spare, so moving the seam cannot silently shorten this.
+  const cap = 60 * (FAC.seam / CFG.scroll + 60);
+  for (let i = 0; i < cap && S.seam.phase !== want && S.mode === 'play'; i++) {
+    update(1 / 60);
+    // solve the road on the way, but do NOT let the bot wave him off or solve the panels --
+    // that is the whole point of stopping here.
+    if (S.seam.phase === 'off') devSolve();
+  }
+  if (qs.has('hits')) S.seam.hits = Math.max(0, Math.min(SEAM.hits, +qs.get('hits')));
+  if (want === 'burst') S.seam.open = Math.max(0.0001, Math.min(1, +(qs.get('open') || 0.5)));
+  // one frame so everything downstream of the phase has been computed at least once
+  update(1 / 60);
+}
 if (qs.has('drill')) {
   S.mode = 'intro';
   const c = I(); S.introT = c.deliver + c.settle;
