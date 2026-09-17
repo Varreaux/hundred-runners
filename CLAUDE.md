@@ -106,6 +106,53 @@ costs a small script and it cannot click anything, so keep the real tab for
 things that need interaction or a live console. Stub the game loop out in the
 headless page if you want the frame to hold still.
 
+### Before the first shot, prove the port is YOURS
+
+Two sessions lost time to this within an hour of each other on 2026-09-17, one of
+them about an hour. You background a server for screenshots, curl it, get a 200,
+and shoot. The 200 came from another worktree's server that already held the
+port; yours died on EADDRINUSE into the `2>&1` you added to keep the terminal
+tidy. Ports 8791, 8793, 8794, 8834, 8836, 8838, 8840, 8842 and 8847 all had
+listeners at once that afternoon, so this is likely rather than exotic.
+
+**A collision does not produce an error, it produces a PLAUSIBLE FRAME.** That is
+the whole difficulty, and it is why looking harder at the picture never catches
+it. Every frame renders, the game is plainly running, and the only symptom is
+that the thing you just changed is not in it -- so the reading is "my change did
+not take", which is a finding rather than a fault, and it sends you into your own
+drawing code. Three real ones: "the room is invisible at cave zoom", "the
+rotation fix did not take", "the gauge redraw did not take". None were true. One session spent four attempts, a pixel sampler and a
+script that computed the rect from the game's own transform before checking the
+port. And if you hand those paths to the reviewers, the whole report is about
+somebody else's code and every line number in it is wrong.
+
+**`tools/shoot.sh` now refuses to shoot, so this is mostly here to explain the
+refusal.** It compares the SHA of the served `index.html` against the one on
+disk, and will not take a frame unless they match.
+
+**Hashed, not BUILD-stamped.** Two worktrees sit at the same BUILD for the whole
+stretch between somebody's rebase and their next bump, so a matching stamp proves
+very little -- and while iterating on art the file is uncommitted anyway, which
+no stamp reflects at all. The hash also catches the case nothing else does: your
+OWN server, correctly rooted, serving bytes you have edited since.
+
+**The hash is the gate; the working directory says WHY, and the two answers want
+opposite reactions.** A bare mismatch invites you to free the port, and if it is
+another session's server that destroys their run. So the refusal resolves the
+listener and splits it: `ANOTHER TREE` names the path and the pid and tells you
+not to kill it, pick another port; `THIS tree` gives you the command to restart
+your own. That case cannot happen with a plain `python3 -m http.server`, which
+reads from disk every request -- it needs a `-d` pointing elsewhere, a symlink or
+anything that caches -- which is also why a cwd check alone waves it through.
+
+Same split as "Never kill a process by pattern" below, one step earlier: that
+section is about whether you may WRITE to a process, this is about whether you
+may READ from one. One of us refused to kill 8794 on exactly those grounds and
+then shot fifteen frames off it.
+
+`SHOOT_ANY_TREE=1` skips the check, for the one shot that is deliberately about
+the difference between trees: 8765, to see what Morgan will actually load.
+
 ## What our instruments cannot sense
 
 A passing test is a verdict only on what the test senses, never on whether the
