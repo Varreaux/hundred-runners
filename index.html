@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '107 rooms open a little closer';
+const BUILD = '108 the hard rooms move to the cave';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -164,40 +164,63 @@ const CFG = {
           'Nikita', 'Paula', 'Hoda', 'Sithe', 'Valeria', 'Violeta\u{1F49C}', 'Wilson', 'BOOM\u{1F4A3}'],
   rooms: [
     { x: 1300,  lane: 0, type: 'bridge',  diff: 1 },
-    // Linh's five, all inside the mill (712..5950), which is where factory
-    // machines belong. Interleaved with the existing crossings on lane 0.
+    // Three of Linh's five are inside the mill (712..5950), which is where factory machines
+    // belong, interleaved with the existing crossings on lane 0. The other two -- the sweeper
+    // and the wages terminal -- now stand in act two; see the header down at the cave rooms
+    // for why, and do not put them back without reading it.
     { x: 1750,  lane: 0, type: 'gears',    diff: 1 },
     { x: 2500,  lane: 0, type: 'conveyor', diff: 1 },
-    // The wages terminal, in the 800-unit gap between the conveyor and the winch, so the
-    // thinking room is met AFTER two easy machine rooms and BEFORE the sweeper, which is
-    // the hardest thing in the mill.
+    // ---- ACT 2, THE CAVE. Both of these stood in the mill until the difficulty schedule in
+    // Linh's design sheet was read against the course. She rates every puzzle 1..10 and gates
+    // each act on it: the Factory takes 1..5, the Cave takes 6..10 (its slots carry a MINIMUM
+    // of 6, so the two acts share nothing), and the Farm takes anything. Trace is her 9 and
+    // Calculations her 10 -- the two hardest things she designed -- and both were sitting in
+    // the act she capped at 5, while the cave held nothing above a 4.
     //
-    // warn 500 arms it 4.55s out and, unusually, most of that IS usable: the whole puzzle is
-    // panel chrome drawn at a fixed place on screen, and the edge tab exists so an armed
-    // off-screen room can be opened on its hotkey, so the sum can be read from the moment it
-    // arms. Road from arm to the first death is (500 + killFrom.machine 88) / 110 = 5.35s.
+    // Her sheet also settles the objection that these are factory machines in a mine: she
+    // themes Trace as a rubbish-cleaning robot and Calculations as the stamping-press room,
+    // and puts both in the Cave anyway. The difficulty gate is deliberately allowed to
+    // override the theme, so this placement is her design rather than a compromise with it.
     //
-    // The sums are still sized against the tighter 3.31s that the VISIBLE window gives (see
-    // the verb, which carries both numbers and why they differ). That is deliberate margin
-    // for a room you have to think in, not an accident -- but 5.35 is the honest ceiling if
-    // anyone ever argues for harder arithmetic here.
-    { x: 2900,  lane: 0, type: 'calculation', diff: 2, warn: 500 },
-    // The sweeper makes you WATCH before it accepts a key, twice, and then type what you
-    // saw. 900 was sized against the WATCH ALONE and so covered barely half the room.
+    // They go in the 2100-unit stretch between the winch at 6200 and the rickety at 8300,
+    // which was the longest empty run of lane 0 in the mountain. 700 units apart, which is
+    // the mill's own spacing. Nothing about either puzzle changes.
+    // WHICH ROOM GETS WHICH SLOT IS SET BY THE ZOOM, not by taste. The view widens as the
+    // cave's lanes open, so the second slot sees further and therefore gets more road:
+    // 6900 samples zoom 0.95 and 7600 samples 0.55, which is (364 + 88)/110 = 4.11s against
+    // (607 + 88)/110 = 6.32s to the first death.
     //
-    // Driven through the verb's own update, 400 runs, pressing at a human 2.2 keys a
-    // second: forced watching totals 5.60s / 7.00s / 8.40s (min / median / max) across
-    // BOTH rounds, then 8 to 10 keys on top. Total time to finish is 7.52s median 9.85s
-    // worst 12.18s, against 8.18s of road at 900 -- so the MEDIAN play could not be
-    // finished, and the worst case spent longer watching than it had road.
+    // The sweeper needs the wider one. Its demo is 1.30s (SWEEP.lead 0.40 + len 3 x flash
+    // 0.30, one round), and a wrong digit does not merely reset progress -- lights.key sets
+    // watch = true and clock = 0, so it costs a SECOND full demo. Perfect play is about
+    // 2.55s; one mistyped third digit is 1.30 + 1.25 + 1.30 + 1.25 = 5.10s. At 6900 that
+    // overran the sighted window by 0.99s and the room was left leaning on the edge tab.
+    // At 7600 it fits with 1.2s spare. The calculation room wants about 2.9s and has 1.2s
+    // spare in the tighter slot, so the swap costs it nothing.
     //
-    // 1350 is 12.27s, which covers the worst case measured. Nothing about Linh's puzzle
-    // changes; it gets the road its own clock demands. Undo by deleting warn.
+    // Do not read 0.95 as a property of 6900: cave lane 2's span starts at fork 7000 +
+    // rampLen 200 = 7200, and the zoom sample looks ahead to x + 250 = 7150, so it misses
+    // by FIFTY UNITS. Move a room here 50 further on and its sampled zoom drops to 0.70.
+    { x: 6900,  lane: 0, type: 'calculation', diff: 2, warn: 500 },
+    // The sweeper's warn was justified by arithmetic about a room that no longer exists. The
+    // old note here said the demo runs TWICE and totals 5.60 / 7.00 / 8.40s, and sized 1350
+    // against that. It is one round now: SWEEP.lead 0.40 + SWEEP.len 3 x SWEEP.flash 0.30 =
+    // 1.30s, so the old figure overstated it by four to six times.
     //
-    // The sizing error is worth remembering: the first number came from timing the demo,
-    // and the demo is not the room. Time the whole thing, including the input, including
-    // every round.
-    { x: 4000,  lane: 0, type: 'sweeper',  diff: 2, warn: 1350 },
+    // 1350 is kept anyway, and left over-provisioned on purpose rather than by neglect. What
+    // it actually buys: the room arms 1350 out = 13.07s to the first death, while the edge
+    // tab only appears at 564 out and the badge at 256, so about 786 units of that warn put
+    // nothing on screen at all. It also holds one of the nine hotkeys from roughly front
+    // runner 6250 to 8140. Cutting it to ~620 would reclaim both and still cover the worst
+    // play measured below -- but that is a straight difficulty increase on a tuned room
+    // (13.07s down to 6.44s), so it is Morgan's call and not a tidy-up. Quote him the number.
+    { x: 7600,  lane: 0, type: 'sweeper',     diff: 2, warn: 1350 },
+    // ---- back to act one, the mill.
+    //
+    // The presses keep their keypad and stay in the mill. Linh's sheet themes her Calculations
+    // room as exactly this room -- three stamping presses, one body per stroke, a code to get
+    // out -- but the puzzle actually built here is the worn-key code, which is not one of her
+    // ten and carries no difficulty rating, so the gate has nothing to say about it.
     { x: 5300,  lane: 0, type: 'presses',  diff: 2 },
     // Same arithmetic fault as the sweeper. Splicing a wire costs a pull and a walk along
     // the sockets; the connect press is gone, since the splice makes itself the moment the
@@ -849,27 +872,33 @@ const VERBS = {
     // What the room actually costs is the sum. TWO budgets apply and they are not the same
     // number, so say which before quoting either:
     //
-    //   3.31s  the VISIBLE window, 0.36 * V.vw (Morgan's warn-is-not-the-players-budget
-    //          note). Measure the zoom rather than assuming the mill runs at 1 -- this room
-    //          does not. It stands at x 2900, the first unit of LANE_SPANS[1] = [2900, 5600],
-    //          so updateView counts lane 1 from cam ~1764 and the zoom is 0.95. V.vw =
-    //          960/0.95 = 1010, and 0.36 * 1010 = 364px = 3.31s.
-    //   5.35s  the REAL road here, (warn 500 + killFrom.machine 88) / 110. The visible-window
-    //          rule is about rooms you have to SEE to play -- one with a demo to watch, or a
-    //          hazard to read off the world. This room's puzzle is entirely panel chrome, the
-    //          panel draws at a fixed place on screen, and the edge tab exists so an armed
-    //          off-screen room can be opened on its hotkey. So the sum is readable from the
-    //          moment the room arms.
+    // BOTH END AT THE SAME PLACE, the first death at room.x + killFrom.machine 88. An
+    // earlier version of this block compared a sighted distance measured to room.x against
+    // an armed one measured to the kill line, which is two extents in one comparison.
     //
-    // The sums below are sized against 3.31, which is the conservative one. That is margin
-    // and not a bug -- but if anyone proposes harder arithmetic here, 5.35 is the ceiling to
-    // argue it against, not 3.31.
+    //   4.11s  SIGHTED, (0.36 * V.vw + 88) / 110. MEASURE the zoom, never derive it: at
+    //          x 6900 it samples 0.949, so V.vw is 960/0.949 = 1012 and sight is 364px.
+    //   5.35s  ARMED, (reach + 88) / 110, and `reach` is NOT `warn`. updateRooms computes
+    //          reach = warn + max(0, sight - warn) * (1 - CFG.armReach), so armReach pulls
+    //          the arm in whenever the view sees further than the warn. Here warn 500 is
+    //          already beyond sight 364, the max() clamps to 0, and reach is exactly 500.
+    //          Both halves of that are worth knowing: quoting `warn` as the budget is right
+    //          only while warn exceeds sight, and wrong the moment it does not.
     //
-    // So the sums are deliberately QUICK ones -- single-digit multiplication, exact
-    // division, add or take a single digit from a two-digit number -- sized at roughly 1.2
-    // to 2.0s of arithmetic plus about 0.5s reading and 0.4s typing. That fits 3.31s with a
-    // little left over. A harder sum here would not be a harder room, it would be an
-    // unplayable one, and no amount of `warn` can buy the time back.
+    // The armed number is the larger one because an armed room can be opened on its hotkey
+    // from the edge tab while it is still off screen, and this puzzle is entirely panel
+    // chrome drawn at a fixed place. The sums are sized against the SIGHTED 4.11s anyway,
+    // which is the number a player who does not use the tab actually has.
+    //
+    // HOW TO MEASURE IT: drive a real game and read V.zoom when the room first comes into
+    // view, which is what tools/room-check.js does and why its own header says driving a
+    // game is the only honest way. Setting S.cam by hand and calling updateView in a stub
+    // reported 1.000 at every x on this course -- a flat, confident, wrong answer.
+    //
+    // The sums are sized against roughly 1.2 to 2.0s of arithmetic plus about 0.5s reading
+    // and 0.4s typing -- about 2.9s worst case, so 1.2s spare inside the sighted 4.11s. They
+    // were NOT loosened when the room moved out of the mill: a harder sum would not make a
+    // harder room, it would make an unplayable one the next time the course changes.
     now: m => (m.failed ? 'NOT THAT' : 'type the answer'),
     // NO mention of entering. drawHud appends "ENTER holds the crowd at the gate" to this
     // very line whenever a gate is armed, so a hint reading "it enters itself" put two
@@ -9535,9 +9564,29 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
 }
 function drawMachineRoom(room, y) {
   const sx = room.x - V.left, gw = CFG.gapWidth;
+  // THIS IS THE ONE ROOM DRAWER THAT USED TO IGNORE roomMaterial(). Every crossing asks it
+  // which act it is standing in and switches between the mill's blue-grey iron and the
+  // cave's warm timber; the machine cabinet had the mill's palette written into it -- body
+  // #232c2b and a cold blue-white #bad4ec specular. In daylight on brick that passed. Two of
+  // these rooms now stand in a lamplit rock gallery, where a cold blue highlight is the
+  // loudest wrong note in the frame and the flat fills read as a hole in the lighting.
+  //
+  // The mill branch is byte-for-byte what it always was, deliberately: the only act whose
+  // look changes here is the one the rooms moved into.
+  // ONLY THE HIGHLIGHT CHANGES ACT, and the body deliberately does not. The complaint was a
+  // cold blue-white specular (#bad4ec) on a machine standing in a warm lamplit tunnel, which
+  // is a lighting error; the fix for that is to light it warm, not to repaint it warm.
+  //
+  // Recolouring the BODY to the cave's browns was tried first and is the wrong instinct.
+  // Measured off a frame, the mill cabinet is green-dominant [65,71,60] against red-dominant
+  // rock [112,93,78], and that hue split is most of what makes it findable at a glance. Give
+  // it the cave's own browns and it separates only by value, on the one stretch of course
+  // where the zoom is widest and the cabinet is smallest.
+  const M = roomMaterial(room.x);
   ctx.fillStyle = '#121018'; ctx.fillRect(sx + 6, y - 74, gw - 12, 74);
   ctx.fillStyle = '#232c2b'; ctx.fillRect(sx + 8, y - 72, gw - 16, 72);
-  ctx.fillStyle = 'rgba(186,212,236,0.3)'; ctx.fillRect(sx + 8, y - 72, gw - 16, 2);
+  ctx.fillStyle = M.mill ? 'rgba(186,212,236,0.3)' : 'rgba(224,186,126,0.32)';
+  ctx.fillRect(sx + 8, y - 72, gw - 16, 2);
   ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(sx + gw - 14, y - 72, 6, 72);
   // a status lamp: the room says whether it is still dangerous
   const lit = room.state === 'solved';
@@ -12649,7 +12698,7 @@ const TRAPS = {
       reelPuffs(NIP.x - 6, NIP.y + 4, clamp01((t - 0.38) * 1.1), 'rgba(120,104,84,0.4)', 5, 14, 0.5);
     }
   } },
-  // The wages terminal. gy: GY.machine like every other mill room -- without an entry here
+  // The wages terminal. gy: GY.machine like every other machine room -- without an entry here
   // reelKind fell back to 'dark', which is act two's BROKEN CAVE FLOOR at GY.gap, 90 units
   // higher, drawn over the weaving shed's brick and captioned "the wages terminal". It also
   // showed a body falling down a hole, on a room whose floor is solid (SOLID_HAZ.machine).
