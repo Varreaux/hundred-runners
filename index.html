@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '104 the wages terminal';
+const BUILD = '105 the tutorial gets its own loop';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1523,17 +1523,26 @@ const ARROWS = ['ARROWLEFT', 'ARROWUP', 'ARROWRIGHT', 'ARROWDOWN'];
 // Everything is guarded on `typeof Audio`, because the headless tools stub `window` and
 // `document` and have no Audio at all. Music must never be the reason probe or the harness
 // cannot run.
+// THREE TRACKS AND TWO CUES. `tut` runs under the opening -- the belt, the proprietor, the
+// drill -- and `intro` takes over the moment the run begins, handing to the looping `bed` on
+// its own `ended`. Morgan, 2026-09-17: the tutorial wanted its own background noise, running
+// from the start of the game to the end of the tutorial.
+//
+// The handover is inside start() rather than at its call site, so no caller can cue the run's
+// music and forget to end the tutorial's. There is exactly one way in for each.
 const MUSIC = {
-  intro: null, bed: null, armed: false,
+  tut: null, intro: null, bed: null, armed: false,
   // Morgan's own filenames, kept as he saved them so that dropping a replacement in with
   // the same name just works. Encoded because they contain spaces.
-  SRC: { intro: 'Hundred%20Intro%20New.wav', bed: 'Hundred%20Loop%20New.wav' },
+  SRC: { tut: 'Hundred%20Tutorial%20Loop.wav', intro: 'Hundred%20Intro%20New.wav', bed: 'Hundred%20Loop%20New.wav' },
   make(src) {
     try { const a = new Audio(src); a.preload = 'auto'; a.volume = 0.62; return a; } catch (e) { return null; }
   },
   init() {
     if (this.armed || typeof Audio === 'undefined') return;
     this.armed = true;
+    this.tut = this.make(this.SRC.tut);
+    if (this.tut) this.tut.loop = true;
     this.intro = this.make(this.SRC.intro);
     this.bed = this.make(this.SRC.bed);
     if (this.bed) this.bed.loop = true;
@@ -1542,25 +1551,45 @@ const MUSIC = {
       if (this.bed && !AU.muted) this.bed.play().catch(() => {});
     });
   },
-  // Called every frame once the doors start moving; idempotent, so the caller does not have
-  // to own a flag of its own.
+  // The opening's own loop. Cued from beginIntro(), which is the one place the opening
+  // starts, and ENDED by start() below rather than by whoever calls it.
+  //
+  // It cannot begin any earlier than this and that is not a limitation: a browser blocks
+  // audio until the player has done something, and pressing SPACE on the title is both the
+  // gesture that unblocks it and the moment the game starts.
+  tutorial() {
+    this.init();
+    if (!this.tut || AU.muted) return;
+    if (!this.tut.paused) return;           // idempotent, like start()
+    this.tut.play().catch(() => {});        // a blocked autoplay must not throw into draw()
+  },
+  // Cued once, from startRun(); idempotent, so the caller does not have to own a flag.
   start() {
     this.init();
+    // THE HANDOVER. The tutorial is over the moment the run begins, and stopping it here
+    // rather than at the call site means a future caller of start() cannot leave the opening's
+    // loop running underneath the run.
+    if (this.tut) { try { this.tut.pause(); this.tut.currentTime = 0; } catch (e) { /* not loaded */ } }
     if (!this.intro || AU.muted) return;
     if (this.intro.currentTime > 0 || !this.intro.paused) return;
     this.intro.play().catch(() => {});      // a blocked autoplay must not throw into draw()
   },
   // R restarts the run, so the music restarts with it and the intro plays again.
   stop() {
-    for (const a of [this.intro, this.bed]) {
+    for (const a of [this.tut, this.intro, this.bed]) {
       if (!a) continue;
       try { a.pause(); a.currentTime = 0; } catch (e) { /* not loaded yet */ }
     }
   },
   // follows the same M key as the rest of the sound
   setMuted(m) {
-    for (const a of [this.intro, this.bed]) if (a) a.muted = m;
-    if (!m && this.bed && this.intro && this.intro.ended && this.bed.paused) this.bed.play().catch(() => {});
+    for (const a of [this.tut, this.intro, this.bed]) if (a) a.muted = m;
+    if (m) return;
+    // Unmuting has to be able to START something, not merely unmute it: every track is gated
+    // on AU.muted at its own cue, so a player who muted before the cue has nothing playing to
+    // unmute. Whichever track owns the moment is the one to begin.
+    if (this.bed && this.intro && this.intro.ended && this.bed.paused) this.bed.play().catch(() => {});
+    else if (S && S.mode === 'intro' && this.tut && this.tut.paused) this.tut.play().catch(() => {});
   },
 };
 const AU = {
@@ -1978,7 +2007,7 @@ window.addEventListener('keydown', e => {
   if (k.startsWith('ARROW')) e.preventDefault();
   AU.init();
   if (k === 'M' && !S.active) { AU.muted = !AU.muted; MUSIC.setMuted(AU.muted); return; }
-  if (S.mode === 'title') { if (k === ' ') { S.mode = 'intro'; S.introT = 0; } return; }
+  if (S.mode === 'title') { if (k === ' ') beginIntro(); return; }
   // Any key skips the opening; nobody wants to watch it twice. It skips TO the drill
   // rather than past it -- people mash space off the title, and landing on the road
   // having never seen a room is the thing the drill exists to prevent. Inside the drill
@@ -1992,13 +2021,13 @@ window.addEventListener('keydown', e => {
     startRun(); return;
   }
   if (S.mode === 'win' || S.mode === 'lose') {
-    if (k === 'R') { reset(); S.mode = 'intro'; S.introT = 0; }
+    if (k === 'R') { reset(); beginIntro(); }
     // Every beat of the end screen is a function of S.endT, so skipping the reel is winding
     // that one clock forward rather than setting a flag the drawing then has to consult.
     else if (k === ' ' && S.endRoll && S.endT < S.endRoll.end) S.endT = S.endRoll.end;
     return;
   }
-  if (S.paused) { if (k === 'P') S.paused = false; else if (k === 'R') { reset(); S.mode = 'intro'; S.introT = 0; } return; }
+  if (S.paused) { if (k === 'P') S.paused = false; else if (k === 'R') { reset(); beginIntro(); } return; }
   if (k === 'P' && !S.active) { S.paused = true; return; }
   if (S.mode === 'play') {
     // Digits pick a room, EXCEPT while a puzzle that reads digits is open --
@@ -2561,6 +2590,14 @@ function updateIntro(dt) {
   // a word from the floor while they wait
   if (S.introT > 0.8) chatter(dt);
   AU.ambient(false, S.runners.filter(r => !r.onBelt).length, dt);
+}
+// The one way into the opening, for the same reason startRun() is the one way out of it:
+// three separate places put the game into 'intro' -- SPACE on the title, R on the end screen
+// and R from the pause -- and a cue repeated in three places is a cue that will be in two of
+// them after the next change.
+function beginIntro() {
+  S.mode = 'intro'; S.introT = 0;
+  MUSIC.tutorial();
 }
 // Hand over to the run proper. Also the skip, so skipping and finishing land
 // in exactly the same state rather than two states that drift apart.

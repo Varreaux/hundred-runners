@@ -60,7 +60,11 @@ eval(src + `
     walkers: S.runners.filter(r => !r.onBelt).length,
   });
 
-  reset(); S.mode = 'intro'; S.introT = 0;
+  // beginIntro(), and NOT a bare assignment to S.mode. Setting the mode by hand walks past
+  // the tutorial loop's only cue (and no backticks in here: this whole block lives inside a
+  // template literal, and a backtick in a comment ends it).
+  // The tool would then report -- correctly, and uselessly -- that the tutorial never plays.
+  reset(); beginIntro();
 
   const log = [];
   let sawBoss = false, sawDrill = false, playsAtBoss = null, playsAtDrill = null;
@@ -93,14 +97,29 @@ eval(src + `
     console.log('        mode=' + a.mode + '  introT=' + a.introT + '  doors=' + a.doorOpen
       + '  proprietor=' + a.boss + '  drill=' + a.drill + '  walking=' + a.walkers);
   });
-  const first = PLAYS[0];
+  // TWO cues now, and each has its own window. The run's music must still begin as the crowd
+  // moves forward; the tutorial's must begin with the opening and be SILENT by then.
+  const pick = n => PLAYS.filter(p => decodeURIComponent(p.src).indexOf(n) >= 0);
+  const tut = pick('Tutorial')[0], run = pick('Intro New')[0];
+  const fails = [];
   console.log('');
-  let bad = true;
-  if (!first) console.log('  VERDICT: no cue fired at all');
-  else if (first.at.boss === 'SPEAKING') console.log('  VERDICT: BAD -- music starts under the proprietor');
-  else if (first.at.drill === 'RUNNING') console.log('  VERDICT: BAD -- music starts during the drill');
-  else if (first.at.mode === 'play') { console.log('  VERDICT: GOOD -- music starts as the crowd moves forward'); bad = false; }
-  else console.log('  VERDICT: music starts in mode ' + first.at.mode + ', doors ' + first.at.doorOpen);
-  process.exitCode = bad ? 1 : 0;
+  if (!PLAYS.length) fails.push('nothing ever played -- the stub was not reached, which is a bug in this tool');
+  if (!tut) fails.push('the tutorial loop never played');
+  else if (tut.at.mode !== 'intro') fails.push('the tutorial loop starts in mode ' + tut.at.mode + ', not under the opening');
+  else console.log('  tutorial loop starts: mode=' + tut.at.mode + ' introT=' + tut.at.introT
+    + ' proprietor=' + tut.at.boss + ' drill=' + tut.at.drill);
+  if (!run) fails.push('the run music never played');
+  else if (run.at.boss === 'SPEAKING') fails.push('the run music starts under the proprietor');
+  else if (run.at.drill === 'RUNNING') fails.push('the run music starts during the drill');
+  else if (run.at.mode !== 'play') fails.push('the run music starts in mode ' + run.at.mode + ', doors ' + run.at.doorOpen);
+  else console.log('  run music starts:      mode=' + run.at.mode + ' doors=' + run.at.doorOpen
+    + ' walking=' + run.at.walkers);
+  // and the handover: the opening's loop must not still be running underneath the run
+  if (tut && MUSIC.tut && !MUSIC.tut.paused) fails.push('the tutorial loop is STILL PLAYING after the run began');
+  else if (tut) console.log('  handover:              the tutorial loop is stopped once the run begins');
+  console.log('');
+  if (fails.length) fails.forEach(f => console.log('  VERDICT: BAD -- ' + f));
+  else console.log('  VERDICT: GOOD -- the opening has its own loop, and the run takes over from it');
+  process.exitCode = fails.length ? 1 : 0;
 })();
 `);
