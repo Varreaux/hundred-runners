@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '113 each act teaches its own games';
+const BUILD = '114 act two is its own five games';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -296,17 +296,17 @@ const CFG = {
     { x: 4400,  lane: 2, type: 'rope',    diff: 2 },
     { x: 4600,  lane: 0, type: 'crusher', diff: 2 },
     { x: 4900,  lane: 1, type: 'rickety', diff: 2 },
-    { x: 6200,  lane: 0, type: 'winch',   diff: 3 },
-    { x: 8300,  lane: 0, type: 'rickety', diff: 3 },
-    { x: 8500,  lane: 1, type: 'bridge',  diff: 3 },
-    { x: 8700,  lane: 2, type: 'crusher', diff: 3 },
-    { x: 8900,  lane: 3, type: 'rope',    diff: 3 },
-    { x: 9100,  lane: 4, type: 'winch',   diff: 3 },
-    { x: 9300,  lane: 5, type: 'bridge',  diff: 3 },
-    { x: 9600,  lane: 0, type: 'winch',   diff: 4 },
-    { x: 9900,  lane: 1, type: 'crusher', diff: 4 },
-    { x: 10200, lane: 2, type: 'rope',    diff: 4 },
-    { x: 11600, lane: 0, type: 'bridge',  diff: 5 },
+    { x: 6200, lane: 0, type: 'ditch', diff: 3, warn: 480 },
+    { x: 8300, lane: 0, type: 'mantrap', diff: 3, warn: 620 },
+    { x: 8500, lane: 1, type: 'wall', diff: 3, warn: 1000 },
+    { x: 8700, lane: 2, type: 'ditch', diff: 3, warn: 480 },
+    { x: 8900, lane: 3, type: 'calculation', diff: 3, warn: 500 },
+    { x: 9100, lane: 4, type: 'mantrap', diff: 3, warn: 620 },
+    { x: 9300, lane: 5, type: 'sweeper', diff: 3, warn: 1350 },
+    { x: 9600, lane: 0, type: 'ditch', diff: 4, warn: 480 },
+    { x: 9900, lane: 1, type: 'wall', diff: 4, warn: 1000 },
+    { x: 10200, lane: 2, type: 'mantrap', diff: 4, warn: 620 },
+    { x: 11600, lane: 0, type: 'sweeper', diff: 5, warn: 1350 },
     // ---- act three -------------------------------------------------------------
     // The warn values are not decoration: tools/room-check.js works out what each room
     // costs an optimal player against the road CFG.scroll gives them, and the mantrap
@@ -324,13 +324,13 @@ const CFG = {
     // Nothing between the mouth at 12290 and 13500: the crowd comes out into open country
     // and runs through it unthreatened, because the stretch has to be worth losing.
     { x: 13560, lane: 0, type: 'ditch',   diff: 3, warn: 480 },
-    { x: 13700, lane: 2, type: 'thorn',   diff: 3 },
-    { x: 13800, lane: 4, type: 'ditch',   diff: 3, warn: 480 },
+    { x: 13700, lane: 2, type: 'gears', diff: 3 },
+    { x: 13800, lane: 4, type: 'conveyor', diff: 3 },
     { x: 13980, lane: 1, type: 'mantrap', diff: 4, warn: 620 },
-    { x: 14180, lane: 3, type: 'thorn',   diff: 4 },
+    { x: 14180, lane: 3, type: 'sweeper', diff: 4, warn: 1350 },
     { x: 14320, lane: 0, type: 'mantrap', diff: 4, warn: 620 },
-    { x: 14060, lane: 0, type: 'ditch',   diff: 5, warn: 480 },
-    { x: 14380, lane: 2, type: 'ditch',   diff: 4, warn: 480 },
+    { x: 14060, lane: 0, type: 'presses', diff: 5 },
+    { x: 14380, lane: 2, type: 'winch', diff: 4 },
     { x: 14560, lane: 1, type: 'thorn',   diff: 5 },
     // THE MISHMASH. Act three used to hold only the four enclosure types, so the last act
     // introduced four new rooms and brought nothing back. Morgan asked for all of them
@@ -340,7 +340,7 @@ const CFG = {
     // wiring, trace, calculation -- stay in the mill and the mountain, because a conveyor
     // in a hedgerow is a drawing nobody has made.
     { x: 13640, lane: 1, type: 'winch',   diff: 4 },
-    { x: 13900, lane: 3, type: 'rope',    diff: 4 },
+    { x: 13900, lane: 3, type: 'wiring', diff: 4, warn: 840 },
     // ---- ACT THREE OPENS WITH ALL SIX MACHINE FAMILIES, so the last act contains every game
     // in the course. Morgan asked for all of them combined here; act three previously held
     // only its own four enclosure types plus four crossings, so Gear, Lever, Wiring, Code,
@@ -358,7 +358,7 @@ const CFG = {
     { x: 13220, lane: 0, type: 'sweeper',     diff: 5, warn: 1350 },
     { x: 13400, lane: 0, type: 'calculation', diff: 5, warn: 500 },
     { x: 13500, lane: 4, type: 'bridge',  diff: 5 },
-    { x: 14700, lane: 0, type: 'rickety', diff: 5 },
+    { x: 14700, lane: 0, type: 'calculation', diff: 5, warn: 500 },
     // the wall across everything. Its warning is long because it is the one room the
     // whole act has been walking toward and a player should see it coming.
     { x: 15180, lane: 0, type: 'wall',    diff: 5, warn: 1000 },
@@ -5499,6 +5499,11 @@ function tunnelSag(wx, lane) {
 // type tables, drawRails tested nothing and broke the track at every room, so 120 units of
 // rail went missing over the two crushers' perfectly solid floor. One predicate, read twice,
 // and the next room type added cannot make them drift apart again.
+// The types drawEncRoom knows how to draw, wherever they stand. Keyed by TYPE and not by
+// position, so Linh's Dig, Lift and Blast can sit in act two where her sheet puts them and
+// still draw as a ditch, a mantrap and a charged wall rather than falling through to the
+// generic crossing art, which has no branch for any of them and would leave a bare pit.
+const ENC_DRAWN = { ditch: 1, thorn: 1, mantrap: 1, wall: 1 };
 const SOLID_TYPE = { thorn: 1, mantrap: 1, gears: 1, conveyor: 1, sweeper: 1, presses: 1, wiring: 1, calculation: 1 };
 const SOLID_HAZ = { burst: 1, machine: 1, press: 1 };
 const roomIsGap = r => !SOLID_HAZ[r.hazard] && !SOLID_TYPE[r.type];
@@ -10934,9 +10939,16 @@ function drawRoom(room, y) {
   // armedMark goes HERE and not at the end of drawEncRoom, because that function returns
   // early for every room type -- ditch, thorn, mantrap and wall each have their own exit,
   // so anything appended to its tail would run for none of them.
-  if (ENC.inside(room.x)) {
+  // THE ART FOLLOWS THE TYPE, THE LIGHTING FOLLOWS THE PLACE. This used to be `ENC.inside`
+  // alone, which tied a ditch's drawing to standing past x 12338 -- so Linh's act-two games
+  // could not be put in act two, where her sheet says they belong. drawEncRoom branches on
+  // room.type and draws everything relative to the lane floor it is handed, so it works
+  // wherever the room stands; only the `outdoors` flag is genuinely about position, and it
+  // still asks ENC.inside. Machine rooms already worked this way, which is why the mill's
+  // six could open act three.
+  if (ENC.inside(room.x) || ENC_DRAWN[room.type]) {
     drawEncRoom(room, y);
-    if (room.state === 'armed') armedMark(room, y, room.x - V.left, CFG.gapWidth, true);
+    if (room.state === 'armed') armedMark(room, y, room.x - V.left, CFG.gapWidth, ENC.inside(room.x));
     return;
   }
   const sx = room.x - V.left, gw = CFG.gapWidth;

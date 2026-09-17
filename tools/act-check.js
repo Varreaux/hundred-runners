@@ -108,12 +108,23 @@ eval(src + `
     if (still) console.log('      why: ' + EXCEPT[t]);
   }
 
-  // ---------------------------------------------------------------- 2. each act introduces something
-  for (let a = 1; a < 3; a++) {
-    const introduced = [...firstIn.entries()].filter(([, v]) => v === a + 1).map(([k]) => k);
-    ok('act ' + (a + 1) + ' introduces a family act ' + a + ' did not have', introduced.length > 0,
-       introduced.length ? introduced.join(', ') : 'nothing new in ' + ACTS[a] + ' -- it repeats act ' + a);
-  }
+  // ---------------------------------------------------------------- 2. act two introduces, act
+  // three combines. Only act two is asked for new families now. Act three deliberately
+  // introduces NOTHING: Morgan's instruction is that it holds an even spread of everything
+  // acts one and two taught, so a check demanding something new there would fail the design
+  // rather than the build -- which is exactly what it did the first time this shape changed.
+  const introduced2 = [...firstIn.entries()].filter(([, v]) => v === 2).map(([k]) => k);
+  ok('act 2 introduces a family act 1 did not have', introduced2.length > 0,
+     introduced2.length ? introduced2.join(', ') : 'nothing new in ' + ACTS[1] + ' -- it repeats act 1');
+  // Act one and act two must be DISJOINT: nothing act one taught may reappear in act two, or
+  // act two's tutorial is teaching five games in an act the player is meanwhile replaying
+  // act one's in.
+  const fams = k => new Set(byAct[k].map(r => fam[r.type] && fam[r.type].family).filter(Boolean));
+  const a1 = fams(0), a2 = fams(1);
+  const bleed = [...a2].filter(f => a1.has(f));
+  ok('act 2 holds ONLY the games its own tutorial teaches', bleed.length === 0,
+     bleed.length ? 'act-one families still in the mountain: ' + bleed.join(', ')
+                  : [...a2].sort().join(', ') + ' -- no act-one family present');
 
   // ---------------------------------------------------------------- 3. the last act mixes
   const lastFams = new Set(byAct[2].map(r => fam[r.type] && fam[r.type].family).filter(Boolean));
@@ -124,6 +135,18 @@ eval(src + `
      revisited.length >= 2,
      revisited.length + ' famil' + (revisited.length === 1 ? 'y' : 'ies') + ' from earlier acts return: ' +
      (revisited.join(', ') || 'none'));
+  // ---- and the mix is EVEN. Counting families rather than room types, because the player
+  // meets games and not types: four Typo rooms wearing four different hazards is still one
+  // game four times. Act three ran Typo x6 and Dig x4 against one each of six others before
+  // this, which is a spread and not a mix.
+  const tally = {};
+  for (const r of byAct[2]) { const f = fam[r.type]; if (f) tally[f.family] = (tally[f.family] || 0) + 1; }
+  const counts = Object.values(tally), lo = Math.min(...counts), hi = Math.max(...counts);
+  const every = [...earlier].every(f => tally[f]);
+  ok('the last act carries EVERY earlier family, evenly', every && hi - lo <= 1,
+     !every ? 'missing from act three: ' + [...earlier].filter(f => !tally[f]).join(', ')
+            : hi - lo <= 1 ? Object.keys(tally).length + ' families, ' + lo + ' to ' + hi + ' rooms each'
+            : 'uneven: ' + Object.entries(tally).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' x' + v).join(', '));
 
   // ---------------------------------------------------------------- 4. nothing unranked
   const unranked = Object.keys(CFG.types).filter(t => !fam[t]);
