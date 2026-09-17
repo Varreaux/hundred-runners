@@ -2241,9 +2241,10 @@ function updateSeamGate(dt) {
   let lead = -Infinity;
   for (const r of S.runners) if (r.state === 'run') lead = Math.max(lead, r.x);
   if (g.phase === 'off') {
-    // Not while a room is armed, the same rule his seam speech already had: talking across a
-    // puzzle asks the player to read two things at once and they will do neither.
-    if (lead >= seamLine() - 6 && !S.active) { g.phase = 'gather'; g.t = 0; }
+    // The STOP is on position alone. Gated on `!S.active` as well, a room armed as they
+    // arrived let the whole crowd run through the doorway and then snapped them backwards to
+    // seamLine() on the frame the room cleared. A closed door does not wait for a puzzle.
+    if (lead >= seamLine() - 6) { g.phase = 'gather'; g.t = 0; }
     return;
   }
   g.t += dt;
@@ -2273,7 +2274,14 @@ function updateSeamGate(dt) {
     }
   }
   if (g.phase === 'gather') {
-    if (g.t >= SEAM.settle) { g.phase = 'boss'; g.t = 0; g.camLock = S.cam; startBoss(BOSS_CAVE, false, null); }
+    // He still waits for the room, which is the rule his seam speech already had: talking
+    // across a puzzle asks the player to read two things at once and they will do neither. The
+    // difference is that the crowd is now stopped while he waits, rather than running past him.
+    // He waits for an armed room, but NOT for ever. Waiting unconditionally is a deadlock and
+    // seam-check found it immediately: once the crowd is stopped at the door it can never reach
+    // the room, so the room stays armed, so he never speaks, so the door never opens. A rule
+    // that was safe while the world kept moving is not safe once you stop the world.
+    if (g.t >= SEAM.settle && (!S.active || g.t > SEAM.settle + 4)) { g.phase = 'boss'; g.t = 0; g.camLock = S.cam; startBoss(BOSS_CAVE, false, null); }
     return;
   }
   if (g.phase === 'boss') {
@@ -2292,10 +2300,21 @@ function updateSeamGate(dt) {
     if (S.drill && !S.drill.done) { updateDrill(dt); return; }
     S.drill = null;
     g.phase = 'burst'; g.t = 0; g.jolt = 1; S.shake = 6;
+    // The break got less than a single strike did: every stroke fires AU.clank() and five
+    // chips, and the thing they were all for happened in silence.
+    AU.boom(); AU.clank();
+    emit('chip', 26, seamX(), laneY(0) - 25,
+         { sx: 26, vx: [-240, 240], vy: [-260, 60], life: [0.5, 1.2], c: '#8b6a42' });
+    emit('dust', 16, seamX(), laneY(0) - 16,
+         { sx: 30, vx: [-90, 90], vy: [10, 80], life: [0.7, 1.5], c: 'rgba(122,110,102,0.55)' });
+    ring(seamX(), laneY(0) - 60, 60, 0.45, '#c9a72e', 3, 0.7);
     return;
   }
   if (g.phase === 'burst') {
-    g.open = Math.min(1, g.t / SEAM.burst);
+    // Eased OUT. Linear t through cos() starts flat -- the silhouette moved 15% in the first
+    // third of the burst and then snapped in the last third, which reads as a fade rather than
+    // as a door being driven open. A struck door does the opposite: it goes at once, then slows.
+    g.open = Math.min(1, 1 - Math.pow(1 - Math.min(1, g.t / SEAM.burst), 0.4));
     if (g.open >= 1) {
       g.phase = 'done'; g.camLock = null;
       // releaseGate ignores its first argument: it releases every held runner, recomputing
@@ -7590,14 +7609,24 @@ const DOOR = {
   half: 32.5,         // the leaf, inset from the opening's 35 to leave a reveal each side
   jamb: 35,           // the opening itself, off the portal's posts
   headroom: 4,        // under the soffit
-  sill: 5,            // onto the stone threshold
+  // drawSeamPortal's sill is INK at y-7 with its lit nose at y-6, so 5 put the leaf two units
+  // through the stone it stands on. Hidden under the contact shadow today, wrong the moment
+  // that shadow moves. The comment on this block claims every number is read off the portal;
+  // this was the one that was not.
+  sill: 7,            // onto the stone threshold, off drawSeamPortal's own sill
   strap: [0.26, 0.74],// iron bands, as a fraction of the leaf's height
 };
 const doorTop = y => y - CFG.tunnelH + DOOR.headroom;
 const doorBot = y => y - DOOR.sill;
 function drawSeamDoor(y) {
   const g = S.seam;
-  if (g.phase === 'off') return;
+  // Drawn from the moment the seam is in view, NOT from the moment the sequence starts. The
+  // frame, sill, soffit and rubble come in with lane 0's ground about three seconds before the
+  // crowd arrives, while the phase only flips 51 units short of the seam -- so the player ran
+  // at an open hole for three seconds and a complete barred door appeared in one frame on top
+  // of the lead runner. The phase machine owns the damage and the opening; it does not own
+  // whether there is a door.
+  if (g.phase === 'done' && g.open >= 1 && !inView(FAC.seam, 300)) return;
   if (!inView(FAC.seam, 300)) return;
   const sx = FAC.seam - V.left;
   const top = doorTop(y), bot = doorBot(y), hh = bot - top;
@@ -7683,12 +7712,17 @@ function drawSeamDoor(y) {
         // A standing body cannot swing a sledge above its own shoulder. The blows land at
         // world y ~386 and the splits were spread uniformly over the leaf's whole height,
         // averaging 1.2 body heights above the hand that makes them.
-        const sy = -hh * 0.06 - t * hh * 0.18;
+        const sy = -hh * 0.18 - t * hh * 0.18;
         const reach = (0.25 + hash(i * 2.3 + d * 1.7) * 0.5) * w * Math.min(1, dmg * 1.4);
         ctx.lineWidth = 1 + hash(i * 6.1 + d * 1.7) * 1.4;
         ctx.beginPath(); ctx.moveTo(edge, sy);
-        ctx.lineTo(edge - d * reach * 0.5, sy + (hash(i * 8.2 + d * 1.7) - 0.5) * 12);
-        ctx.lineTo(edge - d * reach, sy + (hash(i * 5.4 + d * 1.7) - 0.5) * 20);
+        // `+ d * reach`, not `- d * reach`. x0 is 0 for the left leaf and -w for the right, so
+        // the hinge is at local 0 in BOTH and "toward the hinge" is +d. With the sign inverted
+        // every split ran past the meeting stile into the other leaf's half, where this leaf's
+        // own clip rect cut it off within a unit. The door spent every frame from the third
+        // strike to the burst showing no evidence that anything had hit it.
+        ctx.lineTo(edge + d * reach * 0.5, sy + (hash(i * 8.2 + d * 1.7) - 0.5) * 12);
+        ctx.lineTo(edge + d * reach, sy + (hash(i * 5.4 + d * 1.7) - 0.5) * 20);
         ctx.stroke();
       }
       // and once it is nearly through, a hole you can see the dark behind
@@ -7702,15 +7736,18 @@ function drawSeamDoor(y) {
           // about the centre line -- and 63 units above the sill, while the hammer lands at 16.
           // -hh*0.52 put the breach 67.9 above the deck -- 41 above the crown of the person
           // hitting it, where no pose can reach.
-          const hy = -hh * 0.13 + (hash(d * 3.1) - 0.5) * 14;
-          const px = edge - d * (hw * 0.7) + Math.cos(a) * rr, py = hy + Math.sin(a) * rr * 0.9;
+          const hy = -hh * 0.26 + (hash(d * 3.1) - 0.5) * 14;
+          // same inverted sign: at dmg 1 the hole centre sat 8.3 units outside a clip that ends
+          // at the meeting stile, so it showed as a crescent nick at the joint and nothing else.
+          const px = edge + d * (hw * 0.7) + Math.cos(a) * rr, py = hy + Math.sin(a) * rr * 0.9;
           i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
         }
         ctx.closePath(); ctx.fill();
       }
     }
     // turning away from the lamps that light the mill side
-    if (open > 0) { ctx.fillStyle = 'rgba(0,0,0,' + (0.55 * open).toFixed(3) + ')'; ctx.fillRect(x0, -hh, w, hh); }
+    // 0.3, not 0.55: at 0.55 the leaf lost half its contrast exactly while it was performing.
+    if (open > 0) { ctx.fillStyle = 'rgba(0,0,0,' + (0.3 * open).toFixed(3) + ')'; ctx.fillRect(x0, -hh, w, hh); }
     ctx.restore();
   };
   // The reveal, first, so the leaves sit in a black slot rather than butting timber onto
@@ -7750,7 +7787,7 @@ function drawSeamDoor(y) {
   // one could have put it there and no one could lift it off. This is 23 units up, a real
   // drop-bar height, and it is riveted to the POSTS rather than bridging the two leaves only,
   // so it is part of the building and not a stripe painted on the door.
-  const by = bot - hh * 0.19, bh = 18;
+  const by = bot - hh * 0.19, bh = 10;   // 18 units is a 0.7m baulk, twice the leaf's own straps
   const barX0 = sx - DOOR.jamb - 15, barW = (DOOR.jamb + 15) * 2;
   if (open < 0.02) {
     ctx.save();
@@ -7762,11 +7799,13 @@ function drawSeamDoor(y) {
       ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(sx + d * 42 - 7.6, by - bh / 2 - 3.6, 15.2, 1.4);
     }
     // the shadow the bar casts ON the leaves, below it -- not a dark line inside its own rect
+    // offset right, because everything else at this seam is lit from the mill's lamps on the
+    // left; a shadow straight down is a third lighting model on one object
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(sx - DOOR.half, by + bh / 2 + jolt, DOOR.half * 2, 4);
+    ctx.fillRect(sx - DOOR.half + 3, by + bh / 2 + jolt, DOOR.half * 2 - 3, 3.4);
     ctx.fillStyle = INK; ctx.fillRect(barX0, by - bh / 2 - 1 + jolt, barW, bh + 2);
     ctx.fillStyle = '#6a6f7c'; ctx.fillRect(barX0 + 1, by - bh / 2 + jolt, barW - 2, bh);
-    ctx.fillStyle = 'rgba(255,255,255,0.20)'; ctx.fillRect(barX0 + 1, by - bh / 2 + jolt, barW - 2, 2.4);
+    ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(barX0 + 1, by - bh / 2 + jolt, barW - 2, 1.8);
     ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.fillRect(barX0 + 1, by + bh / 2 - 2.6 + jolt, barW - 2, 2.6);
     rivets(barX0 + 10, barX0 + barW - 10, by + jolt, 16, 1.4, 'rgba(255,255,255,0.26)');
     ctx.restore();
@@ -7806,7 +7845,11 @@ function drawSeamHammers(y) {
     // cycle at -2.05 rad -- head high and behind the shoulder, in clear air, exactly where
     // drawRunners stacks the white name tags. The pose that says "hitting something" lasted
     // 155ms out of 620. Now the downswing is half the cycle and it is what you see.
-    const a = ph < 0.5 ? -2.05 + (ph / 0.5) * 0.45 : -1.6 + ((ph - 0.5) / 0.5) * 2.05;
+    // Ends at -0.25 rad, not +0.45. At +0.45 the head finished 11.2 units BELOW a shoulder
+    // that is only 17.5 above the sole -- a sledge swung into a door at the swinger's own
+    // ankles. The earlier fix that brought the damage down to meet it therefore overshot in
+    // the same direction, and the breach went from above the crown to knee height.
+    const a = ph < 0.5 ? -2.05 + (ph / 0.5) * 0.6 : -1.45 + ((ph - 0.5) / 0.5) * 1.2;
     // g.swing stops advancing the instant the phase turns to 'burst', so without this the three
     // sledges hung frozen mid-air for the whole 0.9s the door was coming apart and then vanished
     // between two frames. They come down to rest instead.
@@ -7830,23 +7873,33 @@ function drawSeamHammers(y) {
     // runner has moving=false, so drawFigure gives both arms an idle sway while a sledge goes
     // through two radians beside them -- three people swinging nothing, next to three hammers
     // swung by nobody.
-    ctx.strokeStyle = r.skin; ctx.lineWidth = 3.1; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(-6.5, 3.2); ctx.lineTo(7, 0); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-5.5, 1.4); ctx.lineTo(13, 0); ctx.stroke();
+    // Rooted at the shoulder itself, so they cannot detach from the torso at the ends of the
+    // stroke, and given the ink underlay every other limb in the game has -- these were the
+    // only unoutlined limbs on screen.
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = INK; ctx.lineWidth = 4.7;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(7, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 1.5); ctx.lineTo(13, 0); ctx.stroke();
+    ctx.strokeStyle = r.skin; ctx.lineWidth = 3.1;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(7, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 1.5); ctx.lineTo(13, 0); ctx.stroke();
     // haft
     ctx.fillStyle = INK; ctx.fillRect(-1.9, -1.9, 26, 3.8);
     ctx.fillStyle = '#7a5a34'; ctx.fillRect(-1.4, -1.4, 25, 2.8);
     ctx.fillStyle = 'rgba(255,224,176,0.16)'; ctx.fillRect(-1.4, -1.4, 25, 0.9);
     // head
-    // 11 x 11.2 units at 38.9mm a unit is a 43cm cube -- a mallet, not a sledge. A sledge head
-    // is about 300 x 80mm, which is 7.7 x 2.1. Rounded up a little so it survives 0.70 zoom.
-    ctx.fillStyle = INK; ctx.fillRect(21, -2.4, 9.4, 4.8);
-    ctx.fillStyle = '#585563'; ctx.fillRect(21.6, -1.8, 8.2, 3.6);
+    // 11 x 11.2 units at 38.9mm a unit was a 43cm cube, and a real sledge head is 300 x 80mm
+    // = 7.7 x 2.1. That arithmetic was right and the instruction that came out of it was wrong:
+    // at 7.7 x 2.1 the head is 5.4 x 1.5 screen pixels at play zoom, and the correction traded
+    // the only visible thing about the object for accuracy nobody can resolve. Same shape as
+    // the brick that was refused at 5.6 units. 13 x 7 is a compromise that can be seen.
+    ctx.fillStyle = INK; ctx.fillRect(21, -3.5, 13, 7);
+    ctx.fillStyle = '#585563'; ctx.fillRect(21.6, -2.9, 11.8, 5.8);
     // A hard specular cap, not a wash. The head was #4a4752 against a #2a2431 mill interior
     // and the crowd's own dark silhouettes -- nothing separated it from anything. This is the
     // one bright thing on the object and it is what carries the swing at 0.70 zoom.
-    ctx.fillStyle = 'rgba(255,240,214,0.55)'; ctx.fillRect(21.6, -1.8, 8.2, 1.2);
-    ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.fillRect(21.6, 0.9, 8.2, 0.9);
+    ctx.fillStyle = 'rgba(255,240,214,0.55)'; ctx.fillRect(21.6, -2.9, 11.8, 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.fillRect(21.6, 1.4, 11.8, 1.5);
     ctx.restore();
   });
 }
@@ -14104,6 +14157,15 @@ if (qs.has('seam')) {
     // solve the road on the way, but do NOT let the bot wave him off or solve the panels --
     // that is the whole point of stopping here.
     if (S.seam.phase === 'off') devSolve();
+    // ...unless we are trying to get PAST him. updateSeamGate returns early while he is
+    // speaking and BOSS_CAVE waits for SPACE, so without this the loop could never leave
+    // 'boss': it span out to `cap` and the lines below then forced `open` anyway. Every
+    // screenshot of the burst taken this way was the SPEECH with a forced number on top, at
+    // two hits of damage instead of six -- and two review passes were done on those frames.
+    else if (want !== 'boss' && want !== 'gather') {
+      if (S.boss && !S.boss.gone) bossAdvance();
+      else if (S.drill && !S.drill.done && want === 'burst') drillSolved();
+    }
   }
   if (qs.has('hits')) S.seam.hits = Math.max(0, Math.min(SEAM.hits, +qs.get('hits')));
   if (want === 'burst') S.seam.open = Math.max(0.0001, Math.min(1, +(qs.get('open') || 0.5)));
