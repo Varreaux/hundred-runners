@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '112 the last room, with Linh names for her own rooms';
+const BUILD = '113 each act teaches its own games';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -341,6 +341,22 @@ const CFG = {
     // in a hedgerow is a drawing nobody has made.
     { x: 13640, lane: 1, type: 'winch',   diff: 4 },
     { x: 13900, lane: 3, type: 'rope',    diff: 4 },
+    // ---- ACT THREE OPENS WITH ALL SIX MACHINE FAMILIES, so the last act contains every game
+    // in the course. Morgan asked for all of them combined here; act three previously held
+    // only its own four enclosure types plus four crossings, so Gear, Lever, Wiring, Code,
+    // Trace and Calculation were missing from the act that is meant to have everything.
+    //
+    // They go in the 1200 units between the enclosure boundary at 12338 and the first hedge
+    // room at 13500, which was empty. They draw correctly here without new art because
+    // drawRoom dispatches `machine` and `press` hazards to drawMachineRoom BEFORE it tests
+    // ENC.inside, and drawMachineRoom reads nothing but room.x, V.left and the lane -- which
+    // is also why the enclosure's own types cannot make the reverse trip into act two.
+    { x: 12420, lane: 0, type: 'gears',       diff: 4 },
+    { x: 12620, lane: 0, type: 'conveyor',    diff: 4 },
+    { x: 12820, lane: 0, type: 'wiring',      diff: 5, warn: 840 },
+    { x: 13020, lane: 0, type: 'presses',     diff: 5 },
+    { x: 13220, lane: 0, type: 'sweeper',     diff: 5, warn: 1350 },
+    { x: 13400, lane: 0, type: 'calculation', diff: 5, warn: 500 },
     { x: 13500, lane: 4, type: 'bridge',  diff: 5 },
     { x: 14700, lane: 0, type: 'rickety', diff: 5 },
     // the wall across everything. Its warning is long because it is the one room the
@@ -2346,7 +2362,8 @@ window.addEventListener('keydown', e => {
     // Only SPACE and ENTER, and never an auto-repeat: holding a key down would otherwise
     // walk the whole speech at the keyboard's repeat rate, which is the skip by another name.
     if (S.boss && !S.boss.gone && !S.boss.auto) { if (!e.repeat && (k === ' ' || k === 'ENTER')) bossAdvance(); return; }
-    if (!S.boss) { const c = I(); S.introT = c.deliver + c.settle; startBoss(BOSS_SCRIPT, false, startDrill); return; }
+    // actVerbs(1), not a bare startDrill: its default is every verb on the course.
+    if (!S.boss) { const c = I(); S.introT = c.deliver + c.settle; startBoss(BOSS_SCRIPT, false, () => startDrill(actVerbs(1))); return; }
     startRun(); return;
   }
   if (S.mode === 'win' || S.mode === 'lose') {
@@ -2511,7 +2528,13 @@ const seamLine = () => seamX() - SEAM.standoff;
 // rather than reading their position; when that is on the branch this should read the rank and
 // not the x, because rank survives a room being moved for a reason that is not difficulty.
 // Both give the same answer today. If the rank machinery is present, prefer it.
-function act2Verbs() {
+// The games an act INTRODUCES: verbs whose first room on the course stands in that act.
+// One helper for both drills, because the opening one used to take no argument at all and
+// startDrill's default is every verb in CFG.rooms -- so act one's tutorial taught all ten
+// games before the player had met five of them, and then act two's taught two more that
+// had already been given away. A tutorial that shows a game the act does not contain is
+// not a tutorial, it is a spoiler.
+function actVerbs(act) {
   const rooms = CFG.rooms.slice().sort((a, b) => a.x - b.x);
   const firstAt = {};
   for (const r of rooms) {
@@ -2521,13 +2544,13 @@ function act2Verbs() {
   const out = [];
   for (const r of rooms) {
     const t = CFG.types[r.type];
-    if (firstAt[t.verb] < FAC.seam) continue;            // act one already taught it
-    if (r.x >= CFG.exit) continue;                       // act three has its own problem
+    if (CFG.actAt(firstAt[t.verb]) !== act) continue;    // an earlier act already taught it
     if (out.some(o => o.verb === t.verb)) continue;
     out.push({ verb: t.verb, title: t.title, color: t.color });
   }
   return out;
 }
+const act2Verbs = () => actVerbs(2);
 // The whole sequence, as a phase machine. `off` until the lead runner arrives, `done` for ever
 // after -- there is no path back, so a restart goes through reset() like everything else.
 function updateSeamGate(dt) {
@@ -2591,7 +2614,14 @@ function updateSeamGate(dt) {
     // people on the road; here they are already held, on purpose, so he cannot be walked past.
     if (S.boss && !S.boss.gone) return;
     g.phase = 'drill'; g.t = 0;
-    const order = act2Verbs();
+    // EVERYTHING act one did not teach, which is Linh's act-two set: Trace, Calculation,
+    // Dig, Lift and Blast. Act three's three families are taught here rather than in act
+    // three because there is nowhere in act three to teach them -- the boss's third
+    // appearance is `auto`, the run is live behind him, and a drill there would hold the
+    // player at a panel while the crowd walked into rooms. Teaching a game one act before
+    // its first room is a small oddity; meeting a hedge, a mantrap and a powder charge with
+    // no tutorial at all is a much larger one.
+    const order = [...actVerbs(2), ...actVerbs(3)];
     if (order.length) startDrill(order);
     return;
   }
@@ -4237,7 +4267,7 @@ function updateIntro(dt) {
     }
   }
   // The shift is assembled and the doors are still shut: run the drill in that gap.
-  if (S.introT >= gather && !S.drill && !S.boss) startBoss(BOSS_SCRIPT, false, startDrill);
+  if (S.introT >= gather && !S.drill && !S.boss) startBoss(BOSS_SCRIPT, false, () => startDrill(actVerbs(1)));
   if (drilling) {
     updateDrill(dt);
     if (S.introT > 0.8) chatter(dt);

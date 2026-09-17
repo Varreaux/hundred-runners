@@ -132,12 +132,30 @@ eval(src + `
     console.log(err.stack.split('\\n').slice(1,5).join('\\n'));
     process.exitCode = 1;
   }
+  // The OPENING drill teaches act one only. It used to teach every verb on the course, which
+  // gave away all ten games before the player had met five of them and left act two's drill
+  // repeating two they had already seen. So "reached N of N types" is no longer the question;
+  // the question is whether act one's own set was taught, and separately whether any verb is
+  // ever met untaught.
+  const firstAt = {};
+  for (const r of CFG.rooms.slice().sort((a, b) => a.x - b.x)) {
+    const v = CFG.types[r.type].verb;
+    if (!(v in firstAt)) firstAt[v] = r.x;
+  }
   const types = new Set();
-  for (const r of CFG.rooms) types.add(CFG.types[r.type].verb);
+  for (const v of Object.keys(firstAt)) if (CFG.actAt(firstAt[v]) === 1) types.add(v);
   let total = 0;
   for (const e of log) { total += e.secs; console.log('  ' + e.verb.padEnd(8) + e.secs.toFixed(2).padStart(7) + 's'); }
   console.log('');
-  console.log('  reached ' + log.length + ' of ' + types.size + ' types');
+  console.log('  reached ' + log.length + ' of ' + types.size + ' act-one types');
+  // Every verb must be taught by SOME drill before its first room. The opening drill covers
+  // act one; the seam drill covers everything act one did not. A verb in neither is one the
+  // player meets cold, which is the whole thing the drill exists to prevent.
+  const seam = [];
+  for (const v of Object.keys(firstAt)) if (CFG.actAt(firstAt[v]) !== 1) seam.push(v);
+  console.log('  taught at the seam: ' + (seam.join(', ') || 'none'));
+  const untaught = Object.keys(firstAt).filter(v => !types.has(v) && !seam.includes(v));
+  console.log('  never taught: ' + (untaught.join(', ') || 'none'));
   // Which one it died on matters more than the count. A stall here is usually the DRIVER,
   // not the room: bar and lift are not rate puzzles -- bar wants SPACE when the marker is
   // in the green and lift wants a key held down -- so metronoming them at a fixed rate
@@ -175,7 +193,7 @@ eval(src + `
   console.log(offMid ? '  ' + offMid + ' panel(s) off the midline or behind the HUD'
                      : '  all ' + seenPanels.length + ' panels centred on DRILL_MID ' + DRILL_MID + ', tops clear of the HUD');
   console.log('');
-  const ok = !err && log.length === types.size && S.mode === 'play' && offMid === 0;
+  const ok = !err && log.length === types.size && untaught.length === 0 && S.mode === 'play' && offMid === 0;
   console.log(ok ? 'PASS' : 'FAIL');
   if (!ok) process.exitCode = 1;
   console.log('');
