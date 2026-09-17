@@ -34,6 +34,9 @@ const CFG = {
   gapWidth: 120,
   keyPool: 'QWERASDF',
   types: {
+    ditch: { verb: 'dig', title: 'cut through the bank', hazard: 'all', color: '#c9a16c' },
+    mantrap: { verb: 'lift', title: 'force the jaws open', hazard: 'burst', color: '#ffd23c' },
+    wall: { verb: 'blast', title: 'blow the wall open', hazard: 'all', color: '#ff6464' },
     gears: { verb: 'gears', title: 'align the damaged machine', hazard: 'machine', color: '#ff9a3c' },
     conveyor: { verb: 'levers', title: 'stop the conveyor', hazard: 'machine', color: '#ff9a3c' },
     sweeper: { verb: 'lights', title: 'disable the cleaning robot', hazard: 'machine', color: '#f1c40f' },
@@ -49,60 +52,76 @@ const CFG = {
   // a fork sends `split` of the runners on tunnel `from` up a ramp into tunnel `to`; they come back at `merge`.
   // nested forks must merge before the fork they branched from.
   forks: [
-    { x: 2366, from: 0, to: 1, merge: 5016, split: 0.5 },
-    { x: 3166, from: 1, to: 2, merge: 4216, split: 0.5 },
-    { x: 6066, from: 0, to: 1, merge: 12266, split: 0.55 },
-    { x: 7116, from: 1, to: 2, merge: 10966, split: 0.6 },
-    { x: 8466, from: 2, to: 3, merge: 10316, split: 0.6 },
+    { x: 2366, from: 0, to: 1, merge: 5016, mergeLen: 198, split: 0.5 },
+    { x: 3166, from: 1, to: 2, merge: 4216, mergeLen: 200, split: 0.5 },
+    { x: 6066, from: 0, to: 1, merge: 11166, mergeLen: 148, split: 0.55 },
+    { x: 7116, from: 1, to: 2, merge: 10966, mergeLen: 200, split: 0.6 },
+    { x: 8466, from: 2, to: 3, merge: 10316, mergeLen: 200, split: 0.6 },
+    { x: 11466, from: 0, to: 1, merge: 14816, mergeLen: 200, split: 0.55 },
+    { x: 11966, from: 1, to: 2, merge: 13866, mergeLen: 200, split: 0.6 },
+    { x: 12666, from: 2, to: 3, merge: 13416, mergeLen: 200, split: 0.6 },
   ],
   gates: [],
   gateArm: 140, holdMax: 3, trampleEvery: 0.75,
   names: ['IDA', 'BO', 'JUNO', 'MAX', 'PIP', 'SOL', 'TEO', 'ZARA'],
-  // Document.xlsx / Room Matrix: cumulative spacing in global No order.
+  // Document.xlsx / RoomMatrix2: cumulative spacing; No 56 is finale 0.26.
   rooms: [
-    { no: 2, id: '0.1', x: 940, lane: 0, maxDifficulty: 0 },
-    { no: 3, id: '0.2', x: 1390, lane: 0, maxDifficulty: 1 },
-    { no: 4, id: '0.3', x: 1810, lane: 0, maxDifficulty: 1 },
-    { no: 5, id: '0.4', x: 2230, lane: 0, maxDifficulty: 1 },
-    { no: 6, id: '0.5', x: 2630, lane: 0, maxDifficulty: 1 },
-    { no: 7, id: '1.1', x: 3030, lane: 1, maxDifficulty: 2 },
-    { no: 8, id: '0.6', x: 3330, lane: 0, maxDifficulty: 2 },
-    { no: 9, id: '1.2', x: 3680, lane: 1, maxDifficulty: 2 },
-    { no: 10, id: '2.1', x: 4080, lane: 2, maxDifficulty: 2 },
-    { no: 11, id: '0.7', x: 4480, lane: 0, maxDifficulty: 2 },
-    { no: 12, id: '1.3', x: 4880, lane: 1, maxDifficulty: 3 },
-    { no: 13, id: '0.8', x: 5230, lane: 0, maxDifficulty: 3 },
-    { no: 14, id: '0.9', x: 5580, lane: 0, maxDifficulty: 3 },
-    { no: 15, id: '0.10', x: 5930, lane: 0, maxDifficulty: 3 },
-    { no: 16, id: '0.11', x: 6280, lane: 0, maxDifficulty: 3 },
-    { no: 17, id: '1.4', x: 6630, lane: 1, maxDifficulty: 4 },
-    { no: 18, id: '1.5', x: 6980, lane: 1, maxDifficulty: 4 },
-    { no: 19, id: '0.12', x: 7330, lane: 0, maxDifficulty: 4 },
-    { no: 20, id: '1.6', x: 7630, lane: 1, maxDifficulty: 4 },
-    { no: 21, id: '2.2', x: 7930, lane: 2, maxDifficulty: 4 },
-    { no: 22, id: '0.13', x: 8080, lane: 0, maxDifficulty: 4 },
-    { no: 23, id: '2.3', x: 8330, lane: 2, maxDifficulty: 5 },
-    { no: 24, id: '1.7', x: 8580, lane: 1, maxDifficulty: 5 },
-    { no: 25, id: '0.14', x: 8830, lane: 0, maxDifficulty: 5 },
-    { no: 26, id: '3.1', x: 9130, lane: 3, maxDifficulty: 5 },
-    { no: 27, id: '2.4', x: 9330, lane: 2, maxDifficulty: 5 },
-    { no: 28, id: '1.8', x: 9530, lane: 1, maxDifficulty: 5 },
-    { no: 29, id: '0.15', x: 9730, lane: 0, maxDifficulty: 5 },
-    { no: 30, id: '3.2', x: 10030, lane: 3, maxDifficulty: 5 },
-    { no: 31, id: '2.5', x: 10180, lane: 2, maxDifficulty: 5 },
-    { no: 32, id: '1.9', x: 10330, lane: 1, maxDifficulty: 5 },
-    { no: 33, id: '0.16', x: 10480, lane: 0, maxDifficulty: 5 },
-    { no: 34, id: '2.6', x: 10730, lane: 2, maxDifficulty: 5 },
-    { no: 35, id: '1.10', x: 10830, lane: 1, maxDifficulty: 5 },
-    { no: 36, id: '0.17', x: 10930, lane: 0, maxDifficulty: 5 },
-    { no: 37, id: '1.11', x: 11380, lane: 1, maxDifficulty: 5 },
-    { no: 38, id: '0.18', x: 11530, lane: 0, maxDifficulty: 5 },
-    { no: 39, id: '1.12', x: 11680, lane: 1, maxDifficulty: 5 },
-    { no: 40, id: '0.19', x: 11830, lane: 0, maxDifficulty: 5 },
-    { no: 41, id: '1.13', x: 11980, lane: 1, maxDifficulty: 5 },
-    { no: 42, id: '0.20', x: 12130, lane: 0, maxDifficulty: 5 },
+    { no: 2, id: '0.1', x: 940, lane: 0, minDifficulty: 1, maxDifficulty: 1 },
+    { no: 3, id: '0.2', x: 1390, lane: 0, minDifficulty: 1, maxDifficulty: 2 },
+    { no: 4, id: '0.3', x: 1810, lane: 0, minDifficulty: 1, maxDifficulty: 3 },
+    { no: 5, id: '0.4', x: 2230, lane: 0, minDifficulty: 1, maxDifficulty: 3 },
+    { no: 6, id: '0.5', x: 2630, lane: 0, minDifficulty: 1, maxDifficulty: 4 },
+    { no: 7, id: '1.1', x: 3030, lane: 1, minDifficulty: 1, maxDifficulty: 4 },
+    { no: 8, id: '0.6', x: 3330, lane: 0, minDifficulty: 1, maxDifficulty: 5 },
+    { no: 9, id: '1.2', x: 3680, lane: 1, minDifficulty: 1, maxDifficulty: 5 },
+    { no: 10, id: '2.1', x: 4080, lane: 2, minDifficulty: 1, maxDifficulty: 5 },
+    { no: 11, id: '0.7', x: 4480, lane: 0, minDifficulty: 1, maxDifficulty: 5 },
+    { no: 12, id: '1.3', x: 4880, lane: 1, minDifficulty: 1, maxDifficulty: 5 },
+    { no: 13, id: '0.8', x: 5230, lane: 0, minDifficulty: 1, maxDifficulty: 5 },
+    { no: 14, id: '0.9', x: 5580, lane: 0, minDifficulty: 1, maxDifficulty: 5 },
+    { no: 15, id: '0.10', x: 5930, lane: 0, minDifficulty: 1, maxDifficulty: 5 },
+    { no: 16, id: '0.11', x: 6280, lane: 0, minDifficulty: 6, maxDifficulty: 6 },
+    { no: 17, id: '1.4', x: 6630, lane: 1, minDifficulty: 6, maxDifficulty: 7 },
+    { no: 18, id: '1.5', x: 6980, lane: 1, minDifficulty: 6, maxDifficulty: 7 },
+    { no: 19, id: '0.12', x: 7330, lane: 0, minDifficulty: 6, maxDifficulty: 8 },
+    { no: 20, id: '1.6', x: 7630, lane: 1, minDifficulty: 6, maxDifficulty: 8 },
+    { no: 21, id: '2.2', x: 7930, lane: 2, minDifficulty: 6, maxDifficulty: 9 },
+    { no: 22, id: '0.13', x: 8080, lane: 0, minDifficulty: 6, maxDifficulty: 9 },
+    { no: 23, id: '2.3', x: 8330, lane: 2, minDifficulty: 6, maxDifficulty: 9 },
+    { no: 24, id: '1.7', x: 8580, lane: 1, minDifficulty: 6, maxDifficulty: 10 },
+    { no: 25, id: '0.14', x: 8830, lane: 0, minDifficulty: 6, maxDifficulty: 10 },
+    { no: 26, id: '3.1', x: 9130, lane: 3, minDifficulty: 6, maxDifficulty: 10 },
+    { no: 27, id: '2.4', x: 9330, lane: 2, minDifficulty: 6, maxDifficulty: 10 },
+    { no: 28, id: '1.8', x: 9530, lane: 1, minDifficulty: 6, maxDifficulty: 10 },
+    { no: 29, id: '0.15', x: 9730, lane: 0, minDifficulty: 6, maxDifficulty: 10 },
+    { no: 30, id: '3.2', x: 10030, lane: 3, minDifficulty: 6, maxDifficulty: 10 },
+    { no: 31, id: '2.5', x: 10180, lane: 2, minDifficulty: 6, maxDifficulty: 10 },
+    { no: 32, id: '1.9', x: 10330, lane: 1, minDifficulty: 6, maxDifficulty: 10 },
+    { no: 33, id: '0.16', x: 10480, lane: 0, minDifficulty: 6, maxDifficulty: 10 },
+    { no: 34, id: '2.6', x: 10730, lane: 2, minDifficulty: 6, maxDifficulty: 10 },
+    { no: 35, id: '1.10', x: 10830, lane: 1, minDifficulty: 6, maxDifficulty: 10 },
+    { no: 36, id: '0.17', x: 10930, lane: 0, minDifficulty: 6, maxDifficulty: 10 },
+    { no: 37, id: '0.18', x: 11330, lane: 0, minDifficulty: 6, maxDifficulty: 10 },
+    { no: 38, id: '0.19', x: 11580, lane: 0, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 39, id: '1.11', x: 11830, lane: 1, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 40, id: '0.20', x: 12130, lane: 0, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 41, id: '1.12', x: 12330, lane: 1, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 42, id: '2.7', x: 12530, lane: 2, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 43, id: '0.21', x: 12830, lane: 0, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 44, id: '1.13', x: 12980, lane: 1, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 45, id: '2.8', x: 13130, lane: 2, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 46, id: '3.3', x: 13280, lane: 3, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 47, id: '0.22', x: 13530, lane: 0, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 48, id: '1.14', x: 13630, lane: 1, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 49, id: '2.9', x: 13730, lane: 2, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 50, id: '0.23', x: 14080, lane: 0, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 51, id: '1.15', x: 14200, lane: 1, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 52, id: '0.24', x: 14320, lane: 0, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 53, id: '1.16', x: 14440, lane: 1, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 54, id: '0.25', x: 14560, lane: 0, minDifficulty: 1, maxDifficulty: 10 },
+    { no: 55, id: '1.17', x: 14680, lane: 1, minDifficulty: 1, maxDifficulty: 10 },
   ],
-  finale: { id: '0.21', x: 12630, baseLen: 6, keyTime: 0.9 },
+  finale: { id: '0.26', x: 15180, baseLen: 6, keyTime: 0.9 },
 };
 CFG.exit = CFG.finale.x - 10;
 const laneY = k => CFG.baseY - CFG.laneGap * k;
@@ -229,6 +248,260 @@ const VERBS = {
         ctx.fillStyle = i < m.hits ? '#2ecc71' : '#444';
         ctx.beginPath(); ctx.arc(px + pw / 2 + (i - (m.need - 1) / 2) * 18, ty + 34, 5, 0, 6.28); ctx.fill();
       }
+    },
+  },
+  dig: {
+    now: m => (m.last === 'ARROWLEFT' ? 'now RIGHT' : 'now LEFT'),
+    hint: 'left, right, left, right \u2014 keep the rhythm and the spade keeps cutting',
+    // alternating, so the next key is always the one you did not just press
+    solveKey: m => (m.last === 'ARROWLEFT' ? 'ARROWRIGHT' : 'ARROWLEFT'),
+    start(diff) {
+      // These two are the whole puzzle and they are set against each other deliberately:
+      // the bank slumps back at `decay`, so a press only gains ground if you are pressing
+      // faster than decay/rate. At these numbers that is about three a second to make any
+      // progress at all and five to cut through in under two -- which is a rhythm you have
+      // to keep, not a key to mash. At the shipped 0.30/0.16 four presses finished it.
+      return { cut: 0, last: null, swing: 0, slip: 0, rate: 0.19 + 0.005 * diff, decay: 0.40 + 0.03 * diff };
+    },
+    key(m, k) {
+      if (k !== 'ARROWLEFT' && k !== 'ARROWRIGHT') return null;
+      // pressing the same side twice is a shovel that never leaves the ground: no cut,
+      // but no punishment either. A rhythm game that resets is a rhythm game nobody finishes.
+      if (k === m.last) { m.slip = 1; return 'ok'; }
+      m.last = k; m.swing = 1;
+      m.cut = Math.min(1, m.cut + m.rate);
+      return m.cut >= 1 ? 'done' : 'ok';
+    },
+    update(m, dt) {
+      // the bank slumps back in, so stopping loses ground and the rhythm has to be kept
+      m.cut = Math.max(0, m.cut - m.decay * dt);
+      m.swing = Math.max(0, m.swing - dt * 3.4);
+      m.slip = Math.max(0, m.slip - dt * 2.2);
+    },
+    progress(m) { return m.cut; },
+    draw(m, px, py, pw) {
+      const cx = px + pw / 2, gy = py + 84, halfW = Math.min(150, pw / 2 - 40);
+      // the bank, with a notch cut into it that deepens as you dig
+      ctx.fillStyle = '#4a3b2a';
+      ctx.beginPath();
+      ctx.moveTo(cx - halfW, gy);
+      ctx.lineTo(cx - halfW, py + 40);
+      ctx.lineTo(cx + halfW, py + 40);
+      ctx.lineTo(cx + halfW, gy);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#3f5a2e'; ctx.fillRect(cx - halfW, py + 40, halfW * 2, 4);   // turf on top
+      // the notch: a V that reaches the far side when the cut is complete
+      const w = 16 + m.cut * 54, d = 6 + m.cut * 42;
+      ctx.fillStyle = m.cut >= 1 ? '#7fd6a0' : '#161a20';
+      ctx.beginPath();
+      ctx.moveTo(cx - w, py + 38); ctx.lineTo(cx + w, py + 38);
+      ctx.lineTo(cx + w * 0.45, py + 38 + d); ctx.lineTo(cx - w * 0.45, py + 38 + d);
+      ctx.closePath(); ctx.fill();
+      // the spade, swinging to whichever side was last pressed
+      const side = m.last === 'ARROWRIGHT' ? 1 : -1;
+      const lift = Math.sin(m.swing * Math.PI) * 16;
+      const hx = cx + side * (30 + lift * 0.5), hy = py + 34 - lift;
+      ctx.strokeStyle = '#8a6a44'; ctx.lineWidth = 3.4;
+      ctx.beginPath(); ctx.moveTo(hx, hy - 20); ctx.lineTo(cx + side * 12, py + 40); ctx.stroke();
+      ctx.fillStyle = m.slip > 0 ? '#ff7a7a' : '#c8d0dc';
+      ctx.beginPath();
+      ctx.moveTo(cx + side * 12 - 7, py + 38); ctx.lineTo(cx + side * 12 + 7, py + 38);
+      ctx.lineTo(cx + side * 12, py + 52); ctx.closePath(); ctx.fill();
+      // which side to press next, shown ON the thing rather than in a legend
+      const next = m.last === 'ARROWLEFT' ? 1 : -1;
+      ctx.textAlign = 'center'; ctx.font = 'bold 26px monospace';
+      ctx.fillStyle = 'rgba(92,225,255,0.95)';
+      ctx.fillText(next < 0 ? '\u2190' : '\u2192', cx + next * (halfW + 22), py + 60);
+      ctx.fillStyle = 'rgba(120,132,150,0.4)';
+      ctx.fillText(next < 0 ? '\u2192' : '\u2190', cx - next * (halfW + 22), py + 60);
+      ctx.textAlign = 'left';
+    },
+  },
+  lift: {
+    now: m => (m.holding ? (m.strain > 0.72 ? 'LET GO' : 'keep holding') : m.strain > 0.2 ? 'let the spring settle' : 'hold SPACE'),
+    hint: 'hold SPACE to force the jaws \u2014 let go before the spring bites, then take hold again',
+    // Hold until the strain is nearly up, let go, take hold again. The numbers matter:
+    // strain fills in 1/0.62 = 1.61s and the jaws open in 1/0.42 = 2.38s, so holding
+    // straight through ALWAYS bites before it succeeds. If that ordering ever inverts,
+    // the puzzle solves itself by leaning on the key and there is no puzzle.
+    solveKey: m => (m.holding ? (m.strain > 0.72 ? ' ' : null) : m.strain < 0.2 ? ' ' : null),
+    takesHold: true,
+    start(diff) {
+      // inputT is NOT optional for a verb that banks m.won: the deferred-win branch in
+      // update() does Math.max(0, m.inputT - dt) and then tests <= 0, so leaving it
+      // undefined makes that NaN, NaN <= 0 is false, and the room never clears at all.
+      return { open: 0, strain: 0, holding: false, snapped: 0, inputT: 0.3,
+               gain: 0.46 - 0.01 * diff, build: 0.56 + 0.03 * diff, ease: 1.6, slip: 0.26 };
+    },
+    key(m, k) {
+      if (k !== ' ') return null;
+      // A press TOGGLES the grip, and keyup releases it too. Both, deliberately: holding
+      // the key is the natural way to play it, but the test bot can only dispatch
+      // keydown -- it has no way to let go -- so a release-only design is one the bot can
+      // never solve, and the room would read as impossible in every harness run.
+      m.holding = !m.holding;
+      return m.open >= 1 ? 'done' : 'ok';
+    },
+    release(m, k) { if (k === ' ') m.holding = false; },
+    update(m, dt) {
+      if (m.holding) {
+        m.open = Math.min(1, m.open + m.gain * dt);
+        m.strain = Math.min(1.35, m.strain + m.build * dt);
+        // held too long: the spring bites back and takes some of the opening with it
+        if (m.strain >= 1) { m.holding = false; m.snapped = 1; m.open = Math.max(0, m.open - m.slip); }
+      } else {
+        m.strain = Math.max(0, m.strain - m.ease * dt);
+        m.open = Math.max(0, m.open - 0.06 * dt);       // barely creeps shut: progress is kept
+      }
+      m.snapped = Math.max(0, m.snapped - dt * 2);
+      // The jaws come apart while a key is DOWN, so the moment of winning is not a
+      // keypress. Bank it here or the win waits for a press that may never come.
+      if (m.open >= 1) m.won = true;
+      // And tick the banked win down HERE. The deferred-clear branch in update() only
+      // decrements inputT for a room the player has CLOSED -- an open one is expected to
+      // tick in its own verb, the way lights does. Without this the jaws would open fully
+      // and the room would simply never clear, because the player is holding it open by
+      // playing it. It is the one state a bot that closes rooms would not have found.
+      if (m.won) m.inputT = Math.max(0, m.inputT - dt);
+    },
+    progress(m) { return m.open; },
+    draw(m, px, py, pw) {
+      const cx = px + pw / 2, cy = py + 104;
+      // A trap seen from the side: a base plate on the ground, two jaws hinged at its ends
+      // that swing APART as it opens. The first version drew two mirrored arcs of one
+      // circle, which reads as a broken ring rather than as something with jaws.
+      const ang = m.open * 1.32;                         // up to about 75 degrees each
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(cx - 44, cy + 2, 88, 4);
+      ctx.fillStyle = '#6b5a48'; ctx.fillRect(cx - 40, cy - 4, 80, 7);   // the plate
+      ctx.fillStyle = 'rgba(255,244,214,0.16)'; ctx.fillRect(cx - 40, cy - 4, 80, 1.6);
+      for (const dir of [-1, 1]) {
+        ctx.save();
+        ctx.translate(cx + dir * 34, cy - 3);
+        ctx.rotate(dir * -ang);
+        const col = m.snapped > 0 ? '#ff7a7a' : '#aeb8c6';
+        // the jaw itself, a flat bar with teeth along its inner edge
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(dir * -6, -6); ctx.lineTo(dir * -62, -6); ctx.lineTo(dir * -62, 0);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = m.snapped > 0 ? '#ffb2b2' : '#dfe6f0';
+        for (let i = 1; i <= 6; i++) {
+          const tx = dir * -(8 + i * 8.6);
+          ctx.beginPath(); ctx.moveTo(tx - 3.4, -6); ctx.lineTo(tx + 3.4, -6); ctx.lineTo(tx, -16); ctx.closePath(); ctx.fill();
+        }
+        ctx.fillStyle = '#7f8a99'; ctx.beginPath(); ctx.arc(0, 0, 5, 0, 6.28); ctx.fill();   // the hinge
+        ctx.restore();
+      }
+      // the spring at the centre, flattening as the jaws come apart
+      ctx.strokeStyle = m.snapped > 0 ? '#ff7a7a' : '#7d8794'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      const sh = 13 - m.open * 8;
+      for (let i = 0; i <= 8; i++) ctx.lineTo(cx - 20 + i * 5, cy - 9 - (i % 2 ? 0 : sh * 0.5));
+      ctx.stroke();
+      // THE STRAIN GAUGE. This is the puzzle: hold while it is green, let go before the
+      // line, take hold again. It is the biggest, brightest thing in the panel for that
+      // reason, and the line you must stay under is drawn on it rather than described.
+      const bw = Math.min(230, pw - 80), bx = cx - bw / 2, by = py + 40, bh = 19;
+      ctx.fillStyle = '#20262f'; roundRect(bx, by, bw, bh, 9); ctx.fill();
+      const danger = Math.min(1, m.strain);
+      ctx.fillStyle = danger > 0.78 ? '#ff5a5a' : danger > 0.55 ? '#f1c40f' : '#6ee7a0';
+      roundRect(bx, by, bw * danger, bh, 9); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillRect(bx + bw * 0.78, by - 4, 2.4, bh + 8);
+      // the word goes INSIDE the bar. Above it, it landed on the panel's header rule; below
+      // it, on the trap. There is no free row in a panel this size, so it does not need one.
+      // White with a dark edge, because the word straddles the fill: half of it sits on
+      // bright green and half on the dark track behind, so no single flat colour reads on
+      // both and picking one by `danger` made the label disappear at its own midpoint.
+      ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+      const word = m.holding ? (danger > 0.72 ? 'LET GO' : 'HOLDING') : 'HOLD SPACE';
+      ctx.fillStyle = 'rgba(10,14,12,0.85)';
+      for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) ctx.fillText(word, cx + ox, by + 13 + oy);
+      ctx.fillStyle = '#fff'; ctx.fillText(word, cx, by + 13);
+      ctx.textAlign = 'left';
+    },
+  },
+  blast: {
+    now: m => (m.stage === 0 ? `charge the holes  (${m.idx}/${m.holes.length})` : m.stage === 1 ? `pay out the fuse  (SPACE x${m.need - m.pays})` : m.arm > 0 ? 'stand back...' : 'FIRE'),
+    hint: 'press the lit holes to charge them \u2014 then press SPACE five times to pay out the fuse \u2014 then SPACE to fire',
+    solveKey(m) {
+      if (m.stage === 0) return m.holes[m.idx].k;
+      if (m.stage === 1) return ' ';
+      return m.arm > 0 ? null : ' ';
+    },
+    start(diff) {
+      const n = 3 + Math.min(2, Math.floor(diff / 2));
+      const ks = makeSeq(n);
+      return { stage: 0, idx: 0, holes: ks.map((k, i) => ({ k, charged: false })),
+               fuse: 0, pays: 0, need: 5, arm: 0, lit: 0, fired: 0 };
+    },
+    key(m, k) {
+      // beat one: charge every borehole, in order along the wall
+      if (m.stage === 0) {
+        if (k !== m.holes[m.idx].k) return CFG.keyPool.includes(k) ? 'wrong' : null;
+        m.holes[m.idx].charged = true;
+        if (++m.idx >= m.holes.length) { m.stage = 1; m.idx = 0; }
+        return 'ok';
+      }
+      // beat two: pay the fuse out back to where you are standing, a length per press
+      if (m.stage === 1) {
+        if (k !== ' ') return null;
+        if (++m.pays >= m.need) { m.stage = 2; m.arm = 0.45; }
+        return 'ok';
+      }
+      // beat three: fire. The arm delay exists so the last fuse press cannot roll
+      // straight into the plunger -- both beats are SPACE, and without it the puzzle
+      // would end on a key the player had already pressed for something else.
+      if (k !== ' ' || m.arm > 0) return null;
+      m.fired = 1;
+      return 'done';
+    },
+    update(m, dt) {
+      m.fuse += (Math.min(1, m.pays / m.need) - m.fuse) * Math.min(1, dt * 9);
+      if (m.arm > 0) m.arm -= dt;
+      if (m.stage === 2 && m.arm <= 0) m.lit = Math.min(1, m.lit + dt * 3);
+    },
+    progress(m) { return (m.stage + (m.stage === 0 ? m.idx / m.holes.length : m.stage === 1 ? m.pays / m.need : m.lit)) / 3; },
+    draw(m, px, py, pw) {
+      const cx = px + pw / 2;
+      // the wall face, with boreholes drilled in it
+      ctx.fillStyle = '#4a4048'; ctx.fillRect(cx - 150, py + 30, 300, 58);
+      ctx.fillStyle = 'rgba(0,0,0,0.30)';
+      for (let r = 0; r < 3; r++) ctx.fillRect(cx - 150, py + 30 + r * 20, 300, 1.6);
+      const n = m.holes.length, step = Math.min(58, 260 / n);
+      m.holes.forEach((h, i) => {
+        const hx = cx + (i - (n - 1) / 2) * step, hy = py + 60;
+        ctx.fillStyle = '#14121a'; ctx.beginPath(); ctx.arc(hx, hy, 12, 0, 6.28); ctx.fill();
+        if (h.charged) {
+          ctx.fillStyle = '#c4762e'; ctx.beginPath(); ctx.arc(hx, hy, 8.5, 0, 6.28); ctx.fill();
+          ctx.fillStyle = '#e8a04a'; ctx.beginPath(); ctx.arc(hx - 2, hy - 2, 3.4, 0, 6.28); ctx.fill();
+        }
+        ctx.textAlign = 'center'; ctx.font = 'bold 15px monospace';
+        ctx.fillStyle = h.charged ? '#6ee7a0' : (m.stage === 0 && i === m.idx) ? '#5ce1ff' : '#6e7a8e';
+        ctx.fillText(h.k, hx, hy + 30);
+      });
+      // the fuse, paid out from the charges back to where you are standing
+      if (m.stage >= 1) {
+        const fx0 = cx - 150, fx1 = cx + 150;
+        ctx.strokeStyle = '#6e5a3e'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(fx1, py + 96);
+        ctx.lineTo(fx1 - (fx1 - fx0) * m.fuse, py + 96); ctx.stroke();
+        if (m.stage === 1) {
+          const hx = fx1 - (fx1 - fx0) * m.fuse;
+          ctx.fillStyle = '#ffd23c';
+          ctx.beginPath(); ctx.arc(hx, py + 96, 4.4, 0, 6.28); ctx.fill();
+          // no caption here: the panel's own status line already says how many are left,
+          // and a second copy at py + 112 sits 13px off the row panelGauges owns
+        }
+      }
+      // the plunger, live once the fuse is run out and the arm delay has passed
+      if (m.stage === 2) {
+        const live = m.arm <= 0;
+        ctx.fillStyle = m.fired ? '#6ee7a0' : live ? '#ff5a5a' : '#5a4148';
+        roundRect(cx - 34, py + 88, 68, 18, 5); ctx.fill();
+        ctx.fillStyle = '#12161c'; ctx.textAlign = 'center'; ctx.font = 'bold 13px monospace';
+        ctx.fillText(live ? 'SPACE' : '\u2022 \u2022 \u2022', cx, py + 101);
+      }
+      ctx.textAlign = 'left';
     },
   },
   word: {
@@ -518,15 +791,18 @@ function drawMachineRoom(room, y) {
 
 // Puzzle sheet difficulty ranks select eligible families; existing minigame tuning stays separate.
 const PUZZLE_FAMILIES = [
-  { name: 'Gear', difficulty: 1, types: ['gears'] },
-  { name: 'Typo', difficulty: 2, types: ['bridge', 'crusher', 'rope', 'rickety'] },
-  { name: 'Slider', difficulty: 1, types: ['winch'] },
-  { name: 'Lever', difficulty: 0, types: ['conveyor'] },
-  { name: 'Wiring', difficulty: 3, types: ['wiring'] },
-  { name: 'Trace', difficulty: 4, types: ['sweeper'] },
-  { name: 'Calculation', difficulty: 5, types: ['calculation'] },
+  { name: 'Dig', difficulty: 6, types: ['ditch'] },
+  { name: 'Lift', difficulty: 7, types: ['mantrap'] },
+  { name: 'Blast', difficulty: 8, types: ['wall'] },
+  { name: 'Gear', difficulty: 2, types: ['gears'] },
+  { name: 'Typo', difficulty: 4, types: ['bridge', 'crusher', 'rope', 'rickety'] },
+  { name: 'Slider', difficulty: 3, types: ['winch'] },
+  { name: 'Lever', difficulty: 1, types: ['conveyor'] },
+  { name: 'Wiring', difficulty: 5, types: ['wiring'] },
+  { name: 'Trace', difficulty: 9, types: ['sweeper'] },
+  { name: 'Calculation', difficulty: 10, types: ['calculation'] },
 ];
-const ROOM_DIFFICULTIES = {"bridge": [1, 2, 3, 3, 5], "gears": [1], "rope": [1, 2, 3, 4], "conveyor": [1], "winch": [2, 3, 3, 4], "sweeper": [1], "crusher": [2, 3, 4], "calculation": [1], "wiring": [1], "rickety": [2, 3]};
+const ROOM_DIFFICULTIES = {"ditch": [1], "mantrap": [1], "wall": [1], "bridge": [1, 2, 3, 3, 5], "gears": [1], "rope": [1, 2, 3, 4], "conveyor": [1], "winch": [2, 3, 3, 4], "sweeper": [1], "crusher": [2, 3, 4], "calculation": [1], "wiring": [1], "rickety": [2, 3]};
 function shuffled(items) {
   const result = [...items];
   for (let i = result.length - 1; i > 0; i--) {
@@ -536,38 +812,44 @@ function shuffled(items) {
   return result;
 }
 function randomizedRooms() {
-  const assignments = Array(CFG.rooms.length).fill(null);
-  // The final six regular rooms must use different puzzle families (not just different art).
-  const finalFamilies = new Set();
-  const finalSlots = CFG.rooms.map((room, i) => i).filter(i => CFG.rooms[i].no >= 37 && CFG.rooms[i].no <= 42);
-  finalSlots.sort((a, b) => CFG.rooms[a].maxDifficulty - CFG.rooms[b].maxDifficulty);
-  for (const i of finalSlots) {
-    const eligible = PUZZLE_FAMILIES.filter(p => p.difficulty <= CFG.rooms[i].maxDifficulty && !finalFamilies.has(p.name));
-    if (!eligible.length) throw new Error('Room Matrix cannot fit unique final puzzles');
-    const weight = p => p.difficulty === 5 ? 0.5 : p.difficulty === 4 ? 0.65 : 1;
+  const fits = (family, room) => family.difficulty >= room.minDifficulty && family.difficulty <= room.maxDifficulty;
+  // Keep the reduced Trace/Calculation weights even though their ranks are now 9/10.
+  const weight = p => p.name === 'Calculation' ? 0.5 : p.name === 'Trace' ? 0.65 : 1;
+  const choose = eligible => {
+    if (!eligible.length) throw new Error('Room Matrix has no eligible puzzle');
     let ticket = Math.random() * eligible.reduce((sum, p) => sum + weight(p), 0);
-    const family = eligible.find(p => (ticket -= weight(p)) < 0) || eligible[eligible.length - 1];
-    assignments[i] = family;
-    finalFamilies.add(family.name);
+    return eligible.find(p => (ticket -= weight(p)) < 0) || eligible[eligible.length - 1];
+  };
+  const assignments = Array(CFG.rooms.length).fill(null), finalFamilies = new Set();
+  const finalSlots = CFG.rooms.map((room, i) => i).filter(i => CFG.rooms[i].no >= 50 && CFG.rooms[i].no <= 55);
+  for (const i of finalSlots) {
+    const family = choose(PUZZLE_FAMILIES.filter(p => fits(p, CFG.rooms[i]) && !finalFamilies.has(p.name)));
+    assignments[i] = family; finalFamilies.add(family.name);
   }
-  // Count these reservations toward the four-per-family minimum, hardest first.
-  const priority = shuffled(PUZZLE_FAMILIES).sort((a, b) => b.difficulty - a.difficulty);
-  for (const family of priority) {
-    const available = shuffled(CFG.rooms.map((room, i) => i).filter(i =>
-      !assignments[i] && CFG.rooms[i].maxDifficulty >= family.difficulty));
+  // Match minimum-quota tokens to eligible slots. Augmenting paths can relocate an
+  // earlier reservation, so disjoint Min-Max bands do not fail due to greedy choices.
+  const tokens = [];
+  for (const family of shuffled(PUZZLE_FAMILIES)) {
     const needed = Math.max(0, 4 - assignments.filter(p => p === family).length);
-    if (available.length < needed) throw new Error('Room Matrix cannot fit four ' + family.name + ' puzzles');
-    for (const i of available.slice(0, needed)) assignments[i] = family;
+    for (let n = 0; n < needed; n++) tokens.push(family);
   }
+  const edges = tokens.map(family => shuffled(CFG.rooms.map((room, i) => i).filter(i => !assignments[i] && fits(family, CFG.rooms[i]))));
+  const owners = Array(CFG.rooms.length).fill(-1);
+  function place(token, seen) {
+    for (const i of edges[token]) {
+      if (seen.has(i)) continue;
+      seen.add(i);
+      if (owners[i] < 0 || place(owners[i], seen)) { owners[i] = token; return true; }
+    }
+    return false;
+  }
+  for (let token = 0; token < tokens.length; token++) {
+    if (!place(token, new Set())) throw new Error('Room Matrix cannot fit four of every puzzle within Min-Max');
+  }
+  owners.forEach((token, i) => { if (token >= 0) assignments[i] = tokens[token]; });
   const variants = {}, difficulties = {};
   return CFG.rooms.map((room, i) => {
-    let family = assignments[i];
-    if (!family) {
-      const eligible = PUZZLE_FAMILIES.filter(p => p.difficulty <= room.maxDifficulty);
-      const weight = p => p.difficulty === 5 ? 0.5 : p.difficulty === 4 ? 0.65 : 1;
-      let ticket = Math.random() * eligible.reduce((sum, p) => sum + weight(p), 0);
-      family = eligible.find(p => (ticket -= weight(p)) < 0) || eligible[eligible.length - 1];
-    }
+    const family = assignments[i] || choose(PUZZLE_FAMILIES.filter(p => fits(p, room)));
     if (!variants[family.name]?.length) variants[family.name] = shuffled(family.types);
     const type = variants[family.name].pop();
     if (!difficulties[type]?.length) difficulties[type] = shuffled(ROOM_DIFFICULTIES[type]);
@@ -638,10 +920,10 @@ window.addEventListener('keydown', e => {
   if (S.mode === 'play') {
     if (k >= '1' && k <= '9' && !(S.active && ['lights', 'calculation'].includes(S.active.verb))) {
       const room = S.rooms.find(r => r.state === 'armed' && r.hot === +k);
-      if (room) S.active = room;
+      if (room) { releaseHeldPuzzle(); S.active = room; }
       return;
     }
-    if (k === 'ESCAPE') { S.active = null; return; }
+    if (k === 'ESCAPE') { releaseHeldPuzzle(); S.active = null; return; }
     const room = S.active;
     if (!room) return;
     const res = VERBS[room.verb].key(room.mg, k);
@@ -659,8 +941,16 @@ window.addEventListener('keydown', e => {
     } else finaleFail();
   }
 });
+function releaseHeldPuzzle() {
+  for (const room of S.rooms) {
+    const verb = VERBS[room.verb];
+    if (room.mg && verb.takesHold && verb.release) verb.release(room.mg, ' ');
+  }
+}
+window.addEventListener('keyup', e => { if (e.key === ' ') releaseHeldPuzzle(); });
+window.addEventListener('blur', releaseHeldPuzzle);
 function clearRoom(room) {
-  room.state = 'solved'; if (S.active === room) S.active = null;
+  room.state = 'solved'; if (S.active === room) { releaseHeldPuzzle(); S.active = null; }
   S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 100, txt: 'CLEAR', life: 1, color: '#2ecc71' });
 }
 function toggleGate() {
@@ -705,7 +995,7 @@ function retireEmptyRooms() {
   for (const room of S.rooms) {
     if (room.state !== 'armed' || S.runners.some(r => canReachRoom(r, room))) continue;
     room.state = 'spent'; room.hot = null;
-    if (S.active === room) S.active = null;
+    if (S.active === room) { releaseHeldPuzzle(); S.active = null; }
   }
 }
 function roomEntry(room) { return room.x + (room.hazard === 'machine' ? 72 : -2); }
@@ -760,6 +1050,11 @@ function update(dt) {
   S.cam = Math.min(S.camMax, S.cam + CFG.scroll * dt, Math.max(S.cam, frontRunner - CFG.packFront));
   updateView(dt);
   if (S.active) VERBS[S.active.verb].update(S.active.mg, dt);
+  for (const room of S.rooms) {
+    if (room.state !== 'armed' || room.verb !== 'lift' || !room.mg.won) continue;
+    if (S.active !== room) room.mg.inputT = Math.max(0, room.mg.inputT - dt);
+    if (room.mg.inputT <= 0) clearRoom(room);
+  }
   if (S.active && S.active.verb === 'gears' && gearsAligned(S.active.mg)) clearRoom(S.active);
   for (const room of S.rooms) {
     if (room.state === 'armed' && room.verb === 'lights' && room.mg.round === 1) {
@@ -838,7 +1133,7 @@ function update(dt) {
     }
   }
 
-  if (S.active && !S.runners.some(r => r.state === 'run' && r.lane === S.active.lane && r.x >= S.active.x - 700 && r.x < S.active.x + CFG.gapWidth + 8)) S.active = null;
+  if (S.active && !S.runners.some(r => r.state === 'run' && r.lane === S.active.lane && r.x >= S.active.x - 700 && r.x < S.active.x + CFG.gapWidth + 8)) { releaseHeldPuzzle(); S.active = null; }
   chatter(dt);
   const settled = S.runners.every(r => r.state !== 'run' && r.state !== 'fall');
   if (settled) {
@@ -856,7 +1151,7 @@ function updateLane(r) {
     r.lastForkX = f.x;
     if (f.from !== r.lane) continue;
     if (Math.random() < f.split) {
-      r.route.push({ mergeX: f.merge, back: f.from });
+      r.route.push({ mergeX: f.merge, mergeLen: f.mergeLen, back: f.from });
       r.lane = f.to; r.hop = 0.5;
       r.ramp = { x0: f.x, x1: f.x + CFG.rampLen, y0: laneY(f.from), y1: laneY(f.to) };
       dust(r.x, r.y);
@@ -865,7 +1160,7 @@ function updateLane(r) {
   const top = r.route[r.route.length - 1];
   if (top && r.x >= top.mergeX) {
     r.route.pop();
-    r.ramp = { x0: top.mergeX, x1: top.mergeX + CFG.rampLen, y0: laneY(r.lane), y1: laneY(top.back) };
+    r.ramp = { x0: top.mergeX, x1: top.mergeX + (top.mergeLen || CFG.rampLen), y0: laneY(r.lane), y1: laneY(top.back) };
     r.lane = top.back;
   }
   if (r.ramp) {
@@ -1007,7 +1302,7 @@ function carveTunnels() {
   for (let k = 0; k < CFG.laneCount; k++) for (const [a, b] of LANE_SPANS[k]) corridor(a, b, laneY(k));
   for (const f of CFG.forks) {
     slantCorridor(f.x, laneY(f.from), f.x + CFG.rampLen, laneY(f.to));
-    slantCorridor(f.merge, laneY(f.to), f.merge + CFG.rampLen, laneY(f.from));
+    slantCorridor(f.merge, laneY(f.to), f.merge + (f.mergeLen || CFG.rampLen), laneY(f.from));
   }
   const lamp = (wx, y) => {
     if (!inView(wx, 150)) return;
@@ -1059,7 +1354,7 @@ function drawLane(lane) {
   for (const f of CFG.forks) {
     if (f.to !== lane) continue;
     ramp(f.x, laneY(f.from), f.x + CFG.rampLen, laneY(f.to));
-    ramp(f.merge, laneY(f.to), f.merge + CFG.rampLen, laneY(f.from));
+    ramp(f.merge, laneY(f.to), f.merge + (f.mergeLen || CFG.rampLen), laneY(f.from));
     signpost(f.x, laneY(f.from));
   }
   if (lane === 0) { archway(CFG.entrance, y); archway(CFG.exit, y, true); }
@@ -1151,7 +1446,49 @@ function drawTower(x, y, w, h) {
   ctx.fillStyle = '#5b5b70';
   for (let i = 0; i < 3; i++) ctx.fillRect(x + i * (w / 3) + 1, y - 7, w / 3 - 3, 8);
 }
+// Morgan enclosure puzzles adapted to Linh's existing world renderer.
+function drawEnclosureRoom(room, y) {
+  const x = room.x - V.left, w = CFG.gapWidth, solved = room.state === 'solved';
+  const progress = solved ? 1 : room.mg ? VERBS[room.verb].progress(room.mg) : 0;
+  if (room.type === 'mantrap') {
+    const shut = solved ? 0 : room.slamT < 1 ? 0.25 : 1;
+    ctx.fillStyle = '#5d5146'; ctx.fillRect(x + 10, y - 5, w - 20, 9);
+    for (const dir of [-1, 1]) {
+      ctx.save(); ctx.translate(x + w / 2 + dir * 42, y - 5);
+      ctx.rotate(dir * (solved ? -1.2 : -0.9 * (1 - shut)));
+      ctx.fillStyle = solved ? '#608866' : '#aeb8c6'; ctx.fillRect(dir < 0 ? 0 : -42, -7, 42, 7);
+      for (let i = 0; i < 5; i++) {
+        const tx = -dir * (5 + i * 8); ctx.beginPath(); ctx.moveTo(tx - 3, -7);ctx.lineTo(tx + 3, -7);ctx.lineTo(tx, -17);ctx.fill();
+      }
+      ctx.restore();
+    }
+  } else if (room.type === 'ditch') {
+    ctx.fillStyle = '#3c3027'; ctx.fillRect(x, y, w, room.lane === 0 ? 70 : 55);
+    ctx.fillStyle = '#775736';
+    ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+25,y+45);ctx.lineTo(x+w-25,y+45);ctx.lineTo(x+w,y);ctx.lineTo(x+w,y+55);ctx.lineTo(x,y+55);ctx.fill();
+    ctx.fillStyle = '#936e43'; ctx.fillRect(x, y-5, w * progress, 12);
+    ctx.fillStyle = '#4b6638';ctx.fillRect(x+w-14,y-22*(1-progress),14,5);
+  } else {
+    ctx.fillStyle = '#54444c';ctx.fillRect(x,y,w,room.lane===0?70:55);
+    ctx.fillStyle = '#88817a';ctx.fillRect(x,y-2,w,6);
+    if (!solved) {
+      for(let row=0;row<4;row++) for(let col=0;col<4;col++) {
+        if(progress>0.7 && col>0 && col<3)continue;
+        ctx.fillStyle = (row+col)%2 ? '#76666a' : '#927e80';
+        ctx.fillRect(x+col*30+1,y-80+row*20,28,18);
+      }
+      ctx.fillStyle='#d28d3a';ctx.fillRect(x+w/2-7,y-40,14,25);
+    }
+  }
+}
 function drawRoom(room, y) {
+  if (['ditch', 'mantrap', 'wall'].includes(room.type)) { if (inView(room.x, 240)) drawEnclosureRoom(room, y); return; }
+  if (['dig', 'lift', 'blast'].includes(room.verb)) {
+    const [px, py] = panelFrame(580, `ROOM ${room.hot}   ${room.title}`, '#5ce1ff', 194);
+    v.draw(room.mg, px, py + 24, 580);
+    factoryText(v.now(room.mg), px + 290, py + 167, '#5ce1ff', 12);
+    return;
+  }
   if (['machine', 'press'].includes(room.hazard)) { drawMachineRoom(room, y); return; }
   if (!inView(room.x, 240)) return;
   const sx = room.x - V.left, gw = CFG.gapWidth;
@@ -1457,6 +1794,12 @@ function panelFrame(pw, title, color, ph = 110) {
 }
 function drawPanel(room) {
   const v = VERBS[room.verb];
+  if (['dig', 'lift', 'blast'].includes(room.verb)) {
+    const [px, py] = panelFrame(580, `ROOM ${room.hot}   ${room.title}`, '#5ce1ff', 194);
+    v.draw(room.mg, px, py + 24, 580);
+    factoryText(v.now(room.mg), px + 290, py + 167, '#5ce1ff', 12);
+    return;
+  }
   if (['machine', 'press'].includes(room.hazard)) {
     const [px, py] = panelFrame(580, `ROOM ${room.hot}   ${room.title}`, '#5ce1ff', 218);
     v.draw(room.mg, px, py, 580); return;
