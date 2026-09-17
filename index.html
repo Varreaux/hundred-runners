@@ -1934,6 +1934,8 @@ function reset() {
     finale: null, best: loadBest(), rollBottom: 254,
     endT: 0, endEmb: [], endSpawn: 0, endRoll: null,
     introT: 0, doorOpen: 0, drill: null, boss: null, bossCave: false, bossOpen: false,
+    // the cave door in the seam: the act two checkpoint. See updateSeamGate.
+    seam: { phase: 'off', t: 0, hits: 0, swing: 0, open: 0, jolt: 0, camLock: null },
     recent: [], spike: null, spikeCool: 0, streak: 0, bestStreak: 0, lastScream: 0,
   };
   for (let i = 0; i < CFG.runnerCount; i++) {
@@ -2077,6 +2079,19 @@ window.addEventListener('keydown', e => {
   if (S.paused) { if (k === 'P') S.paused = false; else if (k === 'R') { reset(); beginIntro(); } return; }
   if (k === 'P' && !S.active) { S.paused = true; return; }
   if (S.mode === 'play') {
+    // ---- the cave door owns the keyboard while it is running.
+    // Both of these sit ABOVE room selection deliberately. The crowd is standing still at a
+    // closed door, so there is nothing on the road to select and nothing a gate could usefully
+    // do; letting 1-9 or ENTER through here would hand the player controls whose effects they
+    // cannot see. The drill's own keys go to the drill, exactly as they do in the opening.
+    if (S.drill && !S.drill.done) { drillKey(k); return; }
+    // He waits for SPACE at the door, where his other appearances run on a clock -- the run is
+    // held here, so there is no cost to making him unskippable, and every reason to.
+    if (S.seam.phase === 'boss' && S.boss && !S.boss.gone && !S.boss.auto) {
+      if (k === ' ' || k === 'ENTER') bossAdvance();
+      return;
+    }
+    if (seamHolding()) return;
     // Digits pick a room, EXCEPT while a puzzle that reads digits is open --
     // the sweeper and the press keypad both do. Escape closes the panel and
     // hands 1-9 back to room selection.
@@ -2112,8 +2127,12 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => {
   // The drill plays the same verbs, so a hold started in the drill needs its release
   // too -- without this the mantrap and the charge can never be let go of in there.
-  const room = S.mode === 'play' ? S.active
-             : S.mode === 'intro' && S.drill && !S.drill.done ? S.drill.room : null;
+  // The drill is checked FIRST, not second. There are two drills now and the later one runs
+  // inside mode 'play', where S.active is null -- ordered the other way round, a hold started
+  // in the cave door's drill would never be handed its release and the mantrap could not be
+  // let go of in there. Keyed off the drill existing rather than off the mode, for that reason.
+  const room = S.drill && !S.drill.done ? S.drill.room
+             : S.mode === 'play' ? S.active : null;
   if (!room) return;
   const v = VERBS[room.verb];
   if (v.takesHold && v.release) v.release(room.mg, e.key.toUpperCase());
@@ -2150,6 +2169,121 @@ function releaseGate(g, spread) {
     r.catchUp = 1;                       // a burst of pace, spent as they rejoin the pack
   }
 }
+// ---------------------------------------------------------------- the cave door
+// Act two is behind a door, and the shift has to get through it. The crowd runs up against
+// a closed leaf in the seam, the front of the file takes a sledge to it, the proprietor
+// catches up and tells them they are not allowed to leave, the player is run through act
+// two's own mini-games while nobody is on the road, and then the leaf gives.
+//
+// It is the opening's shape a second time, and deliberately: assemble, be talked at, drill,
+// door. The reason is the same reason the opening drill exists -- a room's usable window is
+// an expert's, and act two hands you kinds you have never seen at a difficulty act one never
+// reached. This is where that reading happens instead, at no cost in lives.
+//
+// The hold is the GATE's, not the room queue's. They look alike and are not: a room queue
+// exists to FEED a hazard -- it sorts the held crowd every frame so the room can take the one
+// at the sharp end -- and this is a queue nobody is taken from. What is borrowed from the room
+// queue is only the SPACING, because a gate clamps everyone to one line and seventy people
+// inside twenty-six units reads as a smudge rather than as a hundred people waiting at a door.
+//
+// Nothing here freezes the camera. It does not need to: the camera's limit is derived from the
+// rearmost live runner, so a stopped crowd stops it, and it never runs backwards.
+const SEAM = {
+  standoff: 26,       // where the front of the file stands off the leaf
+  settle: 1.1,        // let the file pile up before he starts talking
+  hits: 6,            // sledge strokes before it gives
+  swing: 0.62,        // one stroke
+  burst: 0.9,         // the leaf coming apart
+  hammers: 3,         // how many at the front swing; the rest watch
+};
+const seamX = () => FAC.seam;
+const seamLine = () => seamX() - SEAM.standoff;
+// Act two's own kinds, DERIVED rather than listed, so moving a room moves the drill with it.
+// A verb belongs to the second drill when its FIRST appearance on the course is at or past
+// the seam -- which is exactly "act two introduces it". Written down, this list would be
+// wrong the first time anybody moved a room, which has already happened once today.
+//
+// `mini-game tutorial system` is landing CFG.families / CFG.maxRankAt, which ranks room types
+// rather than reading their position; when that is on the branch this should read the rank and
+// not the x, because rank survives a room being moved for a reason that is not difficulty.
+// Both give the same answer today. If the rank machinery is present, prefer it.
+function act2Verbs() {
+  const rooms = CFG.rooms.slice().sort((a, b) => a.x - b.x);
+  const firstAt = {};
+  for (const r of rooms) {
+    const t = CFG.types[r.type];
+    if (!(t.verb in firstAt)) firstAt[t.verb] = r.x;
+  }
+  const out = [];
+  for (const r of rooms) {
+    const t = CFG.types[r.type];
+    if (firstAt[t.verb] < FAC.seam) continue;            // act one already taught it
+    if (r.x >= CFG.exit) continue;                       // act three has its own problem
+    if (out.some(o => o.verb === t.verb)) continue;
+    out.push({ verb: t.verb, title: t.title, color: t.color });
+  }
+  return out;
+}
+// The whole sequence, as a phase machine. `off` until the lead runner arrives, `done` for ever
+// after -- there is no path back, so a restart goes through reset() like everything else.
+function updateSeamGate(dt) {
+  const g = S.seam;
+  if (g.phase === 'done') return;
+  let lead = -Infinity;
+  for (const r of S.runners) if (r.state === 'run') lead = Math.max(lead, r.x);
+  if (g.phase === 'off') {
+    // Not while a room is armed, the same rule his seam speech already had: talking across a
+    // puzzle asks the player to read two things at once and they will do neither.
+    if (lead >= seamLine() - 6 && !S.active) { g.phase = 'gather'; g.t = 0; }
+    return;
+  }
+  g.t += dt;
+  g.jolt = Math.max(0, g.jolt - dt * 3.4);
+  // the sledge, through every phase up to the burst
+  if (g.phase !== 'burst') {
+    g.swing += dt / SEAM.swing;
+    if (g.swing >= 1) {
+      g.swing -= 1;
+      if (g.hits < SEAM.hits) g.hits++;
+      g.jolt = 1; S.shake = Math.min(5, S.shake + 0.7);
+      AU.clank();
+    }
+  }
+  if (g.phase === 'gather') {
+    if (g.t >= SEAM.settle) { g.phase = 'boss'; g.t = 0; g.camLock = S.cam; startBoss(BOSS_CAVE, false, null); }
+    return;
+  }
+  if (g.phase === 'boss') {
+    // He waits for SPACE here rather than running on a clock. His other two appearances are
+    // auto because the run is live behind him and a speech that waits would hold a hundred
+    // people on the road; here they are already held, on purpose, so he cannot be walked past.
+    if (S.boss && !S.boss.gone) return;
+    g.phase = 'drill'; g.t = 0;
+    const order = act2Verbs();
+    if (order.length) startDrill(order);
+    return;
+  }
+  if (g.phase === 'drill') {
+    // updateIntro drives the opening drill from its own loop; inside mode 'play' nothing else
+    // will, so it is driven from here. The world it would otherwise run on is already held.
+    if (S.drill && !S.drill.done) { updateDrill(dt); return; }
+    S.drill = null;
+    g.phase = 'burst'; g.t = 0; g.jolt = 1; S.shake = 6;
+    return;
+  }
+  if (g.phase === 'burst') {
+    g.open = Math.min(1, g.t / SEAM.burst);
+    if (g.open >= 1) {
+      g.phase = 'done'; g.camLock = null;
+      // releaseGate ignores its first argument: it releases every held runner, recomputing
+      // each one's slot from where they actually ended up rather than snapping anybody. That
+      // is the whole reason this does not write its own release -- a compressed crowd handed
+      // fresh positions teleports, and this already solves it by reassigning slots instead.
+      releaseGate(null, 1 + CFG.tire * (S.cam / S.camMax));
+    }
+  }
+}
+const seamHolding = () => S.seam.phase !== 'off' && S.seam.phase !== 'done';
 function finaleFail() {
   const f = S.finale;
   f.attempts--; f.idx = 0; f.timer = CFG.finale.keyTime; S.wrongFlash = 0.4; S.shake = 6; AU.fail();
@@ -2195,6 +2329,13 @@ function update(dt) {
     const limit = rear - CFG.keepOnScreen / V.zoom - CFG.packFront + 0.56 * V.vw;
     S.cam = Math.max(S.cam, Math.min(want, limit));
   } else S.cam = want;
+  // A stopped crowd stops the camera BY ITSELF, because `limit` is derived from the rearmost
+  // runner -- but not quite still. While the file is forming at the cave door the tail is
+  // still closing up, so `rear` keeps rising and the camera creeps after it: measured at 194
+  // units over one hold, which walks the door across the frame during a speech and a drill.
+  // So the framing is pinned once the file has formed. Deliberately NOT pinned during
+  // 'gather', because that drift is the camera settling onto the crowd and is what you want.
+  if (S.seam.camLock != null) S.cam = S.seam.camLock;
   updateView(dt);
   const camStopped = S.cam >= S.camMax;
   S.recent = S.recent.filter(t => S.t - t < 1);
@@ -2203,22 +2344,19 @@ function update(dt) {
   }
   // ---- Mr. Capitalism, once, when the shift walks out of his mill.
   //
-  // Fired off the LEAD runner rather than the camera: the camera waits for stragglers, so
-  // on a bad run it can sit a long way behind the people who have actually left, and he
-  // would be shouting at a doorway they went through half a minute ago.
+  // He no longer has a trigger of his own here. The crowd is stopped at the cave door at this
+  // point, and the sequence starts him -- see updateSeamGate, phase 'boss'. Fired off the LEAD
+  // runner rather than the camera (the camera waits for stragglers, so on a bad run it sits a
+  // long way behind the people who have actually left, and he would be shouting at a doorway
+  // they went through half a minute ago), and never across an armed room, because talking
+  // across a puzzle asks the player to read two things at once and they will do neither.
+  // Both of those rules now live in updateSeamGate's 'off' phase.
   //
-  // Held back while a room is armed, which is the one rule the opening's version already
-  // settled: talking across a puzzle asks the player to read two things at once and they
-  // will do neither. The seam is a natural lull, but a room can straddle it, and if one
-  // does he waits rather than competing with it.
-  if (!S.bossCave) {
-    let lead = -Infinity;
-    for (const r of S.runners) if (r.state === 'run') lead = Math.max(lead, r.x);
-    if (lead >= FAC.seam && !S.active) {
-      S.bossCave = true;
-      startBoss(BOSS_CAVE, true, null);
-    }
-  }
+  // He also WAITS FOR SPACE here now, where before he ran on a clock. That was the right call
+  // while the run was live behind him; it is the wrong one once a hundred people are standing
+  // still at a door on purpose, because then he can be walked past unread.
+  updateSeamGate(dt);
+  S.bossCave = S.seam.phase !== 'off';
   // and again where the rock ends. Same two rules as the seam: off the lead runner, not
   // the camera, and never across an armed room.
   if (S.bossCave && !S.bossOpen) {
@@ -2250,6 +2388,11 @@ function update(dt) {
       }
       if (holdGate && holdGate.drop > 0.5 && r.x >= holdGate.x - 34 && r.x < holdGate.x + 6) { r.x = Math.min(r.x, holdGate.x - 8 - Math.abs(r.dy) * 1.2); r.held = true; }
       else r.held = false;
+      // The cave door. Unlike a gate this has no band: a gate holds only what is already at
+      // it and lets the tail walk up, which is right for two seconds and wrong for thirty --
+      // by then the tail has to be held too or it walks through the people in front of it.
+      // The file is spaced below, once, after everybody has been clamped.
+      if (seamHolding() && r.x > seamLine()) { r.x = seamLine(); r.held = true; }
       // footfall: a puff of dust off the back foot and a beat of squash
       const step = Math.sin(r.phase) > 0;
       if (step !== r.fs) {
@@ -2310,6 +2453,21 @@ function update(dt) {
         const wet = r.lane === 0 && (!ENC.inside(r.x) || into === 'ditch');
         killRunner(r, wet ? 'splash' : 'dark');
       }
+    }
+  }
+
+  // The file at the cave door. Borrowed from the room queue's spacing and from nothing else:
+  // clamping a hundred people to one line puts them inside a couple of body widths, which
+  // reads as a smudge rather than as a shift waiting to be let out. Each one is held behind
+  // the one in front at a stride and a bit, jittered per runner so the file is not a comb.
+  // Sorted by x descending so "the one in front" means furthest forward, not lowest index.
+  if (seamHolding()) {
+    const file = S.runners.filter(r => r.state === 'run' && r.x >= seamLine() - 900)
+                          .sort((a, b) => b.x - a.x);
+    let back = seamLine();
+    for (const p of file) {
+      if (p.x > back) p.x = back;
+      back = p.x - (4.6 + hash(p.jit * 3.7) * 2.4);
     }
   }
 
@@ -2514,14 +2672,21 @@ const DRILL = { in: 0.34, out: 0.26 };
 // 200 - 146 = 54 -- clear of the HUD, which fills 0..40 and shadows to 42. At 163 it would
 // have been 17, behind the bar.
 const DRILL_MID = 200;
-function startDrill() {
+// `only` narrows it to a set of verbs: the cave door runs a second drill covering just what
+// act two introduces. The derivation below is untouched and still does all the work -- this
+// filters its RESULT, so a room being moved still moves the drill with it, and a new room type
+// still earns a panel for free. Called as a boss callback too, where `b.onGone()` passes
+// nothing, so the unfiltered path is the default.
+function startDrill(only) {
   const order = [], seen = {};
   // course order, so the drill hands them over in the order the road will
   for (const r of CFG.rooms.slice().sort((a, b) => a.x - b.x)) {
     const t = CFG.types[r.type];
     if (!seen[t.verb]) { seen[t.verb] = 1; order.push({ verb: t.verb, title: t.title, color: t.color }); }
   }
-  S.drill = { order, idx: -1, room: null, pos: 1, phase: 'in', done: false, flash: 0 };
+  const pick = only && only.length ? new Set(only.map(o => o.verb)) : null;
+  const list = pick ? order.filter(o => pick.has(o.verb)) : order;
+  S.drill = { order: list, idx: -1, room: null, pos: 1, phase: 'in', done: false, flash: 0 };
   drillNext();
 }
 function drillNext() {
@@ -2954,7 +3119,7 @@ function draw() {
   // sideways, until it had nothing to do with the person talking. Morgan saw it as the
   // dialog boxes not lining up with the crowd at the door. Reset here, as the overlay path
   // does, or the leak comes back the moment anything else draws bubbles on their own.
-  else if (S.mode === 'intro' && S.drill && !S.drill.done) {
+  else if (S.drill && !S.drill.done) {
     placedUI = [];
     ctx.textAlign = 'center'; drawBubbles(); ctx.textAlign = 'left';
   }
@@ -2988,7 +3153,7 @@ function draw() {
   if (S.mode !== 'win' && S.mode !== 'lose') drawHud();
   if (S.mode === 'play' && S.active) drawPanel(S.active);
   if (S.boss && S.mode !== 'title') drawBoss();
-  if (S.mode === 'intro' && S.drill && !S.drill.done) drawDrill();
+  if (S.drill && !S.drill.done) drawDrill();
   if (S.mode === 'finale') drawFinalePanel();
   if (S.mode === 'title') drawTitle();
   if (S.mode === 'win' || S.mode === 'lose') drawEnd();
@@ -10961,12 +11126,14 @@ function drawHud() {
   // A one-line comment before a statement swallows the statement. Keep them on their own lines.)
   ctx.fillStyle = '#0a0c14'; ctx.fillRect(0, 0, W, 40);
   ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 40, W, 2);
-  const drilling = S.mode === 'intro' && S.drill && !S.drill.done;
+  // Two drills now, and the second runs inside mode 'play', so this keys off the drill
+  // existing rather than off the mode. Same for `speaking`: he talks at the cave door too.
+  const drilling = S.drill && !S.drill.done;
   // The proprietor speaks before the drill exists, which is a second window in which no
   // run has started. Everything the drill suppresses has to be suppressed here too, or the
   // bar spends his whole speech reporting RUNNING 100, LOST 0, FINISHED 0 over a yard where
   // nobody has gone anywhere yet.
-  const speaking = S.mode === 'intro' && S.boss && !S.boss.gone;
+  const speaking = S.boss && !S.boss.gone && (S.mode === 'intro' || S.seam.phase === 'boss');
   let x = 10;
   // Three tallies of a run that has not started read as a report on nothing: nobody is
   // running, nothing is lost, nothing is finished. During the drill the bar says what is
@@ -13483,6 +13650,23 @@ const SOLVE_KEYS = ['ARROWUP', 'ARROWDOWN', 'ARROWLEFT', 'ARROWRIGHT', ' ',
   '1', '2', '3', '4', '5', '6', '7', '8', '9', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
 function devSolve() {
   const fire = k => window.dispatchEvent(new KeyboardEvent('keydown', { key: k }));
+  // ---- the cave door, first, because it stops everything else.
+  // Without this every scripted run ends at the seam: the crowd halts at the door, the
+  // proprietor waits for a SPACE nobody presses, and the bot sits there to the end of its
+  // frame budget. probe reported exactly that -- "no exception, cam 5574 of 15120" -- which
+  // reads like a freeze and is the sequence working as designed. A tool that cannot get past
+  // a checkpoint stops being evidence about everything behind it, which is the same fault as
+  // the play loop that used to stop at 12300 and accuse the game of stranding people.
+  if (S.drill && !S.drill.done) {
+    const d = S.drill;
+    if (d.phase === 'play' && d.room) {
+      const v = VERBS[d.room.verb];
+      const k = v.solveKey ? v.solveKey(d.room.mg) : null;
+      if (k) fire(k); else if (d.room.mg && d.room.mg.won) drillSolved();
+    }
+    return;
+  }
+  if (S.boss && !S.boss.gone && !S.boss.auto) { bossAdvance(); return; }
   const armed = S.rooms.filter(r => r.state === 'armed' && !r.botStuck);
   if (!armed.length) return;
   // Sit in ONE room and triage which one, because both halves are load-bearing
