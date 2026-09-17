@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '99 they jump the way they are going';
+const BUILD = '100 the music starts with the crowd';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1044,9 +1044,15 @@ function lightRound(m) {
 const ARROWS = ['ARROWLEFT', 'ARROWUP', 'ARROWRIGHT', 'ARROWDOWN'];
 // ================================================================ sound (all synthesised in code, no audio files)
 // ---------------------------------------------------------------- music
-// Two files Morgan supplied. The intro (16.0s) starts the moment the mill doors begin to
-// open at the end of the drill; the bed (32.0s) takes over at the EXACT moment the intro
-// finishes and loops from there.
+// Two files Morgan supplied. The intro (16.0s) starts in startRun(), the frame the crowd
+// begins moving forward -- after the proprietor has had his say and after the drill; the
+// bed (32.0s) takes over at the EXACT moment the intro finishes and loops from there.
+//
+// The cue used to sit in updateIntro's door block, guarded on `S.introT >= gather`. That
+// guard is true from the frame the proprietor STARTS speaking, because he is started on
+// that same frame and only then freezes the clock -- so the music came in under his first
+// line. startRun() is the one place the run is defined to begin, and it cannot be reached
+// early by anything.
 //
 // The handover is the audio element's own `ended` event, not a timer. A timer would need
 // the intro's length written down here, and would then drift against it and go wrong the
@@ -2028,13 +2034,13 @@ function updateIntro(dt) {
     return;
   }
   // doors
-  // The doors beginning to move is the cue for the intro, which is what Morgan asked for:
-  // the drill is over, the gates open, the music starts. MUSIC.start is idempotent so it
-  // can be called every frame from here rather than needing a flag of its own.
-  if (S.introT >= gather) {
-    S.doorOpen = Math.min(1, (S.introT - gather) / c.open);
-    MUSIC.start();
-  }
+  // The music is NOT cued from here. This guard is `S.introT >= gather`, and the boss is
+  // started on the very frame introT first reaches gather (just above), so on that frame
+  // execution falls straight through to here and fired MUSIC.start() while he was opening
+  // his mouth. It was invisible in the source because introT is FROZEN while he speaks:
+  // doorOpen stays 0, the doors do not move, and the comment that used to sit here read
+  // as though the doors were the cue. They were not. The cue is startRun().
+  if (S.introT >= gather) S.doorOpen = Math.min(1, (S.introT - gather) / c.open);
   if (S.introT >= gather + c.open + c.hold) startRun();
   // a word from the floor while they wait
   if (S.introT > 0.8) chatter(dt);
@@ -2054,6 +2060,12 @@ function startRun() {
   for (const r of S.runners) { r.onBelt = false; r.offLine = false; r.held = false; r.stagger = 1; }
   S.bubbles.length = 0;
   AU.clank();
+  // The music cue, and the only one. Morgan asked for it here rather than at the doors:
+  // the tutorial is over and the crowd is moving forward. Putting it in startRun rather
+  // than in updateIntro also means the skip, ?start and ?end reach it by the same route
+  // they reach every other piece of run state, instead of each needing their own call.
+  // MUSIC.start is idempotent, so a second call from anywhere is free.
+  MUSIC.start();
 }
 // forks: branch up into a new tunnel; merges: come back down. Nested branches unwind in order.
 function updateLane(r) {
