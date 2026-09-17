@@ -22,7 +22,17 @@ const CFG = {
   packBack: 120, packFront: 540,   // the pack holds slots in this band ahead of the camera anchor
   jitter: 30,
   tire: 0.15,             // how much the pack stretches by the end of the run
-  armDist: 240,           // room unlocks when the front runner is this close
+  armDist: 240,           // the FLOOR: a room is never armed later than this (or its own warn)
+  // How much of the gap between that floor and the far edge of the view a room waits out
+  // before it can be opened. Morgan asked for this: a room used to arm the instant it came
+  // on screen, which is the whole of the view's reach, and he wanted proximity rather than
+  // sight -- "not too close, but not the maximum, somewhere in the middle, halfway".
+  //
+  // 0 is the old on-sight behaviour, 1 is the floor and nothing but the floor. 0.5 is the
+  // halfway he asked for. It is a fraction and not a distance on purpose: the view's reach
+  // is 0.36 * V.vw, which runs from 346 units at play zoom to 768 when act three pulls back
+  // to five lanes, so any distance written here would mean something different in each act.
+  armReach: 0.5,
   baseY: 400,             // floor of tunnel 0; each tunnel above is laneGap higher
   laneGap: 190,
   laneCount: 6,
@@ -1705,10 +1715,17 @@ function update(dt) {
       // 199px out however large the number was. Routing is decided per runner at the fork,
       // so anyone still behind the room may yet come down this lane.
       const coming = S.runners.some(r => r.state === 'run' && r.x < room.x + CFG.gapWidth);
-      const visible = inView(room.x, 40) || inView(room.x + CFG.gapWidth, 40);
-      // the old rule stays as a floor, so nothing arms later than it used to
-      const close = S.runners.some(r => r.state === 'run' && r.lane === room.lane && r.x >= room.x - (room.warn || CFG.armDist));
-      if ((close || (coming && visible)) && freeHotkey() !== null) armRoom(room);
+      // How far ahead of the pack the view actually reaches, DERIVED from the camera rather
+      // than written down: V.left is packFront - 0.64*vw, so the right edge sits 0.36*vw
+      // past it, and vw is 960/zoom. Sight distance is therefore not one number -- it is
+      // 346 units in act one and 768 out on the five-lane hillside, which is why the old
+      // on-sight rule gave act three more than twice the warning act one got.
+      const sight = 0.36 * V.vw;
+      const floor = room.warn || CFG.armDist;
+      // never later than the floor, and never as early as first sight
+      const reach = floor + Math.max(0, sight - floor) * (1 - CFG.armReach);
+      const within = S.runners.some(r => r.state === 'run' && r.x >= room.x - reach);
+      if (coming && within && freeHotkey() !== null) armRoom(room);
     }
     // A verb that banks its win outside key() finishes here. The sweeper does it
     // so the final key stays lit for its 0.28s; pendingClear is what stops
