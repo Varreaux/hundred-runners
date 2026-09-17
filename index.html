@@ -150,13 +150,22 @@ const CFG = {
     // what it costs a player -- read a keypad, deduce an order, type three digits -- which
     // puts it beside Wiring rather than beside arithmetic.
     presses:  { family: 'Code', rank: 3, weight: 1 },
-    // Ours, added after her branch: the enclosure's own rooms. They are property rather
-    // than machinery and have no family on her sheet, so they are ranked here by what they
-    // cost a player -- a thorn hedge is a typing room, a ditch is a drumming room, a
-    // mantrap is a hold, and the wall is the hardest thing in the game.
-    ditch:    { family: 'Bank',        rank: 3, weight: 1 },
+    // The enclosure's rooms. These were ranked here by what they cost a player, and then
+    // cross-checked against Linh's OWN encoding of the same sheet on origin/Linh2, which
+    // carries a PUZZLE_FAMILIES table mapped onto our types. Hers runs 1..10 where this runs
+    // 0..5, so the numbers do not match and were never going to -- but the ORDER of all ten
+    // families is identical, which is the part that matters, and it was arrived at twice
+    // independently. Her names are used in preference to the ones invented here: Dig rather
+    // than Bank, Lift rather than Jaws.
+    //
+    //   hers:  Lever 1  Gear 2  Slider 3  Typo 4  Wiring 5  Dig 6  Lift 7  Blast 8  Trace 9  Calculation 10
+    //   here:  Lever 0  Gear 1  Slider 1  Typo 2  Code 3 / Wiring 3 / Dig 3  Lift 4 / Trace 4  Blast 5 / Calculation 5
+    //
+    // Her table also has no entry at all for `presses`, which is the independent confirmation
+    // that the worn-key code is not one of her ten and should not be ranked as her Calculation.
+    ditch:    { family: 'Dig',         rank: 3, weight: 1 },
     thorn:    { family: 'Typo',        rank: 2, weight: 1 },
-    mantrap:  { family: 'Jaws',        rank: 4, weight: 1 },
+    mantrap:  { family: 'Lift',        rank: 4, weight: 1 },
     wall:     { family: 'Blast',       rank: 5, weight: 1 },
   },
   crusherPeriod: 1.6,
