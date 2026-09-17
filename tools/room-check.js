@@ -35,7 +35,11 @@
 // cost is a DURATION, not a key count, and the number below is that duration.
 'use strict';
 const fs = require('fs'), path = require('path');
-const src = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+// Takes a path, like enc-check and hall-check do. It did not, and silently read the live
+// file whatever you passed it -- so a before-and-after comparison against an older copy
+// compared the current file to itself and printed two identical answers, which reads
+// exactly like "the change had no effect" and was used as evidence for that.
+const src = fs.readFileSync(process.argv[2] || path.join(__dirname, '..', 'index.html'), 'utf8');
 
 const num = (re, d) => { const m = src.match(re); return m ? +m[1] : d; };
 const scroll = num(/scroll:\s*([\d.]+)/, 110);
@@ -109,6 +113,28 @@ function visibleWindows() {
   const realFillText = ctx.fillText.bind(ctx);
   let probe = null;
   ctx.fillText = function (txt, x, y) { if (probe) probe.push([String(txt), x]); return realFillText(txt, x, y); };
+  // Key cost DERIVED by driving the verb, for the verbs that can be. A hardcoded count is
+  // a fact about the game written down in a second place, and it goes wrong silently the
+  // first time the game changes: wires lost a keystroke per wire and this table did not
+  // move by a digit. Worst of 400 starts, not the median, so it errs toward calling a room
+  // harder than it is.
+  __out.__cost = {};
+  for (const v of ['wires']) {
+    const runs = [];
+    for (let i = 0; i < 400; i++) {
+      const m = VERBS[v].start(3);
+      let n = 0;
+      while (n < 200) {
+        const k = VERBS[v].solveKey(m);
+        if (k == null) break;
+        n++;
+        if (VERBS[v].key(m, k) === 'done') break;
+      }
+      runs.push(n);
+    }
+    runs.sort((a, b) => a - b);
+    __out.__cost[v] = { med: runs[runs.length >> 1], worst: runs[runs.length - 1] };
+  }
   S.mode = 'play';
   for (let f = 0; f < 60 * 220 && S.mode === 'play'; f++) {
     const t = f / 60;
@@ -145,6 +171,11 @@ function visibleWindows() {
 }
 let WIN = {};
 try { WIN = visibleWindows(); } catch (e) { console.log('could not drive a game: ' + e.message); }
+// Key costs measured by driving the verb, carried out of the same run. Falls back to a
+// stated number only if the run failed, and says so, rather than quietly pricing a room
+// off a constant nobody has checked since the verb changed.
+const COSTS = WIN.__cost || {};
+if (!WIN.__cost) console.log('NOTE: could not drive the verbs; derived key costs fall back to stated numbers.');
 
 const typesBlock = src.slice(src.indexOf('  types: {'), src.indexOf('  crusherPeriod'));
 const verbOf = {};
@@ -175,7 +206,13 @@ const cost = {
   word:   d => ({ keys: WORDLEN[Math.max(1, Math.min(5, d)) - 1], kind: 'distinct' }),
   bar:    d => ({ keys: [1, 2, 2, 2, 3][d - 1], kind: 'same', note: 'plus waiting for the marker' }),
   code:   d => ({ keys: 3, kind: 'distinct' }),
-  wires:  d => ({ keys: 14, kind: 'distinct' }),
+  // Derived above, and 'same' rather than 'distinct': after the pull this room is a run
+  // of one arrow held down until the colour matches, which people drum at five or six a
+  // second. Calling it six distinct letters priced it at a rate nobody has to achieve --
+  // it was reading 3.10/s against a 'distinct' ceiling and coming out "hard" on a room
+  // whose whole cost is tapping the same key.
+  wires:  d => ({ keys: (COSTS.wires || { worst: 16 }).worst, kind: 'same',
+                  note: 'pull, then one arrow until the colour matches' }),
   // Forced watching is a duration you cannot hurry; the keys on top are a rate. lights has
   // BOTH, so it needs both, and it used to declare only the first -- at the MINIMUM, which
   // priced a third of the room.

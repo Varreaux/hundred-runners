@@ -166,11 +166,13 @@ const CFG = {
     // every round.
     { x: 4000,  lane: 0, type: 'sweeper',  diff: 2, warn: 1350 },
     { x: 5300,  lane: 0, type: 'presses',  diff: 2 },
-    // Same arithmetic fault as the sweeper, in my own room. Splicing a wire costs a pull,
-    // a walk along the sockets and a connect, and over 4000 layouts an optimal player needs
-    // 14 keys, median and worst alike. The standard 240px of warning is 2.18s of road, so
-    // it demands 6.4 keys a second with no time to read the colours. 840px is 7.6s, which
-    // is about 1.8 keys a second and leaves a moment to look at it. Undo by deleting warn.
+    // Same arithmetic fault as the sweeper. Splicing a wire costs a pull and a walk along
+    // the sockets; the connect press is gone, since the splice makes itself the moment the
+    // colours meet. Over 4000 layouts an optimal player needs 10 keys, worst 16. The
+    // standard 240px of warning is 2.18s of road, so it demanded 4.6 keys a second with no
+    // time to read the colours. 840px is 7.64s, about 2.1 a second at worst, which leaves a
+    // moment to look at it. Undo by deleting warn. Numbers from tools/room-check.js, which
+    // DERIVES them by driving the verb -- do not restate them here without re-running it.
     { x: 5800,  lane: 0, type: 'wiring',   diff: 3, warn: 840 },
     { x: 2200,  lane: 0, type: 'rope',    diff: 1 },
     { x: 3300,  lane: 0, type: 'winch',   diff: 2 },
@@ -395,6 +397,26 @@ const toScreen = (wx, wy) => [(wx - V.left) * V.zoom, H + (wy - CFG.worldBottom)
 const inView = (wx, margin = 100) => wx > V.left - margin && wx < V.left + V.vw + margin;
 
 // ================================================================ mini-game verbs
+
+// One greasy thumbprint, at one of three wear ranks. Drawn in ONE place because the press
+// room's legend and its keypad both use it, and the entire puzzle is the claim that rank 0
+// looks heavier than rank 1 — if the worked example and the keys could drift apart on what
+// "heaviest" looks like, the legend would teach a rule the keypad does not follow.
+//
+// The three ranks differ in ink, in ring count AND in size rather than in one of those
+// alone: the print alone separated first from third at a glance but not second from third,
+// and second versus third is the comparison the player has to make twice.
+function thumbMark(x, y, rank, s) {
+  const ink = [0.92, 0.5, 0.2][rank], rings = [6, 4, 2][rank], grow = [1.15, 0.8, 0.5][rank] * s;
+  ctx.fillStyle = `rgba(150,132,98,${ink * 0.45})`;
+  ctx.beginPath(); ctx.ellipse(x, y, 9 * grow, 12 * grow, 0.15, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = `rgba(214,196,156,${ink})`; ctx.lineWidth = 0.9;
+  for (let j = 0; j < rings; j++) {
+    ctx.beginPath();
+    ctx.ellipse(x, y, (2 + j * 1.5) * grow, (3.4 + j * 1.9) * grow, 0.15, 0.2, 5.4);
+    ctx.stroke();
+  }
+}
 const VERBS = {
   // ---- the five factory puzzles. STUBS: real versions are being written
   // elsewhere and drop straight in here. Contract: key() returns 'done' | 'ok' |
@@ -483,7 +505,11 @@ const VERBS = {
                       // 210 not 196: at 196 the round pips at py+175 landed ON the progress
                       // bar that panelFrame's callers draw at py+ph-20, two unrelated readouts
                       // in the same five pixel rows.
-    now: m => (m.watch ? 'WATCH' : m.won ? 'done' : `repeat it  (${m.idx}/${m.seq.length})`),
+    // Nothing while the sweeper is showing you the order. The banner inside the panel
+    // already says WATCH in 20px yellow; repeating it in the step slot printed the same
+    // word twice in two sizes, and spent the "what to do right now" line on an instruction
+    // to do nothing -- on the one room where the next thing to do changes twice.
+    now: m => (m.watch ? null : m.won ? 'done' : `repeat it  (${m.idx}/${m.seq.length})`),
     takesDigits: true,
     hint: 'watch the sweeper, then repeat the order with 1-9',
     solveKey: m => (m.watch || m.won ? null : m.seq[m.idx]),
@@ -515,7 +541,9 @@ const VERBS = {
       const own = m.inputT > 0;
       ctx.textAlign = 'center';
       ctx.fillStyle = m.watch ? '#ffc64d' : '#5ce1ff'; ctx.font = 'bold 12px monospace';
-      ctx.fillText(`${m.watch ? 'WATCH' : 'YOUR TURN'}   ${m.seq.length} FLASHES`, cx, py + 44);
+      // 48, not 44: at 44 the cap tops sat 4.6 units under panelFrame's header hairline,
+      // the tightest text-to-rule clearance in the set.
+      ctx.fillText(`${m.watch ? 'WATCH' : 'YOUR TURN'}   ${m.seq.length} FLASHES`, cx, py + 48);
       for (let i = 0; i < 9; i++) {
         const isLit = lit === String(i + 1);
         const x = cx - 72 + (i % 3) * 50, y = py + 54 + Math.floor(i / 3) * 38;
@@ -535,14 +563,22 @@ const VERBS = {
     },
   },
   code: {
-    ph: 210,          // same 3x3 keypad as the sweeper, same reason, same clearance
+    // WIDE, not tall. The legend below is the whole fix for this room, and stacking it
+    // above the keypad took the panel to 266 -- which tools/cover-check.js scores at 59.6%
+    // of the crowd hidden behind the panel on average and 100% on its worst frame, against
+    // 17.7% before. A room you cannot see past is not a legibility win. Beside the keypad
+    // instead, in a panel half again as wide, it costs 21.6% -- the same as the sweeper,
+    // the other 3x3 keypad. 200 is about the floor for any panel holding a 3x3 grid:
+    // 30 of header, an input line, 3 rows at 38, and the ~32 panelStep and panelGauges
+    // own at the bottom.
+    ph: 218, pw: 620,
     takesDigits: true,
-    // A STATUS, not the rule. panelStep prints this right-aligned on the same line as the
-    // room title, so anything long collides with it: "press the worn keys, dirtiest first"
-    // printed straight through "unlock the press controls". The rule lives in hint, which
-    // has the whole bottom of the screen to itself.
-    now: m => (m.failed ? 'REJECTED' : `${m.input.length}/3`),
-    hint: 'three greasy keys: press them dirtiest first',
+    // panelStep moved to the bottom row, opposite the time-to-arrival readout, with a
+    // 376px budget -- it no longer collides with the title, which is why this can carry the
+    // rule as well as the count. It was a bare "0/3", the least instructive line in the set
+    // on the room with the most to teach.
+    now: m => (m.failed ? 'REJECTED \u2014 dirtiest first' : `dirtiest first  (${m.input.length}/3)`),
+    hint: 'three greasy keys · the dirtiest was pressed first, the cleanest last',
     solveKey: m => m.secret[m.input.length],
     start() {
       const digits = Array.from({ length: 9 }, (_, i) => String(i + 1));
@@ -570,14 +606,131 @@ const VERBS = {
     update() {},
     progress(m) { return m.input.length / 3; },
     draw(m, px, py, pw) {
-      const cx = px + pw / 2;
+      // Two columns: the worked example on the left, the keypad on the right.
+      // Kx is the centre of the right column, px+336 (the divider) to px+620, not a round
+      // number near it: at px+460 the keypad sat 18 units left of its own half, leaving 52
+      // of gap on one side and 88 on the other.
+      const Lx = px + 150, Kx = px + 478;
       ctx.textAlign = 'center';
-      ctx.fillStyle = m.failed ? '#ff7777' : '#5ce1ff'; ctx.font = 'bold 20px monospace';
-      ctx.fillText(m.failed ? 'REJECTED' : m.input.padEnd(3, '\u00b7').split('').join('   '), cx, py + 46);
+
+      // THE LEGEND. Morgan: players were splitting evenly on whether to go dirtiest-first
+      // or cleanest-first, which means the rule was not on screen -- it was in a hint line
+      // at the bottom of the canvas, and in the player's own reasoning about how a finger
+      // works. "More grease means earlier" is a deduction, not a perception, and half of
+      // them deduced it the other way round.
+      //
+      // So the rule is stated here as a worked example, in the panel, above the keypad it
+      // applies to: three sample prints from heaviest to lightest, labelled 1st 2nd 3rd,
+      // with a ghost fingertip travelling along them in that order and leaving each mark
+      // as it goes. It shows the cause -- the finger gives up its grease as it presses --
+      // rather than asserting the consequence.
+      //
+      // It cannot leak the answer: these are three swatches in a row, not keys. Which of
+      // the nine keys carries which mark is still the thing the player has to read.
+      // Reading down the column, because that is the order the finger goes in and the
+      // order the answer is pressed in. Across, the eye has no reason to start at the left.
+      //
+      // NO TILE UNDER A SWATCH. A first pass drew each one on a rounded rectangle filled
+      // rgba(122,104,72, [0.5,0.26,0.1][rank]) -- which is character for character the fill
+      // a WORN KEY gets below, at the same corner radius and the same aspect. Three of them
+      // in a column read as three keys with prints on them, and a player starts hunting for
+      // which keys they are. The prints lie bare on the panel ground instead, so nothing in
+      // the example shares a surface with anything on the keypad.
+      const sy = k => py + 76 + k * 36;
+      // 144, ending at py + 184, the same line the divider stops on. At 148 the box ran to
+      // py + 188 and the step line's cap top is py + ph - 25 - 8 = py + 185.
+      ctx.fillStyle = 'rgba(255,255,255,0.045)'; roundRect(px + 16, py + 40, 268, 144, 6); ctx.fill();
+      ctx.font = 'bold 12px monospace'; ctx.fillStyle = 'rgba(180,196,220,0.8)';
+      ctx.textAlign = 'center';
+      // +12, not Lx: the prints sit on Lx but each carries its label to the right, so the
+      // group's optical centre is right of the column and a header centred on Lx reads as
+      // misaligned with the thing it heads.
+      ctx.fillText('MOST GREASE', Lx + 12, py + 58);
+      ctx.fillText('LEAST GREASE', Lx + 12, py + 178);
+      // The finger walks 1st, 2nd, 3rd on a four-second loop, pressing at each stop, and
+      // A MARK ONLY EXISTS ONCE THE FINGER HAS BEEN THERE. Drawing all three at full ink on
+      // every frame made the example assert the consequence -- here are three prints, they
+      // differ -- which is exactly the thing the player was already failing to reason from.
+      // Appearing under the finger shows the CAUSE: the press is what leaves the grease.
+      // The travel takes press 0 to 0.4545 (min(1, press * 2.2)), so the dip has to peak
+      // after that or the finger presses hardest between two swatches. It used to peak at
+      // press 0.19, which is sy(stop) + 15.2 -- four units below the swatch it was aiming
+      // at, every time.
+      const walk = (S.t % 4) / 4 * 3, stop = Math.min(2, Math.floor(walk)), press = walk - stop;
+      const dip = Math.max(0, 1 - Math.abs((press - 0.7) * 5));
+      for (let r2 = 0; r2 < 3; r2++) {
+        const y2 = sy(r2);
+        // 0 before the finger arrives, fading in across its press, solid once it has gone
+        const born = r2 < stop ? 1 : r2 > stop ? 0 : clamp01((press - 0.12) * 5);
+        ctx.font = 'bold 12px monospace'; ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(210,220,236,' + (0.28 + born * 0.47).toFixed(2) + ')';
+        ctx.fillText(['1st', '2nd', '3rd'][r2], Lx + 26, y2 + 4);
+        if (born > 0) {
+          ctx.save(); ctx.globalAlpha = born;
+          thumbMark(Lx, y2, r2, 0.85);
+          ctx.restore();
+        }
+        if (r2 < 2) {
+          ctx.strokeStyle = 'rgba(167,152,125,0.4)'; ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.moveTo(Lx, y2 + 14); ctx.lineTo(Lx, y2 + 24); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(Lx - 3, y2 + 21); ctx.lineTo(Lx, y2 + 24); ctx.lineTo(Lx + 3, y2 + 21); ctx.stroke();
+        }
+      }
+      // The fingertip, on the mark rather than beside it. It used to ride x = Lx - 27 + dip
+      // * 12, so its right edge reached Lx - 9 while the print spans Lx - 7.5 to Lx + 7.5:
+      // it pressed the air next to the thing it was supposedly making, and being the same
+      // cream as the ink it read as a fourth, fainter print. It comes in from the left and
+      // lands ON Lx, over its own mark, with a nail so it is a finger and not an egg.
+      // stop is clamped to 2 but the travel was not, so for the last 0.73s of every loop
+      // the finger slid on to sy(3) = py + 184 and hung out of the box onto the step row.
+      const fy = sy(Math.min(2, stop + Math.min(1, press * 2.2)));
+      const fx = Lx - 24 + dip * 24;
+      // A fingertip coming down from the upper left: a short tapered shaft into a rounded
+      // pad with a nail on it. The shaft is 26 units and stops, rather than running to the
+      // panel edge -- at full width it was a 130-unit slab of flat cream straight across
+      // the legend and read as a plank lying on the prints, not as a hand.
+      ctx.save();
+      ctx.globalAlpha = 0.40 + dip * 0.40;
+      ctx.fillStyle = '#e4d2b6';
+      ctx.beginPath();
+      ctx.moveTo(fx - 3, fy - 8);
+      ctx.quadraticCurveTo(fx - 18, fy - 17, fx - 27, fy - 21);
+      ctx.lineTo(fx - 22, fy - 8);
+      ctx.quadraticCurveTo(fx - 14, fy - 2, fx - 4, fy + 4);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,246,232,0.6)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.ellipse(fx, fy - 1, 9, 7, -0.42, 0, 6.28); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,250,242,0.8)';
+      ctx.beginPath(); ctx.ellipse(fx - 2.6, fy - 4.2, 4.4, 2.8, -0.42, 0, 6.28); ctx.fill();
+      ctx.restore();
+      // the rule between the example and the thing it is an example of, on the midpoint of
+      // the two columns' edges rather than hard against the left one
+      ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(px + 336, py + 44); ctx.lineTo(px + 336, py + 184); ctx.stroke();
+
+      ctx.textAlign = 'center';
+      // Empty slots as underscores rather than middots: three 20px middots read as specks
+      // rather than as "you have entered one of three", which is the only thing this line
+      // is for.
+      // THREE SLOTS, drawn as three cells. Bare cyan underscores at py + 56 sat ten units
+      // above the top key row in the same cyan as the active-room frame and read as an
+      // underline under keys 1, 2 and 3 -- i.e. as the answer, in a puzzle whose entire
+      // content is which three keys. Cells say "three presses, this many so far" without
+      // pointing at anything, and they say it while empty, which underscores did not.
+      // The word REJECTED goes in the step line, not here: it is twice the width of the
+      // slots and setting it here would either overflow them or shrink the digits.
+      for (let s2 = 0; s2 < 3; s2++) {
+        const sx3 = Kx - 38 + s2 * 38, got = m.input[s2];
+        ctx.fillStyle = 'rgba(255,255,255,0.03)'; roundRect(sx3 - 17, py + 34, 34, 30, 5); ctx.fill();
+        ctx.strokeStyle = m.failed ? 'rgba(255,119,119,0.55)'
+                        : got ? 'rgba(92,225,255,0.75)' : 'rgba(92,225,255,0.22)';
+        ctx.lineWidth = got ? 1.6 : 1; roundRect(sx3 - 17, py + 34, 34, 30, 5); ctx.stroke();
+        if (got) { ctx.fillStyle = '#5ce1ff'; ctx.font = 'bold 20px monospace'; ctx.fillText(got, sx3, py + 56); }
+      }
       for (let i = 0; i < 9; i++) {
         const d = String(i + 1), rank = m.wear[d];
         const marked = rank !== undefined, used = marked && m.input.includes(d);
-        const x = cx - 72 + (i % 3) * 50, y = py + 56 + Math.floor(i / 3) * 38;
+        const x = Kx - 72 + (i % 3) * 50, y = py + 66 + Math.floor(i / 3) * 38;
         ctx.fillStyle = '#2a2d3a'; roundRect(x, y, 44, 32, 5); ctx.fill();
         // The whole key face darkens with wear, not just the print on it. The print alone
         // separated first from third at a glance but not second from third, and second
@@ -590,58 +743,55 @@ const VERBS = {
         ctx.lineWidth = marked ? 2 : 1;
         roundRect(x, y, 44, 32, 5); ctx.stroke();
         if (marked) {
-          // A greasy thumbprint whose HEAVINESS is the answer: the first key pressed took
-          // the most off the finger. Three ranks, and they have to be tellable apart in one
-          // look, so they differ in ink, in ring count and in size rather than in one of
-          // those alone.
-          const ink = [0.92, 0.5, 0.2][rank], rings = [6, 4, 2][rank], grow = [1.15, 0.8, 0.5][rank];
           ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2, 40, 28); ctx.clip();
-          ctx.fillStyle = `rgba(150,132,98,${ink * 0.45})`;
-          ctx.beginPath(); ctx.ellipse(x + 31, y + 17, 9 * grow, 12 * grow, 0.15, 0, 6.28); ctx.fill();
-          ctx.strokeStyle = `rgba(214,196,156,${ink})`; ctx.lineWidth = 0.9;
-          for (let j = 0; j < rings; j++) {
-            ctx.beginPath();
-            ctx.ellipse(x + 31, y + 17, (2 + j * 1.5) * grow, (3.4 + j * 1.9) * grow, 0.15, 0.2, 5.4);
-            ctx.stroke();
-          }
+          thumbMark(x + 31, y + 17, rank, 1);
           ctx.restore();
         }
         ctx.fillStyle = marked ? '#e8e4ea' : '#6a6270'; ctx.font = 'bold 17px monospace';
         ctx.fillText(d, x + 14, y + 22);
       }
-      // No footer line here. panelGauges owns everything from py + 171 down, and a caption
-      // at py + 178 printed across its bars and across "N reach this in Xs", which is the
-      // one readout that tells you whether to stay in the room or run.
+      // No footer line here. panelStep and panelGauges own the last ~32 units of the panel,
+      // and a caption in there printed across their bars and across "N reach this in Xs",
+      // which is the one readout that tells you whether to stay in the room or run.
       ctx.textAlign = 'left';
     },
   },
   wires: {
-    now: m => (m.held == null ? 'pull a live wire with \u2192' : 'choose a socket \u2191\u2193, then \u2192'),
-    hint: '→ pull the live wire · ↑↓ choose a socket · → again to connect',
-    // Two states per wire: pulled or not. Pull first, then walk the sockets until the
-    // colour matches, then connect. Returning ARROWRIGHT while the wrong socket is
-    // selected would make the bot fail the splice on every wire and stall the room.
-    solveKey: m => (!m.pulling || m.right[m.target] === m.left[m.idx] ? 'ARROWRIGHT' : 'ARROWDOWN'),
+    // join() clears m.pulling on the last splice too, so without the first clause the
+    // solved room spent its final frames telling the player to start again.
+    now: m => (m.idx >= m.left.length ? 'all safe' : !m.pulling ? 'pull a live wire with \u2192' : 'walk the sockets \u2191\u2193 \u2014 it joins itself'),
+    hint: '→ pull the live wire · ↑↓ walk the sockets · it connects the moment the colours meet',
+    // Two states per wire: pulled or not. Pull, then walk the sockets; the splice makes
+    // itself the instant the colour under the cursor matches the wire in hand. There is no
+    // confirm press, because there was never a decision in it -- one socket is right, it is
+    // the one you can see, and agreeing with yourself is not gameplay.
+    solveKey: m => (!m.pulling ? 'ARROWRIGHT' : 'ARROWDOWN'),
     start(diff) {
       const shuffle = list => { for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(rand(0, i + 1)); [list[i], list[j]] = [list[j], list[i]]; } return list; };
       const left = shuffle([0, 1, 2, 3]).slice(0, 3 + Math.floor(rand(0, 2)));
       const right = shuffle([...left]);
       // a socket row that already matches would solve itself
       if (right.every((c, i) => c === left[i])) [right[0], right[1]] = [right[1], right[0]];
-      return { left, right, idx: 0, target: 0, pulling: false, links: [], wrong: 0 };
+      return { left, right, idx: 0, target: 0, pulling: false, links: [], made: 0 };
+    },
+    // splice the wire in hand into whatever the cursor is on. One place, because both the
+    // pull and every step now have to ask "did that land it?" and two copies would drift.
+    join(m) {
+      m.links.push(m.target); m.idx++; m.pulling = false; m.target = 0; m.made = 0.35;
+      return m.idx >= m.left.length ? 'done' : 'ok';
     },
     key(m, k) {
       if (m.idx >= m.left.length) return null;
       if (m.pulling && (k === 'ARROWUP' || k === 'ARROWDOWN')) {
-        m.target = (m.target + (k === 'ARROWUP' ? m.right.length - 1 : 1)) % m.right.length; return 'ok';
+        m.target = (m.target + (k === 'ARROWUP' ? m.right.length - 1 : 1)) % m.right.length;
+        return m.left[m.idx] === m.right[m.target] ? VERBS.wires.join(m) : 'ok';
       }
-      if (k !== 'ARROWRIGHT') return null;
-      if (!m.pulling) { m.pulling = true; return 'ok'; }
-      if (m.left[m.idx] !== m.right[m.target]) { m.wrong = 0.3; return 'wrong'; }
-      m.links.push(m.target); m.idx++; m.pulling = false; m.target = 0;
-      return m.idx >= m.left.length ? 'done' : 'ok';
+      if (k !== 'ARROWRIGHT' || m.pulling) return null;
+      m.pulling = true; m.target = 0;
+      // pulling can land it outright, when the wire's own colour happens to sit at the top
+      return m.left[m.idx] === m.right[m.target] ? VERBS.wires.join(m) : 'ok';
     },
-    update(m, dt) { m.wrong = Math.max(0, m.wrong - dt); },
+    update(m, dt) { m.made = Math.max(0, m.made - dt); },
     progress(m) { return m.idx / m.left.length; },
     draw(m, px, py, pw) {
       const COL = ['#ff706c', '#5ce1ff', '#f1c40f', '#ad8bfa'];
@@ -649,22 +799,28 @@ const VERBS = {
       ctx.textAlign = 'center'; ctx.font = 'bold 11px monospace';
       for (let i = 0; i < m.left.length; i++) {
         const on = i === m.idx;
-        if (on) { ctx.fillStyle = 'rgba(92,225,255,0.13)'; ctx.fillRect(lx - 40, yy(i) - 8, 84, 16); }
+        // 72 wide on a 60-wide wire, centred on it. At 84 offset -40 the highlight ran 14
+        // units past the right end of the wire it marked and 10 past the left, so it read
+        // as a band the wire sat in rather than as the wire being selected.
+        if (on) { ctx.fillStyle = 'rgba(92,225,255,0.13)'; ctx.fillRect(lx - 36, yy(i) - 8, 72, 16); }
         ctx.strokeStyle = COL[m.left[i]]; ctx.lineWidth = on ? 4 : 2.4;
         ctx.beginPath(); ctx.moveTo(lx - 30, yy(i)); ctx.lineTo(lx + 30, yy(i)); ctx.stroke();
         // the run across, once spliced or while being aimed
         if (i < m.idx || (on && m.pulling)) {
           const to = i < m.idx ? m.links[i] : m.target;
           ctx.globalAlpha = on ? 1 : 0.6; ctx.lineWidth = on ? 3 : 2;
+          // to rx - 3, the socket's own terminal dot, not rx - 14, its left edge: a
+          // finished splice used to stop 11 units short of the thing it was spliced into.
           ctx.beginPath(); ctx.moveTo(lx + 30, yy(i));
-          ctx.bezierCurveTo(lx + 90, yy(i), rx - 90, yy(to), rx - 14, yy(to));
+          ctx.bezierCurveTo(lx + 90, yy(i), rx - 90, yy(to), rx - 3, yy(to));
           ctx.stroke(); ctx.globalAlpha = 1;
         }
         // the socket block
         ctx.fillStyle = '#242c37'; ctx.fillRect(rx - 14, yy(i) - 8, 46, 16);
         const aimed = m.pulling && m.target === i;
-        ctx.strokeStyle = aimed ? (m.wrong > 0 ? '#ff5555' : '#fff') : '#3c4654';
-        ctx.lineWidth = aimed ? 2 : 1; ctx.strokeRect(rx - 14, yy(i) - 8, 46, 16);
+        const fresh = m.made > 0 && i === m.links[m.links.length - 1];
+        ctx.strokeStyle = fresh ? '#6ee7a0' : aimed ? '#fff' : '#3c4654';
+        ctx.lineWidth = fresh || aimed ? 2 : 1; ctx.strokeRect(rx - 14, yy(i) - 8, 46, 16);
         ctx.fillStyle = COL[m.right[i]]; ctx.beginPath(); ctx.arc(rx - 3, yy(i), 4.4, 0, 6.28); ctx.fill();
       }
       ctx.textAlign = 'left';
@@ -731,6 +887,10 @@ const VERBS = {
   // that is what these two are; blast is a three-beat sequence because it is a finale and
   // wants a shape of its own.
   dig: {
+    // 176, not the default 150: the bank's foot is BANK + 50 = py + 128 and panelStep
+    // writes its line at py + ph - 25, so at 150 the status printed across the bottom of
+    // the bank.
+    ph: 176,
     now: m => (m.last === 'ARROWLEFT' ? 'now RIGHT' : 'now LEFT'),
     hint: 'left, right, left, right \u2014 keep the rhythm and the spade keeps cutting',
     // alternating, so the next key is always the one you did not just press
@@ -760,40 +920,50 @@ const VERBS = {
     },
     progress(m) { return m.cut; },
     draw(m, px, py, pw) {
-      const cx = px + pw / 2, gy = py + 84, halfW = Math.min(150, pw / 2 - 40);
+      // The bank sits at py + 78 rather than py + 40 because of the spade above it. The
+      // handle reaches 20 units above its own grip and the grip lifts another 16 on the
+      // swing, so at py + 34 the top of the handle ran from py + 14 to py - 2: through the
+      // title, and at full swing out of the panel altogether. It had done that since the
+      // room was written and nobody saw it, because two units of a brown line over a brown
+      // header is nothing until every panel is drawn half again as large.
+      //
+      // Everything below is measured DOWN from BANK, so the clearance cannot be lost again
+      // by someone moving one number: handle top is BANK - 26 - lift, i.e. py + 36 at worst
+      // against a header that ends at py + 30.
+      const cx = px + pw / 2, BANK = py + 78, gy = BANK + 50, halfW = Math.min(150, pw / 2 - 40);
       // the bank, with a notch cut into it that deepens as you dig
       ctx.fillStyle = '#4a3b2a';
       ctx.beginPath();
       ctx.moveTo(cx - halfW, gy);
-      ctx.lineTo(cx - halfW, py + 40);
-      ctx.lineTo(cx + halfW, py + 40);
+      ctx.lineTo(cx - halfW, BANK);
+      ctx.lineTo(cx + halfW, BANK);
       ctx.lineTo(cx + halfW, gy);
       ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#3f5a2e'; ctx.fillRect(cx - halfW, py + 40, halfW * 2, 4);   // turf on top
+      ctx.fillStyle = '#3f5a2e'; ctx.fillRect(cx - halfW, BANK, halfW * 2, 4);   // turf on top
       // the notch: a V that reaches the far side when the cut is complete
       const w = 16 + m.cut * 54, d = 6 + m.cut * 42;
       ctx.fillStyle = m.cut >= 1 ? '#7fd6a0' : '#161a20';
       ctx.beginPath();
-      ctx.moveTo(cx - w, py + 38); ctx.lineTo(cx + w, py + 38);
-      ctx.lineTo(cx + w * 0.45, py + 38 + d); ctx.lineTo(cx - w * 0.45, py + 38 + d);
+      ctx.moveTo(cx - w, BANK - 2); ctx.lineTo(cx + w, BANK - 2);
+      ctx.lineTo(cx + w * 0.45, BANK - 2 + d); ctx.lineTo(cx - w * 0.45, BANK - 2 + d);
       ctx.closePath(); ctx.fill();
       // the spade, swinging to whichever side was last pressed
       const side = m.last === 'ARROWRIGHT' ? 1 : -1;
       const lift = Math.sin(m.swing * Math.PI) * 16;
-      const hx = cx + side * (30 + lift * 0.5), hy = py + 34 - lift;
+      const hx = cx + side * (30 + lift * 0.5), hy = BANK - 6 - lift;
       ctx.strokeStyle = '#8a6a44'; ctx.lineWidth = 3.4;
-      ctx.beginPath(); ctx.moveTo(hx, hy - 20); ctx.lineTo(cx + side * 12, py + 40); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(hx, hy - 20); ctx.lineTo(cx + side * 12, BANK); ctx.stroke();
       ctx.fillStyle = m.slip > 0 ? '#ff7a7a' : '#c8d0dc';
       ctx.beginPath();
-      ctx.moveTo(cx + side * 12 - 7, py + 38); ctx.lineTo(cx + side * 12 + 7, py + 38);
-      ctx.lineTo(cx + side * 12, py + 52); ctx.closePath(); ctx.fill();
+      ctx.moveTo(cx + side * 12 - 7, BANK - 2); ctx.lineTo(cx + side * 12 + 7, BANK - 2);
+      ctx.lineTo(cx + side * 12, BANK + 12); ctx.closePath(); ctx.fill();
       // which side to press next, shown ON the thing rather than in a legend
       const next = m.last === 'ARROWLEFT' ? 1 : -1;
       ctx.textAlign = 'center'; ctx.font = 'bold 26px monospace';
       ctx.fillStyle = 'rgba(92,225,255,0.95)';
-      ctx.fillText(next < 0 ? '\u2190' : '\u2192', cx + next * (halfW + 22), py + 60);
+      ctx.fillText(next < 0 ? '\u2190' : '\u2192', cx + next * (halfW + 22), BANK + 30);
       ctx.fillStyle = 'rgba(120,132,150,0.4)';
-      ctx.fillText(next < 0 ? '\u2192' : '\u2190', cx - next * (halfW + 22), py + 60);
+      ctx.fillText(next < 0 ? '\u2192' : '\u2190', cx - next * (halfW + 22), BANK + 30);
       ctx.textAlign = 'left';
     },
   },
@@ -877,26 +1047,35 @@ const VERBS = {
       ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(cx - 44, cy + 2, 88, 4);
       ctx.fillStyle = '#6b5a48'; ctx.fillRect(cx - 40, cy - 4, 80, 7);   // the plate
       ctx.fillStyle = 'rgba(255,244,214,0.16)'; ctx.fillRect(cx - 40, cy - 4, 80, 1.6);
+      // ONE number for the hinge offset and the jaw length, so the two tips meet at the
+      // centre and cannot be made to pass through each other. They did: the hinges were at
+      // cx +/- 34 and each jaw ran 62 from its hinge, so at m.open = 0 the left jaw
+      // occupied cx-34..cx+28 and the right cx+34..cx-28 -- 56 units of mutual overlap,
+      // with both sets of six teeth drawn through each other. It read as one toothed bar,
+      // and as an object it could not exist.
+      const JAW = 34;
       for (const dir of [-1, 1]) {
         ctx.save();
-        ctx.translate(cx + dir * 34, cy - 3);
+        ctx.translate(cx + dir * JAW, cy - 3);
         ctx.rotate(dir * -ang);
         const col = m.snapped > 0 ? '#ff7a7a' : '#aeb8c6';
         // the jaw itself, a flat bar with teeth along its inner edge
         ctx.fillStyle = col;
         ctx.beginPath();
-        ctx.moveTo(0, 0); ctx.lineTo(dir * -6, -6); ctx.lineTo(dir * -62, -6); ctx.lineTo(dir * -62, 0);
+        ctx.moveTo(0, 0); ctx.lineTo(dir * -6, -6); ctx.lineTo(dir * -JAW, -6); ctx.lineTo(dir * -JAW, 0);
         ctx.closePath(); ctx.fill();
         ctx.fillStyle = m.snapped > 0 ? '#ffb2b2' : '#dfe6f0';
-        for (let i = 1; i <= 6; i++) {
-          const tx = dir * -(8 + i * 8.6);
-          ctx.beginPath(); ctx.moveTo(tx - 3.4, -6); ctx.lineTo(tx + 3.4, -6); ctx.lineTo(tx, -16); ctx.closePath(); ctx.fill();
+        // five teeth, the last of them ending ON the tip rather than 25 units past it
+        for (let i = 1; i <= 5; i++) {
+          const tx = dir * -(5 + i * 5.2);
+          ctx.beginPath(); ctx.moveTo(tx - 3, -6); ctx.lineTo(tx + 3, -6); ctx.lineTo(tx, -16); ctx.closePath(); ctx.fill();
         }
         ctx.fillStyle = '#7f8a99'; ctx.beginPath(); ctx.arc(0, 0, 5, 0, 6.28); ctx.fill();   // the hinge
         ctx.restore();
       }
-      // the spring at the centre, flattening as the jaws come apart
-      ctx.strokeStyle = m.snapped > 0 ? '#ff7a7a' : '#7d8794'; ctx.lineWidth = 3;
+      // the spring at the centre, flattening as the jaws come apart. Darker than the jaws,
+      // not lighter: at #7d8794 over #aeb8c6 it was invisible on the thing it lies across.
+      ctx.strokeStyle = m.snapped > 0 ? '#ff7a7a' : '#4e5763'; ctx.lineWidth = 3;
       ctx.beginPath();
       const sh = 13 - m.open * 8;
       for (let i = 0; i <= 8; i++) ctx.lineTo(cx - 20 + i * 5, cy - 9 - (i % 2 ? 0 : sh * 0.5));
@@ -970,21 +1149,29 @@ const VERBS = {
     progress(m) { return (m.stage + (m.stage === 0 ? m.idx / m.holes.length : m.stage === 1 ? m.pays / m.need : m.lit)) / 3; },
     draw(m, px, py, pw) {
       const cx = px + pw / 2;
-      // the wall face, with boreholes drilled in it
-      ctx.fillStyle = '#4a4048'; ctx.fillRect(cx - 150, py + 30, 300, 58);
+      // FACE, so the courses and the letters cannot drift off the stone they belong to.
+      // It started at py + 30, over panelFrame's own header hairline at py + 29..30.4, so
+      // the rock covered the middle 300 units of the line that divides the title from the
+      // panel and read as hanging from the title rather than sitting below it.
+      const FACE = py + 38, faceH = 54;
+      ctx.fillStyle = '#4a4048'; ctx.fillRect(cx - 150, FACE, 300, faceH);
       ctx.fillStyle = 'rgba(0,0,0,0.30)';
-      for (let r = 0; r < 3; r++) ctx.fillRect(cx - 150, py + 30 + r * 20, 300, 1.6);
+      for (let r = 0; r < 3; r++) ctx.fillRect(cx - 150, FACE + r * 18, 300, 1.6);
       const n = m.holes.length, step = Math.min(58, 260 / n);
       m.holes.forEach((h, i) => {
-        const hx = cx + (i - (n - 1) / 2) * step, hy = py + 60;
+        const hx = cx + (i - (n - 1) / 2) * step, hy = FACE + 22;
         ctx.fillStyle = '#14121a'; ctx.beginPath(); ctx.arc(hx, hy, 12, 0, 6.28); ctx.fill();
         if (h.charged) {
           ctx.fillStyle = '#c4762e'; ctx.beginPath(); ctx.arc(hx, hy, 8.5, 0, 6.28); ctx.fill();
           ctx.fillStyle = '#e8a04a'; ctx.beginPath(); ctx.arc(hx - 2, hy - 2, 3.4, 0, 6.28); ctx.fill();
         }
+        // +26 and not +30: at +30 the baseline sat 2 units BELOW the bottom of the face,
+        // so every letter had its caps on the rock and its feet off it. And #6e7a8e on a
+        // #4a4048 face is barely a separation, on the letters you have not pressed yet --
+        // which are the only ones you need to read.
         ctx.textAlign = 'center'; ctx.font = 'bold 15px monospace';
-        ctx.fillStyle = h.charged ? '#6ee7a0' : (m.stage === 0 && i === m.idx) ? '#5ce1ff' : '#6e7a8e';
-        ctx.fillText(h.k, hx, hy + 30);
+        ctx.fillStyle = h.charged ? '#6ee7a0' : (m.stage === 0 && i === m.idx) ? '#5ce1ff' : '#a9b2c4';
+        ctx.fillText(h.k, hx, hy + 26);
       });
       // the fuse, paid out from the charges back to where you are standing
       if (m.stage >= 1) {
@@ -1970,7 +2157,12 @@ const stairFootX = () => CFG.intro.drop + STAIR_RUN;
 // Panels arrive from the right, are played, and leave to the left. ESC moves past one.
 const DRILL = { in: 0.34, out: 0.26 };
 // The horizontal line every drill panel is centred on, whatever its height.
-const DRILL_MID = 163;
+//
+// 200, up from 163, because the panels are now drawn at PANEL_SCALE. A panel's scaled top
+// is DRILL_MID - ph * PANEL_SCALE / 2, so the tallest (the press keypad at 218) sits at
+// 200 - 146 = 54 -- clear of the HUD, which fills 0..40 and shadows to 42. At 163 it would
+// have been 17, behind the bar.
+const DRILL_MID = 200;
 function startDrill() {
   const order = [], seen = {};
   // course order, so the drill hands them over in the order the road will
@@ -2403,7 +2595,11 @@ function draw() {
     // "N coming" bar already live, and the toll landed straight on top of them.
     // Below is also where the bodies went, so it is where the eye already is.
     const sink = (1 - S.spike.t / 0.9) * 16;
-    const x = Math.max(70, Math.min(W - 70, kx)), y = Math.min(H - 54, ky + 74 + sink);
+    // The plate's bottom is y + 24 and it is drawn BEFORE drawHud, so it has to clear the
+    // hint band or the band washes its bottom corners at 0.6 alpha. hintBandH() is the
+    // band's real height rather than a number copied from it, which is how this went wrong:
+    // the clamp was written against a 26px band, and the band later grew.
+    const x = Math.max(70, Math.min(W - 70, kx)), y = Math.min(H - hintBandH() - 24, ky + 74 + sink);
     ctx.textAlign = 'center'; ctx.globalAlpha = a;
     ctx.fillStyle = 'rgba(10,6,10,0.55)';
     ctx.font = 'bold 46px monospace';
@@ -10457,20 +10653,81 @@ function drawHud() {
 // The drill shows eleven of these back to back and blast's hint plus the aside is 936px at
 // 13px, a hair over the limit, so that one panel alone dropped a step and the size visibly
 // flickered mid-sequence. Passing the longest line in the set makes all eleven agree.
+// Morgan, on the mini-games generally: "whatever is written is too small to read". This
+// line carries every instruction the game gives, so it was the worst offender.
+//
+// IT WRAPS, IT DOES NOT SHRINK. The first attempt at this just raised the size from 13 to
+// 17 and kept the shrink-to-fit loop, and it changed nothing at all on the eleven screens
+// it was written for: the drill sizes every panel's line off the LONGEST hint in the set
+// (so the type does not jump as panels swap), the longest is blast's at 93 characters, and
+// 93 characters plus the aside do not fit on one line at any size above 13. So all eleven
+// drill lines rendered at exactly the size complained about, and the only line in the game
+// that came out at 17 was "watch the tunnels ahead", which teaches nothing.
+//
+// At 17px a line holds about 91 characters, and shortening every instruction to fit that
+// would cost the instructions. So the size is fixed and the LINE COUNT gives instead.
+const HINT_FS = 17, HINT_LH = 20, HINT_PAD = 7;
+// The tallest the band ever gets, for anything that has to stay clear of it. Two lines is
+// the practical worst case: the longest instruction the game can assemble is the mantrap's
+// hint plus "(ESC to close)" plus the gate clause, 136 characters, which wraps to two.
+const hintBandH = () => HINT_PAD * 2 + 2 * HINT_LH;
+// A space that wrap() will not break on. The aside travels as ONE word with the four
+// spaces that separate it from the instruction, so it cannot be split across a line and
+// cannot be orphaned from its gap.
+const HINT_NB = '\u0001';
 function hintBar(text, note, sizeFrom) {
-  ctx.fillStyle = 'rgba(8,10,18,0.6)'; ctx.fillRect(0, H - 26, W, 26);
-  const gap = '    ';
-  let fs = 13;
-  ctx.font = `${fs}px monospace`;
-  const measure = sizeFrom || (text + (note ? gap + note : ''));
-  while (fs > 9 && ctx.measureText(measure).width > W - 24) { fs -= 1; ctx.font = `${fs}px monospace`; }
-  // laid out left-to-right from a computed start, so the pair is centred as one run and
-  // the aside cannot land on top of a long instruction the way a right-aligned one does
+  ctx.font = `${HINT_FS}px monospace`;
+  const max = W - 28;
+  const wrapAt = (s, w) => {
+    const out = [];
+    let line = '';
+    for (const word of s.split(' ')) {
+      const t = line ? line + ' ' + word : word;
+      if (line && ctx.measureText(t.replace(/\u0001/g, ' ')).width > w) { out.push(line); line = word; }
+      else line = t;
+    }
+    if (line) out.push(line);
+    return out;
+  };
+  // BALANCED, not greedy. Greedy filled the first line and left whatever was over on the
+  // second: blast's hint came out as eighty characters and then the single word "fire".
+  // Squeezing the allowance down to the narrowest that still gives the same number of
+  // lines spreads the words evenly instead, and cannot add a line by construction.
+  const wrap = s => {
+    const rows = wrapAt(s, max);
+    if (rows.length < 2) return rows;
+    let lo = 0, hi = max;
+    while (hi - lo > 2) {
+      const mid = (lo + hi) / 2;
+      if (wrapAt(s, mid).length <= rows.length) hi = mid; else lo = mid;
+    }
+    return wrapAt(s, hi);
+  };
+  // the aside is part of the run being wrapped, not a thing appended afterwards -- laid out
+  // separately it decided on its own whether to fit, and balancing the instruction then
+  // pushed it onto a third line
+  const full = note ? text + ' ' + ('    ' + note).replace(/ /g, HINT_NB) : text;
+  const rows = wrap(full);
+  // sizeFrom is the longest line in a set the caller will cycle through. It sizes the BAND
+  // rather than the type: the drill swaps eleven panels in sequence and a bar that changed
+  // height between them would flicker, which is what that argument was always for.
+  const n = Math.max(rows.length, sizeFrom ? wrap(sizeFrom).length : 1);
+  const band = HINT_PAD * 2 + n * HINT_LH;
+  ctx.fillStyle = 'rgba(8,10,18,0.6)'; ctx.fillRect(0, H - band, W, band);
   ctx.textAlign = 'left';
-  const tw = ctx.measureText(text).width, nw = note ? ctx.measureText(gap + note).width : 0;
-  const x0 = W / 2 - (tw + nw) / 2;
-  ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillText(text, x0, H - 9);
-  if (note) { ctx.fillStyle = 'rgba(255,255,255,0.38)'; ctx.fillText(gap + note, x0 + tw, H - 9); }
+  const top = H - band + HINT_PAD;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i], cut = row.indexOf(HINT_NB);
+    const head = cut < 0 ? row : row.slice(0, cut);
+    const tail = cut < 0 ? '' : row.slice(cut).replace(/\u0001/g, ' ');
+    const hw = ctx.measureText(head).width, tw = ctx.measureText(tail).width;
+    // laid out left-to-right from a computed start, so an instruction and its aside are
+    // centred as one run and the aside cannot land on top of the instruction
+    let x = W / 2 - (hw + tw) / 2;
+    const y = top + i * HINT_LH + HINT_FS - 3;
+    if (head) { ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillText(head, x, y); x += hw; }
+    if (tail) { ctx.fillStyle = 'rgba(255,255,255,0.38)'; ctx.fillText(tail, x, y); }
+  }
 }
 // The word is read and typed, not followed. drawKeyBoxes highlights the next
 // key, which turns 'type the word' into 'press the lit thing' -- fine for the
@@ -10532,11 +10789,50 @@ function drawKeyBoxes(chars, idx, px, py, pw) {
   }
   ctx.textAlign = 'left';
 }
+// How much bigger every mini-game panel is drawn than the coordinates inside it say.
+// 1 is the old size. Morgan asked for this: "whatever is written is too small to read."
+//
+// One transform rather than editing the numbers, because a panel is a hundred hand-placed
+// coordinates across eleven verbs -- eleven chances to get it wrong, and a guarantee that
+// the next verb added misses it. Canvas text under a scaled transform is rendered at the
+// effective size, so type gets bigger rather than blurrier.
+//
+// WHAT LIMITS THIS IS NOT THE CANVAS, IT IS THE CROWD. A panel is opaque and sits over the
+// road, so every unit it grows is road you cannot watch while you work -- and watching the
+// crowd is the game. There is a great deal of canvas left (the tallest panel reaches 340 of
+// 540, and the hint band does not start until 506); the cost is entirely in what is
+// covered. tools/cover-check.js scores that directly, at scale 1.00 against the current
+// value, on the same frames:
+//
+//   420x150, nine of the eleven rooms    4.1% of the crowd hidden -> 6.3%
+//   420x176, dig                         4.5% -> 11.5%
+//   420x210, the sweeper                 6.4% -> 18.6%
+//   620x218, the press keypad            6.7% -> 19.1%
+//
+// Those move a point or two between runs -- the game calls Math.random() in about thirty
+// places -- so reproduce on the shape, not the digits. Run the tool before raising this or
+// before making any panel BIGGER IN HEIGHT. A first pass at the press room stacked its
+// legend above the keypad, at 420x266: 18.2% -> 60.0%, and 100% of the crowd on its worst
+// frame, for a panel that looked perfectly fine in every screenshot. Widening it instead
+// cost almost nothing, because the crowd sits near the middle of the screen and a panel's
+// outer thirds cover very few people. Wide is nearly free. Tall is not.
+const PANEL_SCALE = 1.34;
+// Wrap a panel's whole draw in that scale, about its top centre -- top, not middle, so a
+// panel grows downward from where it already starts rather than climbing into the HUD.
+// Callers hand it the body as a function so there is exactly one save/restore and no way
+// to leave the transform on.
+function atPanelScale(py0, body) {
+  ctx.save();
+  ctx.translate(W / 2, py0);
+  ctx.scale(PANEL_SCALE, PANEL_SCALE);
+  ctx.translate(-W / 2, -py0);
+  try { body(); } finally { ctx.restore(); }
+}
 // py0 exists for the drill. On the road one panel is open at a time and a fixed top edge
-// is right; in the drill eleven are swapped in sequence and the two panel heights (150,
-// and 210 for the keypads) made the box jump 60px taller and back again mid-run. The drill
-// passes a top derived from a shared midline so all eleven read as one object being
-// exchanged rather than a box that keeps resizing. Default unchanged, so the road is.
+// is right; in the drill eleven are swapped in sequence and the panel heights (150 up to
+// 218 for the keypads) made the box jump taller and back again mid-run. The drill passes a
+// top derived from a shared midline so all eleven read as one object being exchanged
+// rather than a box that keeps resizing. Default unchanged, so the road is.
 function panelFrame(pw, title, color, ph = 150, py0 = 48) {
   const px = W / 2 - pw / 2, py = py0;
   // a cast shadow, so the panel sits over the world instead of being cut into it
@@ -10603,16 +10899,26 @@ function panelGauges(room, px, py, pw, ph) {
   ctx.fillStyle = 'rgba(255,255,255,0.09)'; roundRect(bx, by + 9, bw, 5, 3); ctx.fill();
   ctx.fillStyle = urgent ? (Math.sin(S.t * 14) > 0 ? '#ff5a5a' : '#ff9a9a') : eta < 3 ? '#f1c40f' : '#6ee7a0';
   roundRect(bx, by + 9, bw * t, 5, 3); ctx.fill();
-  ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right';
-  ctx.fillStyle = urgent ? '#ff8a8a' : 'rgba(210,220,236,0.7)';
-  ctx.fillText(n ? `${n} reach this in ${eta.toFixed(1)}s` : 'nobody left to save here', px + pw - 22, by - 5);
+  // 12, not 10. The comment above calls this the single thing that decides whether to
+  // keep working on a room or abandon it, and it was set smaller and fainter than the
+  // decorative title over it -- the smallest type in the frame.
+  ctx.font = 'bold 12px monospace'; ctx.textAlign = 'right';
+  ctx.fillStyle = urgent ? '#ff8a8a' : 'rgba(210,220,236,0.78)';
+  // "they have all passed this one", not "nobody left to save here": the second is
+  // arithmetically true -- nobody is walking INTO this room -- and prints over a deck with
+  // forty people on it, so it reads as the game being wrong about its own screen.
+  ctx.fillText(n ? `${n} reach this in ${eta.toFixed(1)}s` : 'they have all passed this one', px + pw - 22, by - 5);
   ctx.textAlign = 'left';
 }
 // One width, read by both the room panel and the drill panel. The keys and word verbs
 // size themselves to their content, and a second copy of this arithmetic is a second
 // number to drift: the drill would have drawn a 420 panel around a 6-letter word.
 function panelWidth(room) {
-  return Math.max(420, 80 + (room.verb === 'keys' ? room.mg.seq.length : room.verb === 'word' ? room.mg.word.length : 0) * 48);
+  // A verb may ask for a width, as it may already ask for a height. The press keypad does:
+  // its legend sits BESIDE the keys rather than above them, because stacking them made the
+  // panel tall enough to hide the whole crowd. See the comment on code.ph.
+  const want = VERBS[room.verb].pw || 0;
+  return Math.max(420, want, 80 + (room.verb === 'keys' ? room.mg.seq.length : room.verb === 'word' ? room.mg.word.length : 0) * 48);
 }
 function drawPanel(room) {
   const v = VERBS[room.verb];
@@ -10626,13 +10932,15 @@ function drawPanel(room) {
   // a wrong key shakes the panel. Cheap, and it puts the feedback where the player is
   // already looking rather than only in a full-screen red flash.
   if (S.wrongFlash > 0) ctx.translate(Math.sin(S.wrongFlash * 90) * S.wrongFlash * 9, 0);
-  const [px, py] = panelFrame(pw, `ROOM ${room.hot}   ${room.title}`, '#5ce1ff', ph);
-  // cyan deliberately, NOT room.color: drawRoom already turns the ACTIVE room's badge and
-  // frame cyan, so cyan is what "the room you are in" looks like out in the world. Colouring
-  // the panel by hazard instead would break the one association the player has to follow.
-  v.draw(room.mg, px, py, pw);
-  panelStep(room, px, py, pw, ph);
-  panelGauges(room, px, py, pw, ph);
+  atPanelScale(48, () => {
+    const [px, py] = panelFrame(pw, `ROOM ${room.hot}   ${room.title}`, '#5ce1ff', ph);
+    // cyan deliberately, NOT room.color: drawRoom already turns the ACTIVE room's badge and
+    // frame cyan, so cyan is what "the room you are in" looks like out in the world. Colouring
+    // the panel by hazard instead would break the one association the player has to follow.
+    v.draw(room.mg, px, py, pw);
+    panelStep(room, px, py, pw, ph);
+    panelGauges(room, px, py, pw, ph);
+  });
   ctx.restore();
 }
 // The drill panel. Same frame, same verb drawing, same step line as a real room, so what
@@ -11222,7 +11530,12 @@ function drawDrill() {
   // 1 (off the right) to 0 (centred) to -1 (off the left), and the span clears the panel's
   // own half-width, or a wide one would still have an edge on screen at rest.
   ctx.save();
-  ctx.translate(d.pos * d.pos * d.pos * (W / 2 + pw / 2 + 40), 0);
+  // pw * PANEL_SCALE, not pw: the span has to clear the panel as DRAWN. Against the
+  // unscaled half-width a panel still had 163px of itself on screen at pw 420, and 215 at
+  // 620, on the frame it was last drawn -- so it popped out of existence rather than
+  // leaving, eleven times, on the line whose own comment says the span exists to stop
+  // exactly that.
+  ctx.translate(d.pos * d.pos * d.pos * (W / 2 + pw * PANEL_SCALE / 2 + 40), 0);
   if (S.wrongFlash > 0) ctx.translate(Math.sin(S.wrongFlash * 90) * S.wrongFlash * 9, 0);
   const col = d.flash > 0 ? '#2ecc71' : '#5ce1ff';
   // DRILL_MID is a shared midline rather than a shared top: the keypad panels are 210 tall
@@ -11230,7 +11543,16 @@ function drawDrill() {
   // and panel 6 and back again. It also clears the HUD hairline properly -- at py 48 the
   // 150-tall panels left a ~10px sliver of sky under the bar, too small to read as
   // separation and too large to read as alignment.
-  const [px, py] = panelFrame(pw, d.room.title, col, ph, Math.round(DRILL_MID - ph / 2));
+  // The scale's fixed point is DRILL_MID, not the panel's top. atPanelScale keeps its py0
+  // still and grows everything away from it, so scaling about the top sent the whole 34%
+  // downward: the shared midline the constant exists to hold became dTop + ph * 0.67, which
+  // is a different line for every height. Measured across panels 5 to 9 the top edge moved
+  // 30, 4, 34 and 13, the bottom 50, 7, 57 and 22, and the midline drifted 11.6 -- the
+  // "box that keeps resizing" this was written to kill. About DRILL_MID every scaled
+  // midline is 200 exactly and the panels breathe symmetrically again.
+  const dTop = Math.round(DRILL_MID - ph / 2);
+  atPanelScale(DRILL_MID, () => {
+  const [px, py] = panelFrame(pw, d.room.title, col, ph, dTop);
   v.draw(d.room.mg, px, py, pw);
   panelStep(d.room, px, py, pw, ph);
   // Both bars, not just the one. On the road panelGauges draws progress AND an urgency bar
@@ -11245,8 +11567,14 @@ function drawDrill() {
   ctx.fillStyle = 'rgba(210,220,236,0.45)';
   ctx.fillText('nobody on the road yet', px + pw - 22, by - 5);
   ctx.textAlign = 'left';
+  });
   ctx.restore();
 }
+// Deliberately NOT wrapped in atPanelScale, unlike the road and drill panels. The session
+// transplanting Linh's LastRoom is replacing this whole function with a full-screen
+// chamber that does not use panelFrame at all and hit-tests client pixels against its own
+// layout rects -- a live transform there would move the art and leave the clicks behind,
+// which fails silently rather than visibly. PANEL_SCALE is for the room panels' type.
 function drawFinalePanel() {
   const f = S.finale, pw = 80 + f.len * 48;
   const [px, py] = panelFrame(pw, `FINAL GATE   attempts left: ${f.attempts}`, '#f1c40f', 116);
@@ -12730,6 +13058,19 @@ if (qs.has('start')) {
   // they are half the art: the plank over the ditch, the gap in the thorn, the breach in
   // the wall. Nothing outside this dev branch reads it.
   if (qs.has('cleared')) for (const room of S.rooms) if (room.x < S.cam + CFG.packFront) { room.state = 'solved'; room.bridge = 1; }
+  // ?open=<verb> arms and opens the next room of that kind ahead of the crowd. A panel is
+  // only on screen for the second or two it takes to beat the room, so photographing one
+  // AGAINST THE ROAD -- which is the only way to see how much of the world it hides -- meant
+  // guessing a skip time and shooting until one happened to be up.
+  if (qs.has('open')) {
+    const want = qs.get('open');
+    const room = S.rooms.find(r => r.verb === want && r.state !== 'solved' && r.x > S.cam);
+    // armRoom, not `state = 'armed'`: it is the one place that also hands out the hotkey
+    // and builds the mini-game state. Set by hand, the panel drew its title as "ROOM null"
+    // and then threw on an mg that did not exist, leaving a frame with the legend on it and
+    // no keypad -- which looks exactly like a layout bug in the thing being photographed.
+    if (room) { armRoom(room); S.active = room; }
+  }
 }
 // ?intro=N holds the opening at N seconds, for headless screenshots of it
 if (qs.has('intro')) {
