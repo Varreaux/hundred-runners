@@ -28,16 +28,19 @@ global.URLSearchParams=class{has(){return false}get(){return null}};
 eval(src + `
 ;(function(){
   try {
-    // 'finale' needs its state built, exactly as the ?finale dev shortcut builds it.
-    // Setting the mode alone leaves S.finale null and update() dies on it -- which is the
-    // probe being wrong, not the game, and is worth not re-learning at 3am.
+    // 'finale' needs its state built. This USED to restate the state literal here, which
+    // went stale the moment the finale was replaced: the probe then built a shape nothing
+    // reads and reported "f.fx is not iterable" -- an instrument accusing the game of its
+    // own rot. It calls the game's own constructor now, so it cannot drift again.
     if ('${MODE}' === 'finale') {
-      S.runners.slice(0, 12).forEach(r => { r.state = 'arrived'; });
-      S.stats.arrived = 12; S.cam = S.camMax; updateView(1);
-      S.finale = { len: 6, seq: makeSeq(6), idx: 2, attempts: 12, timer: 0.9,
-                   line: S.runners.slice(0, 12), leaving: [] };
+      const crew = 12;
+      S.runners.slice(0, crew).forEach(r => { r.state = 'arrived'; });
+      S.stats.arrived = crew; S.cam = S.camMax; updateView(1);
+      startFinale();
+    } else {
+      S.mode='${MODE}';
     }
-    S.mode='${MODE}'; S.introT=0;
+    S.introT=0;
     // With no input everyone dies in the first act and the mode flips to 'lose', so the
     // camera never advances and the later acts are never drawn. A probe that reports
     // "no exception" having never executed act three is worse than no probe: pass 'solve'
