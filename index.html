@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '114 act two is its own five games';
+const BUILD = '115 act three has room to breathe';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -323,15 +323,15 @@ const CFG = {
     // trust the number.
     // Nothing between the mouth at 12290 and 13500: the crowd comes out into open country
     // and runs through it unthreatened, because the stretch has to be worth losing.
-    { x: 13560, lane: 0, type: 'ditch',   diff: 3, warn: 480 },
-    { x: 13700, lane: 2, type: 'gears', diff: 3 },
-    { x: 13800, lane: 4, type: 'conveyor', diff: 3 },
-    { x: 13980, lane: 1, type: 'mantrap', diff: 4, warn: 620 },
-    { x: 14180, lane: 3, type: 'sweeper', diff: 4, warn: 1350 },
-    { x: 14320, lane: 0, type: 'mantrap', diff: 4, warn: 620 },
-    { x: 14060, lane: 0, type: 'presses', diff: 5 },
-    { x: 14380, lane: 2, type: 'winch', diff: 4 },
-    { x: 14560, lane: 1, type: 'thorn',   diff: 5 },
+    { x: 12450, lane: 0, type: 'gears', diff: 4 },
+    { x: 12850, lane: 1, type: 'conveyor', diff: 4 },
+    { x: 12950, lane: 0, type: 'ditch', diff: 4, warn: 480 },
+    { x: 13100, lane: 2, type: 'wiring', diff: 4, warn: 840 },
+    { x: 13350, lane: 3, type: 'sweeper', diff: 4, warn: 1350 },
+    { x: 13400, lane: 1, type: 'winch', diff: 4 },
+    { x: 13500, lane: 0, type: 'presses', diff: 5 },
+    { x: 13600, lane: 4, type: 'calculation', diff: 5, warn: 500 },
+    { x: 13650, lane: 2, type: 'ditch', diff: 4, warn: 480 },
     // THE MISHMASH. Act three used to hold only the four enclosure types, so the last act
     // introduced four new rooms and brought nothing back. Morgan asked for all of them
     // combined here, and these are the families that can stand in open country without
@@ -339,8 +339,8 @@ const CFG = {
     // bridge over the stream, a rickety crossing. The machine families -- lever, gear,
     // wiring, trace, calculation -- stay in the mill and the mountain, because a conveyor
     // in a hedgerow is a drawing nobody has made.
-    { x: 13640, lane: 1, type: 'winch',   diff: 4 },
-    { x: 13900, lane: 3, type: 'wiring', diff: 4, warn: 840 },
+    { x: 13700, lane: 3, type: 'conveyor', diff: 4 },
+    { x: 13950, lane: 1, type: 'thorn', diff: 4 },
     // ---- ACT THREE OPENS WITH ALL SIX MACHINE FAMILIES, so the last act contains every game
     // in the course. Morgan asked for all of them combined here; act three previously held
     // only its own four enclosure types plus four crossings, so Gear, Lever, Wiring, Code,
@@ -351,17 +351,17 @@ const CFG = {
     // drawRoom dispatches `machine` and `press` hazards to drawMachineRoom BEFORE it tests
     // ENC.inside, and drawMachineRoom reads nothing but room.x, V.left and the lane -- which
     // is also why the enclosure's own types cannot make the reverse trip into act two.
-    { x: 12420, lane: 0, type: 'gears',       diff: 4 },
-    { x: 12620, lane: 0, type: 'conveyor',    diff: 4 },
-    { x: 12820, lane: 0, type: 'wiring',      diff: 5, warn: 840 },
-    { x: 13020, lane: 0, type: 'presses',     diff: 5 },
-    { x: 13220, lane: 0, type: 'sweeper',     diff: 5, warn: 1350 },
-    { x: 13400, lane: 0, type: 'calculation', diff: 5, warn: 500 },
-    { x: 13500, lane: 4, type: 'bridge',  diff: 5 },
-    { x: 14700, lane: 0, type: 'calculation', diff: 5, warn: 500 },
+    { x: 13950, lane: 4, type: 'winch', diff: 5 },
+    { x: 14000, lane: 3, type: 'wiring', diff: 5, warn: 840 },
+    { x: 14050, lane: 0, type: 'mantrap', diff: 5, warn: 620 },
+    { x: 14150, lane: 2, type: 'gears', diff: 5 },
+    { x: 14300, lane: 3, type: 'mantrap', diff: 5, warn: 620 },
+    { x: 14500, lane: 1, type: 'sweeper', diff: 5, warn: 1350 },
+    { x: 14500, lane: 2, type: 'rickety', diff: 5 },
+    { x: 14600, lane: 0, type: 'calculation', diff: 5, warn: 500 },
     // the wall across everything. Its warning is long because it is the one room the
     // whole act has been walking toward and a player should see it coming.
-    { x: 15180, lane: 0, type: 'wall',    diff: 5, warn: 1000 },
+    { x: 15180, lane: 0, type: 'wall', diff: 5, warn: 1000 },
   ],
   // THE LAST ROOM. Linh's finale, transplanted from her LastRoom branch (486d00e).
   // x stays at OUR 15600 -- her branch carries a playtest x of 2100 with laneCount 1 and no
