@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- One tableau's two copies, side by side and UNVEILED, for an art pass.
+       tools/spot-shot.html?scene=line|vault|banquet|ticker|contract|smog&shot
+
+     The chamber draws these under a lamp that hides most of the picture, which is the room
+     working as designed and useless for judging the paintings themselves: a reviewer asked
+     whether a mark reads cannot tell a mark that does not read from a mark that is simply
+     outside the pool. So this is the same drawFinaleScene at the same on-screen size with no
+     veil over it, ORIGINAL on the left and ALTERED on the right, exactly as the room labels
+     them. Shoot the game at ?finale&scene=... for what the player actually sees; shoot this
+     for what is on the canvas to be seen.
+
+     NO BACKTICKS BELOW THIS LINE: the bench is one template literal. -->
+<html><head><meta charset="utf-8"><title>spotshot</title>
+<style>html,body{margin:0;background:#0d0f16}canvas{display:block}</style></head>
+<body><canvas id="c" width="960" height="540"></canvas>
+<script>
+const req = new XMLHttpRequest();
+req.open('GET', '../index.html', false); req.send();
+const o = '<' + 'script>', cl = '<' + '/script>';
+const game = req.responseText.split(o)[1].split(cl)[0].replace("'use strict';", '');
+const bench = `
+  const QS2 = new URLSearchParams(location.search);
+  const scene = FINALE_SCENES.find(s => s.id === QS2.get('scene')) || FINALE_SCENES[0];
+  const diffs = makeFinaleDiffs(scene);
+  const L = finaleLayout();
+  S.t = +(QS2.get('st') || 3.1);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#12101a'; ctx.fillRect(0, 0, W, H);
+  drawFinaleScene(scene, L.left.x, L.left.y, L.left.w, L.left.h, false, diffs, new Set(), S.t);
+  drawFinaleScene(scene, L.right.x, L.right.y, L.right.w, L.right.h, true, diffs, new Set(), S.t);
+  ctx.fillStyle = '#c4b89a'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 18);
+  ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 18);
+  ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 15px monospace';
+  ctx.fillText(scene.title + '   (' + scene.id + ')', W / 2, 30);
+  ctx.fillStyle = '#7a7282'; ctx.font = '11px monospace';
+  ctx.fillText('no lamp veil -- this is what is on the canvas, not what the player sees at once', W / 2, 48);
+`;
+try { (0, eval)(game + bench); }
+catch (e) {
+  // A page that throws leaves an empty canvas, and an empty canvas is indistinguishable
+  // from a composition problem. Paint the failure.
+  const g = document.getElementById('c').getContext('2d');
+  g.fillStyle = '#300'; g.fillRect(0, 0, 960, 540);
+  g.fillStyle = '#fca'; g.font = '13px monospace';
+  String(e && e.stack || e).split('\n').slice(0, 12).forEach((l, i) => g.fillText(l.slice(0, 110), 12, 30 + i * 17));
+}
+</script></body></html>

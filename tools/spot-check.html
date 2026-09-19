@@ -1,0 +1,167 @@
+<!doctype html>
+<!-- The last room's spot-the-difference, measured in PIXELS rather than read in source.
+     Driven by tools/spot-check.js; open it by hand to look at the numbers.
+
+     Why it is a browser page and not a node script like every other check here. The harness
+     mocks a canvas, and a mock cannot tell you what a 0.5-alpha ellipse looks like over the
+     colour that was already there. This question is ONLY about that. So it renders both
+     paintings at their real on-screen size through the game's own drawFinaleScene -- under
+     the game's own transform, which is the other half of why -- reads both rects back, and
+     measures what actually changed.
+
+     What it asks, and the fault each one is written against:
+
+       FAINT      every difference must move at least MIN_DPX pixels, and its strongest
+                  channel at least MIN_PEAK of 255. The contract's inkblot was painted in
+                  rgba(18,22,28) onto a floor that was already that colour and moved nothing
+                  by more than about 5. Four more changed under a dozen pixels each.
+       OFFSET     the ink must sit within MAX_OFF of the point the hit test scores against.
+                  Three differences are a body REMOVED from the painting, and were anchored
+                  at that body's feet -- so the gap you can see and the place you have to
+                  press were a whole tolerance apart.
+       TOLERANCE  the scoring radius must not depend on the crew, and must be the flat
+                  CFG.finale.hitRadius. It used to be max(36, min(lampR * 0.35, 90)): a
+                  hundred survivors bought 65px of aim, and pressing on blank canvas scored.
+                  This one is measured by PRESSING, not by reading the expression, because
+                  the expression is exactly what was wrong.
+       AREA       and the consequence of that, stated as the number Morgan actually felt:
+                  how much of the painting scores. It was 74-80% at a full crew.
+       SPACING    no two differences within 2 * hitRadius, or one press sits inside both.
+       STRAY      the two paintings must differ ONLY where the puzzle says they do.
+
+     Floors are numbers, not opinions, and they are deliberately set at the bottom of the
+     range the differences that ALWAYS worked already sat in -- not at what looks nice.
+
+     NO BACKTICKS BELOW THIS LINE: the bench is one template literal. -->
+<html><head><meta charset="utf-8"><title>spotcheck</title>
+<style>html,body{margin:0;background:#0d0f16;color:#cfe;font:12px monospace}canvas{display:block}pre{padding:8px}</style></head>
+<body><canvas id="c" width="960" height="540"></canvas><pre id="out">running</pre>
+<script>
+const req = new XMLHttpRequest();
+req.open('GET', '../index.html', false); req.send();
+const o = '<' + 'script>', cl = '<' + '/script>';
+const game = req.responseText.split(o)[1].split(cl)[0].replace("'use strict';", '');
+const bench = `
+  const QZ = new URLSearchParams(location.search);
+  const THRESH = +(QZ.get('t') || 8);          // a channel step below this is not a difference
+  const MIN_DPX = +(QZ.get('dpx') || 120);     // pixels a difference must move
+  const MIN_PEAK = +(QZ.get('peak') || 45);    // and how far its strongest channel must move
+  // A PEAK IS ONE PIXEL, AND ONE PIXEL IS NOT A THING YOU CAN SEE. The art pass caught this
+  // in the instrument rather than in the game: the ticker's bull and tie passed on 280 pixels
+  // moved and a peak of 137, and were still called invisible on the screen -- because the
+  // 14x5 plate that is most of the mark is drawn in #1a1210 on a ground of the same value,
+  // and every bit of the contrast was in a 5x6 block in the corner of it. So the floor is
+  // three numbers, not two: how much moved AT ALL, how far the best pixel moved, and how much
+  // of it moved ENOUGH TO READ.
+  const STRONG = +(QZ.get('s') || 40);        // a channel step that carries at a glance
+  const MIN_STRONG = +(QZ.get('sn') || 45);   // and how many pixels must carry it
+  const MAX_OFF = +(QZ.get('off') || 16);      // how far the ink may sit from its hit point
+  const MAX_AREA = +(QZ.get('area') || 0.20);  // how much of the painting may score
+  const want = QZ.get('scene');
+  const L = finaleLayout();
+  const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const out = { painting: [L.left.w, L.left.h], thresh: THRESH,
+                floors: { dpx: MIN_DPX, peak: MIN_PEAK, off: MAX_OFF, area: MAX_AREA,
+                          strong: STRONG, strongN: MIN_STRONG },
+                hitRadius: CFG.finale.hitRadius, scenes: [], tolerance: [] };
+  S.t = 0;
+
+  // ------------------------------------------------------------------ what is on the canvas
+  for (const scene of FINALE_SCENES) {
+    if (want && scene.id !== want) continue;
+    const diffs = makeFinaleDiffs(scene);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    drawFinaleScene(scene, L.left.x, L.left.y, L.left.w, L.left.h, false, diffs, new Set(), 0);
+    drawFinaleScene(scene, L.right.x, L.right.y, L.right.w, L.right.h, true, diffs, new Set(), 0);
+    const A = ctx.getImageData(L.left.x, L.left.y, L.left.w, L.left.h).data;
+    const B = ctx.getImageData(L.right.x, L.right.y, L.right.w, L.right.h).data;
+    const w = L.left.w, h = L.left.h;
+    const D = new Uint8Array(w * h);
+    for (let i = 0, p = 0; i < w * h; i++, p += 4) {
+      D[i] = Math.max(Math.abs(A[p] - B[p]), Math.abs(A[p + 1] - B[p + 1]), Math.abs(A[p + 2] - B[p + 2]));
+    }
+    const sxS = w / FINALE_ART.w, syS = h / FINALE_ART.h;
+    const pts = diffs.map(d => ({ d: d, x: d.x * sxS, y: d.y * syS }));
+    // Every changed pixel is attributed to its NEAREST difference, never to a window round
+    // one. A square window round a hit point reaches 68px into its corners, and the tenth
+    // difference in every scene sits about 55px from the ninth -- so the first cut of this
+    // reported the SAME blob against both, with identical counts, and called each of them
+    // displaced by the distance to the other. Two differences cannot own one pixel.
+    const own = pts.map(() => ({ n: 0, strong: 0, peak: 0, sum: 0, wx: 0, wy: 0, wsum: 0 }));
+    let stray = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const v = D[y * w + x];
+      if (v <= THRESH) continue;
+      let bi = -1, bd = 70;
+      for (let i = 0; i < pts.length; i++) {
+        const dd = Math.hypot(x - pts[i].x, y - pts[i].y);
+        if (dd < bd) { bd = dd; bi = i; }
+      }
+      if (bi < 0) { stray++; continue; }
+      const a = own[bi];
+      a.n++; a.sum += v; if (v > a.peak) a.peak = v;
+      if (v >= STRONG) a.strong++;
+      a.wx += x * v; a.wy += y * v; a.wsum += v;
+    }
+    const rows = [];
+    for (let i = 0; i < pts.length; i++) {
+      const px = pts[i].x, py = pts[i].y, a = own[i], d = pts[i].d;
+      // A PATCH, never one pixel. Every tableau is laid over a hash noise field and a single
+      // sample reads the noise rather than the ground.
+      let bl = 0, al = 0, bn = 0;
+      for (let y = Math.max(0, (py | 0) - 5); y < Math.min(h, py + 6); y++)
+        for (let x = Math.max(0, (px | 0) - 12); x < Math.min(w, px + 13); x++) {
+          const p = (y * w + x) * 4; bn++;
+          bl += lum(A[p], A[p + 1], A[p + 2]); al += lum(B[p], B[p + 1], B[p + 2]);
+        }
+      const off = a.n ? Math.hypot(a.wx / a.wsum - px, a.wy / a.wsum - py) : -1;
+      rows.push({ kind: d.kind, at: [Math.round(px), Math.round(py)],
+                  dpx: a.n, strong: a.strong, peak: a.peak,
+                  bg: +(bl / bn).toFixed(1), alt: +(al / bn).toFixed(1),
+                  off: a.n ? +off.toFixed(1) : -1,
+                  faint: a.n < MIN_DPX || a.peak < MIN_PEAK || a.strong < MIN_STRONG,
+                  offset: !a.n || off > MAX_OFF });
+    }
+    // spacing, and how much of the picture a blind press would score
+    let minGap = 1e9;
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++)
+      minGap = Math.min(minGap, Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y));
+    let inside = 0, cells = 0;
+    for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
+      cells++;
+      for (const p of pts) if (Math.hypot(x - p.x, y - p.y) < CFG.finale.hitRadius) { inside++; break; }
+    }
+    out.scenes.push({ scene: scene.id, rows: rows, stray: stray,
+                      minGap: +minGap.toFixed(1), area: +(inside / cells).toFixed(3) });
+  }
+
+  // ------------------------------------------------- what the room actually accepts as a hit
+  // Measured by pressing, at two crew sizes. Reading the expression is what let the old one
+  // through: it LOOKED like a tolerance and it was the whole picture.
+  function chamber(crew) {
+    reset();
+    S.runners.slice(0, crew).forEach(r => { r.state = 'arrived'; });
+    S.stats.arrived = crew; S.cam = S.camMax; updateView(1);
+    startFinale();
+    beginFinaleCharge(S.finale);
+    for (let i = 0; i < 60 * 40 && S.finale.phase !== 'search'; i++) updateFinale(1 / 60);
+    return S.finale;
+  }
+  for (const crew of [1, 12, 100]) {
+    const f = chamber(crew);
+    const d = f.diffs[0];
+    let scored = -1;
+    for (let px = 0; px <= 160; px++) {
+      f.found.clear(); f.foundAt = {}; f.wrongT = 0; f.flashWrong = 0; f.winT = 0; S.mode = 'finale';
+      const u = d.x / FINALE_ART.w + px / L.right.w, v = d.y / FINALE_ART.h;
+      finaleConfirm(u, v);
+      if (!f.found.size) { scored = px - 1; break; }
+    }
+    out.tolerance.push({ crew: crew, radius: scored, lamp: +finaleSpotRadius(f, L).toFixed(1) });
+  }
+  document.getElementById('out').textContent = JSON.stringify(out);
+`;
+try { (0, eval)(game + bench); }
+catch (e) { document.getElementById('out').textContent = 'THREW: ' + (e && e.stack || e); }
+</script></body></html>
