@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '127 field machines, not black boxes';
+const BUILD = '128 the machine, framed in timber';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -12173,64 +12173,98 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
 // against a 45-unit body, and out here there is no tunnel roof to justify a slab. Nothing but
 // the drawing reads that number -- a machine room's kill line is room.x + 4 (see holdLine).
 function drawFieldMachine(room, y, sx, gw) {
-  const H = 54, x0 = sx + 8, w = gw - 16, x1 = x0 + w;
+  // THE MACHINE IS THE OBJECT; THE TIMBER IS ONLY THE FRAME ROUND IT. The first cut of this
+  // deleted the machine and kept the housing, and what it produced was the act's own FIELD
+  // GATE made taller and boarded in, with a cart wheel leaned against the end. Not similar
+  // timber -- the SAME PAINT: encGate's post #5c4630, its capped head #6b5438, its rail
+  // #7a6142, its left-lit upright and its one bottom-left-to-top-right brace, all matched hex
+  // for hex, on an object the player has to tell apart from a gate he can hold the crowd at.
+  //
+  // So the cabinet's own dark body comes back and the act's timber goes AROUND it. That one
+  // move restores the mill silhouette the player learned two acts ago -- a dark mass with a
+  // single round lamp on it -- and with it the thing the timber version lost: at act three's
+  // 0.453 zoom the boarded version put 47x14 screen px of fence-coloured brown on a fence,
+  // where the mill cabinet put 47x33 of #232c2b. Area times contrast had fallen by about an
+  // order of magnitude, in the act with the widest camera in the game.
+  const H = 66, x0 = sx + 8, w = gw - 16, x1 = x0 + w;
   const lit = room.state === 'solved';
-  // it stands ON the turf: a shadow, and the grass disturbed where the frame was dragged in
+  const M = roomMaterial(room.x);
+  // it stands ON the turf, and the grass is disturbed where the frame was dragged in
   ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(x0 - 6, y - 1, w + 12, 5);
   ctx.fillStyle = 'rgba(74,61,47,0.35)'; ctx.fillRect(x0 - 2, y - 3, w + 4, 4);
-  // the two uprights, in the fence's own timber, with the capped heads the gate posts carry
-  for (const px of [x0, x1 - 8]) {
-    ctx.fillStyle = '#5c4630'; ctx.fillRect(px, y - H, 8, H);
-    ctx.fillStyle = 'rgba(255,240,206,0.20)'; ctx.fillRect(px, y - H, 2.4, H);
-    ctx.fillStyle = '#6b5438'; ctx.beginPath();
-    ctx.moveTo(px - 2, y - H); ctx.lineTo(px + 10, y - H); ctx.lineTo(px + 4, y - H - 6); ctx.closePath(); ctx.fill();
+  // the drum housing: the cabinet's value, reaching the ground, so there is no daylight under
+  // it and no question about what is holding it up
+  const by = y - H + 10, bh = H - 10;
+  ctx.fillStyle = '#121018'; ctx.fillRect(x0 + 2, by - 2, w - 4, bh + 2);
+  ctx.fillStyle = '#232c2b'; ctx.fillRect(x0 + 4, by, w - 8, bh);
+  ctx.fillStyle = M.mill ? 'rgba(186,212,236,0.3)' : 'rgba(224,186,126,0.32)';
+  ctx.fillRect(x0 + 4, by, w - 8, 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(x1 - 14, by, 6, bh);
+  // the act's timber, hung in FRONT of it -- boards across the lower half only, so the dark
+  // body is what carries at distance and the frame is what places it out of doors. Depth and
+  // highlight vary per board off the room's WORLD x, because every other object in this act
+  // is hash-jittered and fourteen even rectangles is the one thing here drawn with a ruler.
+  const bn = 3;
+  for (let i = 0; i < bn; i++) {
+    const jd = hash(room.x * 0.37 + i) * 2.2, jy = hash(room.x * 0.11 + i * 3.1) * 1.6;
+    const ry = y - 10 - i * 11 - jy, rh = 6 + jd;
+    ctx.fillStyle = '#7a6142'; ctx.fillRect(x0 - 2, ry - rh, w + 4, rh);
+    ctx.fillStyle = 'rgba(255,240,206,0.16)'; ctx.fillRect(x0 - 2, ry - rh, w + 4, 1.2 + jd * 0.2);
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(x0 - 2, ry - 1.2, w + 4, 1.2);
   }
-  // the boarded housing, hung between them and stopping short of the heads so the frame
-  // reads as a frame and the sky comes through the top of it
-  const by = y - H + 14, bh = H - 24;
-  ctx.fillStyle = '#4a3a28'; ctx.fillRect(x0 + 6, by, w - 12, bh);
-  ctx.fillStyle = '#7a6142';
-  for (let i = 0; i < 4; i++) ctx.fillRect(x0 + 7, by + 1.5 + i * (bh / 4), w - 14, bh / 4 - 2.4);
-  ctx.fillStyle = 'rgba(255,240,206,0.16)';
-  for (let i = 0; i < 4; i++) ctx.fillRect(x0 + 7, by + 1.5 + i * (bh / 4), w - 14, 1.1);
-  // the diagonal brace, which is what stops any timber frame racking -- the gate has one too
-  ctx.strokeStyle = '#6b5438'; ctx.lineWidth = 3.2; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(x0 + 8, y - 4); ctx.lineTo(x1 - 10, y - H + 12); ctx.stroke();
-  // and a drive wheel on the near post: the one cue that says MACHINE rather than hoarding,
-  // turning while the room is still live and stopped once it is not
-  const wx = x0 + 2, wy = y - 18, wr = 9;
-  ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(wx, wy, wr + 1.6, 0, 6.28); ctx.fill();
-  ctx.fillStyle = '#6e5a3c'; ctx.beginPath(); ctx.arc(wx, wy, wr, 0, 6.28); ctx.fill();
-  ctx.strokeStyle = '#3d3122'; ctx.lineWidth = 1.6;
+  // the two uprights, in the fence's own timber and capped as the gate posts are -- in FRONT
+  // of the body, which is what makes them a frame round a machine rather than the machine
+  for (const px of [x0 - 4, x1 - 6]) {
+    ctx.fillStyle = '#5c4630'; ctx.fillRect(px, y - H - 2, 10, H + 2);
+    ctx.fillStyle = 'rgba(255,240,206,0.20)'; ctx.fillRect(px, y - H - 2, 2.8, H + 2);
+    ctx.fillStyle = '#6b5438'; ctx.beginPath();
+    ctx.moveTo(px - 2, y - H - 2); ctx.lineTo(px + 12, y - H - 2); ctx.lineTo(px + 5, y - H - 9); ctx.closePath(); ctx.fill();
+  }
+  // A DRIVE WHEEL THAT DRIVES SOMETHING. It hung 8.6 units outboard of the frame over open
+  // grass with no axle, no bearing and nothing to turn, which is a cart wheel propped against
+  // a fence. It is inboard over the housing now, on a bearing block, with a belt down to a
+  // drum inside the boards -- and its six-fold symmetry is broken by a crank pin, because a
+  // symmetric spoked disc with no rim mark cannot show rotation at all.
+  const wx = x0 + 26, wy = y - H + 26, wr = 11;
+  ctx.fillStyle = '#1b1519'; ctx.fillRect(wx - 5, wy - 2, 10, 24);
   const spin = lit ? 0.6 : S.t * 1.9;
+  ctx.strokeStyle = 'rgba(28,24,22,0.85)'; ctx.lineWidth = 2.4;
+  ctx.beginPath(); ctx.moveTo(wx - wr + 1, wy); ctx.lineTo(wx - wr + 1, y - 22);
+  ctx.moveTo(wx + wr - 1, wy); ctx.lineTo(wx + wr - 1, y - 22); ctx.stroke();
+  ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(wx, wy, wr + 1.8, 0, 6.28); ctx.fill();
+  ctx.fillStyle = '#6e5a3c'; ctx.beginPath(); ctx.arc(wx, wy, wr, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = '#3d3122'; ctx.lineWidth = 1.9;
   for (let i = 0; i < 6; i++) {
     const a2 = spin + i * Math.PI / 3;
     ctx.beginPath(); ctx.moveTo(wx, wy); ctx.lineTo(wx + Math.cos(a2) * wr, wy + Math.sin(a2) * wr); ctx.stroke();
   }
-  ctx.fillStyle = '#8a7e6a'; ctx.beginPath(); ctx.arc(wx, wy, 2.6, 0, 6.28); ctx.fill();
-  // The status lamp keeps its meaning and loses its enamel: a lantern hung off a bracket,
-  // which is how you would mark a live machine on open ground at dusk. Same pulse, same
-  // green-for-solved, so nothing the player has learned about this signal changes.
-  const lx = x1 - 16, ly = y - H + 6;
-  ctx.strokeStyle = '#4a3d2f'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(x1 - 4, y - H + 1); ctx.lineTo(lx, y - H + 1); ctx.lineTo(lx, ly - 5); ctx.stroke();
+  ctx.fillStyle = '#c8b27a';
+  ctx.beginPath(); ctx.arc(wx + Math.cos(spin) * wr * 0.66, wy + Math.sin(spin) * wr * 0.66, 2.6, 0, 6.28); ctx.fill();
+  ctx.fillStyle = '#8a7e6a'; ctx.beginPath(); ctx.arc(wx, wy, 3, 0, 6.28); ctx.fill();
+  // the diagonal brace, which is what stops a timber frame racking
+  ctx.strokeStyle = '#6b5438'; ctx.lineWidth = 3.2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x0 + 4, y - 6); ctx.lineTo(x1 - 8, y - H + 6); ctx.stroke();
+  // THE LAMP GOES BACK EXACTLY WHERE THE MILL PUT IT. The first cut moved it, reshaped it,
+  // recoloured it and dimmed its glow -- four changes at once to the single element that was
+  // supposed to be the constant across three acts. Round, centred, rgba(255,120,60), and the
+  // 34/0.26 glow, all byte-for-byte what drawMachineRoom draws in the mill.
+  const lx = sx + gw / 2, ly = y - H + 22;
+  ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(lx, ly, 7.4, 0, 6.28); ctx.fill();
   const pulse = lit ? 1 : 0.55 + 0.45 * Math.sin(S.t * 6);
-  ctx.fillStyle = INK; ctx.fillRect(lx - 6, ly - 5, 12, 13);
-  ctx.fillStyle = lit ? 'rgba(46,204,113,0.95)' : `rgba(255,150,70,${pulse})`;
-  ctx.fillRect(lx - 4.4, ly - 3.4, 8.8, 9.8);
-  ctx.fillStyle = '#4a3d2f'; ctx.fillRect(lx - 7, ly - 7, 14, 2.6); ctx.fillRect(lx - 7, ly + 7.4, 14, 2.6);
+  ctx.fillStyle = lit ? 'rgba(46,204,113,0.95)' : `rgba(255,120,60,${pulse})`;
+  ctx.beginPath(); ctx.arc(lx, ly, 5.4, 0, 6.28); ctx.fill();
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
-  const g2 = ctx.createRadialGradient(lx, ly + 1, 1, lx, ly + 1, 30);
-  g2.addColorStop(0, lit ? 'rgba(46,204,113,0.22)' : `rgba(255,150,70,${0.2 * pulse})`);
+  const g2 = ctx.createRadialGradient(lx, ly, 1, lx, ly, 34);
+  g2.addColorStop(0, lit ? 'rgba(46,204,113,0.28)' : `rgba(255,120,60,${0.26 * pulse})`);
   g2.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = g2; ctx.fillRect(lx - 30, ly - 29, 60, 60);
+  ctx.fillStyle = g2; ctx.fillRect(lx - 34, ly - 34, 68, 68);
   ctx.restore();
-  if (room.state === 'armed') {
-    const p = 0.6 + 0.4 * Math.sin(S.t * 10);
-    ctx.strokeStyle = S.active === room ? '#5ce1ff' : room.color;
-    ctx.globalAlpha = S.active === room ? 1 : p; ctx.lineWidth = 2.4 / V.zoom;
-    ctx.strokeRect(sx + 4, y - H - 10, gw - 8, H + 12); ctx.globalAlpha = 1;
-  }
+  // ARMED READS OFF THE GROUND OUT HERE. armedMark's own comment says danger reads off the
+  // floor and the tunnel and not a box drawn over the scene -- and act three's ditch, thorn,
+  // mantrap and wall all get it, because drawRoom calls it for them. This drew the tunnel-era
+  // strokeRect instead: a hard rectangle over a meadow, on the one object that most needed to
+  // look native.
+  if (room.state === 'armed') armedMark(room, y, sx, gw, true);
 }
 function drawMachineRoom(room, y) {
   const sx = room.x - V.left, gw = CFG.gapWidth;
