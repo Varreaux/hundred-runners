@@ -161,7 +161,20 @@ eval(src + `
   // in the green and lift wants a key held down -- so metronoming them at a fixed rate
   // measures the metronome. Check which kind the verb is before believing a red run.
   if (S.mode !== 'play' && S.drill && S.drill.room) console.log('  stalled on: ' + S.drill.room.verb);
-  console.log('  total ' + total.toFixed(1) + 's of puzzle, ' + t.toFixed(1) + 's of drill including the slides');
+  // WHICH OF THESE NUMBERS ARE A VERDICT AND WHICH ARE SPREAD. The per-type times and the
+  // total are NOT reproducible: measured six times on byte-identical code they came back
+  // 7.2, 7.7, 8.2, 8.5, 8.6 and 8.9 seconds -- a 23% spread, because the driver presses at a
+  // fixed rate against a frame loop and the verbs seed their own puzzles. A change worth less
+  // than about 1.5s cannot be seen here at all, and will appear to move in either direction:
+  // a fix that lengthened the drill by 1.7s was measured as SHORTENING it by 0.5.
+  //
+  // Deterministic, and safe to reproduce on: the reached/never-taught lists, the mode after
+  // the drill, and the panel geometry rows below, which are pure arithmetic off the captured
+  // atPanelScale/panelFrame arguments.
+  //
+  // If you need to measure a duration inside one panel, drive that panel and count frames --
+  // see tools/blast-check.js, which resolves 1.15s against 0.02s where this could not.
+  console.log('  total ' + total.toFixed(1) + 's of puzzle, ' + t.toFixed(1) + 's of drill including the slides  (SPREADS ~23%, see note in source)');
   console.log('  mode after the drill: ' + S.mode + (S.mode === 'play' ? '  (the doors opened)' : '  (the run never started)'));
   // ---- every drill panel on the same midline, and clear of the HUD ----
   // DRILL_MID exists so panels of four different heights read as one object being exchanged
