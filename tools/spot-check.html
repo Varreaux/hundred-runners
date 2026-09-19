@@ -103,6 +103,19 @@ const bench = `
   // caveat is that a player has ninety seconds, a moving lamp and no coordinate list, and that
   // none of the six cards can be cleared unsteered.
   const MAX_SCORE = +(QZ.get('sc') || 10);   // masked blob per unit of local clutter
+  // THE BRIGHTEST UNLIT PIXEL IS REPORTED AND NOT ENFORCED, and the reason is that it
+  // SATURATES. The logic pass was right that an area score cannot bound a speck -- the redraw
+  // that moved a mark's light out of its outline and into a small specular cut the pale
+  // element to a quarter of its area and raised its value, so the score fell for a reason
+  // unrelated to findability. But the veil is a composite at 0.93, so the largest unlit delta
+  // any mark can have is 0.07 x 255 = 17.8, and anything with strong lit contrast lands at 12
+  // to 14. Measured: this build's worst is 14, the pale-on-dark known-bad's worst is 14, and
+  // the dark-on-bright known-bad's worst is 14. A term that reads the same on a build that
+  // was photographed and read as on one that was not cannot be a criterion, whatever it is
+  // measuring. Third term I have had to park: the longest thin component, its width, and now
+  // this. The area-and-clutter score is the only one that separates the two known-bad builds
+  // from this one, which is why it is the only one enforced.
+  const MAX_LEAK_PEAK = +(QZ.get('lp') || 99);   // REPORTED
   // MAX_AXIS BELOW IS REPORTED AND NOT ENFORCED -- this paragraph is about that term and
   // not about MAX_SCORE above it, which is the one live predicate in this file. The reason
   // it is parked is that I could not calibrate it. The art pass was
@@ -239,7 +252,7 @@ const bench = `
     // difference in every scene sits about 55px from the ninth -- so the first cut of this
     // reported the SAME blob against both, with identical counts, and called each of them
     // displaced by the distance to the other. Two differences cannot own one pixel.
-    const own = pts.map(() => ({ n: 0, strong: 0, leak: 0, leakAxis: 0, peak: 0, sum: 0, wx: 0, wy: 0, wsum: 0 }));
+    const own = pts.map(() => ({ n: 0, strong: 0, leak: 0, leakAxis: 0, leakPeak: 0, peak: 0, sum: 0, wx: 0, wy: 0, wsum: 0 }));
     const OWN = new Int16Array(w * h).fill(-1);
     let stray = 0;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -252,6 +265,7 @@ const bench = `
       }
       if (bi < 0) { stray++; continue; }
       OWN[y * w + x] = bi;
+      if (COV[y * w + x] >= COVER && D2[y * w + x] > own[bi].leakPeak) own[bi].leakPeak = D2[y * w + x];
       const a = own[bi];
       a.n++; a.sum += v; if (v > a.peak) a.peak = v;
       if (v >= STRONG) a.strong++;
@@ -354,7 +368,8 @@ const bench = `
       const off = a.n ? Math.hypot(a.wx / a.wsum - px, a.wy / a.wsum - py) : -1;
       rows.push({ kind: d.kind, at: [Math.round(px), Math.round(py)],
                   dpx: a.n, strong: a.strong, leak: a.leak, leakAxis: a.leakAxis,
-                  sd: +sd.toFixed(2), score: +score.toFixed(1), peak: a.peak,
+                  sd: +sd.toFixed(2), score: +score.toFixed(1),
+                  leakPeak: a.leakPeak, peak: a.peak,
                   bg: +(bl / bn).toFixed(1), alt: +(al / bn).toFixed(1),
                   off: a.n ? +off.toFixed(1) : -1,
                   faint: a.n < MIN_DPX || a.peak < MIN_PEAK || a.strong < MIN_STRONG,

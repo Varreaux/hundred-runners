@@ -47,7 +47,7 @@ const FAULTS = [
     // have skipped it. Scored on the build that really shipped it, it comes out at 13.9
     // against a cut of 10 -- so the bracket is anchored at both ends by builds that were
     // photographed and read, rather than by one failure mode and an assumption about the other.
-    edit: s => s.replace("ctx.strokeStyle = 'rgba(40,34,26,0.9)'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';",
+    edit: s => s.replace(/ctx\.strokeStyle = 'rgba\([\d, .]+\)'; ctx\.lineWidth = 1\.6; ctx\.lineCap = 'round';/,
                          "ctx.strokeStyle = 'rgba(196,164,84,0.9)'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';")
                 .replace("{ x: 50, y: 38, w: 0.78, kind: 'chandelier' }", "{ x: 50, y: 38, kind: 'chandelier' }") },
   { name: 'two differences inside one press',

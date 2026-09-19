@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '122 you cannot damp a silhouette';
+const BUILD = '123 a body has to clear its ground';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3523,33 +3523,29 @@ function drawDiffMark(d, x, y, on) {
     ctx.beginPath(); ctx.arc(4, 1.2, 4.4, 0, 6.28); ctx.stroke();
     ctx.restore();
   } else if (k === 'cage' || k === 'chain') {
-    // TWO arcs in one path with no moveTo between them, and canvas joins the end of the
-    // first to the start of the second with a straight line -- so the ink pass laid a bar
-    // through both rings while the colour pass below, which strokes them separately, never
-    // covered it. Two grey rings bridged and bisected by a black bar: a pair of spectacles.
-    markInk(() => { ctx.arc(dx - 4.5, dy, 4.2, 0, 6.28); ctx.moveTo(dx + 8.2, dy + 1.2); ctx.arc(dx + 4, dy + 1.2, 4.2, 0, 6.28); }, 1.8);
-    // Luminance 137 against the line's belt highlight at 75 and the vault's bars at 74.5 is a
-    // delta of 62, hard against the band's ceiling, and cage was the loudest thing left in any
-    // dark frame once the fringes were masked out of the measurement.
-    // YOU CANNOT DAMP A SILHOUETTE OUT OF EXISTENCE. This mark is a pale outline and nothing
-    // else -- no fill anywhere in it -- so cutting its alpha reduced its contrast and left its
-    // SHAPE intact, and shape is what the eye locks onto at the deltas that survive the veil.
-    // Two rounds of damping made it fainter and never made it unfindable.
+    // A BODY HAS TO CLEAR ITS GROUND TO BE A BODY. The inversion overshot: moving the light
+    // out of the outline was right, but the iron then landed within about 12 of the line's
+    // belt, so the ring's body was invisible and only its highlight was drawn. An object whose
+    // body cannot be separated from its ground is not an object, it is a highlight -- these
+    // read as two bright crescents floating on the belt. Twenty to twenty-five of luminance
+    // above the ground is enough, and it costs nothing in the dark: 7% of 25 is 1.8 against a
+    // cut of 10.
     //
-    // The answer is the bird's, mirrored. That one was light-on-light and needed a dark
-    // outline to read; these are dark-ground objects whose lightest element IS their outline.
-    // So the iron goes dark and one small specular carries the light: a bright core inside a
-    // dark body still reads strongly under the lamp, and there is no long pale boundary left
-    // for the veil to hand back.
-    ctx.strokeStyle = 'rgba(48,50,56,0.92)'; ctx.lineWidth = 1.8;
+    // AND THE TWO KINDS NEED DIFFERENT NUMBERS, which is why they no longer share a body.
+    // cage lies on the line's belt at luminance 10.5 and chain hangs on the vault's bars at
+    // 74.5 -- so the specular that cage had to lengthen to clear its lit floor was applied to
+    // chain as well, on a ground seven times brighter, and brought chain back into the dark
+    // frames after two passes of being gone. One branch, one highlight, two grounds.
+    const iron = k === 'chain' ? 'rgba(46,49,54,0.92)' : 'rgba(34,38,44,0.92)';
+    const spec = k === 'chain' ? 'rgba(126,132,142,0.5)' : 'rgba(178,184,194,0.7)';
+    const arc0 = k === 'chain' ? 3.55 : 3.25, arc1 = k === 'chain' ? 4.35 : 4.75;
+    markInk(() => { ctx.arc(dx - 4.5, dy, 4.2, 0, 6.28); ctx.moveTo(dx + 8.2, dy + 1.2); ctx.arc(dx + 4, dy + 1.2, 4.2, 0, 6.28); }, 1.8);
+    ctx.strokeStyle = iron; ctx.lineWidth = 1.8;
     ctx.beginPath(); ctx.arc(dx - 4.5, dy, 4.2, 0, 6.28); ctx.stroke();
     ctx.beginPath(); ctx.arc(dx + 4, dy + 1.2, 4.2, 0, 6.28); ctx.stroke();
-    ctx.strokeStyle = 'rgba(206,212,220,0.82)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.arc(dx - 4.5, dy, 4.2, 3.25, 4.75); ctx.stroke();
-    ctx.beginPath(); ctx.arc(dx + 4, dy + 1.2, 4.2, 3.25, 4.75); ctx.stroke();
-    ctx.strokeStyle = 'rgba(150,158,168,0.6)'; ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.arc(dx - 4.5, dy, 4.2, 0.35, 1.25); ctx.stroke();
-    ctx.beginPath(); ctx.arc(dx + 4, dy + 1.2, 4.2, 0.35, 1.25); ctx.stroke();
+    ctx.strokeStyle = spec; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(dx - 4.5, dy, 4.2, arc0, arc1); ctx.stroke();
+    ctx.beginPath(); ctx.arc(dx + 4, dy + 1.2, 4.2, arc0, arc1); ctx.stroke();
   } else if (k === 'brokenGear' || k === 'percent') {
     // Five nouns shared this open arc and SMOG CARRIED THREE OF THEM -- filter, pipe and
     // chimney, on one card. One spinner is a shape; three at three places is a motif, and a
@@ -3621,7 +3617,7 @@ function drawDiffMark(d, x, y, on) {
       ctx.moveTo(dx - 7, dy - 3.5); ctx.lineTo(dx + 6, dy - 1);
     };
     markInk(arm, 1.6);
-    ctx.strokeStyle = 'rgba(40,34,26,0.9)'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(70,60,48,0.9)'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
     ctx.beginPath(); arm(); ctx.stroke();
     for (const [ox, oy, r] of [[-6.4, 1.4, 2.5], [0.2, 3, 2.2], [5.8, 4.2, 1.8]]) {
       markBlob(dx + ox, dy + oy, r, r * 1.5, 0.1, 'rgba(172,142,70,0.9)', 'rgba(224,200,146,0.44)');
