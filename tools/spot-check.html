@@ -115,6 +115,12 @@ const bench = `
   // measuring. Third term I have had to park: the longest thin component, its width, and now
   // this. The area-and-clutter score is the only one that separates the two known-bad builds
   // from this one, which is why it is the only one enforced.
+  // PARKED PERMANENTLY, not pending. The null has a general reason behind it: the largest
+  // unlit delta any mark CAN have is 0.07 x 255 = 17.8 and all three builds land at 14, so
+  // the veil compresses the whole room into about four levels at the top of its range. That
+  // is a property of the veil rather than of this build, so it cannot become discriminating
+  // later -- and it is the general reason no PER-PIXEL statistic can work here, which leaves
+  // area, coverage and shape as the only families that can.
   const MAX_LEAK_PEAK = +(QZ.get('lp') || 99);   // REPORTED
   // MAX_AXIS BELOW IS REPORTED AND NOT ENFORCED -- this paragraph is about that term and
   // not about MAX_SCORE above it, which is the one live predicate in this file. The reason

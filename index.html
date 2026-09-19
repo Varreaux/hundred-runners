@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '123 a body has to clear its ground';
+const BUILD = '124 the last room, dry';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2715,7 +2715,15 @@ const FINALE_SCENES = [
       { x: 40, y: 36, kind: 'arrowUp' }, { x: 140, y: 44, kind: 'arrowDown' }, { x: 250, y: 38, kind: 'crash' },
       { x: 60, y: 98, kind: 'screen' }, { x: 143, y: 137, kind: 'headset' }, { x: 242, y: 98, kind: 'chart' },
       // 48,166 was 72px from the worker this removes; same fault as the line scene.
-      { x: 96, y: 176, gy: 189, kind: 'fallen' }, { x: 168, y: 181, kind: 'briefcase' }, { x: 240, y: 178, kind: 'tie' }, { x: 280, y: 74, kind: 'bull' },
+      { x: 96, y: 176, gy: 189, kind: 'fallen' }, { x: 168, y: 181, kind: 'briefcase' }, { x: 240, y: 178, kind: 'tie' },
+      // IF THIS ONE IS EVER TO BE MADE EASIER, RAISE THE MUZZLE AND NOT THE HORNS. It has the
+      // least margin of the sixty -- a muzzle about 40 against a chart interior of 13, so the
+      // body clears by 27 -- its light is two separate horn strokes, and it sits on the red
+      // plot line, the busiest local ground any mark has. It reads today and it has been
+      // unfindable in the dark for five builds. The horns are the lever anyone would reach
+      // for, and brightening two small separate highlights on a body with a 27 margin is
+      // exactly the pair of conditions that broke the cage and the chandelier.
+      { x: 280, y: 74, kind: 'bull' },
     ],
   },
   {
@@ -3530,6 +3538,14 @@ function drawDiffMark(d, x, y, on) {
     // read as two bright crescents floating on the belt. Twenty to twenty-five of luminance
     // above the ground is enough, and it costs nothing in the dark: 7% of 25 is 1.8 against a
     // cut of 10.
+    //
+    // THE RULE HAS TWO CLAUSES AND THE SECOND DECIDES. A mark fails when its highlights are
+    // small and repeated AND its body is within about 15 of luminance of its ground; either
+    // alone is survivable. The first wording was "small and repeated reads as a scatter", and
+    // swept across all sixty marks that is wrong -- maskGas and headset are both small and
+    // repeated and read fine, because their bodies clear their grounds by over 100. The
+    // hourglass has the body problem and passes, because its light is one shape. These two
+    // failed because both clauses held at once.
     //
     // AND THE TWO KINDS NEED DIFFERENT NUMBERS, which is why they no longer share a body.
     // cage lies on the line's belt at luminance 10.5 and chain hangs on the vault's bars at
