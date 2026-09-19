@@ -27,8 +27,12 @@ img.onload = () => {
     return s / n;
   };
   const rgb = (x, y) => { const p = (y * img.width + x) * 4; return [D[p], D[p + 1], D[p + 2]]; };
-  // canvas sits at (160,90) in a 1280x720 window; paintings at canvas (24,84) and (495,84)
-  const OX = 160 + 24, OY = 90 + 84, GAP = 471, W = 441, H = 300;
+  // WHERE THE CANVAS SITS IS NOT THE SAME IN EVERY SHOT. A room shot is the game page, whose
+  // 960x540 canvas is centred in a 1280x720 window at (160,90); a sheet is tools/spot-shot.html,
+  // whose canvas is at (0,0). Hardcoding one of them samples the wrong place in the other and
+  // reports nothing, which reads as "clean" -- so it is a parameter with the default named.
+  const CO = (Q.get('canvas') || '160,90').split(',').map(Number);
+  const OX = CO[0] + 24, OY = CO[1] + 84, GAP = 471, W = 441, H = 300;
   const rows = [];
   for (let v = 10; v < H; v += 10) for (let u = 10; u < W; u += 10) {
     const ax = OX + u, ay = OY + v;          // ORIGINAL

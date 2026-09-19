@@ -77,6 +77,20 @@ const bench = `
   // composition and no damping hides that. It is the one difference that should be findable
   // from a wide view, and it is one of ten.
   const MAX_LEAK = +(QZ.get('ln') || 140);   // largest connected unlit blob a mark may show
+  // REPORTED, NOT ENFORCED, and the reason is that I could not calibrate it. The art pass was
+  // right that the area test inherited the mirror of the fault it cured: after it, eight marks
+  // still leaked in the dark and every one was stroke-built, because a 2x20 stroke is 40 px of
+  // area and scores as nothing while a pale line in a dark field is the easiest thing an eye
+  // finds. But at LEAK = 5 the unlit map is dominated by every mark's anti-aliased FRINGE,
+  // which is also thin and also long -- so "thin long component" describes an outline exactly
+  // as well as it describes a stroke, and sorting all sixty by it puts solid blobs (bull 27,
+  // mansion 26, roast 25) among the leakers the pass named by eye (chandelier 29, shackle 26,
+  // cage 25). Dividing area by length to get the component's WIDTH did not separate them
+  // either, for the same reason. No threshold I tried failed the eight without also failing a
+  // dozen that are fine, and a number chosen to make the answer come out is not a measurement.
+  // So the column prints and a human reads it; the eight were found by eye and fixed at source
+  // -- three stroke alphas the damping sweep had missed.
+  const MAX_AXIS = +(QZ.get('la') || 26);    // longest thin component, painting px -- REPORTED
   const MIN_STRONG = +(QZ.get('sn') || 45);   // and how many pixels must carry it
   const MAX_OFF = +(QZ.get('off') || 16);      // how far the ink may sit from its hit point
   const MAX_AREA = +(QZ.get('area') || 0.20);  // how much of the painting may score
@@ -85,7 +99,8 @@ const bench = `
   const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
   const out = { painting: [L.left.w, L.left.h], thresh: THRESH,
                 floors: { dpx: MIN_DPX, peak: MIN_PEAK, off: MAX_OFF, area: MAX_AREA,
-                          strong: STRONG, strongN: MIN_STRONG, leak: LEAK, leakN: MAX_LEAK },
+                          strong: STRONG, strongN: MIN_STRONG, leak: LEAK, leakN: MAX_LEAK,
+                          axis: MAX_AXIS },
                 hitRadius: CFG.finale.hitRadius, scenes: [], tolerance: [] };
   S.t = 0;
 
@@ -101,8 +116,15 @@ const bench = `
     const B = ctx.getImageData(L.right.x, L.right.y, L.right.w, L.right.h).data;
     const w = L.left.w, h = L.left.h;
     const D = new Uint8Array(w * h);
+    // ALPHA IS A CHANNEL TOO, and leaving it out made the check blind to a whole class. A
+    // destination-out composite leaves un-premultiplied RGB UNCHANGED and only drops alpha, so
+    // the stamp's two "bites" -- which were taking 36% of the alpha out of the parchment, the
+    // board and the chamber behind them, and rendering 68 of luminance darker than the paper
+    // they were meant to reveal -- measured as exactly zero difference here. Only the delivered
+    // PNG showed them, because that is where the page background gets composited in.
     for (let i = 0, p = 0; i < w * h; i++, p += 4) {
-      D[i] = Math.max(Math.abs(A[p] - B[p]), Math.abs(A[p + 1] - B[p + 1]), Math.abs(A[p + 2] - B[p + 2]));
+      D[i] = Math.max(Math.abs(A[p] - B[p]), Math.abs(A[p + 1] - B[p + 1]),
+                      Math.abs(A[p + 2] - B[p + 2]), Math.abs(A[p + 3] - B[p + 3]));
     }
     // ---------------------------------------------------- and now through the LAMP VEIL
     // THE BARE CANVAS IS THE ONE STATE THE PLAYER NEVER SEES. Everything above measures the
@@ -129,7 +151,8 @@ const bench = `
       const A2 = ctx.getImageData(L.left.x, L.left.y, w, h).data;
       const B2 = ctx.getImageData(L.right.x, L.right.y, w, h).data;
       for (let i = 0, q = 0; i < w * h; i++, q += 4) {
-        D2[i] = Math.max(Math.abs(A2[q] - B2[q]), Math.abs(A2[q + 1] - B2[q + 1]), Math.abs(A2[q + 2] - B2[q + 2]));
+        D2[i] = Math.max(Math.abs(A2[q] - B2[q]), Math.abs(A2[q + 1] - B2[q + 1]),
+                         Math.abs(A2[q + 2] - B2[q + 2]), Math.abs(A2[q + 3] - B2[q + 3]));
       }
       // and blank the pool itself, since a mark the lamp IS on is supposed to be visible
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -143,7 +166,7 @@ const bench = `
     // difference in every scene sits about 55px from the ninth -- so the first cut of this
     // reported the SAME blob against both, with identical counts, and called each of them
     // displaced by the distance to the other. Two differences cannot own one pixel.
-    const own = pts.map(() => ({ n: 0, strong: 0, leak: 0, peak: 0, sum: 0, wx: 0, wy: 0, wsum: 0 }));
+    const own = pts.map(() => ({ n: 0, strong: 0, leak: 0, leakAxis: 0, peak: 0, sum: 0, wx: 0, wy: 0, wsum: 0 }));
     const OWN = new Int16Array(w * h).fill(-1);
     let stray = 0;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -179,10 +202,12 @@ const bench = `
       for (let i = 0; i < w * h; i++) {
         if (seen2[i] || D2[i] < LEAK || OWN[i] < 0) continue;
         const stack = [i]; seen2[i] = 1;
-        const tally = {}; let size = 0;
+        const tally = {}; let size = 0, x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
         while (stack.length) {
           const j = stack.pop(), jx = j % w, jy = (j / w) | 0;
           size++; tally[OWN[j]] = (tally[OWN[j]] || 0) + 1;
+          if (jx < x0) x0 = jx; if (jx > x1) x1 = jx;
+          if (jy < y0) y0 = jy; if (jy > y1) y1 = jy;
           for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
             const nx = jx + dx, ny = jy + dy;
             if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
@@ -193,7 +218,27 @@ const bench = `
         // the component belongs to whichever mark holds most of it
         let bestOwner = -1, bestShare = 0;
         for (const o in tally) if (tally[o] > bestShare) { bestShare = tally[o]; bestOwner = +o; }
-        if (bestOwner >= 0 && size > own[bestOwner].leak) own[bestOwner].leak = size;
+        // AREA IS NOT THE ONLY WAY A THING IS SEEN, and the last fix to this inherited the
+        // mirror of the fault it cured. Scoring the largest connected component stopped a
+        // solid plate hiding behind a small per-pixel number -- and a 2-unit by 20-unit stroke
+        // is about 40 pixels of area, which that same test scores as nothing, while a pale
+        // line in a dark field is close to the easiest thing an eye finds. Eight marks leaked
+        // in the dark after the area fix and every single one was stroke-built: not a
+        // coincidence about those objects, a property of the criterion. So a component is
+        // measured by its LONGEST SIDE as well, and either one can fail it.
+        if (bestOwner >= 0) {
+          const o = own[bestOwner];
+          if (size > o.leak) o.leak = size;
+          // THINNESS, not length. Length alone does not separate them: every mark is 20 to 29
+          // px across whatever its shape, so a longest-side term flagged solid blobs and
+          // strokes alike. What a stroke actually is, is a component whose AREA divided by its
+          // length is small -- that ratio is its width in pixels. A 2-unit stroke comes out
+          // near 3; a plate or a blob of the same length comes out at 10 or more. So the score
+          // is the length of the thinnest long component, and a fat one scores nothing.
+          const major = Math.max(x1 - x0 + 1, y1 - y0 + 1);
+          const minor = size / Math.max(1, major);
+          if (minor <= 5 && major > o.leakAxis) o.leakAxis = major;
+        }
       }
     }
     const rows = [];
@@ -209,7 +254,7 @@ const bench = `
         }
       const off = a.n ? Math.hypot(a.wx / a.wsum - px, a.wy / a.wsum - py) : -1;
       rows.push({ kind: d.kind, at: [Math.round(px), Math.round(py)],
-                  dpx: a.n, strong: a.strong, leak: a.leak, peak: a.peak,
+                  dpx: a.n, strong: a.strong, leak: a.leak, leakAxis: a.leakAxis, peak: a.peak,
                   bg: +(bl / bn).toFixed(1), alt: +(al / bn).toFixed(1),
                   off: a.n ? +off.toFixed(1) : -1,
                   faint: a.n < MIN_DPX || a.peak < MIN_PEAK || a.strong < MIN_STRONG,

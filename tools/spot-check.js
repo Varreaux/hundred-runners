@@ -113,7 +113,7 @@ async function get(port, p) {
       for (const r of s.rows.slice().sort((a, b) => a.dpx - b.dpx)) {
         console.log('    ' + r.kind.padEnd(15) + String(r.at).padStart(10) +
           '  moved ' + String(r.dpx).padStart(4) + 'px  read ' + String(r.strong).padStart(4) +
-          '  unlit blob ' + String(r.leak).padStart(4) +
+          '  unlit blob ' + String(r.leak).padStart(4) + '/' + String(r.leakAxis).padStart(3) +
           '  peak ' + String(r.peak).padStart(3) +
           '  ground ' + String(r.bg).padStart(5) + ' -> ' + String(r.alt).padStart(5) +
           '  ink ' + String(r.off).padStart(5) + 'px off' +
@@ -124,7 +124,7 @@ async function get(port, p) {
          faint.length ? faint.map(r => r.kind).join(', ') : '10 of 10');
       const leak = s.rows.filter(r => r.leaks);
       ok('no difference in ' + s.scene.padEnd(9) + ' can be found unlit', leak.length === 0,
-         leak.length ? leak.map(r => r.kind + ' ' + r.leak + 'px').join(', ') : 'the lamp is the only way in');
+         leak.length ? leak.map(r => r.kind + ' ' + r.leak + 'px/' + r.leakAxis + 'long').join(', ') : 'the lamp is the only way in');
       ok('every difference in ' + s.scene.padEnd(9) + ' is where you press it', off.length === 0,
          off.length ? off.map(r => r.kind + ' ' + r.off + 'px').join(', ') : 'all within ' + F.off + 'px');
       ok('the paintings in ' + s.scene.padEnd(9) + ' differ ONLY where the puzzle says', s.stray < 120,
