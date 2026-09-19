@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '132 the country comes out from behind the rock';
+const BUILD = '133 act three twice as long, same traps';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -248,12 +248,27 @@ const CFG = {
     // against 6.5s and then four splits inside eight. The 1-path opening is where the player
     // meets act three's own furniture -- and it is also where updateView holds the camera at
     // 0.95 instead of 0.453, which is the only stretch where a field machine is legible.
-    { x: 13100, from: 0, to: 1, merge: 16160, split: 0.5 },
-    { x: 13700, from: 1, to: 2, merge: 15940, split: 0.5 },
-    { x: 14300, from: 2, to: 3, merge: 15720, split: 0.5 },
-    { x: 14850, from: 3, to: 4, merge: 15500, split: 0.5 },
+    // TWICE THE LENGTH, THE SAME NINETEEN TRAPS. The wall goes from 16360 to 20430, so act
+    // three runs 8140 units against 4070 -- and not one room is added, which means the
+    // spacing between them roughly doubles. That is the whole of the instruction: the act is
+    // not denser, it is longer, and the crowd spends more of it walking.
+    //
+    //    1 path   12290 .. 14300   2010 units   18.3s
+    //    2 paths  14300 .. 15500   1200         10.9
+    //    3 paths  15500 .. 16700   1200         10.9
+    //    4 paths  16700 .. 17800   1100         10.0
+    //    5 paths  17800 .. 19330   1530         13.9
+    //    then down 220 at a time to one path, and 440 more to the wall
+    //
+    // The eighteen-second single path is where the act introduces itself, and it is the only
+    // stretch where updateView holds the camera at 0.95 instead of 0.453 -- so it is also the
+    // only stretch where act three's own furniture is drawn at a size you can read.
+    { x: 14100, from: 0, to: 1, merge: 19990, split: 0.5 },
+    { x: 15300, from: 1, to: 2, merge: 19770, split: 0.5 },
+    { x: 16500, from: 2, to: 3, merge: 19550, split: 0.5 },
+    { x: 17600, from: 3, to: 4, merge: 19330, split: 0.5 },
   ],
-  gates: [3150, 8150, 13600],
+  gates: [3150, 8150, 14600],
   gateArm: 140, holdMax: 8,
   keepOnScreen: 10,       // a live runner is never pushed closer than this to the left edge; the camera waits instead
   // everyone in the crew runs every time; who they end up being is shuffled each run
@@ -361,15 +376,15 @@ const CFG = {
     // trust the number.
     // Nothing between the mouth at 12290 and 13500: the crowd comes out into open country
     // and runs through it unthreatened, because the stretch has to be worth losing.
-    { x: 12600, lane: 0, type: 'gears', diff: 4 },
-    { x: 13500, lane: 1, type: 'conveyor', diff: 4 },
-    { x: 13150, lane: 0, type: 'ditch', diff: 4, warn: 480 },
-    { x: 14150, lane: 2, type: 'wiring', diff: 4, warn: 840 },
-    { x: 14700, lane: 3, type: 'sweeper', diff: 4, warn: 1350 },
-    { x: 14100, lane: 1, type: 'winch', diff: 4 },
-    { x: 13900, lane: 0, type: 'presses', diff: 5 },
-    { x: 15120, lane: 4, type: 'calculation', diff: 5, warn: 500 },
-    { x: 14700, lane: 2, type: 'ditch', diff: 4, warn: 480 },
+    { x: 12900, lane: 0, type: 'gears', diff: 4 },
+    { x: 14800, lane: 1, type: 'conveyor', diff: 4 },
+    { x: 14000, lane: 0, type: 'ditch', diff: 4, warn: 480 },
+    { x: 16000, lane: 2, type: 'wiring', diff: 4, warn: 840 },
+    { x: 16900, lane: 3, type: 'sweeper', diff: 4, warn: 1350 },
+    { x: 16200, lane: 1, type: 'winch', diff: 4 },
+    { x: 15600, lane: 0, type: 'presses', diff: 5 },
+    { x: 18300, lane: 4, type: 'calculation', diff: 5, warn: 500 },
+    { x: 17400, lane: 2, type: 'ditch', diff: 4, warn: 480 },
     // THE MISHMASH. Act three used to hold only the four enclosure types, so the last act
     // introduced four new rooms and brought nothing back. Morgan asked for all of them
     // combined here, and these are the families that can stand in open country without
@@ -377,8 +392,8 @@ const CFG = {
     // bridge over the stream, a rickety crossing. The machine families -- lever, gear,
     // wiring, trace, calculation -- stay in the mill and the mountain, because a conveyor
     // in a hedgerow is a drawing nobody has made.
-    { x: 15000, lane: 3, type: 'conveyor', diff: 4 },
-    { x: 14900, lane: 1, type: 'thorn', diff: 4 },
+    { x: 17800, lane: 3, type: 'conveyor', diff: 4 },
+    { x: 17600, lane: 1, type: 'thorn', diff: 4 },
     // ---- ACT THREE OPENS WITH ALL SIX MACHINE FAMILIES, so the last act contains every game
     // in the course. Morgan asked for all of them combined here; act three previously held
     // only its own four enclosure types plus four crossings, so Gear, Lever, Wiring, Code,
@@ -389,24 +404,24 @@ const CFG = {
     // drawRoom dispatches `machine` and `press` hazards to drawMachineRoom BEFORE it tests
     // ENC.inside, and drawMachineRoom reads nothing but room.x, V.left and the lane -- which
     // is also why the enclosure's own types cannot make the reverse trip into act two.
-    { x: 15330, lane: 4, type: 'winch', diff: 5 },
-    { x: 15280, lane: 3, type: 'wiring', diff: 5, warn: 840 },
-    { x: 14700, lane: 0, type: 'mantrap', diff: 5, warn: 620 },
-    { x: 15200, lane: 2, type: 'gears', diff: 5 },
-    { x: 15550, lane: 3, type: 'mantrap', diff: 5, warn: 620 },
-    { x: 15700, lane: 1, type: 'sweeper', diff: 5, warn: 1350 },
-    { x: 15700, lane: 2, type: 'rickety', diff: 5 },
-    { x: 15600, lane: 0, type: 'calculation', diff: 5, warn: 500 },
+    { x: 18900, lane: 4, type: 'winch', diff: 5 },
+    { x: 18600, lane: 3, type: 'wiring', diff: 5, warn: 840 },
+    { x: 17200, lane: 0, type: 'mantrap', diff: 5, warn: 620 },
+    { x: 18400, lane: 2, type: 'gears', diff: 5 },
+    { x: 19300, lane: 3, type: 'mantrap', diff: 5, warn: 620 },
+    { x: 19000, lane: 1, type: 'sweeper', diff: 5, warn: 1350 },
+    { x: 19400, lane: 2, type: 'rickety', diff: 5 },
+    { x: 18800, lane: 0, type: 'calculation', diff: 5, warn: 500 },
     // the wall across everything. Its warning is long because it is the one room the
     // whole act has been walking toward and a player should see it coming.
-    { x: 16360, lane: 0, type: 'wall', diff: 5, warn: 1000 },
+    { x: 20430, lane: 0, type: 'wall', diff: 5, warn: 1000 },
   ],
   // THE LAST ROOM. Linh's finale, transplanted from her LastRoom branch (486d00e).
   // x stays at OUR 15600 -- her branch carries a playtest x of 2100 with laneCount 1 and no
   // forks, and her own merge note says in bold not to bring those across: they would turn
   // the public game into a short straight corridor with no branches. The finale SYSTEM
   // comes over; the course stays ours.
-  finale: { x: 16780, findCount: 10, searchTime: 90, hitRadius: 24,
+  finale: { x: 20850, findCount: 10, searchTime: 90, hitRadius: 24,
             cursorSpeed: 1.15, cursorAccel: 4.5, cursorFriction: 10,
             baseLen: 6, keyTime: 0.9 },
 };
@@ -448,8 +463,8 @@ const laneY = k => CFG.baseY - CFG.laneGap * k;
 const DITCH_SPOIL = 140;
 const ENC = {
   x0: CFG.exit + 48,      // where the rock ends and the grass starts
-  free: 14100,            // up to here it is open country and nothing is fenced
-  wall: 16360,            // the wall across everything; the last room stands at it
+  free: 15600,            // up to here it is open country and nothing is fenced
+  wall: 20430,            // the wall across everything; the last room stands at it
   // >= not >. drawLane starts lane 0's outdoor span at exactly CFG.exit + 48, so with a
   // strict > the first 1200 units of act three fell through to the mountain's outdoor
   // ground whenever the view began left of the seam -- the same stretch drew in two
