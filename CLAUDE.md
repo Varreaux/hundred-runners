@@ -740,10 +740,31 @@ reading and let them judge. If the answer is "I am going into the same function"
 when to wait.
 
 The loop is: screenshot eight to ten fixed moments, hand them the paths plus the
-relevant drawing function names, fix everything they find, re-shoot, repeat until
-they come back dry. Four passes found fifty-nine issues, including a lantern glow clipped
-to a rect smaller than its own radius, which was flattening the light in every
-frame. Do not ship an art change without a pass.
+relevant drawing function names, fix everything they find, re-shoot, and go again.
+Four passes found fifty-nine issues, including a lantern glow clipped to a rect
+smaller than its own radius, which was flattening the light in every frame. Do not
+ship an art change without a pass.
+
+**THREE PASSES MAXIMUM PER PIECE OF WORK. Morgan's decision, 2026-09-19.** This
+replaces "repeat until they come back dry", which is what it said before and which
+is no longer the instruction. Run the pass; fix what comes back; stop at three
+whether or not the reports are empty.
+
+The change came directly out of what it cost. The last room's sixty difference-marks
+ran ELEVEN passes -- twenty-two reports, ten builds -- and it did keep finding real
+things that late: an eleventh unmarkable difference at pass 9, a coverage mask that
+had silently stopped measuring most of what it claimed to. So "it was still finding
+things" is not an argument for a fourth pass, because it will almost always be true.
+The cap is a judgement about what that is worth against the rest of the game, and
+that judgement is his.
+
+What to do with the cap rather than against it. **Spend the passes on the questions
+only they can answer**, and say what those are when you hand the shots over -- does
+this read as the object it is meant to be, does it still read as the same thing the
+player learned two acts ago, is it findable at the zoom the game actually plays at.
+Anything a tool can decide, decide with the tool first so a pass is not spent on it.
+And if the third comes back with something real, that is a finding to report to
+Morgan with the number, not a reason to quietly run a fourth.
 
 **The critic is not the decider.** It can see that something looks wrong; it
 cannot see what a change costs. Three kinds of finding come back that you do not
