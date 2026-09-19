@@ -493,6 +493,40 @@ varied fragmented into an entry per value and would have buried a rarer second
 error. Applies equally to the death-cause paths in the end report and to the art
 critic, not just to this harness.
 
+**Proving the MECHANISM is not proving the COVERAGE, and a falsifier can pass for the wrong
+reason.** `tools/path-check.js` was written, run clean, and then handed a copy with a
+`beginPath` deliberately removed -- which came back ALL CLEAR. The logic was right the whole
+time; the sweep had drawn panels 392 times without once reaching `VERBS.code.draw`, because
+the bot opens and clears a room in the same frame and the sweep samples every third one. So
+which panels got drawn was luck, and the keypad lost. Every verdict `rect-check` had ever
+given about a panel painter was silence rather than a pass, over months.
+
+The general form: **a green covers the lines it executed, and a falsifier only proves the
+assertion if the fault it injects is somewhere the driver actually goes.** When you falsify,
+put the fault where you have separately confirmed the sweep arrives -- and when a falsifier
+comes back green, suspect the coverage before the assertion. Both tools open every verb's
+panel by hand now, at five difficulties, stepped through their states.
+
+Its sibling, from the same day: `tools/death-shape-check.js` reported "nobody died" for six
+room types, which reads exactly like six rooms behaving. Two causes, both the driver: an
+unsolved room holds the crowd so walking the course spent the whole budget on 12 of 44 rooms,
+and placing the crowd past the seam fires the cave door and holds them for a sequence longer
+than the budget. **A room that kills nobody is a failure of the CHECK, not a pass for the
+room** -- it exits 1 on silence for that reason. Say in the file what a green depends on:
+that one only means anything because the crowd is moved into the room's own lane and
+`S.seam.phase` is set to 'done' after placing them, and neither is visible from the output.
+
+**A named hole beats a check you half-build tired and that then accuses the game.** Two
+sessions independently declined to build the strongest version of the same assertion -- does
+a room's art stand on ground the deck actually has -- and wrote down that it is missing
+instead. The weaker check that did get built compares three statements that already exist
+(the deck, the death, and the reel's own ground line) and says plainly in its own footer that
+all three could still be wrong together. Every instrument in this file that had to be
+debugged was one that measured the world; the ones that compare values the game already
+commits to have needed almost no maintenance. Reach for the cheap comparison first, and if
+the expensive one is genuinely needed, say so and leave it undone rather than leaving it
+half-done.
+
 **Count deaths everywhere, not in the room under test.** A fix that MOVES the
 damage and a fix that removes it look identical if you only count where you were
 already looking. The test bot used to visit every armed room each frame, which
