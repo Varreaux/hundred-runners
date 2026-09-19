@@ -135,8 +135,16 @@ eval(src + `
   //    that restates the thing it is testing is testing itself.
   const wall = CFG.rooms.find(r => r.type === 'wall');
   if (wall) {
-    const jambM = src.match(/const bL = wx0 \\+ (\\d+), bR = wx0 \\+ ww - (\\d+);/);
-    const wallM = src.match(/const wx0 = sx - (\\d+), ww = gw \\+ (\\d+);/);
+    // bL/bR are now the ANIMATED edges -- the breach opens on a clock -- so what this check
+    // wants is the fully-open extent, which is bL0/bR0. Measuring the animated pair would
+    // price the hole at whatever width the blast clock happened to be at, i.e. at nothing.
+    const jambM = src.match(/const bL0 = wx0 \\+ (\\d+), bR0 = wx0 \\+ ww - (\\d+), aMid/);
+    // The over-hang is one named constant now -- read by drawEncWall, holdLine, the fence
+    // exclusion and the kill line -- so read the CONSTANT and derive both offsets from it,
+    // rather than matching the two literals it used to be spelled as.
+    const overM = src.match(/const WALL_OVER = (\\d+);/);
+    const formOK = /const wx0 = sx - WALL_OVER, ww = gw \\+ WALL_OVER \\* 2;/.test(src);
+    const wallM = overM && formOK ? [null, overM[1], String(+overM[1] * 2)] : null;
     if (!jambM || !wallM) throw new Error('enc-check: drawEncWall no longer declares bL/bR or wx0/ww in the expected form, so the breach cannot be measured. Point this at the new expressions rather than leaving it green.');
     const off = +wallM[1];
     const masonry = [wall.x - off, wall.x + CFG.gapWidth + (+wallM[2] - off)];

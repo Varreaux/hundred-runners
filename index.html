@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '133 act three twice as long, same traps';
+const BUILD = '134 the wall is blown open, not switched open';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -464,7 +464,9 @@ const DITCH_SPOIL = 140;
 const ENC = {
   x0: CFG.exit + 48,      // where the rock ends and the grass starts
   free: 15600,            // up to here it is open country and nothing is fenced
-  wall: 20430,            // the wall across everything; the last room stands at it
+  // DERIVED. This was 20430 written down beside a room literal that also says 20430, so
+  // moving the wall moved one of them. The room is the fact; this is a view of it.
+  get wall() { return (CFG.rooms.find(r => r.type === 'wall') || { x: 20430 }).x; },
   // >= not >. drawLane starts lane 0's outdoor span at exactly CFG.exit + 48, so with a
   // strict > the first 1200 units of act three fell through to the mountain's outdoor
   // ground whenever the view began left of the seam -- the same stretch drew in two
@@ -646,6 +648,18 @@ function thumbMark(x, y, rank, s) {
     ctx.stroke();
   }
 }
+// How long the blast's fuse takes to run home. ONE number: the win countdown reads it and so
+// does the drawn flame, so the flame cannot arrive before or after the room clears.
+const FUSE_BURN = 1.15;
+// The wall coming down, after the fuse arrives. BLAST_OPEN is the FRACTION of that clock the
+// arch takes to open: the hole is the way through, and the crowd is already running at it, so
+// it has to be there in 0.35s. The other 1.85 is smoke, which nobody has to walk past.
+const BLAST_T = 2.2, BLAST_OPEN = 0.16;
+// ?blast=N pins the wall's clock at N so the bang can be PHOTOGRAPHED. The whole thing is
+// over in 2.2 seconds, most of it in the first half second, so a still taken at whatever
+// instant a headless run happened to stop at says nothing about whether it is right -- the
+// same reason &st exists for the lamp flicker. null means the clock runs normally.
+let DEV_BLAST = null;
 const VERBS = {
   // ---- the five factory puzzles. STUBS: real versions are being written
   // elsewhere and drop straight in here. Contract: key() returns 'done' | 'ok' |
@@ -1762,95 +1776,199 @@ const VERBS = {
     },
   },
   blast: {
-    now: m => (m.stage === 0 ? `charge the holes  (${m.idx}/${m.holes.length})` : m.stage === 1 ? `pay out the fuse  (SPACE x${m.need - m.pays})` : m.arm > 0 ? 'stand back...' : 'FIRE'),
-    hint: 'press the lit holes to charge them \u2014 then hold SPACE to pay out the fuse \u2014 then SPACE to fire',
+    // ONE SPACE, NOT FIVE, AND THE FUSE BURNING IS THE ENDING. Morgan: "each letter could be
+    // us adding a stick of dynamite and you press space once at the end and you get a kind of
+    // small lighted fuse animation and then since the mini game is completed, when you zoom
+    // out you see an animation for the wall blowing up".
+    //
+    // What was here: charge n boreholes by letter, then press SPACE five times to "pay out
+    // the fuse" as a bar crept across, then a third beat with a plunger and a 0.45s arm delay
+    // to stop the last payout press rolling into it. Three beats, six SPACE presses, and the
+    // only thing the player could see happening was a line getting longer.
+    //
+    // Now: a letter plants a stick, one SPACE lights it, and the flame runs down the fuse to
+    // the charges. That last beat is a DEFERRED WIN -- m.won with m.inputT counting the flame
+    // home -- which is the contract `lights` already uses: update() ticks inputT while the
+    // room is open and updateRoom ticks it while it is closed, and solveRoom fires when it
+    // reaches zero. So the explosion in the world is triggered by the fuse arriving rather
+    // than by the keypress, and the two cannot drift apart.
+    now: m => (m.lit ? 'stand clear' : m.idx < m.holes.length ? `pack the charges  (${m.idx}/${m.holes.length})` : 'SPACE to light the fuse'),
+    hint: 'press each letter to pack a charge into its hole — then SPACE once to light the fuse',
     solveKey(m) {
-      if (m.stage === 0) return m.holes[m.idx].k;
-      if (m.stage === 1) return ' ';
-      return m.arm > 0 ? null : ' ';
+      if (m.lit) return null;
+      return m.idx < m.holes.length ? m.holes[m.idx].k : ' ';
     },
     start(diff) {
       const n = 3 + Math.min(2, Math.floor(diff / 2));
-      const ks = makeSeq(n);
-      return { stage: 0, idx: 0, holes: ks.map((k, i) => ({ k, charged: false })),
-               fuse: 0, pays: 0, need: 5, arm: 0, lit: 0, fired: 0 };
+      // inputT is NOT optional for a verb that banks m.won -- see the note in `lift`. It is
+      // the fuse's burn time as well as the win delay, and FUSE_BURN is the one number both
+      // the countdown and the drawn flame read, so the flame cannot arrive early or late.
+      return { idx: 0, holes: makeSeq(n).map(k => ({ k, packed: false })),
+               lit: 0, inputT: 0, won: false };
     },
     key(m, k) {
-      // beat one: charge every borehole, in order along the wall
-      if (m.stage === 0) {
+      if (m.lit) return null;
+      // beat one: pack a stick into each borehole, in order along the wall
+      if (m.idx < m.holes.length) {
         if (k !== m.holes[m.idx].k) return CFG.keyPool.includes(k) ? 'wrong' : null;
-        m.holes[m.idx].charged = true;
-        if (++m.idx >= m.holes.length) { m.stage = 1; m.idx = 0; }
+        m.holes[m.idx].packed = true;
+        m.idx++;
         return 'ok';
       }
-      // beat two: pay the fuse out back to where you are standing, a length per press
-      if (m.stage === 1) {
-        if (k !== ' ') return null;
-        if (++m.pays >= m.need) { m.stage = 2; m.arm = 0.45; }
-        return 'ok';
-      }
-      // beat three: fire. The arm delay exists so the last fuse press cannot roll
-      // straight into the plunger -- both beats are SPACE, and without it the puzzle
-      // would end on a key the player had already pressed for something else.
-      if (k !== ' ' || m.arm > 0) return null;
-      m.fired = 1;
-      return 'done';
+      // beat two: one press, and the fuse is lit. The win is banked, not returned.
+      if (k !== ' ') return null;
+      m.lit = 1; m.won = true; m.inputT = FUSE_BURN;
+      return 'ok';
     },
-    update(m, dt) {
-      m.fuse += (Math.min(1, m.pays / m.need) - m.fuse) * Math.min(1, dt * 9);
-      if (m.arm > 0) m.arm -= dt;
-      if (m.stage === 2 && m.arm <= 0) m.lit = Math.min(1, m.lit + dt * 3);
+    update(m, dt) { m.inputT = Math.max(0, m.inputT - dt); },
+    // Counted in PRESSES, so the bar agrees with the count printed four pixels from it. It
+    // was `packed * 0.67`, which showed 27% beside a label reading (2/5) and 67% beside one
+    // reading 5/5 -- a bar lying about a number in its own row. There are n packing presses
+    // and one to light, and the fuse is the last beat: idx/(n+1) rising to 1 as it burns,
+    // continuous at the moment of lighting because both sides read n/(n+1) there.
+    progress(m) {
+      const n = m.holes.length;
+      return m.lit ? (n + (1 - m.inputT / FUSE_BURN)) / (n + 1) : m.idx / (n + 1);
     },
-    progress(m) { return (m.stage + (m.stage === 0 ? m.idx / m.holes.length : m.stage === 1 ? m.pays / m.need : m.lit)) / 3; },
     draw(m, px, py, pw) {
       const cx = px + pw / 2;
-      // FACE, so the courses and the letters cannot drift off the stone they belong to.
-      // It started at py + 30, over panelFrame's own header hairline at py + 29..30.4, so
-      // the rock covered the middle 300 units of the line that divides the title from the
-      // panel and read as hanging from the title rather than sitting below it.
       const FACE = py + 38, faceH = 54;
-      ctx.fillStyle = '#4a4048'; ctx.fillRect(cx - 150, FACE, 300, faceH);
-      ctx.fillStyle = 'rgba(0,0,0,0.30)';
-      for (let r = 0; r < 3; r++) ctx.fillRect(cx - 150, FACE + r * 18, 300, 1.6);
-      const n = m.holes.length, step = Math.min(58, 260 / n);
-      m.holes.forEach((h, i) => {
-        const hx = cx + (i - (n - 1) / 2) * step, hy = FACE + 22;
-        ctx.fillStyle = '#14121a'; ctx.beginPath(); ctx.arc(hx, hy, 12, 0, 6.28); ctx.fill();
-        if (h.charged) {
-          ctx.fillStyle = '#c4762e'; ctx.beginPath(); ctx.arc(hx, hy, 8.5, 0, 6.28); ctx.fill();
-          ctx.fillStyle = '#e8a04a'; ctx.beginPath(); ctx.arc(hx - 2, hy - 2, 3.4, 0, 6.28); ctx.fill();
+      // THE PLATE IS THAT WALL, not a dark bar. It was #4a4048 with three black lines --
+      // violet-grey against the wall's warm brown-grey, about 40 of luminance apart and a
+      // different masonry -- so the one place that can say "these charges are going into THAT
+      // wall" said nothing. Same colours as drawEncWall's coursing, at the scale the charges
+      // themselves imply: they span 208 panel units against 92 world units, so 2.26x, which
+      // turns the world's 28x11 blocks on a 13 pitch into 63x25 on a 29.4 pitch.
+      const BSC = 2.26, bh = 13 * BSC, bw2 = 28 * BSC, bstep = 30 * BSC;
+      ctx.fillStyle = '#5b5148'; ctx.fillRect(cx - 150, FACE, 300, faceH);
+      ctx.save(); ctx.beginPath(); ctx.rect(cx - 150, FACE, 300, faceH); ctx.clip();
+      for (let by = FACE; by < FACE + faceH; by += bh) {
+        const stag = (Math.floor((by - FACE) / bh) % 2) * (bstep / 2);
+        for (let bx = cx - 150 - bstep; bx < cx + 150; bx += bstep) {
+          const hv = hash(bx * 0.3 + by * 0.7);
+          ctx.fillStyle = `rgb(${Math.round(104 + hv * 30)},${Math.round(97 + hv * 27)},${Math.round(88 + hv * 24)})`;
+          ctx.fillRect(bx + stag + 2, by + 2, bw2, bh - 4);
+          ctx.fillStyle = 'rgba(255,248,230,0.13)'; ctx.fillRect(bx + stag + 2, by + 2, bw2, 2.2);
+          ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(bx + stag + 2, by + bh - 5.5, bw2, 3.5);
         }
-        // +26 and not +30: at +30 the baseline sat py + 90 against a face ending at py + 92,
-        // so the descenders and the whole visual weight of the row crowded its bottom edge
-        // with 2 units to spare. At +26 the baseline is 6 clear and the caps 15 inside. And
-        // #6e7a8e on a #4a4048 face is barely a separation, on the letters you have not
-        // pressed yet -- which are the only ones you need to read.
+      }
+      ctx.restore();
+      const n = m.holes.length, step = Math.min(58, 260 / n);
+      const burn = m.lit ? 1 - m.inputT / FUSE_BURN : 0;
+      // ONE CORD, THREADED THROUGH THE CHARGES, LIT FROM THE CROWD'S SIDE. Three faults in
+      // one line of geometry, all found by the reviewers:
+      //
+      //  - the free end was at cx + 146, i.e. off the RIGHT of the wall. The crowd comes from
+      //    the left and the finale is on the right, so the end a player lights was on the far
+      //    side of the thing they cannot get past. Somebody had to walk through the wall.
+      //  - the flame therefore ran right to left and reached the last charge after 17% of the
+      //    burn, spending the other 0.96s sitting on four live sticks of dynamite with nothing
+      //    happening. Fire on explosives, five times, no effect.
+      //  - and the tail crossed every hole still empty, so a cord was drawn connected to a
+      //    borehole with nothing in it.
+      //
+      // All three go away by putting the free end on the LEFT and packing left to right: the
+      // cord now runs free end -> charge 1 -> charge 2 ..., it never reaches past the last
+      // charge that is actually in, and the flame arrives at the last one exactly as the room
+      // resolves. Each charge is consumed as the flame reaches it, so what the player watches
+      // is a chain going off, which is the only thing fire touching dynamite can be.
+      //
+      // The control point of each quadratic sits at the segment's midpoint in x, which makes
+      // x(t) exactly linear in t -- so the flame's position along the cord can be found from
+      // its x without integrating arc length, and the sag is free.
+      const hy0 = FACE + 22, SAG = 6;   // the holes' own centre line, not a second copy of it
+      const pts = [{ x: cx - 146, y: hy0 - 18 }].concat(
+        m.holes.map((h, i) => ({ x: cx + (i - (n - 1) / 2) * step, y: hy0 - 13, on: h.packed }))
+               .filter(q => q.on));
+      const seg = i => { const a = pts[i], b = pts[i + 1];
+        // slack belongs BETWEEN two charges, where it says they are joined; the lead-in from
+        // the free end is only going somewhere, so it is straight
+        const sag = a.on && b.on ? SAG : 0;
+        return { a, b, c: { x: (a.x + b.x) / 2, y: Math.max(a.y, b.y) + sag } }; };
+      const fx0 = pts[0].x, fx1 = pts[pts.length - 1].x;
+      const flameX = m.lit ? fx0 + burn * (fx1 - fx0) : fx0;
+      // Everything below is inside the plate. The flame's 16-unit glow used to spill off the
+      // masonry onto the panel body, which reads as the cord not being on the wall at all.
+      ctx.save();
+      ctx.beginPath(); ctx.rect(cx - 150, FACE, 300, faceH); ctx.clip();
+      m.holes.forEach((h, i) => {
+        const hx = cx + (i - (n - 1) / 2) * step, hy = hy0;
+        // has the flame reached this one? `pop` is how recently, for the flash
+        const fired = m.lit && h.packed && flameX >= hx;
+        const pop = fired ? Math.max(0, 1 - (flameX - hx) / 34) : 0;
+        ctx.fillStyle = '#14121a'; ctx.beginPath(); ctx.arc(hx, hy, 12, 0, 6.28); ctx.fill();
+        if (h.packed && !fired) {
+          // A STICK, not a dot. Red paper body, a band, and a fuse cap on top -- the mark of
+          // the puzzle is that you can see how many are in and how many are not.
+          ctx.fillStyle = '#8c2a22'; ctx.fillRect(hx - 4.5, hy - 9, 9, 19);
+          ctx.fillStyle = '#b8392c'; ctx.fillRect(hx - 4.5, hy - 9, 9, 6);
+          ctx.fillStyle = 'rgba(255,224,190,0.30)'; ctx.fillRect(hx - 4.5, hy - 9, 2.4, 19);
+          ctx.fillStyle = '#e2c98a'; ctx.fillRect(hx - 1.4, hy - 13, 2.8, 5);
+        } else if (fired) {
+          // gone off: a blown-out socket, and a flash for as long as it is fresh
+          ctx.fillStyle = '#2a1c16';
+          ctx.beginPath(); ctx.arc(hx, hy, 12, 0, 6.28); ctx.fill();
+          if (pop > 0) {
+            ctx.save(); ctx.globalCompositeOperation = 'lighter';
+            const pg = ctx.createRadialGradient(hx, hy, 0, hx, hy, 10 + 26 * (1 - pop));
+            pg.addColorStop(0, `rgba(255,236,190,${0.9 * pop})`);
+            pg.addColorStop(0.45, `rgba(255,164,60,${0.5 * pop})`);
+            pg.addColorStop(1, 'rgba(230,110,30,0)');
+            ctx.fillStyle = pg;
+            ctx.beginPath(); ctx.arc(hx, hy, 10 + 26 * (1 - pop), 0, 6.28); ctx.fill();
+            ctx.restore();
+          }
+        }
         ctx.textAlign = 'center'; ctx.font = 'bold 15px monospace';
-        ctx.fillStyle = h.charged ? '#6ee7a0' : (m.stage === 0 && i === m.idx) ? '#5ce1ff' : '#a9b2c4';
+        ctx.fillStyle = fired ? '#6e5a4e' : h.packed ? '#6ee7a0' : i === m.idx ? '#5ce1ff' : '#a9b2c4';
         ctx.fillText(h.k, hx, hy + 26);
       });
-      // the fuse, paid out from the charges back to where you are standing
-      if (m.stage >= 1) {
-        const fx0 = cx - 150, fx1 = cx + 150;
-        ctx.strokeStyle = '#6e5a3e'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(fx1, py + 96);
-        ctx.lineTo(fx1 - (fx1 - fx0) * m.fuse, py + 96); ctx.stroke();
-        if (m.stage === 1) {
-          const hx = fx1 - (fx1 - fx0) * m.fuse;
-          ctx.fillStyle = '#ffd23c';
-          ctx.beginPath(); ctx.arc(hx, py + 96, 4.4, 0, 6.28); ctx.fill();
-          // no caption here: the panel's own status line already says how many are left,
-          // and a second copy at py + 112 sits 13px off the row panelGauges owns
+      // The cord, drawn whole and then over-drawn in BURNT as far as the flame -- so the two
+      // lengths are one path evaluated at two points and cannot disagree about where the
+      // flame is. (It used to be the other way round, because the flame ran the other way.)
+      const cordTo = (upto) => {
+        ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 0; i < pts.length - 1; i++) {
+          const sg = seg(i);
+          if (upto >= sg.b.x) { ctx.quadraticCurveTo(sg.c.x, sg.c.y, sg.b.x, sg.b.y); continue; }
+          // de Casteljau: the sub-curve from a to the flame, so a partly burnt segment keeps
+          // the sag it had rather than straightening as it shortens
+          const t = Math.max(0, Math.min(1, (upto - sg.a.x) / (sg.b.x - sg.a.x)));
+          const c1 = { x: sg.a.x + (sg.c.x - sg.a.x) * t, y: sg.a.y + (sg.c.y - sg.a.y) * t };
+          const c2 = { x: sg.c.x + (sg.b.x - sg.c.x) * t, y: sg.c.y + (sg.b.y - sg.c.y) * t };
+          ctx.quadraticCurveTo(c1.x, c1.y, c1.x + (c2.x - c1.x) * t, c1.y + (c2.y - c1.y) * t);
+          return { x: c1.x + (c2.x - c1.x) * t, y: c1.y + (c2.y - c1.y) * t };
+        }
+        return pts[pts.length - 1];
+      };
+      ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      if (pts.length > 1) {
+        ctx.strokeStyle = '#6e5a3e'; cordTo(fx1); ctx.stroke();
+        if (m.lit) {
+          ctx.strokeStyle = '#2a2320';
+          const f = cordTo(flameX);
+          ctx.stroke();
+          ctx.save(); ctx.globalCompositeOperation = 'lighter';
+          const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, 16);
+          g.addColorStop(0, 'rgba(255,214,140,0.55)'); g.addColorStop(1, 'rgba(255,150,40,0)');
+          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(f.x, f.y, 16, 0, 6.28); ctx.fill();
+          ctx.restore();
+          ctx.fillStyle = '#ffd23c'; ctx.beginPath(); ctx.arc(f.x, f.y, 4.2, 0, 6.28); ctx.fill();
+          ctx.fillStyle = '#fff3c4'; ctx.beginPath(); ctx.arc(f.x - 1, f.y - 1, 1.8, 0, 6.28); ctx.fill();
+          // sparks off the flame, blown BACK along the length it has already eaten, which is
+          // now behind it on the left
+          for (let i = 0; i < 5; i++) {
+            const h2 = hash(i * 7.3 + Math.floor(burn * 40));
+            ctx.fillStyle = `rgba(255,${160 + h2 * 80 | 0},60,${0.5 + h2 * 0.4})`;
+            ctx.fillRect(f.x - 4 - h2 * 12, f.y - 4 + hash(i * 3.1) * 8, 1.6, 1.6);
+          }
+        } else if (m.idx >= m.holes.length) {
+          // the free end, on the side a person can reach, so it is obvious what SPACE does
+          ctx.fillStyle = '#a9b2c4';
+          ctx.beginPath(); ctx.arc(fx0 + 4, pts[0].y, 4, 0, 6.28); ctx.fill();   // inset, or it breaks the plate's corner
         }
       }
-      // the plunger, live once the fuse is run out and the arm delay has passed
-      if (m.stage === 2) {
-        const live = m.arm <= 0;
-        ctx.fillStyle = m.fired ? '#6ee7a0' : live ? '#ff5a5a' : '#5a4148';
-        roundRect(cx - 34, FACE + faceH + 2, 68, 18, 5); ctx.fill();
-        ctx.fillStyle = '#12161c'; ctx.textAlign = 'center'; ctx.font = 'bold 13px monospace';
-        ctx.fillText(live ? 'SPACE' : '\u2022 \u2022 \u2022', cx, py + 101);
-      }
+      ctx.restore();
       ctx.textAlign = 'left';
     },
   },
@@ -2333,7 +2451,7 @@ function reset() {
   CFG.rooms.forEach(r => {
     const t = CFG.types[r.type];
     S.rooms.push({ ...r, ord: byX.indexOf(r) + 1, verb: t.verb, hazard: t.hazard, title: t.title, color: t.color,
-                   hot: null, mg: null, state: 'dormant', bridge: 0, deaths: 0, flash: 0, killT: 0,
+                   hot: null, mg: null, state: 'dormant', bridge: 0, blast: 0, deaths: 0, flash: 0, killT: 0,
                    slamT: rand(0, CFG.crusherPeriod) });
   });
   for (const x of CFG.gates) S.gates.push({ x, state: 'dormant', holdT: 0, drop: 0.09, dropV: 0, landed: false, judder: 0, flash: 0 });
@@ -2344,9 +2462,30 @@ function reset() {
 function solveRoom(room) {
   room.state = 'solved'; room.pendingClear = false;
   if (S.active === room) S.active = null;
-  AU.thud(); solveBurst(room);
+  // The wall gets its own report below, so it does not also take the generic one: a 96-unit
+  // light ring and a thud is what a lever gets, and stacking it under a fireball reads as a
+  // small sparkle arriving a frame before the explosion.
+  if (room.type !== 'wall') { AU.thud(); solveBurst(room); }
+  // The wall does not open, it is BLOWN open, and that is the payoff of a room whose whole
+  // puzzle was packing charges. Debris is emitted once, here, rather than drawn per frame:
+  // chunks of its own masonry need gravity and a lifetime, which the particle pool has and a
+  // painted animation does not.
+  if (room.type === 'wall') {
+    const bx = room.x + CFG.gapWidth / 2, by = laneY(room.lane);
+    // 6 was a gate burst; a death spike is 8 and the cave-in is 10. This is the largest
+    // charge in the game and it was shaking the screen less than one person falling.
+    AU.boom(); S.shake = Math.max(S.shake, 9);
+    ring(bx, by - 46, 150, 0.5, '#ffd8a0', 5, 0.75);
+    emit('chip', 30, bx, by - 44, { sx: 60, sy: 30, vx: [-300, 300], vy: [-430, -120], life: [0.8, 1.7], c: '#8c8378', sz: 1.7 });
+    emit('ember', 16, bx, by - 34, { sx: 44, vx: [-170, 170], vy: [-280, -60], life: [0.4, 0.9], c: '#ffbe5e' });
+    emit('smoke', 18, bx, by - 24, { sx: 70, sy: 16, vx: [-76, 76], vy: [-96, -24], life: [1.4, 2.6], c: 'rgba(150,140,128,0.5)', sz: 2.2 });
+    emit('dust', 20, bx, by - 4, { sx: 80, vx: [-230, 230], vy: [-30, 6], life: [1.0, 1.9], c: 'rgba(178,164,140,0.5)', sz: 1.8 });
+  }
   if (room.deaths === 0) cleanRoom(room);
-  else S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 100, txt: 'CLEAR', life: 1, color: '#2ecc71' });
+  // Off the wall, for the same reason the streak badge is: laneY - 100 puts it inside a
+  // breach whose crown is at laneY - 134, so the word sits in the hole while the hole is
+  // being made. Pushed left over the crowd for the wall only.
+  else S.floaters.push({ wx: room.x + (room.type === 'wall' ? -210 : CFG.gapWidth / 2), wy: laneY(room.lane) - 100, txt: 'CLEAR', life: 1, color: '#2ecc71' });
 }
 // The lowest digit nobody is using, or null when all nine are taken. It used to stop at 9
 // and hand out 9 regardless, which gave two rooms the same key; that never bit while rooms
@@ -2374,7 +2513,10 @@ function cleanRoom(room) {
   const txt = S.streak > 1 ? `CLEAN x${S.streak}` : 'CLEAN';
   const live = S.floaters.find(f => f.clean);
   if (live) { live.txt = txt; live.life = 1.4; live.big = S.streak > 1; live.wx = room.x + CFG.gapWidth / 2; live.wy = laneY(room.lane) - 152; }
-  else S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 152, txt, life: 1.4, color: '#2ecc71', big: S.streak > 1, clean: true });
+  // OFF THE WALL. laneY - 152 against a breach crown at laneY - 134 pins it just above the
+  // hole, on the one strip of the frame where the payoff is happening, for 1.4s -- and it is
+  // big, green and more legible than the blast. Pushed left over the crowd for the wall only.
+  else S.floaters.push({ wx: room.x + (room.type === 'wall' ? -210 : CFG.gapWidth / 2), wy: laneY(room.lane) - 152, txt, life: 1.4, color: '#2ecc71', big: S.streak > 1, clean: true });
   emit('spark', 7 + Math.min(9, S.streak), room.x + CFG.gapWidth / 2, laneY(room.lane) - 26, { sx: 34, vx: [-46, 46], vy: [-230, -120], life: [0.45, 0.95], c: '#8affbc' });
   AU.cheer(S.streak);
 }
@@ -4658,7 +4800,10 @@ function update(dt) {
         if (victim) { victim.doom = room; killRunner(victim, 'crush'); room.deaths++; }
       }
     }
-    if (room.state === 'solved') room.bridge = Math.min(1, room.bridge + dt * 3.5);
+    if (room.state === 'solved') {
+      room.bridge = Math.min(1, room.bridge + dt * 3.5);
+      if (room.type === 'wall') room.blast = DEV_BLAST === null ? Math.min(1, room.blast + dt / BLAST_T) : DEV_BLAST;
+    }
     room.flash = Math.max(0, room.flash - dt * 1.8);
     room.killT = Math.max(0, room.killT - dt);
     // ONE AT A TIME, OFF THE FRONT OF THE QUEUE. Resolved here rather than in the runner loop
@@ -4677,9 +4822,22 @@ function update(dt) {
       const front = room.killT <= 0 ? q[0] : null;
       if (front) {
         room.killT = CFG.reload; room.deaths++;
+        // A dev-held room does not kill. ?blast holds the wall shut until it fires it at a
+        // chosen instant, and a wall the crowd is standing at kills one every CFG.reload --
+        // so the frame came back with 24 LOST and a red plate over the explosion. Dev flag
+        // only: DEV_HOLD_HARD is set nowhere but the query string.
+        if (DEV_HOLD_HARD && room.verb === DEV_HOLD) break;
         front.doom = room;
         front.held = false; front.atRoom = null;
         if (room.hazard === 'machine') killRunner(front, room.type === 'wiring' ? 'electric' : 'crush');
+        // A WALL IS NOT A HOLE. This fell through to the gap branch, so a body dropped 70
+        // units down the front of 244 units of solid masonry and died "somewhere in the
+        // dark" -- and up to eleven of them do, because the room keeps killing for the whole
+        // 1.15s of the fuse. The closing reel has always disagreed: TRAPS.wall draws the body
+        // running INTO the brick and coming to rest against it. The reel card is chosen by
+        // room type rather than by `how`, so this only ever contradicted the play, never the
+        // card. The splash was fixed for exactly this case and the fall was left.
+        else if (room.type === 'wall') { front.x = holdLine(room); killRunner(front, 'crush'); }
         else {
           // nudged over the edge, so they go INTO the gap rather than dropping down its face
           front.x = Math.max(front.x, room.x + killFrom(room) + 5);
@@ -4860,7 +5018,14 @@ function updateDrill(dt) {
   v.update(d.room.mg, dt);
   // the sweeper, the mantrap and the charge bank a win on their own clock rather than
   // returning 'done' from a keypress, so both routes out have to be watched
-  if (d.room.mg.won) drillSolved();
+  //
+  // AND THE CLOCK HAS TO BE HONOURED, which the road does via pendingClear and this did not:
+  // it fired the moment `won` flipped, so the drill skipped the sweeper's 0.28s and the
+  // mantrap's 0.3s -- small enough that nobody noticed -- and then the charge's whole 1.15s
+  // fuse, which is the entire mechanic, in the tutorial where the player first meets it.
+  // `undefined > 0` is false, so a verb that banks without an inputT is unaffected. The tick
+  // itself is on the line above: every banking verb decrements inputT in its own update.
+  if (d.room.mg.won && !(d.room.mg.inputT > 0)) drillSolved();
 }
 function drillKey(k) {
   const d = S.drill;
@@ -5056,7 +5221,18 @@ const roomFree = room => !(room.killT > 0);
 // WHERE THE QUEUE STOPS. A crossing halts them at its lip. A machine bay halts them at its
 // mouth and not at `killFrom.machine`, which is 88 units INSIDE the cabinet -- that number is
 // where the machinery starts killing, not anywhere a queue could stand.
-const holdLine = room => room.x + (room.hazard === 'machine' ? MACHINE_FACE : killFrom(room));
+// How far the wall's masonry OVER-HANGS its room, each side. One number, because four
+// separate places are making a claim about where the stone is and they were not agreeing:
+// drawEncWall drew the face at sx - 62, holdLine stopped the queue at room.x + 8, the fence
+// exclusion skipped a band of room.x +/- 4, and the kill shoved a body to room.x + 13. The
+// result was a hundred people queued 68 units INSIDE 244 units of stone, twelve of them
+// drawn over it with their name tags, on every approach frame in act three.
+const WALL_OVER = 62;
+// The queue stops at the FACE, not at the room's origin. -(WALL_OVER + 20) puts the leading
+// toe at the toe of the batter rather than inside it: the batter spreads 26 units over the
+// last 210 down, so at ground level the face is about 20 units proud of wx0.
+const holdLine = room => room.x + (room.hazard === 'machine' ? MACHINE_FACE
+                                 : room.type === 'wall' ? -(WALL_OVER + 20) : killFrom(room));
 // Where a body is through its jump, as a fraction of the span it is clearing; -1 for not
 // jumping. POSITION, not seconds. The pack does not travel at CFG.scroll: `rel` is clamped to
 // [-80, +190] on top of it, so the real range is 30 to 300 units a second. Clocked in seconds,
@@ -5228,6 +5404,7 @@ function draw() {
   // BEFORE its runners (or it washes a pale film over the faces of the crowd standing
   // in it, which is what it did: light in front of the people it is lighting).
   for (let k = CFG.laneCount - 1; k >= 0; k--) { drawLane(k); if (k === 0) drawDoorSpill(); drawRunners(k); if (k === 0) { drawFeeder(); drawStairRail(); } drawRoomProps(k); for (const g of S.gates) drawGate(g, k, true); }
+  blastLight();
   // The cave door, for the same reason the gate bars are drawn here: a closed barrier that
   // the crowd is painted over is not a barrier. Its FRAME went down with lane 0's ground,
   // behind the bodies, because the frame is the hole they are standing in. The sledges go
@@ -6162,9 +6339,22 @@ function tunnelSag(wx, lane) {
 // still draw as a ditch, a mantrap and a charged wall rather than falling through to the
 // generic crossing art, which has no branch for any of them and would leave a bare pit.
 const ENC_DRAWN = { ditch: 1, thorn: 1, mantrap: 1, wall: 1 };
-const SOLID_TYPE = { thorn: 1, mantrap: 1, gears: 1, conveyor: 1, sweeper: 1, presses: 1, wiring: 1, calculation: 1 };
+// `wall` was missing, so roomIsGap was true for it and drawLane cut a 120-unit hole in lane
+// 0's deck underneath 244 units of masonry standing on that ground. Invisible only because
+// the wall is wider than the hole and drawForeground covers the rest -- but the crowd walks
+// over it once the breach opens, and it is what made a death there a FALL.
+const SOLID_TYPE = { thorn: 1, mantrap: 1, gears: 1, conveyor: 1, sweeper: 1, presses: 1, wiring: 1, calculation: 1, wall: 1 };
 const SOLID_HAZ = { burst: 1, machine: 1, press: 1 };
 const roomIsGap = r => !SOLID_HAZ[r.hazard] && !SOLID_TYPE[r.type];
+// Would a fence line here be stranded in a hole, or drawn and then painted out by the room?
+// The second half used the ROOM's extent, and the wall's masonry reaches WALL_OVER past it
+// on each side -- so a post and a five-bar gate could stand in the 58-unit band the stone
+// covers, be drawn, and be buried, which is the fault this test exists to prevent.
+const buriedByRoom = (m, here) => {
+  const over = m.type === 'wall' ? WALL_OVER : 0;
+  if (!(here > m.x - over - 4 && here < m.x + CFG.gapWidth + over + 4)) return false;
+  return roomIsGap(m) || !ENC_DRAWN[m.type] || m.type === 'wall';
+};
 // The stretches of a gallery floor that actually exist. The track already breaks on these;
 // the drain did not, so a drainage channel was cut across a hole with a river under it.
 // The AIR PIPE deliberately does not use this: it is hung from the roof, and a pipe spanning
@@ -10907,8 +11097,7 @@ function drawEncBounds() {
       // line at 14534.85 did the same to the sweeper -- drawn, buried, and costing a fence
       // line each from an act whose fencing IS its argument. 14095.96 lands on the mantrap's
       // own plate and stands a gate between the jaws.
-      if (S.rooms.some(m => m.lane === k && here > m.x - 4 && here < m.x + CFG.gapWidth + 4
-                         && (roomIsGap(m) || !ENC_DRAWN[m.type]))) continue;
+      if (S.rooms.some(m => m.lane === k && buriedByRoom(m, here))) continue;
       const dy = laneY(k);
       sunShade(sx, dy + 2, 4, STAKE * 2.4, 0.18);
       ctx.fillStyle = kind === 3 ? '#8a8378' : '#5c4830';
@@ -10921,8 +11110,7 @@ function drawEncBounds() {
       if (!laneAt(k, here)) continue;
       // the same two exclusions as the posts above. This loop never consulted S.rooms at all,
       // so every gate the post loop was careful not to strand was stranded here instead.
-      if (S.rooms.some(m => m.lane === k && here > m.x - 4 && here < m.x + CFG.gapWidth + 4
-                         && (roomIsGap(m) || !ENC_DRAWN[m.type]))) continue;
+      if (S.rooms.some(m => m.lane === k && buriedByRoom(m, here))) continue;
       const gy = laneY(k);
       sunShade(sx + 6, gy + 2, 10, 38, 0.20);
       // CLOSING BEHIND YOU, which is what this module's own header says it does. As a
@@ -11756,7 +11944,12 @@ function armedMark(room, y, sx, gw, outdoors) {
     wash.addColorStop(0, 'rgba(0,0,0,0)');
     wash.addColorStop(1, isActive ? `rgba(92,225,255,${0.16 + 0.05 * pulse})` : `rgba(255,70,70,${0.13 + 0.07 * pulse})`);
   }
-  ctx.fillStyle = wash; ctx.fillRect(sx - 12, y - ch, gw + 24, ch + 20);
+  // SIZED TO THE OBJECT, not to the room. 144 units of wash on a 244-unit wall left 50
+  // units of untinted stone either side of a hard-edged tinted rectangle in the middle of a
+  // flat masonry field -- the wash reads as a panel stuck on the wall rather than as danger
+  // on the thing itself. The wall's masonry over-hangs its room by WALL_OVER each side.
+  const washOver = room.type === 'wall' ? WALL_OVER : 12;
+  ctx.fillStyle = wash; ctx.fillRect(sx - washOver, y - ch, gw + washOver * 2, ch + 20);
   // Hazard chevrons crawling along both LIPS of the gap -- and outdoors that must be two
   // strips, not one band across the whole span. Clipped to the full width they painted an
   // opaque light bar over the middle of the very thing they warn about: the mantrap's
@@ -12063,17 +12256,91 @@ function drawEncRoom(room, y) {
 // The wall. It is not a bigger fence: it runs off the top of the frame and down past the
 // water, it has no gate, and it is the first thing in the act that is built rather than
 // grown. The blast puts a hole in it, and the hole is the only way anyone gets through.
+// The explosion, laid over the runners it is standing next to. Everything drawEncWall paints
+// -- the fireball, the spill, the dust cloud, the ground shock -- is drawn inside drawLane,
+// which runs BEFORE drawRunners, so the largest light source in act three changed the colour
+// of nobody: it lit the ground and stopped dead at the silhouette of the nearest body, with
+// the front of the queue standing 54 units from the centre of a 300-unit fireball. This is
+// the one pass that has to come afterwards, so it is its own function and its own call.
+function blastLight() {
+  for (const room of S.rooms) {
+    if (room.type !== 'wall' || room.state !== 'solved') continue;
+    const bl = room.blast === undefined ? 1 : room.blast;
+    const fl = Math.max(0, 1 - bl / 0.20);
+    if (fl <= 0 || !inView(room.x, 420)) continue;
+    const cx2 = room.x + CFG.gapWidth / 2 - V.left, y2 = laneY(room.lane) - 58;
+    const FIRE = 150 + 230 * (1 - fl);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(cx2, y2, 0, cx2, y2, FIRE);
+    g.addColorStop(0, `rgba(255,224,160,${0.42 * fl})`);
+    g.addColorStop(0.45, `rgba(255,164,72,${0.24 * fl})`);
+    g.addColorStop(1, 'rgba(230,120,40,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx2, y2, FIRE, 0, 6.28); ctx.fill();
+    ctx.restore();
+  }
+}
 function drawEncWall(room, y, sx, gw, solved, prog) {
   // 172 wide against 1470 tall is 8.5:1 with open sky either side -- a factory chimney,
   // not a wall across everything. It is wider, it has a battered base, and a paler second
   // plane runs off behind it so the thing reads as LONG rather than tall.
   const top = laneY(CFG.laneCount - 1) - 260, bottom = CFG.worldBottom + 120;
-  const wx0 = sx - 62, ww = gw + 124;
+  const wx0 = sx - WALL_OVER, ww = gw + WALL_OVER * 2;
   // The breach is as wide as the wall's FOOTPRINT, not as wide as the room's gap. At
   // sx-6 .. sx+gw+6 it left 56 units of solid masonry at ground level on each side that
   // the crowd was drawn walking straight through -- and six of the forty finale dancers
   // stood inside the right jamb. Both edges come from wx0/ww so they cannot drift apart.
-  const bL = wx0 + 4, bR = wx0 + ww - 4;
+  //
+  // THE BREACH OPENS ON A CLOCK, and every copy of its outline reads the same four numbers.
+  // The arch is drawn three times -- the clip that takes the masonry away, the clip that
+  // paints the far side inside it, and the burnt rim -- so an edge animated in one of them
+  // would be a hole the other two did not know about.
+  const bL0 = wx0 + 4, bR0 = wx0 + ww - 4, aMid = wx0 + ww / 2;
+  const bl = room.blast === undefined ? 1 : room.blast;
+  // A SINE PROFILE, NOT A QUADRATIC, AND NOT SYMMETRIC. Three faults in the old outline:
+  //
+  //  - the 134 was commented as the crown and was a quadratic CONTROL point, so the real
+  //    crown sat at y-98: a rise of 36 over a 236 span, 1:6.6. That is a segmental cart
+  //    arch, which is why the settled breach read as a purpose-built entrance and made the
+  //    explosion look retroactively pointless. Sine puts the crown AT the number, 1:3.3.
+  //  - both sides scaled from one `ease`, so the hole was bilaterally symmetric at every
+  //    instant of its opening. Nothing blown out of a wall is.
+  //  - and the soffit was smooth. It is ragged now, jittered per room off `hash`, so the
+  //    edge reads as broken stone rather than as dressed voussoirs.
+  //
+  // The ground-level springing points are untouched at bL0/bR0: enc-check requires the
+  // breach to span the wall's footprint within 12 units or the crowd is drawn walking
+  // through stone, and narrowing it to the 45-55 units a side an art pass asked for scores
+  // 140 units of solid wall walked through.
+  const easeOf = e => e * e * (3 - 2 * e);
+  const opL = solved ? Math.min(1, bl / BLAST_OPEN) : 0;
+  // The right side lags by nine tenths of the opening window and then takes as long again,
+  // so the hole is still visibly growing at 0.66s, AFTER the flash has died at 0.44s. Opened
+  // on one clock the whole breach was finished by 0.35s and entirely behind the fireball:
+  // the player saw wall, flash, arch -- a cut, not a demolition. The LEFT side keeps the
+  // original clock because that is the side the crowd walks in from.
+  const opR = solved ? Math.min(1, Math.max(0, bl - BLAST_OPEN * 0.9) / BLAST_OPEN) : 0;
+  const eL = easeOf(opL), eR = easeOf(opR), ease = Math.max(eL, eR);
+  const bL = aMid - (aMid - bL0) * eL, bR = aMid + (bR0 - aMid) * eR;
+  const aSprL = y - 62 * eL, aSprR = y - 62 * eR;
+  const aSpr = aSprL, aApex = y - 134 * ease;      // kept for the callers that want one number
+  // How deep the opening is at t along its span, ragged. RAG segments, so the same points
+  // are traced by the clip, the far-side clip and the burnt rim and they cannot disagree.
+  const RAG = 9;
+  const soffit = t => {
+    const spr = 62 * (eL + (eR - eL) * t);
+    const jag = (hash(room.x * 0.31 + t * 17.3) - 0.3) * 20 * ease;
+    return y - (spr + 72 * ease * Math.sin(Math.PI * t) + jag);
+  };
+  const archPath = () => {
+    ctx.moveTo(bL, y + 4);
+    ctx.lineTo(bL, aSprL);
+    for (let i = 1; i < RAG; i++) ctx.lineTo(bL + (bR - bL) * (i / RAG), soffit(i / RAG));
+    ctx.lineTo(bR, aSprR);
+    ctx.lineTo(bR, y + 4);
+    ctx.closePath();
+  };
   // The far return is OPAQUE, in a colour already mixed toward the sky, not two translucent
   // washes laid over it. Painted at 0.55 and 0.28 alpha it let the sky read through, so the
   // frame appeared to have two different skies either side of a hard vertical edge -- which
@@ -12092,11 +12359,7 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
     // the breach: everything inside this arch is gone, so the wall is drawn around it
     ctx.beginPath();
     ctx.rect(-80, top - 40, V.vw + 160, bottom - top + 80);
-    ctx.moveTo(bL, y + 4);
-    ctx.lineTo(bL, y - 62);
-    ctx.quadraticCurveTo(sx + gw / 2, y - 134, bR, y - 62);
-    ctx.lineTo(bR, y + 4);
-    ctx.closePath();
+    archPath();
     ctx.clip('evenodd');
   }
   ctx.fillStyle = '#5b5148'; ctx.fillRect(wx0, top, ww, bottom - top);
@@ -12162,7 +12425,10 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
   // scaffold has two standards, and they are the cheapest possible statement that this was
   // BUILT -- by people, recently, and in a hurry.
   ctx.fillStyle = 'rgba(28,24,22,0.55)';
-  for (let hy = top + 96; hy < bottom - 120; hy += 118) {
+  // STOPS AT THE GROUND. `bottom` is worldBottom + 120 = 660 and the wall stands at y = 400,
+  // so the last two sockets were drilled 66 and 106 units BELOW the earth -- hidden only
+  // because drawForeground covers them. A scaffold does not have standards underground.
+  for (let hy = top + 96; hy < y - 46; hy += 118) {
     ctx.fillRect(wx0 + ww * 0.24, hy, 9, 7);
     ctx.fillRect(wx0 + ww * 0.68, hy + 40, 9, 7);
   }
@@ -12187,34 +12453,54 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
     // land, and the ground the crowd is about to run out onto.
     ctx.save();
     ctx.beginPath();
-    ctx.moveTo(bL, y + 4);
-    ctx.lineTo(bL, y - 62);
-    ctx.quadraticCurveTo(sx + gw / 2, y - 134, bR, y - 62);
-    ctx.lineTo(bR, y + 4);
-    ctx.closePath(); ctx.clip();
+    archPath(); ctx.clip();
     // The SAME sky the player can already see, sampled from drawSky's own stops at this
     // height. It was #8fc1e4 -> #cfe3ea, both LIGHTER than the real sky there, so the
     // breach glowed: a hole you look through cannot be brighter than the daylight it is
     // showing you, and a lit panel is exactly what it read as.
-    const sky = ctx.createLinearGradient(0, y - 128, 0, y - 20);
+    // ONE PAIR for the gradient and its fill. They were y-128..y-20 against y-136..y-18:
+    // 8 units of held end-colour above the ramp and 2 below it. Harmless at these stops and
+    // one edit from a hard band, which is the fault CLAUDE.md records three times.
+    const SKY0 = y - 136, SKY1 = y - 18;
+    const sky = ctx.createLinearGradient(0, SKY0, 0, SKY1);
     sky.addColorStop(0, '#7fadd4'); sky.addColorStop(1, '#b8cfd8');
-    ctx.fillStyle = sky; ctx.fillRect(bL - 2, y - 136, bR - bL + 4, 118);
-    ctx.fillStyle = '#9dbd93';                                   // far hills through the gap
+    ctx.fillStyle = sky; ctx.fillRect(bL - 2, SKY0, bR - bL + 4, SKY1 - SKY0);
+    // The hills were built in the ROOM's coordinates (sx + gw*0.3 ...) inside a breach built
+    // from the wall's footprint, so their join landed 14 units right of centre and split a
+    // 236-unit opening into lobes of 132 and 104. Same span as the hole, so they cannot drift.
+    ctx.fillStyle = '#9dbd93';
+    const hx1 = bL + (bR - bL) * 0.3, hx2 = bL + (bR - bL) * 0.62, hx3 = bL + (bR - bL) * 0.9;
     ctx.beginPath();
     ctx.moveTo(bL - 2, y - 18);
-    ctx.quadraticCurveTo(sx + gw * 0.3, y - 46, sx + gw * 0.62, y - 22);
-    ctx.quadraticCurveTo(sx + gw * 0.9, y - 38, bR + 2, y - 20);
-    ctx.lineTo(bR + 2, y + 6); ctx.lineTo(bL - 2, y + 6); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#5c8b52'; ctx.fillRect(bL - 2, y - 14, bR - bL + 4, 20);
-    ctx.fillStyle = '#84b063'; ctx.fillRect(bL - 2, y - 14, bR - bL + 4, 2.4);
+    ctx.quadraticCurveTo(hx1, y - 46, hx2, y - 22);
+    ctx.quadraticCurveTo(hx3, y - 38, bR + 2, y - 20);
+    // STOPS AT THE ROAD'S LIP. It used to paint a 20-unit band of distant turf across the
+    // whole opening, over 116 units of the crowd's own trodden track, and step the lip up 7
+    // units at each springing. The wall is a SOLID_TYPE now, so drawLane lays the deck
+    // continuously underneath it before drawRoom paints the wall -- which means the way to
+    // show the road through the hole is to stop painting and let it be seen.
+    ctx.lineTo(bR + 2, y - 7); ctx.lineTo(bL - 2, y - 7); ctx.closePath(); ctx.fill();
     ctx.restore();
-    // The light SPILLS OUT of the opening onto the ground and the crowd, rather than
-    // sitting inside it as a film. A wash laid within the clip is a pane of frosted glass
-    // in the hole; light coming through a gap lands on what is in front of it, and that is
-    // also the only way the breach can look like the way out rather than like a window.
+    // The light SPILLS OUT of the opening onto the GROUND, rather than sitting inside it as
+    // a film. A wash laid within the clip is a pane of frosted glass in the hole; light
+    // coming through a gap lands on what is in front of it, and that is also the only way
+    // the breach can look like the way out rather than like a window.
+    //
+    // Ground only, and the comment used to claim the crowd as well, which draw order made
+    // false: drawEncWall runs inside drawLane, before drawRunners, so every body is painted
+    // on top of this and the light stopped at the nearest silhouette. What does reach them
+    // is blastLight(), drawn after the runners.
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    const spill = ctx.createLinearGradient(sx + gw / 2, y - 100, sx + gw / 2, y + 40);
+    // MEASURED, not judged. Sampling the delivered frame, the settled breach interior read
+    // luminance 202 against the real sky in the same frame at 130 (right of the wall) and 154
+    // (left, nearer the sun glow) -- so a hole you look THROUGH was 48 to 72 points brighter
+    // than the daylight behind it. The sky stops were fixed for exactly that once; it came
+    // back through this additive wash, which rose to `ease` at 0.35s and then never came down,
+    // so a momentary flash of daylight through a new hole glowed for the rest of the act and
+    // through the finale. It is a FLASH: full while the dust is in the air, then a sixth.
+    ctx.globalAlpha = ease * (0.17 + 0.83 * Math.max(0, 1 - bl / 0.5));
+    const spill = ctx.createLinearGradient(aMid, y - 100, aMid, y + 40);
     spill.addColorStop(0, 'rgba(255,244,206,0.26)');
     spill.addColorStop(0.55, 'rgba(255,240,196,0.13)');
     spill.addColorStop(1, 'rgba(255,240,196,0)');
@@ -12225,33 +12511,241 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
     ctx.closePath(); ctx.fill();
     ctx.restore();
     // rubble on the ground and a burnt rim, so the hole was made rather than left
+    ctx.save();
+    ctx.globalAlpha = ease;
     ctx.fillStyle = 'rgba(30,22,20,0.55)';
     ctx.beginPath();
-    ctx.moveTo(bL, y - 62);
-    ctx.quadraticCurveTo(sx + gw / 2, y - 134, bR, y - 62);
-    ctx.lineTo(bR - 5, y - 62);
-    ctx.quadraticCurveTo(sx + gw / 2, y - 127, bL + 5, y - 62);
+    // THICKEST AT THE FOOT, where the charges were. It was 7 units at the crown tapering to
+    // nothing at the jambs -- 1.6 screen px at act three's zoom, and thickest furthest from
+    // the explosive. The band follows the same soffit and swells toward each springing.
+    const rimT = t => (11 - 7 * Math.sin(Math.PI * t)) * ease;
+    ctx.moveTo(bL, aSprL);
+    for (let i = 1; i < RAG; i++) ctx.lineTo(bL + (bR - bL) * (i / RAG), soffit(i / RAG));
+    ctx.lineTo(bR, aSprR);
+    ctx.lineTo(bR, aSprR + rimT(1));
+    for (let i = RAG - 1; i >= 1; i--) ctx.lineTo(bL + (bR - bL) * (i / RAG), soffit(i / RAG) + rimT(i / RAG));
+    ctx.lineTo(bL, aSprL + rimT(0));
     ctx.closePath(); ctx.fill();
-    for (let i = 0; i < 18; i++) {
-      const hv = hash(room.x + i * 5.3), hv2 = hash(room.x * 2 + i);
-      ctx.fillStyle = `rgba(${Math.round(96 + hv * 30)},${Math.round(90 + hv * 26)},${Math.round(82 + hv * 22)},0.95)`;
+    // SPOIL, not gravel. 24,000 square units of masonry came out of this wall and left
+    // eighteen pebbles in a flat line -- and the wall's own coursing draws 28x11 blocks, so
+    // it was built of megaliths and disintegrated into grit. Two heaps against the jambs,
+    // where material actually falls, with block-sized pieces at the size the coursing uses.
+    for (const side of [-1, 1]) {
+      const foot = side < 0 ? bL : bR;
+      ctx.fillStyle = 'rgba(88,82,74,0.95)';
       ctx.beginPath();
-      ctx.ellipse(bL - 14 + hv * (bR - bL + 28), y - 2 - hv2 * 6, 3 + hv * 6, 2 + hv * 4, hv * 3, 0, 6.28);
-      ctx.fill();
+      ctx.moveTo(foot - side * 4, y + 5);
+      ctx.quadraticCurveTo(foot + side * 26, y - 20 * ease, foot + side * 74, y + 5);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,248,230,0.09)';
+      ctx.beginPath();
+      ctx.moveTo(foot - side * 4, y + 5);
+      ctx.quadraticCurveTo(foot + side * 26, y - 20 * ease, foot + side * 34, y + 5);
+      ctx.closePath(); ctx.fill();
+    }
+    for (let i = 0; i < 9; i++) {
+      const hv = hash(room.x + i * 5.3), hv2 = hash(room.x * 2 + i);
+      const bw3 = 12 + hv * 16, bh3 = 5 + hv2 * 6;                 // block-sized, like the coursing
+      ctx.save();
+      ctx.translate(bL - 26 + hv * (bR - bL + 52), y - 1 - hv2 * 5);
+      ctx.rotate((hv - 0.5) * 1.1);
+      ctx.fillStyle = `rgb(${Math.round(96 + hv * 30)},${Math.round(90 + hv * 26)},${Math.round(82 + hv * 22)})`;
+      ctx.fillRect(-bw3 / 2, -bh3 / 2, bw3, bh3);
+      ctx.fillStyle = 'rgba(255,248,230,0.14)'; ctx.fillRect(-bw3 / 2, -bh3 / 2, bw3, 1.4);
+      ctx.restore();
+    }
+    ctx.restore();
+    // THE BANG. The chunks and the smoke are particles emitted once in solveRoom, because
+    // they need gravity and a lifetime; what is drawn here is the part that belongs to the
+    // wall rather than to the air -- the flash in the hole and the sheet of dust coming off
+    // the masonry -- and both are over long before the smoke is.
+    if (bl < 1) {
+      // SIZED AGAINST THE WALL, not against a mini-game panel. The first version used a
+      // 120-unit fireball on a wall 244 wide and 1470 tall, at a zoom of 0.45: 54 screen
+      // pixels at the foot of a chimney that filled the frame, which read as a firework
+      // rather than as the thing that brought the wall down. FIRE is the one radius both the
+      // gradient and its arc take, so they cannot come apart.
+      const fl = Math.max(0, 1 - bl / 0.20);              // the flash: 0.44s, front-loaded
+      if (fl > 0) {
+        const FIRE = 150 + 230 * (1 - fl);
+        // THE BODY IN source-over AND ONLY THE CORE IN lighter. Drawn entirely additively it
+        // came out cream: `lighter` saturates the red channel first, so every stop past the
+        // middle turns to white on anything but black, and a 380-unit fireball washed the
+        // foot of the wall pale instead of burning. Orange has to be laid ON the masonry to
+        // stay orange; the white-hot centre is the part that genuinely adds light.
+        ctx.save();
+        const g = ctx.createRadialGradient(aMid, y - 58, 0, aMid, y - 58, FIRE);
+        g.addColorStop(0, `rgba(255,226,158,${0.88 * fl})`);
+        g.addColorStop(0.26, `rgba(255,158,52,${0.80 * fl})`);
+        g.addColorStop(0.55, `rgba(214,84,26,${0.50 * fl})`);
+        g.addColorStop(0.80, `rgba(132,46,20,${0.22 * fl})`);
+        g.addColorStop(1, 'rgba(96,34,16,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(aMid, y - 58, FIRE, 0, 6.28); ctx.fill();
+        ctx.globalCompositeOperation = 'lighter';
+        const g3 = ctx.createRadialGradient(aMid, y - 58, 0, aMid, y - 58, FIRE * 0.34);
+        g3.addColorStop(0, `rgba(255,250,232,${0.9 * fl})`);
+        g3.addColorStop(0.5, `rgba(255,206,120,${0.4 * fl})`);
+        g3.addColorStop(1, 'rgba(255,170,70,0)');
+        ctx.fillStyle = g3;
+        ctx.beginPath(); ctx.arc(aMid, y - 58, FIRE * 0.34, 0, 6.28); ctx.fill();
+        ctx.restore();
+      }
+      // The dust cloud the fireball turns into. Drawn rather than emitted, because it has to
+      // be one big soft body at a known size -- sixteen smoke particles at this zoom are
+      // sixteen small dots, and what says "a wall just came down" is the volume.
+      const cl = Math.max(0, 1 - bl / 0.72);
+      if (cl > 0) {
+        const CLOUD = 90 + 300 * (1 - cl);
+        ctx.save();
+        const g2 = ctx.createRadialGradient(aMid, y - 70, 0, aMid, y - 70, CLOUD);
+        g2.addColorStop(0, `rgba(196,184,164,${0.5 * cl})`);
+        g2.addColorStop(0.55, `rgba(170,158,140,${0.32 * cl})`);
+        g2.addColorStop(1, 'rgba(150,140,124,0)');
+        ctx.fillStyle = g2;
+        ctx.beginPath(); ctx.arc(aMid, y - 70, CLOUD, 0, 6.28); ctx.fill();
+        ctx.restore();
+      }
+      // dust shaken off the whole face, falling as a sheet. It is the thing that makes the
+      // wall a heavy object: the hole is 244 wide and the wall is 1470 tall, and only this
+      // says the rest of it felt the charge.
+      const sh = Math.max(0, 1 - bl / 0.55);
+      if (sh > 0) {
+        // Fourteen hard-edged rects at a constant 864 units/s, on a modulo that TELEPORTED
+        // any bar past 0.47 from the foot of the wall to its top in one frame, clipped to the
+        // whole wall so a strip could paint down over the open hole and the sky inside it.
+        // Now: each bar falls under gravity from its own start, never wraps, is soft at both
+        // ends, and the masonry MINUS the breach is the clip -- dust cannot fall through a
+        // hole that is not there any more.
+        ctx.save();
+        ctx.beginPath(); ctx.rect(wx0, top, ww, bottom - top); archPath(); ctx.clip('evenodd');
+        for (let i = 0; i < 14; i++) {
+          const hv = hash(room.x + i * 13.7), hv2 = hash(room.x * 3 + i * 2.1);
+          const fx = wx0 + hv * ww, fw = 10 + hv * 26, len = 90 + hv * 160;
+          const t2 = Math.max(0, bl - hv2 * 0.12);
+          const fy = top + hv * 520 + 1900 * t2 * t2 / 0.55;        // falls, rather than scrolls
+          if (fy > bottom) continue;
+          const gsh = ctx.createLinearGradient(0, fy, 0, fy + len);
+          const a3 = 0.42 * sh * (0.5 + hv * 0.5);
+          gsh.addColorStop(0, 'rgba(206,196,178,0)');
+          gsh.addColorStop(0.35, `rgba(206,196,178,${a3})`);
+          gsh.addColorStop(1, 'rgba(206,196,178,0)');
+          ctx.fillStyle = gsh; ctx.fillRect(fx, fy, fw, len);
+        }
+        ctx.restore();
+      }
+      // and the ground shock rolling out of the foot of the wall, both ways
+      // An ANNULUS. Filled solid it was an opaque oval with a hard boundary growing out of
+      // the wall foot, which reads as a dome or a puddle appearing rather than as dust
+      // rolling outward. Dust leaving a blast has a clear centre and a soft leading edge.
+      const gr = Math.max(0, 1 - bl / 0.40);
+      if (gr > 0) {
+        const reach = 120 + 320 * (1 - gr), rh = 20 + 22 * (1 - gr);
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(aMid, y - 4, reach, rh, 0, 0, 6.28);
+        ctx.ellipse(aMid, y - 4, reach * 0.62, rh * 0.62, 0, 0, 6.28);
+        ctx.clip('evenodd');
+        const rg = ctx.createRadialGradient(aMid, y - 4, reach * 0.55, aMid, y - 4, reach);
+        rg.addColorStop(0, `rgba(190,176,150,${0.30 * gr})`);
+        rg.addColorStop(0.7, `rgba(190,176,150,${0.34 * gr})`);
+        rg.addColorStop(1, 'rgba(190,176,150,0)');
+        ctx.fillStyle = rg;
+        ctx.fillRect(aMid - reach, y - 4 - rh, reach * 2, rh * 2);
+        ctx.restore();
+      }
     }
 
   } else {
-    // the boreholes the puzzle is charging, drilled along the base
-    const n = 5;
+    // The boreholes the puzzle is charging, drilled along the base -- and a stick standing in
+    // each one the player has packed. The COUNT and the packed flags come from the room's own
+    // minigame, not from a 5 written down here: the puzzle makes 3 to 5 holes by difficulty,
+    // so a fixed five drew two charges nobody could account for on an easy wall. `prog` is
+    // only the fallback for a dormant room, which has no mg to read.
+    const hs = room.mg && room.mg.holes;
+    const n = hs ? hs.length : 5;
+    const holeX = i => sx + 14 + (n === 1 ? 0.5 : i / (n - 1)) * (gw - 28);
+    // THE FREE END IS ON THE CROWD'S SIDE, on the ground, just in front of the wall's face --
+    // which is where the head of the queue is standing (holdLine puts them at
+    // room.x - WALL_OVER - 20). Somebody there can reach it. It used to be at sx + gw - 14,
+    // which is algebraically the LAST borehole's own x for every n: the "tail running off to
+    // the right" was a 4-unit stub sitting on top of charge 5, and the flame was drawn
+    // standing on a live charge at t = 0.
+    const f0 = sx - WALL_OVER - 18, fy0 = y - 4;
+    const f1 = holeX(n - 1);
+    const burn = hs && room.mg.lit ? 1 - room.mg.inputT / FUSE_BURN : 0;
+    const flameX = f0 + burn * (f1 - f0);
     for (let i = 0; i < n; i++) {
-      const hx = sx + 14 + (i / (n - 1)) * (gw - 28);
+      const hx = holeX(i);
+      const packed = hs ? hs[i].packed : prog > (i + 1) / (n + 2);
+      const fired = packed && hs && room.mg.lit && flameX >= hx;
+      const pop = fired ? Math.max(0, 1 - (flameX - hx) / 26) : 0;
       ctx.fillStyle = 'rgba(206,198,184,0.5)';                  // dust collar round the hole
       ctx.beginPath(); ctx.ellipse(hx, y - 21, 6, 4, 0, 0, 6.28); ctx.fill();
-      ctx.fillStyle = 'rgba(16,12,14,0.92)';
-      ctx.beginPath(); ctx.arc(hx, y - 22, 3.4, 0, 6.28); ctx.fill();
+      ctx.fillStyle = fired ? 'rgba(38,22,16,0.95)' : 'rgba(16,12,14,0.92)';
+      ctx.beginPath(); ctx.arc(hx, y - 22, fired ? 4.4 : 3.4, 0, 6.28); ctx.fill();
       ctx.strokeStyle = 'rgba(255,248,230,0.4)'; ctx.lineWidth = 1;   // lit upper lip
       ctx.beginPath(); ctx.arc(hx, y - 22, 3.7, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
-      if (prog > (i + 1) / (n + 2)) { ctx.fillStyle = '#c4762e'; ctx.beginPath(); ctx.arc(hx, y - 22, 2, 0, 6.28); ctx.fill(); }
+      if (packed && !fired) {
+        // a charge standing in the hole, 11 units against a 45-unit body: a stick of dynamite
+        // at this scale is about a quarter of a forearm, and it is drawn as one rather than as
+        // a dot so the panel and the wall are plainly the same act.
+        ctx.fillStyle = '#8c2a22'; ctx.fillRect(hx - 2.2, y - 33, 4.4, 11);
+        ctx.fillStyle = '#b8392c'; ctx.fillRect(hx - 2.2, y - 33, 4.4, 3.4);
+        ctx.fillStyle = 'rgba(255,224,190,0.28)'; ctx.fillRect(hx - 2.2, y - 33, 1.3, 11);
+      } else if (pop > 0) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        const pg = ctx.createRadialGradient(hx, y - 26, 0, hx, y - 26, 8 + 20 * (1 - pop));
+        pg.addColorStop(0, `rgba(255,236,190,${0.85 * pop})`);
+        pg.addColorStop(0.45, `rgba(255,164,60,${0.45 * pop})`);
+        pg.addColorStop(1, 'rgba(230,110,30,0)');
+        ctx.fillStyle = pg;
+        ctx.beginPath(); ctx.arc(hx, y - 26, 8 + 20 * (1 - pop), 0, 6.28); ctx.fill();
+        ctx.restore();
+      }
+    }
+    // The fuse joining the charges up, and burning once lit. It runs THROUGH the stick tops,
+    // not past them along the ground: a trunk line that touches none of its charges is five
+    // sticks that are never going off, and the panel makes the same claim about the same
+    // wall, so the two have to describe one arrangement.
+    if (hs && hs.some(h => h.packed)) {
+      const xs = hs.map((h, i) => (h.packed ? holeX(i) : null)).filter(v => v !== null);
+      // ONE PATH, evaluated at two points. The burnt length used to be a straight line at
+      // y-30 while the cord it was meant to be consuming was a polyline at y-34 sagging to
+      // y-32 -- a tan line with a black line drawn under it, the cord never shortening. The
+      // panel had this right and the world did not, which is two halves of one effect built
+      // differently. `upto` clips the same polyline instead.
+      const cord = upto => {
+        ctx.beginPath(); ctx.moveTo(f0, fy0);
+        let px2 = f0, py2 = fy0;
+        const step2 = (bx, by, cxx, cyy) => {
+          if (upto >= bx) { ctx.quadraticCurveTo(cxx, cyy, bx, by); px2 = bx; py2 = by; return null; }
+          const t = Math.max(0, Math.min(1, (upto - px2) / (bx - px2)));
+          const c1x = px2 + (cxx - px2) * t, c1y = py2 + (cyy - py2) * t;
+          const c2x = cxx + (bx - cxx) * t, c2y = cyy + (by - cyy) * t;
+          const ex = c1x + (c2x - c1x) * t, ey = c1y + (c2y - c1y) * t;
+          ctx.quadraticCurveTo(c1x, c1y, ex, ey);
+          return { x: ex, y: ey };
+        };
+        let hit = step2(xs[0], y - 34, (f0 + xs[0]) / 2, y - 16);
+        for (let i = 1; i < xs.length && !hit; i++) hit = step2(xs[i], y - 34, (xs[i - 1] + xs[i]) / 2, y - 30);
+        return hit || { x: xs[xs.length - 1], y: y - 34 };
+      };
+      ctx.lineWidth = 1.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#6e5a3e'; cord(Infinity); ctx.stroke();
+      if (room.mg.lit) {
+        ctx.strokeStyle = '#2a2320';
+        const fp = cord(flameX);
+        ctx.stroke();
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        const fg = ctx.createRadialGradient(fp.x, fp.y, 0, fp.x, fp.y, 14);
+        fg.addColorStop(0, 'rgba(255,214,140,0.6)'); fg.addColorStop(1, 'rgba(255,150,40,0)');
+        ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(fp.x, fp.y, 14, 0, 6.28); ctx.fill();
+        ctx.restore();
+        ctx.fillStyle = '#ffd23c'; ctx.beginPath(); ctx.arc(fp.x, fp.y, 2.6, 0, 6.28); ctx.fill();
+      } else if (hs.every(h => h.packed)) {
+        ctx.fillStyle = '#c9c2b4'; ctx.beginPath(); ctx.arc(f0, fy0, 2.4, 0, 6.28); ctx.fill();
+      }
     }
   }
 }
@@ -16865,6 +17359,11 @@ const qs = new URLSearchParams(location.search);
 // solve any puzzle that RESETS on a wrong key, because after a reset it can
 // only climb back to where it was and never above, so it concludes it is stuck.
 // Verbs without the hook fall back to the blind search.
+// The verb `?open=` wants photographed, which the bot must therefore LEAVE ALONE. Every room
+// arms long before the crowd arrives -- the wall has warn 1000 -- so on a solved run the bot
+// had always cleared it by the time the flag looked for one, and `open=blast` silently found
+// nothing and drew no panel. Set from the flag itself, so it cannot disagree with it.
+let DEV_HOLD = null, DEV_HOLD_HARD = false;
 const SOLVE_KEYS = ['ARROWUP', 'ARROWDOWN', 'ARROWLEFT', 'ARROWRIGHT', ' ',
   '1', '2', '3', '4', '5', '6', '7', '8', '9', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
 function devSolve() {
@@ -16886,7 +17385,24 @@ function devSolve() {
     return;
   }
   if (S.boss && !S.boss.gone && !S.boss.auto) { bossAdvance(); return; }
-  const armed = S.rooms.filter(r => r.state === 'armed' && !r.botStuck);
+  // DEV_HOLD skips rooms of the verb being photographed, but only ones still WELL AHEAD of
+  // the pack. Skipping every room of that verb meant nobody cleared them: `?open=dig` ended a
+  // solved run with 0 of 100 on the podium. A room the crowd is queued at is 0 ahead, so it
+  // is solved normally and there is no deadlock; the wall, which arms 1000 out, stays shut.
+  const front = S.runners.reduce((m2, q) => (q.state === 'run' && q.x > m2 ? q.x : m2), 0);
+  // RELEASED BY REACHABILITY, not by a distance guess. A flat CFG.armDist was marginal for
+  // the one room it most needed to hold: at skip 190 the pack front sits about 249 units off
+  // the wall, so a 240 threshold released it and the bot cleared the wall before ?open could
+  // find it -- which looks exactly like the flag not working. A room somebody is queued AT is
+  // released, so `?open=dig` cannot deadlock a solved run; anything still out of reach is held.
+  // ?blast holds ABSOLUTELY: it fires the wall itself at a chosen instant, so the room has
+  // to still be pristine when it does. Released-by-reachability let the crowd arrive first,
+  // which killed six people at it and then drew a red LOST HERE plate over the explosion --
+  // a photograph of the death report rather than of the bang.
+  const heldByDev = r => r.verb === DEV_HOLD
+                      && (DEV_HOLD_HARD
+                          || (!S.runners.some(q => q.atRoom === r) && r.x - front > CFG.gapWidth));
+  const armed = S.rooms.filter(r => r.state === 'armed' && !r.botStuck && !heldByDev(r));
   if (!armed.length) return;
   // Sit in ONE room and triage which one, because both halves are load-bearing
   // and each is useless alone. update() runs the SELECTED room's minigame and
@@ -16958,6 +17474,11 @@ if (qs.has('start')) {
   // already claimed the skip went through here, and now it does.
   startRun();
   const n = +(qs.get('skip') || 0) * 60, solve = qs.has('solve');
+  if (qs.has('open')) DEV_HOLD = qs.get('open');
+  // ?blast wants to fire the wall ITSELF, at a chosen instant, so the bot must not have done
+  // it already on the way past -- otherwise the debris has long since expired and the frame
+  // shows a quiet hole.
+  if (qs.has('blast')) { DEV_HOLD = 'blast'; DEV_HOLD_HARD = true; }
   for (let i = 0; i < n; i++) { update(1 / 60); if (solve) devSolve(); }
   // ?cleared marks every room behind the camera as solved, for screenshots of what a
   // crossing looks like AFTER it is fixed. Those states are otherwise nearly impossible
@@ -16972,11 +17493,54 @@ if (qs.has('start')) {
   if (qs.has('open')) {
     const want = qs.get('open');
     const room = S.rooms.find(r => r.verb === want && r.state !== 'solved' && r.x > S.cam);
+    // Out on the hillside nine rooms are usually armed at once, so freeHotkey() returns null,
+    // armRoom RETURNS WITHOUT ARMING, and `S.active = room` then points at a dormant room
+    // with no mg -- which draws no panel at all. Photographing act three this way produced a
+    // frame of ordinary play and an hour of wondering why the flag had stopped working. Give
+    // the room being photographed a digit by standing the furthest-off one down.
+    if (room && freeHotkey() === null) {
+      const far = S.rooms.filter(r => r.state === 'armed').sort((a, b) => b.x - a.x)[0];
+      if (far) { far.state = 'dormant'; far.hot = null; far.mg = null; }
+    }
     // armRoom, not `state = 'armed'`: it is the one place that also hands out the hotkey
     // and builds the mini-game state. Set by hand, the panel drew its title as "ROOM null"
     // and then threw on an mg that did not exist, leaving a frame with the legend on it and
     // no keypad -- which looks exactly like a layout bug in the thing being photographed.
-    if (room) { armRoom(room); S.active = room; }
+    if (room) {
+      armRoom(room); S.active = room;
+      // &packed=N charges already in, &fuse=T seconds of fuse left to burn. Both go through
+      // the mini-game's own fields rather than a second copy of its rules, so a panel
+      // photographed here is the panel the player gets.
+      if (room.verb === 'blast' && qs.has('packed')) {
+        const n = Math.max(0, Math.min(room.mg.holes.length, +qs.get('packed')));
+        for (let i = 0; i < n; i++) room.mg.holes[i].packed = true;
+        room.mg.idx = n;
+      }
+      if (room.verb === 'blast' && qs.has('fuse')) {
+        for (const h of room.mg.holes) h.packed = true;
+        room.mg.idx = room.mg.holes.length;
+        room.mg.lit = 1; room.mg.won = true;
+        room.mg.inputT = Math.max(0.0001, Math.min(FUSE_BURN, +qs.get('fuse')));
+      }
+    }
+  }
+  // ?start&skip=N&blast=T blows the next wall and pins its clock at T seconds in, so the
+  // explosion can be held still. It solves through solveRoom, so the debris, the sound and
+  // the shake are the real ones and not a second staging of them.
+  if (qs.has('blast')) {
+    const room = S.rooms.find(r => r.type === 'wall');
+    if (room) {
+      if (room.state === 'dormant') armRoom(room);
+      S.active = null;
+      if (room.state !== 'solved') solveRoom(room);
+      DEV_BLAST = Math.max(0, Math.min(1, +qs.get('blast') / BLAST_T));
+      room.blast = DEV_BLAST;
+      // as far as the debris would have flown BY THAT INSTANT. A fixed 40 frames advanced it
+      // 0.67s whatever `blast` said, so every frame shot before then showed chunks that had
+      // already landed -- an explosion with no explosion in it, which reads as a drawing fault.
+      const adv = Math.round(Math.max(0, +qs.get('blast')) * 60);
+      for (let i = 0; i < adv; i++) updateFx(1 / 60);
+    }
   }
 }
 // ?intro=N holds the opening at N seconds, for headless screenshots of it

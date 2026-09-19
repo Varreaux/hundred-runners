@@ -136,7 +136,23 @@ function visibleWindows() {
     __out.__cost[v] = { med: runs[runs.length >> 1], worst: runs[runs.length - 1] };
   }
   S.mode = 'play';
-  for (let f = 0; f < 60 * 220 && S.mode === 'play'; f++) {
+  // DERIVED FROM THE COURSE, not written down. This was 60 * 220 against a run that needs
+  // 199s today -- 21 seconds of slack, which is one course change from the loop stopping
+  // short and every room past that point silently falling back to road / scroll instead of
+  // measured road. That failure accuses the game: it reports rooms as never armed, or prices
+  // them off a warn nobody has checked. The same written-down length has now gone stale three
+  // times on this course (the freeze harness 60*140, cover-check 160s, and this).
+  //
+  // NO BACKTICKS IN HERE. This whole function is the body of a template literal handed to
+  // eval, so one backtick in a comment ends the string and the tool dies with "missing )
+  // after argument list" pointing at a line thirty above the real fault.
+  //
+  // +90s of headroom over pure travel, matching the freeze harness's own budget, because a
+  // solved run is slower than the scroll: rooms hold the pack while they are being cleared.
+  const BUDGET = 60 * (S.camMax / CFG.scroll + 90);
+  let ranOut = false;
+  for (let f = 0; f < BUDGET && S.mode === 'play'; f++) {
+    if (f === BUDGET - 1) ranOut = true;
     const t = f / 60;
     // update, then LOOK, then let the bot press. devSolve opens and clears a room in the
     // same call, so sampling after it meant r.state was never observed as 'armed' -- the
@@ -171,17 +187,30 @@ function visibleWindows() {
     }
     devSolve();
   }
+  if (ranOut) __out.__ranOut = true;
 })();
 `);
   return out;
 }
-let WIN = {};
-try { WIN = visibleWindows(); } catch (e) { console.log('could not drive a game: ' + e.message); }
+let WIN = {}, DEGRADED = null;
+// A CHECK THAT HAS STOPPED LOOKING READS EXACTLY LIKE A CHECK THAT IS PASSING. This caught,
+// printed one line and carried on with WIN = {}, so every room fell through to its written
+// warn, every zoom printed `-`, and thirty rows of entirely plausible verdicts scrolled the
+// note off the top. Run from a temp directory -- which is what a before-and-after comparison
+// does -- it reported 16 rooms IMPOSSIBLE and none of them were.
+//
+// Still not fatal, because a fallback run is better than nothing when a sibling is missing.
+// But the degradation now has to be visible where verdicts are READ: every affected row is
+// marked, and the banner is repeated at the END, after the rows, rather than only before
+// them. And the exit code is non-zero, so nothing scripted can mistake it for a pass.
+try { WIN = visibleWindows(); } catch (e) { DEGRADED = e.message; }
 // Key costs measured by driving the verb, carried out of the same run. Falls back to a
 // stated number only if the run failed, and says so, rather than quietly pricing a room
 // off a constant nobody has checked since the verb changed.
 const COSTS = WIN.__cost || {};
-if (!WIN.__cost) console.log('NOTE: could not drive the verbs; derived key costs fall back to stated numbers.');
+if (WIN.__ranOut) console.log(`!! THE DRIVEN RUN NEVER FINISHED inside its derived budget, so rooms past\n!! the point it stopped are scored against their written warn. Something has lengthened\n!! the course or slowed the bot; do not read the rows past that point as measurements.\n`);
+if (DEGRADED) console.log(`!! COULD NOT DRIVE A GAME: ${DEGRADED}\n!! Every row below is scored against its WRITTEN warn, not the window a player gets,\n!! and is marked with a ~ . These are not measurements. Run this from tools/, with the\n!! file under test passed as the path argument -- __dirname has to resolve its siblings.\n`);
+else if (!WIN.__cost) console.log('NOTE: could not drive the verbs; derived key costs fall back to stated numbers.');
 
 const typesBlock = src.slice(src.indexOf('  types: {'), src.indexOf('  crusherPeriod'));
 const verbOf = {};
@@ -200,6 +229,15 @@ const WORDLEN = [3, 4, 5, 6, 6];
 // The sweeper's demo clock, read out of index.html rather than written down here. Throws
 // rather than falling back to a default: a cost model that cannot find the numbers it
 // prices should stop, not quietly price the room off a guess.
+const BLAST = (() => {
+  const fuse = src.match(/const FUSE_BURN = ([\d.]+)/);
+  const blk = src.match(/\n  blast: \{[\s\S]*?\n    start\(diff\) \{([\s\S]*?)\n    \},/);
+  if (!fuse || !blk) throw new Error('room-check: cannot find FUSE_BURN or blast.start in index.html -- the wall was rewritten, and this tool cannot price it until it is pointed at the new numbers.');
+  const n = blk[1].match(/const n = (\d+) \+ Math\.min\((\d+), Math\.floor\(diff \/ (\d+)\)\);/);
+  if (!n) throw new Error('room-check: blast.start no longer computes its hole count as `const n = A + Math.min(B, Math.floor(diff / C))`.');
+  const [, A, B, C] = n.map(Number);
+  return { fuse: Number(fuse[1]), holes: d => A + Math.min(B, Math.floor(d / C)) };
+})();
 const SWEEP = (() => {
   const m = src.match(/const SWEEP = (\{[^}]*\})/);
   if (!m) throw new Error('room-check: no `const SWEEP = {...}` in index.html -- the sweeper was retimed or renamed, and this tool cannot price it until it is pointed at the new numbers.');
@@ -252,8 +290,12 @@ const cost = {
   // measures the road from a run. Returning null here prints the same "no cost model" row
   // that calculation gets, which is an admission rather than a fiction.
   lift:   () => ({ skip: 'six presses at every difficulty; the cost is time, not keys -- run tools/lift-check.js' }),
-  blast:  d => ({ keys: (3 + Math.min(2, Math.floor(d / 2))) + 5 + 1, kind: 'distinct',
-                  secs: 0.45, note: 'charge, pay out the fuse, fire' }),
+  // Parsed, not written down. This entry carried `+ 5 + 1` and `secs: 0.45` for the payout
+  // presses and the arm delay after the room stopped having either, and a tool that states a
+  // fact about the game goes stale by lying rather than by failing. Both numbers now come out
+  // of blast's own source, and a rename throws instead of quietly pricing the old room.
+  blast:  d => ({ keys: BLAST.holes(d) + 1, kind: 'distinct',
+                  secs: BLAST.fuse, note: `${BLAST.holes(d)} charges, then one SPACE and a ${BLAST.fuse}s fuse` }),
 };
 // keys per second a person can actually manage, by what kind of pressing it is
 const CEIL = { distinct: { bug: 3.2, hard: 2.4 }, same: { bug: 6.5, hard: 5.0 }, alt: { bug: 6.5, hard: 5.0 } };
@@ -319,18 +361,36 @@ for (const r of rooms) {
   rate = need / usable;
   verdict = usable <= 0 || !isFinite(need) || rate > lim.bug ? 'IMPOSSIBLE' : rate > lim.hard ? 'hard' : 'ok';
   if (verdict === 'IMPOSSIBLE') bugs++; else if (verdict === 'hard') hard++;
-  console.log(`${r.type.padEnd(11)} ${r.diff}     ${(w ? w.zoom.toFixed(2) : ' -  ').padEnd(6)} ${secs.toFixed(2)}s   ${(need + ' ' + c.kind).padEnd(18)} ${(rate.toFixed(2) + '/s').padEnd(9)} ${verdict}   ${String(road).padEnd(5)} ${c.note || ''}`);
+  // The column is headed `usable` and printed `secs`, the raw road, for every room -- which
+  // is the same number until a room has dead time in it, and the wall now has 1.15s of fuse.
+  // The rate below was always computed from `usable`, so the row disagreed with its own sum.
+  console.log(`${(w ? ' ' : '~') + r.type.padEnd(10)} ${r.diff}     ${(w ? w.zoom.toFixed(2) : ' -  ').padEnd(6)} ${usable.toFixed(2)}s   ${(need + ' ' + c.kind).padEnd(18)} ${(rate.toFixed(2) + '/s').padEnd(9)} ${verdict}   ${String(road).padEnd(5)} ${c.note || ''}`);
 }
 console.log(`\n${bugs} impossible, ${hard} hard, ${offLane} off-lane.`);
 console.log('Impossible is a bug and must be fixed. Hard is a judgement: quote it to Morgan,');
 console.log('do not pad the room to make the number go away.');
-process.exit(bugs || offLane ? 1 : 0);
+if (DEGRADED) {
+  console.log(`\n!! AND NONE OF THE ABOVE IS A MEASUREMENT: could not drive a game (${DEGRADED}).`);
+  console.log('!! Every ~ row used its written warn instead of the window a player actually gets.');
+}
+process.exit(bugs || offLane || DEGRADED ? 1 : 0);
 
 // Proved it can fail, rather than only seen it pass -- which matters more here than usual,
 // because this file measured the WRONG WINDOW for four days and printed "0 impossible, 0
 // hard" the whole time. Against copies of index.html:
 //
-//   armDist 240 -> 70    conveyor IMPOSSIBLE at 3.36 keys/sec, 1 impossible
-//   armReach   -> 1.0    6 hard, 0 impossible (every room arming at its own floor)
+//   armDist 240 -> 70    2 impossible: conveyor@1 3.64/s and conveyor@4 3.43/s
+//   armReach   -> 1.0    5 hard, 0 impossible (every room arming at its own floor)
 //
 // Run those two again if you change what `secs` is measured from.
+//
+// Re-run 2026-09-19, and BOTH COUNTS HAD MOVED -- 1 impossible became 2, 6 hard became 5.
+// Neither was the change under test. Act three doubling in length moved the arming windows
+// under every room, and the blast entry stopped being written down on the same day, so the
+// obvious reading was that one of those had done it. The way to tell: run the PREVIOUS copy
+// of this file against the SAME falsified index.html. It gave the same 2 and the same 5, so
+// the move is the course and not the tool. Keep that habit -- a falsifier whose counts drift
+// is only evidence once you have attributed the drift.
+//
+// And the windows have spread: conveyor@1 read 1.65s on one run and 1.75s on the next at the
+// same armDist. A single-room delta under about 0.1s is noise, not a change.
