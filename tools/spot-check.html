@@ -79,38 +79,33 @@ const bench = `
   // 200, not 230. With the mask pass forced to full weight the densest fills compound to
   // about 217, so 230 would still cut through a mark that is entirely opaque in intent.
   const COVER = +(QZ.get('cv') || 200);      // a pixel the mark fully covers, 0..255
-  // 140 WAS CALIBRATED AGAINST THE UNMASKED STATISTIC AND IS CURRENTLY A NO-OP: with the
-  // coverage mask in, the worst mark in the room measures 111, so nothing can fail this and a
-  // threshold nothing can fail is not a check. It is left at 140 for one round ON PURPOSE,
-  // because the honest way to reset it is the way it was set the first time -- fix the art,
-  // shoot the dark frames, find where the eye puts the boundary, and put the number there.
-  // Halving it to match the halved statistic would be arithmetic standing in for evidence,
-  // and the masked numbers do not track the eye closely enough to take that on trust: the
-  // three highest after the last fix (arrowDown 111, safeCrack 96, roast 91) are marks the art
-  // pass cannot see in any dark frame, while two it CAN see sit under 66.
-  // SET BY FALSIFICATION, and the story of how nearly went wrong is worth more than the
+  // SET BY FALSIFICATION, and the story of how it nearly went wrong is worth more than the
   // number. Five statistics were tried against the art pass's list of what it can and cannot
   // see in the dark, and the coverage-masked one appeared to ANTI-correlate: the three marks
-  // scoring highest were three it had gone and looked for and could not find. I reported that
-  // as a property of the measurement and concluded no threshold existed.
+  // scoring highest were three it had gone and looked for and could not find. That was
+  // reported as a property of the measurement, and a conclusion drawn from it, in a commit.
   //
-  // It was my own bug. The mask pass drew each mark through drawDiffMark, which sets
-  // globalAlpha to the mark's WEIGHT, so the alpha channel held opacity x coverage rather than
-  // coverage -- and every weighted mark, which is the whole contract card and nine others, had
-  // no pixel above the threshold at all. The marks that survived were the ones on cards with
-  // no weight. Of course they ranked highest: they were the only ones being measured. The
-  // statistic had quietly stopped being about leaking, and it took a reviewer deriving the
-  // compounded alpha of each mark by hand to see it. The mask pass forces full weight now.
+  // It was a bug in the mask, not a property of anything. The mask pass drew each mark through
+  // drawDiffMark, which sets globalAlpha to the mark's WEIGHT, so the alpha channel held
+  // opacity x coverage rather than coverage -- and every weighted mark, which is the whole
+  // contract card and nine others, had no pixel above the threshold at all. The three that
+  // survived were on cards with no weight. They ranked highest because they were the only
+  // ones still being measured. The mask pass forces full weight now.
   //
-  // With that corrected, the bracket: a build with the contract's weights stripped -- the card
-  // that WAS photographed and read -- scores 13.7, 13.0 and 11.6 on its three worst marks.
-  // This build's worst is 7.9. 10 sits between them, so the check catches a card that has
-  // become readable. It does not claim to resolve the faint residuals the art pass can still
-  // find by computing a coordinate and looking at two pixels; its own caveat is that a player
-  // has ninety seconds, a moving lamp and no coordinate list, and that none of the six cards
-  // can be cleared unsteered. tools/spot-falsify.js runs exactly that pair.
+  // So the threshold is bracketed by two builds that were really photographed and really read,
+  // rather than set from the eye it could not track. Contract weights stripped -- the card
+  // that WAS read at pass 5, dark-on-bright -- scores 13.7, 13.0 and 11.6. The build before
+  // the three 0.9 strokes were found by eye -- pale-on-dark, the room's other leak mode --
+  // is the second sample, and tools/spot-falsify.js runs the pair. This build's worst is 7.9.
+  //
+  // What it does NOT catch, said plainly so a pass is not read as more than it is: marks the
+  // art pass can still find by computing a coordinate and looking at two pixels. Its own
+  // caveat is that a player has ninety seconds, a moving lamp and no coordinate list, and that
+  // none of the six cards can be cleared unsteered.
   const MAX_SCORE = +(QZ.get('sc') || 10);   // masked blob per unit of local clutter
-  // REPORTED, NOT ENFORCED, and the reason is that I could not calibrate it. The art pass was
+  // MAX_AXIS BELOW IS REPORTED AND NOT ENFORCED -- this paragraph is about that term and
+  // not about MAX_SCORE above it, which is the one live predicate in this file. The reason
+  // it is parked is that I could not calibrate it. The art pass was
   // right that the area test inherited the mirror of the fault it cured: after it, eight marks
   // still leaked in the dark and every one was stroke-built, because a 2x20 stroke is 40 px of
   // area and scores as nothing while a pale line in a dark field is the easiest thing an eye

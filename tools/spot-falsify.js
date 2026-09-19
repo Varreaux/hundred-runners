@@ -26,11 +26,11 @@ const FAULTS = [
       "    ctx.fillStyle = k === 'bloodSpot' ? 'rgba(60,18,20,0.55)' : 'rgba(18,22,28,0.5)';\n" +
       "    ctx.beginPath(); ctx.ellipse(dx, dy, 7, 3.5, 0.35, 0, 6.28); ctx.fill();\n") },
   { name: 'a tolerance that grows with the crew',
-    want: /FAIL {2}the crew does not buy aim/,
+    want: /FAIL\s+the crew does not buy aim/,
     edit: s => s.replace('  const hitR = CFG.finale.hitRadius;',
                          '  const hitR = Math.max(36, Math.min(r * 0.35, 90));') },
   { name: 'a difference you can find without the lamp',
-    want: /FAIL {2}no difference in contract {2}can be found unlit/,
+    want: /FAIL\s+no difference in contract\s+can be found unlit/,
     // the contract's marks at full weight: dark ink on parchment at luminance 195 gives far
     // more contrast than the read floor asks for, and 7% of it survives the veil
     // Strip BOTH the card weight and the per-mark weights, so the contract's marks go back to
@@ -39,8 +39,19 @@ const FAULTS = [
     // goes stale silently -- which this one already did once, and said so.
     edit: s => s.replace(/markWeight: [\d.]+, markInk: '[^']*',/, '')
                 .replace(/(\{ x: \d+, y: \d+), w: [\d.]+(, kind: '(?:stamp|seal|thumb|hourglass|shackle|inkblot|tear)' \})/g, '$1$2') },
+  { name: 'a pale mark readable on a dark card',
+    want: /FAIL\s+no difference in banquet\s+can be found unlit/,
+    // THE ROOM HAS TWO LEAK MODES and the other case only samples one of them. That one is
+    // dark ink on the contract's bright parchment; this is a pale stroke on a dark ground,
+    // which is what the chandelier's arm was at 0.9 before the damping sweep was found to
+    // have skipped it. Scored on the build that really shipped it, it comes out at 13.9
+    // against a cut of 10 -- so the bracket is anchored at both ends by builds that were
+    // photographed and read, rather than by one failure mode and an assumption about the other.
+    edit: s => s.replace("ctx.strokeStyle = 'rgba(40,34,26,0.9)'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';",
+                         "ctx.strokeStyle = 'rgba(196,164,84,0.9)'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';")
+                .replace("{ x: 50, y: 38, w: 0.78, kind: 'chandelier' }", "{ x: 50, y: 38, kind: 'chandelier' }") },
   { name: 'two differences inside one press',
-    want: /FAIL {2}no two differences in line/,
+    want: /FAIL\s+no two differences in line/,
     edit: s => s.replace("{ x: 173, y: 188, kind: 'bloodSpot' }", "{ x: 116, y: 177, kind: 'bloodSpot' }") },
 ];
 
