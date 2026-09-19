@@ -76,6 +76,16 @@ const bench = `
   // The removed-body marks will always sit high: a whole figure absent changes the
   // composition and no damping hides that. It is the one difference that should be findable
   // from a wide view, and it is one of ten.
+  const COVER = +(QZ.get('cv') || 230);      // a pixel the mark fully covers, 0..255
+  // 140 WAS CALIBRATED AGAINST THE UNMASKED STATISTIC AND IS CURRENTLY A NO-OP: with the
+  // coverage mask in, the worst mark in the room measures 111, so nothing can fail this and a
+  // threshold nothing can fail is not a check. It is left at 140 for one round ON PURPOSE,
+  // because the honest way to reset it is the way it was set the first time -- fix the art,
+  // shoot the dark frames, find where the eye puts the boundary, and put the number there.
+  // Halving it to match the halved statistic would be arithmetic standing in for evidence,
+  // and the masked numbers do not track the eye closely enough to take that on trust: the
+  // three highest after the last fix (arrowDown 111, safeCrack 96, roast 91) are marks the art
+  // pass cannot see in any dark frame, while two it CAN see sit under 66.
   const MAX_LEAK = +(QZ.get('ln') || 140);   // largest connected unlit blob a mark may show
   // REPORTED, NOT ENFORCED, and the reason is that I could not calibrate it. The art pass was
   // right that the area test inherited the mirror of the fault it cured: after it, eight marks
@@ -159,6 +169,30 @@ const bench = `
         if (Math.hypot(x - w * 0.08, y - h * 0.92) < lampR * 1.5) D2[y * w + x] = 0;
       }
     }
+    // ---------------------------------------------- the marks' own coverage, alone
+    // THE SEPARATOR I COULD NOT FIND GEOMETRICALLY, and it is not geometric. An anti-aliased
+    // fringe exists ONLY where a mark's coverage is PARTIAL -- that is what anti-aliasing is --
+    // while a genuine leak is the mark's own body, where coverage is FULL. So the unlit map is
+    // masked to fully-covered pixels before anything is labelled, and every fringe in the room
+    // disappears in one step with no shape term at all. A 2-unit stroke renders about 2.7
+    // device pixels wide and keeps a fully-covered core, so nothing thin is lost; a blob's
+    // fringe has no fully-covered pixels outside a body that is already below the floor.
+    //
+    // Drawn alone on a cleared rect so the alpha channel IS the coverage. Same transform
+    // drawFinaleScene uses, or the mask would not line up with what it is masking.
+    const COV = new Uint8Array(w * h);
+    {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(L.right.x, L.right.y, w, h);
+      ctx.save();
+      ctx.beginPath(); ctx.rect(L.right.x, L.right.y, w, h); ctx.clip();
+      ctx.translate(L.right.x, L.right.y);
+      ctx.scale(w / FINALE_ART.w, h / FINALE_ART.h);
+      for (const d of diffs) drawDiffMark(d, 0, 0, true);
+      ctx.restore();
+      const C = ctx.getImageData(L.right.x, L.right.y, w, h).data;
+      for (let i = 0, q = 3; i < w * h; i++, q += 4) COV[i] = C[q];
+    }
     const sxS = w / FINALE_ART.w, syS = h / FINALE_ART.h;
     const pts = diffs.map(d => ({ d: d, x: d.x * sxS, y: d.y * syS }));
     // Every changed pixel is attributed to its NEAREST difference, never to a window round
@@ -200,7 +234,7 @@ const bench = `
     {
       const seen2 = new Uint8Array(w * h);
       for (let i = 0; i < w * h; i++) {
-        if (seen2[i] || D2[i] < LEAK || OWN[i] < 0) continue;
+        if (seen2[i] || D2[i] < LEAK || OWN[i] < 0 || COV[i] < COVER) continue;
         const stack = [i]; seen2[i] = 1;
         const tally = {}; let size = 0, x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
         while (stack.length) {
@@ -212,7 +246,7 @@ const bench = `
             const nx = jx + dx, ny = jy + dy;
             if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
             const k = ny * w + nx;
-            if (!seen2[k] && D2[k] >= LEAK && OWN[k] >= 0) { seen2[k] = 1; stack.push(k); }
+            if (!seen2[k] && D2[k] >= LEAK && OWN[k] >= 0 && COV[k] >= COVER) { seen2[k] = 1; stack.push(k); }
           }
         }
         // the component belongs to whichever mark holds most of it

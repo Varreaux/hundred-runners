@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '119 a hole is not a hole';
+const BUILD = '120 one card is not one ground';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2729,9 +2729,9 @@ const FINALE_SCENES = [
   {
     id: 'smog', title: 'PROGRESS HAS A SMELL',
     diffs: [
-      { x: 38, y: 40, kind: 'stackSmoke' }, { x: 116, y: 34, kind: 'mansion' }, { x: 248, y: 44, kind: 'sunMoney' },
+      { x: 38, y: 40, ink: '#332c28', kind: 'stackSmoke' }, { x: 116, y: 34, ink: '#332c28', kind: 'mansion' }, { x: 248, y: 44, ink: '#3a322c', kind: 'sunMoney' },
       { x: 90, y: 174, gy: 189, kind: 'cough' }, { x: 158, y: 100, kind: 'filter' }, { x: 240, y: 112, kind: 'pipe' },
-      { x: 46, y: 200, kind: 'puddle' }, { x: 190, y: 14, kind: 'bird' }, { x: 198, y: 167, kind: 'maskGas' }, { x: 282, y: 26, kind: 'chimney' },
+      { x: 46, y: 200, kind: 'puddle' }, { x: 190, y: 14, ink: '#332c28', kind: 'bird' }, { x: 198, y: 167, kind: 'maskGas' }, { x: 282, y: 26, ink: '#332c28', kind: 'chimney' },
     ],
   },
 ];
@@ -2746,7 +2746,13 @@ function makeFinaleDiffs(scene) {
   // those places on the other painting. Photographed at crew 12 before believing it, because
   // a threshold that accuses two thirds of what it measures is usually the threshold's fault.
   // This time it was not.
-  return scene.diffs.map((d, i) => ({ ...d, id: i, w: d.w || scene.markWeight || 0.95, ink: scene.markInk || INK }));
+  // PER MARK, not just per scene. The contract needed one ink because its whole card is a
+  // flat bright parchment; smog needs one for HALF its card. INK is luminance 22.6, its sky
+  // runs to 90.7 and its buildings sit at 37 -- so the same outline is 68 over the band's
+  // ceiling on the sky and comfortably inside it on the brick, and no single value serves
+  // both. A lighter ink that quietens the five sky marks would silhouette on the five below.
+  return scene.diffs.map((d, i) => ({ ...d, id: i, w: d.w || scene.markWeight || 0.95,
+                                      ink: d.ink || scene.markInk || INK }));
 }
 function finaleFx(f, k, x, y, o = {}) {
   const n = o.n || 1, vx = o.vx || [-20, 20], vy = o.vy || [-40, -10], lf = o.life || [0.35, 0.8];
@@ -3397,11 +3403,17 @@ function drawDiffMark(d, x, y, on) {
     ctx.beginPath(); ctx.ellipse(dx - 2, dy - 2, 8, 6.5, -0.3, 0, 6.28); ctx.fill();
     ctx.fillStyle = 'rgba(38,33,33,0.28)';
     ctx.beginPath(); ctx.ellipse(dx + 3, dy + 4, 7, 5.5, -0.3, 0, 6.28); ctx.fill();
-    markBlob(dx + 1, dy + 1.5, 3.4, 2.6, 0.4, 'rgba(38,30,26,0.9)', null);
+    // +1.5 UNITS OFF THE STACK. At dx+1 the cinder's ink edge cleared the chimney beside it by
+    // 0.36 of a unit in the line and 0.21 in smog -- a third to a half of a screen pixel, where
+    // the two inks antialias into one another. So it did not read as carried up in the
+    // draught, it read as a lump on the side of the stack, which is the one thing a cinder
+    // must not be. It is still entirely inside the drawn puff: its furthest point is 0.55 of
+    // the way to the plume's boundary.
+    markBlob(dx + 2.5, dy + 1.5, 3.4, 2.6, 0.4, 'rgba(38,30,26,0.9)', null);
     ctx.fillStyle = 'rgba(178,100,44,0.42)';
-    ctx.beginPath(); ctx.ellipse(dx + 1.6, dy + 2.6, 2, 1.3, 0.4, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(dx + 3.1, dy + 2.6, 2, 1.3, 0.4, 0, 6.28); ctx.fill();
     ctx.fillStyle = 'rgba(206,162,100,0.34)';
-    ctx.beginPath(); ctx.ellipse(dx + 0.4, dy + 2.2, 0.9, 0.7, 0.4, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(dx + 1.9, dy + 2.2, 0.9, 0.7, 0.4, 0, 6.28); ctx.fill();
   } else if (k === 'goldClock' || k === 'goldBar' || k === 'diamond' || k === 'sunMoney' || k === 'coinStack') {
     // nested brick of gold, same palette as vault bars - easy to miss
     markPlate(dx, dy, 13, 9, '#68511f', 'rgba(166,148,102,0.3)');
@@ -3516,7 +3528,10 @@ function drawDiffMark(d, x, y, on) {
     // through both rings while the colour pass below, which strokes them separately, never
     // covered it. Two grey rings bridged and bisected by a black bar: a pair of spectacles.
     markInk(() => { ctx.arc(dx - 4.5, dy, 4.2, 0, 6.28); ctx.moveTo(dx + 8.2, dy + 1.2); ctx.arc(dx + 4, dy + 1.2, 4.2, 0, 6.28); }, 1.8);
-    ctx.strokeStyle = 'rgba(132,138,146,0.6)'; ctx.lineWidth = 1.8;
+    // Luminance 137 against the line's belt highlight at 75 and the vault's bars at 74.5 is a
+    // delta of 62, hard against the band's ceiling, and cage was the loudest thing left in any
+    // dark frame once the fringes were masked out of the measurement.
+    ctx.strokeStyle = 'rgba(110,116,124,0.54)'; ctx.lineWidth = 1.8;
     ctx.beginPath(); ctx.arc(dx - 4.5, dy, 4.2, 0, 6.28); ctx.stroke();
     ctx.beginPath(); ctx.arc(dx + 4, dy + 1.2, 4.2, 0, 6.28); ctx.stroke();
   } else if (k === 'brokenGear' || k === 'percent') {
@@ -3771,13 +3786,18 @@ function drawDiffMark(d, x, y, on) {
     // turned and given nothing, and two asymmetric curves with a 1-unit gap between them
     // stop being wings and become a stroke: at play scale it read as a tilde. The symmetric
     // version at least said gull.
-    markBlob(dx - 0.5, dy + 0.5, 3, 1.8, -0.2, 'rgba(60,52,44,0.9)', 'rgba(170,160,144,0.4)');
+    // DARK, because it is against the sky. It was drawn pale with a light crown, which on a
+    // ground of luminance 82 is light-on-light -- so it needed a near-black outline to read at
+    // all, and that outline was what leaked in the dark. A bird overhead is a silhouette:
+    // dark body, dark wings, and the lighter ink round it now reads as glare off the edge
+    // rather than as the thing itself. One change fixes both ends of the band.
+    markBlob(dx - 0.5, dy + 0.5, 3.2, 1.9, -0.2, 'rgba(30,25,21,0.94)', null);
     const wing = () => {
       ctx.moveTo(dx - 10, dy + 3); ctx.quadraticCurveTo(dx - 5, dy - 5.5, dx - 2.4, dy + 0.2);
       ctx.moveTo(dx + 2.2, dy - 0.8); ctx.quadraticCurveTo(dx + 4.5, dy - 5, dx + 7, dy - 1.5);
     };
     markInk(wing, 2);
-    ctx.strokeStyle = 'rgba(192,180,160,0.56)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(32,27,23,0.92)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
     ctx.beginPath(); wing(); ctx.stroke();
   } else if (k === 'maskGas') {
     // A bilaterally symmetric oval with two symmetric eyes is the one shape the eye finds
