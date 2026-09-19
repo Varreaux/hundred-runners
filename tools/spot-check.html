@@ -76,7 +76,9 @@ const bench = `
   // The removed-body marks will always sit high: a whole figure absent changes the
   // composition and no damping hides that. It is the one difference that should be findable
   // from a wide view, and it is one of ten.
-  const COVER = +(QZ.get('cv') || 230);      // a pixel the mark fully covers, 0..255
+  // 200, not 230. With the mask pass forced to full weight the densest fills compound to
+  // about 217, so 230 would still cut through a mark that is entirely opaque in intent.
+  const COVER = +(QZ.get('cv') || 200);      // a pixel the mark fully covers, 0..255
   // 140 WAS CALIBRATED AGAINST THE UNMASKED STATISTIC AND IS CURRENTLY A NO-OP: with the
   // coverage mask in, the worst mark in the room measures 111, so nothing can fail this and a
   // threshold nothing can fail is not a check. It is left at 140 for one round ON PURPOSE,
@@ -86,7 +88,28 @@ const bench = `
   // and the masked numbers do not track the eye closely enough to take that on trust: the
   // three highest after the last fix (arrowDown 111, safeCrack 96, roast 91) are marks the art
   // pass cannot see in any dark frame, while two it CAN see sit under 66.
-  const MAX_LEAK = +(QZ.get('ln') || 140);   // largest connected unlit blob a mark may show
+  // SET BY FALSIFICATION, and the story of how nearly went wrong is worth more than the
+  // number. Five statistics were tried against the art pass's list of what it can and cannot
+  // see in the dark, and the coverage-masked one appeared to ANTI-correlate: the three marks
+  // scoring highest were three it had gone and looked for and could not find. I reported that
+  // as a property of the measurement and concluded no threshold existed.
+  //
+  // It was my own bug. The mask pass drew each mark through drawDiffMark, which sets
+  // globalAlpha to the mark's WEIGHT, so the alpha channel held opacity x coverage rather than
+  // coverage -- and every weighted mark, which is the whole contract card and nine others, had
+  // no pixel above the threshold at all. The marks that survived were the ones on cards with
+  // no weight. Of course they ranked highest: they were the only ones being measured. The
+  // statistic had quietly stopped being about leaking, and it took a reviewer deriving the
+  // compounded alpha of each mark by hand to see it. The mask pass forces full weight now.
+  //
+  // With that corrected, the bracket: a build with the contract's weights stripped -- the card
+  // that WAS photographed and read -- scores 13.7, 13.0 and 11.6 on its three worst marks.
+  // This build's worst is 7.9. 10 sits between them, so the check catches a card that has
+  // become readable. It does not claim to resolve the faint residuals the art pass can still
+  // find by computing a coordinate and looking at two pixels; its own caveat is that a player
+  // has ninety seconds, a moving lamp and no coordinate list, and that none of the six cards
+  // can be cleared unsteered. tools/spot-falsify.js runs exactly that pair.
+  const MAX_SCORE = +(QZ.get('sc') || 10);   // masked blob per unit of local clutter
   // REPORTED, NOT ENFORCED, and the reason is that I could not calibrate it. The art pass was
   // right that the area test inherited the mirror of the fault it cured: after it, eight marks
   // still leaked in the dark and every one was stroke-built, because a 2x20 stroke is 40 px of
@@ -109,7 +132,7 @@ const bench = `
   const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
   const out = { painting: [L.left.w, L.left.h], thresh: THRESH,
                 floors: { dpx: MIN_DPX, peak: MIN_PEAK, off: MAX_OFF, area: MAX_AREA,
-                          strong: STRONG, strongN: MIN_STRONG, leak: LEAK, leakN: MAX_LEAK,
+                          strong: STRONG, strongN: MIN_STRONG, leak: LEAK, score: MAX_SCORE,
                           axis: MAX_AXIS },
                 hitRadius: CFG.finale.hitRadius, scenes: [], tolerance: [] };
   S.t = 0;
@@ -125,6 +148,14 @@ const bench = `
     const A = ctx.getImageData(L.left.x, L.left.y, L.left.w, L.left.h).data;
     const B = ctx.getImageData(L.right.x, L.right.y, L.right.w, L.right.h).data;
     const w = L.left.w, h = L.left.h;
+    // The clutter term reads the LIT original, not the veiled one. The veil is a uniform
+    // composite, so it scales the scene's structure by 0.07 and preserves it exactly -- in
+    // real arithmetic. In eight-bit integers it does not: the whole veiled card lands in a
+    // range of about nine to twenty-five, where a neighbourhood's standard deviation is mostly
+    // rounding. Measured there the term did not separate anything; measured on the lit card it
+    // is the same quantity with sixteen times the resolution.
+    const VL = new Float32Array(w * h);
+    for (let i = 0, q = 0; i < w * h; i++, q += 4) VL[i] = lum(A[q], A[q + 1], A[q + 2]);
     const D = new Uint8Array(w * h);
     // ALPHA IS A CHANNEL TOO, and leaving it out made the check blind to a whole class. A
     // destination-out composite leaves un-premultiplied RGB UNCHANGED and only drops alpha, so
@@ -160,6 +191,7 @@ const bench = `
       veilPaintingSpot(L.right, L.right.x + w * 0.08, L.right.y + h * 0.92, lampR, fullR);
       const A2 = ctx.getImageData(L.left.x, L.left.y, w, h).data;
       const B2 = ctx.getImageData(L.right.x, L.right.y, w, h).data;
+
       for (let i = 0, q = 0; i < w * h; i++, q += 4) {
         D2[i] = Math.max(Math.abs(A2[q] - B2[q]), Math.abs(A2[q + 1] - B2[q + 1]),
                          Math.abs(A2[q + 2] - B2[q + 2]), Math.abs(A2[q + 3] - B2[q + 3]));
@@ -188,7 +220,19 @@ const bench = `
       ctx.beginPath(); ctx.rect(L.right.x, L.right.y, w, h); ctx.clip();
       ctx.translate(L.right.x, L.right.y);
       ctx.scale(w / FINALE_ART.w, h / FINALE_ART.h);
-      for (const d of diffs) drawDiffMark(d, 0, 0, true);
+      // AT FULL WEIGHT, or this measures the wrong thing entirely. drawDiffMark sets
+      // globalAlpha to the mark's own w, so the alpha channel of a mask pass drawn normally is
+      // OPACITY x coverage, not coverage -- and a mark whose paint never reaches the threshold
+      // has no "covered" pixel anywhere in it, whatever its geometry. At COVER 230 that erased
+      // the entire contract card and nine other weighted marks, and cut THROUGH the plate
+      // family, keeping only whichever layer happened to compound past 0.902.
+      //
+      // That is what produced the anti-correlation I reported and drew a conclusion from: the
+      // three marks scoring highest were all on cards with no weight, so they survived the
+      // mask intact, and the marks the art pass could actually see were on the contract, which
+      // the mask deleted. The statistic was not failing to track the eye. It had quietly
+      // stopped being a statistic about leaking at all.
+      for (const d of diffs) drawDiffMark({ ...d, w: 1 }, 0, 0, true);
       ctx.restore();
       const C = ctx.getImageData(L.right.x, L.right.y, w, h).data;
       for (let i = 0, q = 3; i < w * h; i++, q += 4) COV[i] = C[q];
@@ -286,13 +330,40 @@ const bench = `
           const p = (y * w + x) * 4; bn++;
           bl += lum(A[p], A[p + 1], A[p + 2]); al += lum(B[p], B[p + 1], B[p + 2]);
         }
+      // ---------------------------------------------------------------- LOCAL CLUTTER
+      // THE STATISTIC ANTI-CORRELATED WITH THE EYE AT THE TOP OF ITS RANGE, which is worse
+      // than mis-scaling and is why no multiplier could rescue it: the three highest-scoring
+      // marks in the room were three the art pass went and looked for and could NOT find,
+      // while four it could see scored below them. Any cut under the highest fails an
+      // invisible mark; any cut above it passes a visible one. There was no number.
+      //
+      // What separates them is not the mark, it is the NEIGHBOURHOOD. Every one it could not
+      // find sits on or against a scene feature of its own value -- a red arrow on the red
+      // chart line, a pale crack beside the vault's gold rim, a brown dome on a brown table
+      // between two dishes. Every one it could find sits on empty ground: the contract's
+      // blank board, a plain run of belt, bare wall, plain brick. A given delta disappears
+      // into a busy neighbourhood and shouts on a flat one, which is the per-mark form of the
+      // ground-uniformity argument that produced the per-scene weights three passes ago.
+      //
+      // So the score is the masked component divided by the local variation of the unlit
+      // ORIGINAL around it -- which needs no shape term, no second threshold, and nothing
+      // that is not already rendered.
+      let vs = 0, vss = 0, vn = 0;
+      const R = Math.round(24 * sxS);
+      for (let y = Math.max(0, (py | 0) - R); y < Math.min(h, py + R); y++)
+        for (let x = Math.max(0, (px | 0) - R); x < Math.min(w, px + R); x++) {
+          const v2 = VL[y * w + x]; vs += v2; vss += v2 * v2; vn++;
+        }
+      const sd = vn ? Math.sqrt(Math.max(0, vss / vn - (vs / vn) * (vs / vn))) : 0;
+      const score = a.leak / (1 + sd);
       const off = a.n ? Math.hypot(a.wx / a.wsum - px, a.wy / a.wsum - py) : -1;
       rows.push({ kind: d.kind, at: [Math.round(px), Math.round(py)],
-                  dpx: a.n, strong: a.strong, leak: a.leak, leakAxis: a.leakAxis, peak: a.peak,
+                  dpx: a.n, strong: a.strong, leak: a.leak, leakAxis: a.leakAxis,
+                  sd: +sd.toFixed(2), score: +score.toFixed(1), peak: a.peak,
                   bg: +(bl / bn).toFixed(1), alt: +(al / bn).toFixed(1),
                   off: a.n ? +off.toFixed(1) : -1,
                   faint: a.n < MIN_DPX || a.peak < MIN_PEAK || a.strong < MIN_STRONG,
-                  leaks: a.leak > MAX_LEAK,
+                  leaks: score > MAX_SCORE,
                   offset: !a.n || off > MAX_OFF });
     }
     // spacing, and how much of the picture a blind press would score

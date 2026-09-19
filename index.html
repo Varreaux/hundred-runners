@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '120 one card is not one ground';
+const BUILD = '121 the mask was measuring opacity';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2690,7 +2690,7 @@ const FINALE_SCENES = [
       // 70,110 was 120px from the worker this removes -- marking the gap you can SEE was a
       // wrong answer and cost a body. It sits on the actor now.
       { x: 110, y: 169, gy: 187, kind: 'missingWorker' }, { x: 160, y: 102, kind: 'redBanner' }, { x: 240, y: 120, w: 0.62, kind: 'coinStack' },
-      { x: 121, y: 96, kind: 'brokenGear' }, { x: 173, y: 188, kind: 'bloodSpot' }, { x: 220, y: 182, kind: 'cage' }, { x: 275, y: 90, kind: 'priceTag' },
+      { x: 121, y: 96, kind: 'brokenGear' }, { x: 173, y: 188, kind: 'bloodSpot' }, { x: 220, y: 182, w: 0.78, kind: 'cage' }, { x: 275, y: 90, w: 0.78, kind: 'priceTag' },
     ],
   },
   {
@@ -2704,7 +2704,7 @@ const FINALE_SCENES = [
   {
     id: 'banquet', title: 'THEIR TABLE, YOUR FLOOR',
     diffs: [
-      { x: 50, y: 38, kind: 'chandelier' }, { x: 108, y: 78, kind: 'wine' }, { x: 228, y: 80, kind: 'roast' },
+      { x: 50, y: 38, w: 0.7, kind: 'chandelier' }, { x: 108, y: 78, kind: 'wine' }, { x: 228, y: 80, kind: 'roast' },
       { x: 64, y: 105, kind: 'servant' }, { x: 168, y: 100, kind: 'cigar' }, { x: 154, y: 50, kind: 'mask' },
       { x: 45, y: 184, kind: 'crumb' }, { x: 150, y: 175, gy: 189, kind: 'kneel' }, { x: 225, y: 184, kind: 'rat' }, { x: 284, y: 80, kind: 'bill' },
     ],
@@ -2723,13 +2723,13 @@ const FINALE_SCENES = [
     diffs: [
       { x: 56, y: 42, w: 0.36, kind: 'stamp' }, { x: 145, y: 38, kind: 'quill' }, { x: 252, y: 48, w: 0.6, kind: 'seal' },
       { x: 68, y: 108, kind: 'fineprint' }, { x: 165, y: 102, w: 0.58, kind: 'thumb' }, { x: 262, y: 184, w: 0.72, kind: 'shackle' },
-      { x: 42, y: 168, w: 0.8, kind: 'inkblot' }, { x: 138, y: 162, w: 0.8, kind: 'tear' }, { x: 218, y: 181, w: 0.38, kind: 'hourglass' }, { x: 120, y: 78, kind: 'X' },
+      { x: 42, y: 168, w: 0.8, kind: 'inkblot' }, { x: 138, y: 162, w: 0.8, kind: 'tear' }, { x: 218, y: 181, w: 0.3, kind: 'hourglass' }, { x: 120, y: 78, kind: 'X' },
     ],
   },
   {
     id: 'smog', title: 'PROGRESS HAS A SMELL',
     diffs: [
-      { x: 38, y: 40, ink: '#332c28', kind: 'stackSmoke' }, { x: 116, y: 34, ink: '#332c28', kind: 'mansion' }, { x: 248, y: 44, ink: '#3a322c', kind: 'sunMoney' },
+      { x: 38, y: 40, ink: '#332c28', kind: 'stackSmoke' }, { x: 116, y: 34, ink: '#332c28', kind: 'mansion' }, { x: 248, y: 44, kind: 'sunMoney' },
       { x: 90, y: 174, gy: 189, kind: 'cough' }, { x: 158, y: 100, kind: 'filter' }, { x: 240, y: 112, kind: 'pipe' },
       { x: 46, y: 200, kind: 'puddle' }, { x: 190, y: 14, ink: '#332c28', kind: 'bird' }, { x: 198, y: 167, kind: 'maskGas' }, { x: 282, y: 26, ink: '#332c28', kind: 'chimney' },
     ],
