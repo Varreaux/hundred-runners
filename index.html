@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '126 the last room is sound';
+const BUILD = '127 field machines, not black boxes';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -12157,8 +12157,84 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
     }
   }
 }
+// The same machine, out of doors. A painted steel cabinet 72 units tall -- more than one
+// and a half bodies -- standing on a sunlit meadow reads as a black box pasted on the grass,
+// which is exactly what Morgan called it. The fix is not to recolour the cabinet: it is that
+// a cabinet is the wrong OBJECT out here.
+//
+// What replaces it is period rather than invented. The machines that actually arrived on
+// the commons during enclosure were field machines on timber frames -- threshers, winnowers,
+// horse-gins -- and they are what the labourers broke in the Swing years. So the mechanism
+// stays, because the player has spent two acts learning what this room is and must still
+// recognise it, and the HOUSING becomes the act's own timber: the post, cap and rail palette
+// that encGate and drawEncBounds already use, on a frame you can see the sky through.
+//
+// Its height comes down from 72 to 54 for the same reason the gate is 34: these are sized
+// against a 45-unit body, and out here there is no tunnel roof to justify a slab. Nothing but
+// the drawing reads that number -- a machine room's kill line is room.x + 4 (see holdLine).
+function drawFieldMachine(room, y, sx, gw) {
+  const H = 54, x0 = sx + 8, w = gw - 16, x1 = x0 + w;
+  const lit = room.state === 'solved';
+  // it stands ON the turf: a shadow, and the grass disturbed where the frame was dragged in
+  ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(x0 - 6, y - 1, w + 12, 5);
+  ctx.fillStyle = 'rgba(74,61,47,0.35)'; ctx.fillRect(x0 - 2, y - 3, w + 4, 4);
+  // the two uprights, in the fence's own timber, with the capped heads the gate posts carry
+  for (const px of [x0, x1 - 8]) {
+    ctx.fillStyle = '#5c4630'; ctx.fillRect(px, y - H, 8, H);
+    ctx.fillStyle = 'rgba(255,240,206,0.20)'; ctx.fillRect(px, y - H, 2.4, H);
+    ctx.fillStyle = '#6b5438'; ctx.beginPath();
+    ctx.moveTo(px - 2, y - H); ctx.lineTo(px + 10, y - H); ctx.lineTo(px + 4, y - H - 6); ctx.closePath(); ctx.fill();
+  }
+  // the boarded housing, hung between them and stopping short of the heads so the frame
+  // reads as a frame and the sky comes through the top of it
+  const by = y - H + 14, bh = H - 24;
+  ctx.fillStyle = '#4a3a28'; ctx.fillRect(x0 + 6, by, w - 12, bh);
+  ctx.fillStyle = '#7a6142';
+  for (let i = 0; i < 4; i++) ctx.fillRect(x0 + 7, by + 1.5 + i * (bh / 4), w - 14, bh / 4 - 2.4);
+  ctx.fillStyle = 'rgba(255,240,206,0.16)';
+  for (let i = 0; i < 4; i++) ctx.fillRect(x0 + 7, by + 1.5 + i * (bh / 4), w - 14, 1.1);
+  // the diagonal brace, which is what stops any timber frame racking -- the gate has one too
+  ctx.strokeStyle = '#6b5438'; ctx.lineWidth = 3.2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x0 + 8, y - 4); ctx.lineTo(x1 - 10, y - H + 12); ctx.stroke();
+  // and a drive wheel on the near post: the one cue that says MACHINE rather than hoarding,
+  // turning while the room is still live and stopped once it is not
+  const wx = x0 + 2, wy = y - 18, wr = 9;
+  ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(wx, wy, wr + 1.6, 0, 6.28); ctx.fill();
+  ctx.fillStyle = '#6e5a3c'; ctx.beginPath(); ctx.arc(wx, wy, wr, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = '#3d3122'; ctx.lineWidth = 1.6;
+  const spin = lit ? 0.6 : S.t * 1.9;
+  for (let i = 0; i < 6; i++) {
+    const a2 = spin + i * Math.PI / 3;
+    ctx.beginPath(); ctx.moveTo(wx, wy); ctx.lineTo(wx + Math.cos(a2) * wr, wy + Math.sin(a2) * wr); ctx.stroke();
+  }
+  ctx.fillStyle = '#8a7e6a'; ctx.beginPath(); ctx.arc(wx, wy, 2.6, 0, 6.28); ctx.fill();
+  // The status lamp keeps its meaning and loses its enamel: a lantern hung off a bracket,
+  // which is how you would mark a live machine on open ground at dusk. Same pulse, same
+  // green-for-solved, so nothing the player has learned about this signal changes.
+  const lx = x1 - 16, ly = y - H + 6;
+  ctx.strokeStyle = '#4a3d2f'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x1 - 4, y - H + 1); ctx.lineTo(lx, y - H + 1); ctx.lineTo(lx, ly - 5); ctx.stroke();
+  const pulse = lit ? 1 : 0.55 + 0.45 * Math.sin(S.t * 6);
+  ctx.fillStyle = INK; ctx.fillRect(lx - 6, ly - 5, 12, 13);
+  ctx.fillStyle = lit ? 'rgba(46,204,113,0.95)' : `rgba(255,150,70,${pulse})`;
+  ctx.fillRect(lx - 4.4, ly - 3.4, 8.8, 9.8);
+  ctx.fillStyle = '#4a3d2f'; ctx.fillRect(lx - 7, ly - 7, 14, 2.6); ctx.fillRect(lx - 7, ly + 7.4, 14, 2.6);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g2 = ctx.createRadialGradient(lx, ly + 1, 1, lx, ly + 1, 30);
+  g2.addColorStop(0, lit ? 'rgba(46,204,113,0.22)' : `rgba(255,150,70,${0.2 * pulse})`);
+  g2.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g2; ctx.fillRect(lx - 30, ly - 29, 60, 60);
+  ctx.restore();
+  if (room.state === 'armed') {
+    const p = 0.6 + 0.4 * Math.sin(S.t * 10);
+    ctx.strokeStyle = S.active === room ? '#5ce1ff' : room.color;
+    ctx.globalAlpha = S.active === room ? 1 : p; ctx.lineWidth = 2.4 / V.zoom;
+    ctx.strokeRect(sx + 4, y - H - 10, gw - 8, H + 12); ctx.globalAlpha = 1;
+  }
+}
 function drawMachineRoom(room, y) {
   const sx = room.x - V.left, gw = CFG.gapWidth;
+  if (ENC.inside(room.x)) { drawFieldMachine(room, y, sx, gw); return; }
   // THIS IS THE ONE ROOM DRAWER THAT USED TO IGNORE roomMaterial(). Every crossing asks it
   // which act it is standing in and switches between the mill's blue-grey iron and the
   // cave's warm timber; the machine cabinet had the mill's palette written into it -- body
@@ -16944,6 +17020,19 @@ if (typeof cv.addEventListener === 'function') {
   if (cv.style) cv.style.touchAction = 'none';
 }
 
+// ?zoom=N&at=X pins the camera for ONE frame, which is the only way to photograph anything
+// in the world close up. updateView derives the zoom from how many lanes are live, so act
+// three is always at its widest -- a field machine there renders about 40px across, which is
+// enough to see that a thing is wrong and nowhere near enough to judge the fix or to hand a
+// reviewer. Set after all the other flags have run and before the single draw, so it cannot
+// be overwritten; without ?shot the next updateView takes the zoom straight back.
+//   &at=X   centre on a world x instead of on the pack, for a room the crowd has not reached
+if (qs.has('zoom')) {
+  V.zoom = Math.max(0.2, Math.min(6, +qs.get('zoom')));
+  V.vw = W / V.zoom;
+  const mid = qs.has('at') ? +qs.get('at') : S.cam + CFG.packFront;
+  V.left = mid - 0.5 * V.vw;
+}
 if (qs.has('shot')) draw(); else requestAnimationFrame(frame);
 </script>
 </body>
