@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '125 the arm was never lifted';
+const BUILD = '126 the last room is sound';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3632,12 +3632,18 @@ function drawDiffMark(d, x, y, on) {
     // read off the painting's origin rather than as a dy-relative constant. It was dy - 20,
     // which is the same number arrived at by subtraction and goes stale silently the first
     // time either the band or the mark moves.
-    // IF THE ARM IS EVER RAISED A THIRD TIME, CHECK IT AGAINST THE DROPS AND NOT THE WALL.
-    // It has been lifted twice, 61.3 then 67.6, both correctly -- but the direction eventually
-    // inverts the value hierarchy that makes this a light fitting: drops brightest, arm mid,
-    // wall dark. A lamp whose arm outshines its lights stops being a lamp, and that failure
-    // announces itself as neither a leak nor a read-floor miss. It is the one kind neither
-    // spot-check nor the clutter term can see.
+    // IF THE ARM IS RAISED AGAIN, RAISE THE DROPS WITH IT. Not a distant caution: the
+    // hierarchy that makes this read as a light fitting is wall 34.2 < arm 55.0 < drop body
+    // 108.0 < drop highlight 140.0, and the arm is already at 0.51 of the drop body -- the
+    // conventional half-of-the-emitter line. The next lift of any size is the one that takes
+    // the iron above half the light it carries, and then the fitting stops being a lamp and
+    // becomes a bright shape with brighter dots on it.
+    //
+    // That failure announces itself as neither a leak nor a read-floor miss, so it is the one
+    // kind neither spot-check nor the clutter term can see. It was lifted twice, 61.3 then
+    // 67.6, both correctly, and the second of those was published as done while the write that
+    // would have made it so had never run -- so if this number ever looks wrong, grep it
+    // before trusting a commit message about it, including this one.
     const arm = () => {
       ctx.moveTo(dx, y + 18); ctx.lineTo(dx, dy - 2);
       ctx.moveTo(dx - 7, dy - 3.5); ctx.lineTo(dx + 6, dy - 1);
