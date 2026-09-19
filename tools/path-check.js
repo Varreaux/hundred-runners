@@ -139,7 +139,16 @@ const OUT = eval(src + `
 
   // ---- a real run, so the hazards, panels, particles and the finale all draw
   reset(); startRun();
-  for (let i = 0; i < 60 * 400 && S.mode === 'play'; i++) { update(1/60); devSolve(); if (i % 3 === 0) { draw(); seen.frames++; } }
+  // Derived, not written down. 400s was a generous margin over a 12300-unit course and is
+  // still generous over 20370, but it encodes a fact about the world inside a test of the
+  // world -- the exact shape that broke the freeze harness, and that truncated
+  // tools/cover-check.js silently the day act three doubled. Derive it and lengthening the
+  // course cannot quietly shorten the sweep.
+  const playBudget = Math.round(60 * (S.camMax / CFG.scroll + 90));
+  let ranOut = true;
+  for (let i = 0; i < playBudget && S.mode === 'play'; i++) { update(1/60); devSolve(); if (i % 3 === 0) { draw(); seen.frames++; } }
+  if (S.mode !== 'play') ranOut = false;
+  seen.truncated = ranOut;
   for (let i = 0; i < 60 * 200 && S.mode === 'finale'; i++) { update(1/60); if (i % 3 === 0) { draw(); seen.frames++; } }
   seen.acts.push('a solved run, ending in ' + S.mode);
 
@@ -201,6 +210,10 @@ const OUT = eval(src + `
 })()
 `);
 
+if (OUT.truncated) {
+  console.log('NOTE: the solved run hit its frame budget without finishing. The sweep below');
+  console.log('covers only the part of the course it reached -- fix that before believing it.');
+}
 console.log(`swept ${OUT.frames} frames: 30s of the opening, ${OUT.acts.join(', ')}\n`);
 const rows = [...BAD.values()].sort((a, b) => b.n - a.n);
 if (!rows.length) {

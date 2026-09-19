@@ -65,7 +65,20 @@ eval(src + `
     bins.push({ ...sh, sc, y: 48 + sh.ph * sc, x0: W / 2 - sh.pw * sc / 2, x1: W / 2 + sh.pw * sc / 2,
                 hid: 0, tot: 0, worst: 0 });
   let frames = 0;
-  for (let i = 0; i < 160 * 60 && S.mode !== 'win' && S.mode !== 'lose'; i++) {
+  // DERIVED FROM THE COURSE, not written down. This was 160 seconds, which was a comfortable
+  // margin over a 15120-unit world and silently too short the day act three doubled to
+  // 20370: the run stopped at cam 16524 still in 'play', so the tool went on printing
+  // percentages that covered 81% of the course and truncated exactly the act with the widest
+  // zoom and therefore the largest panel coverage. Same shape as the freeze harness's own
+  // hardcoded play loop, and the same fix.
+  //
+  // NO BACKTICKS IN THIS COMMENT. Everything from here to the closing brace lives inside a
+  // template literal passed to eval, so one backtick in prose ends the string and the file
+  // dies with "missing ) after argument list" pointing at the eval rather than at the
+  // sentence. Second time today: the same character killed tools/bench.html and produced six
+  // blank frames that went to a reviewer before anyone opened them.
+  const budget = Math.round(60 * (S.camMax / CFG.scroll + 90));
+  for (let i = 0; i < budget && S.mode !== 'win' && S.mode !== 'lose'; i++) {
     update(1 / 60); devSolve();
     if (i % 6) continue;
     const live = S.runners.filter(r => r.state === 'run');
@@ -88,9 +101,14 @@ eval(src + `
 })();
 `);
 
-if (out.mode === 'lose') {
-  console.log('NOTE: the run ended in "lose" -- the bot never got through, so this is a');
-  console.log('verdict on the first crossing only. Fix that before believing anything below.');
+// Anything that is not a finished run is a truncated measurement, and the old guard only
+// caught 'lose'. A run that simply ran out of frames exits in 'play' and said nothing at
+// all -- which is how 81% of the course got reported as if it were the course.
+if (out.mode !== 'win' && out.mode !== 'finale') {
+  console.log(`NOTE: the run did not finish -- it ended in '${out.mode}' at cam ${out.cam.toFixed(0)} of ${out.camMax}.`);
+  console.log('Everything below covers only the part of the course it reached. Fix that before');
+  console.log('believing any of it: a truncated sweep reports percentages, not a shortfall.');
+  console.log('');
 }
 console.log(`a solved run to cam ${out.cam.toFixed(0)} of ${out.camMax}, ending in ${out.mode}`);
 console.log(`${out.frames} frames sampled, every one scored at both scales\n`);
