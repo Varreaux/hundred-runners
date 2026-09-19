@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '124 the last room, dry';
+const BUILD = '125 the arm was never lifted';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3548,10 +3548,14 @@ function drawDiffMark(d, x, y, on) {
     // failed because both clauses held at once.
     //
     // AND THE TWO KINDS NEED DIFFERENT NUMBERS, which is why they no longer share a body.
-    // cage lies on the line's belt at luminance 10.5 and chain hangs on the vault's bars at
-    // 74.5 -- so the specular that cage had to lengthen to clear its lit floor was applied to
-    // chain as well, on a ground seven times brighter, and brought chain back into the dark
-    // frames after two passes of being gone. One branch, one highlight, two grounds.
+    // cage lies on the line's belt at luminance 10.5; chain hangs in the vault's cell, and
+    // that is TWO grounds rather than one -- only about 8.5% of its two circumferences crosses
+    // a bar at 74.5 and the rest is against the cell interior at 27.4. 48.7 was chosen for the
+    // bars and happens to clear both, 25.8 under one and 21.3 over the other. Both are written
+    // down because anyone tuning this toward the bars alone would walk it into the cell. The
+    // specular cage had to lengthen to clear its lit floor on a belt at 10.5 was applied to
+    // chain as well, and brought chain back into the dark frames after two passes of being
+    // gone. One branch, one highlight, three grounds.
     const iron = k === 'chain' ? 'rgba(46,49,54,0.92)' : 'rgba(34,38,44,0.92)';
     const spec = k === 'chain' ? 'rgba(126,132,142,0.5)' : 'rgba(178,184,194,0.7)';
     const arc0 = k === 'chain' ? 3.55 : 3.25, arc1 = k === 'chain' ? 4.35 : 4.75;
@@ -3628,12 +3632,18 @@ function drawDiffMark(d, x, y, on) {
     // read off the painting's origin rather than as a dy-relative constant. It was dy - 20,
     // which is the same number arrived at by subtraction and goes stale silently the first
     // time either the band or the mark moves.
+    // IF THE ARM IS EVER RAISED A THIRD TIME, CHECK IT AGAINST THE DROPS AND NOT THE WALL.
+    // It has been lifted twice, 61.3 then 67.6, both correctly -- but the direction eventually
+    // inverts the value hierarchy that makes this a light fitting: drops brightest, arm mid,
+    // wall dark. A lamp whose arm outshines its lights stops being a lamp, and that failure
+    // announces itself as neither a leak nor a read-floor miss. It is the one kind neither
+    // spot-check nor the clutter term can see.
     const arm = () => {
       ctx.moveTo(dx, y + 18); ctx.lineTo(dx, dy - 2);
       ctx.moveTo(dx - 7, dy - 3.5); ctx.lineTo(dx + 6, dy - 1);
     };
     markInk(arm, 1.6);
-    ctx.strokeStyle = 'rgba(70,60,48,0.9)'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(78,66,54,0.9)'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
     ctx.beginPath(); arm(); ctx.stroke();
     for (const [ox, oy, r] of [[-6.4, 1.4, 2.5], [0.2, 3, 2.2], [5.8, 4.2, 1.8]]) {
       markBlob(dx + ox, dy + oy, r, r * 1.5, 0.1, 'rgba(172,142,70,0.9)', 'rgba(224,200,146,0.44)');

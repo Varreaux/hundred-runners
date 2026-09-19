@@ -360,6 +360,35 @@ It does not flag `fill(); stroke();` on one path -- that is how an inked outline
 argument now, which is what a falsifier needs; without it a broken copy is ignored and the
 real file is swept, and the run comes back clean looking like proof.
 
+`tools/spot-check.js` — the last room's spot-the-difference, as pixels. It needs a real
+canvas, so it drives `tools/spot-shot.html` through headless Chrome: a mocked context cannot
+say what a translucent shape looks like over the colour that was already underneath it, and
+that is the whole question. It asks whether every difference can be SEEN (enough pixels
+moving by enough to read), whether it is where the hit test scores, whether two of them sit
+inside one press, whether the tolerance grows with the crew -- measured by PRESSING, because
+reading the expression is what missed it the first time -- and whether any of them can be
+found THROUGH the lamp veil, which would delete the room's mechanic rather than its art.
+`tools/spot-falsify.js` proves all five can fail, against two known-bad builds that were
+really photographed and really read.
+
+**Three things it got wrong before it got them right, all the same family.** It computed a
+threshold from the veil's transmission instead of sampling a frame, and so could not see a
+card that could be photographed and read. It counted pixels, when legibility is a coherent
+AREA with an edge -- a solid plate can have every pixel under a floor and still be
+unmistakable. And its coverage mask read opacity rather than coverage, which deleted every
+weighted mark and left only the unweighted ones being measured at all. That last one is the
+worst kind: the tool went on printing verdicts, a conclusion was drawn from its ranking and
+written into a commit, and **a check that has stopped looking reads exactly like a check that
+is passing**. Three terms are parked in it unenforced, each with the arithmetic for why --
+including one that is parked permanently, because the veil compresses the whole room into
+about four levels at the top of its range and so no per-pixel statistic can ever discriminate
+there.
+
+`tools/frame-probe.html` — samples a delivered PNG rather than a render a bench made for
+itself, comparing the two paintings at the same point. It exists because `spot-check` passed
+a card that could be read by eye in the shot, and it is the tie-breaker whenever a bench and
+a frame disagree. The bench is always the one to suspect.
+
 `tools/panel-check.js` — the two rows a puzzle panel shares between the verb and the frame:
 the title against the status, and the status against the arrival readout, which sit at
 opposite ends of one 376px row. It reads BOTH font sizes and every readout string out of
@@ -745,6 +774,49 @@ third time, ask for the two composites first.
 
 Refuse with the number, not with an opinion, and write the refusal down or the
 next pass will find it again.
+
+**A CLEARER OBJECT IN THE WRONG PLACE IS WORSE THAN A VAGUE ONE.** Twelve rounds on
+the last room's sixty difference-marks, and this is the one that generalises. Eight
+nouns shared one rounded chip -- a house, a crack, a screen, a case, a headset, a
+pocket, a BIRD -- so the marks read as stickers however well each was placed.
+Splitting them into eight silhouettes was right and immediately made things worse:
+a vague blob floating is survivable, and a recognisable briefcase floating is a
+statement. Every placement fault the split exposed had been there all along and had
+been hiding behind the ambiguity. Expect the pass after a clarity fix to be the
+worst one.
+
+**And symmetry is what makes a shape an emblem.** Those eight were drawn mirrored
+about their own centre, in six paintings where every machine, body and building is
+three-quarter on with one side foreshortened. Two of them became faces, and a
+bilaterally symmetric oval with two dark spots above a mass is the one shape the
+eye finds before anything else on a card. Draw them turned: one eye smaller, one
+wing behind the body, one horn shorter. And note the follow-up, because the first
+prescription was incomplete -- a face is not read by its symmetry, it is read by
+two dark spots above a mass, so turning one does not stop it being one. A
+face-shaped thing has to go ON somebody.
+
+**Anything whose worth is a threshold lives in a BAND, and only the floor is
+obvious.** The fix for marks nobody could see was "a lit face on everything", which
+was right and had no ceiling, so it ran until the marks could be found THROUGH the
+lamp veil -- clearing a card without ever steering, which deletes a mechanic rather
+than art. Two floors and a ceiling now: enough contrast to be found, and not so
+much that it survives what is meant to hide it. Whenever a rule is written as "more
+of X", ask what stops it.
+
+**You cannot damp a silhouette out of existence.** A mark whose lightest element is
+its own outline does not go away when you cut its alpha -- contrast drops, the
+SHAPE survives, and shape is what the eye locks onto. Move the light instead: a
+bright core inside a dark body. But a body must then clear its ground by 20-25 of
+luminance or it is not a body, it is a highlight floating on nothing. The full rule
+has two clauses and the second decides: a mark fails when its highlights are small
+and repeated AND its body is within about 15 of its ground. Either alone is
+survivable.
+
+**A SOURCE COLOUR IS NOT A RENDERED CLEARANCE.** The hardest miss of the twelve
+rounds, because it looks exactly like measuring. `rgba(70,60,48)` is luminance 61;
+through its own stroke alpha and the mark's weight it lands at 53 on the card. A
+reviewer's hand estimate beat the "measurement" because its model carried a term
+mine had dropped. If a number is going to decide something, sample the frame.
 
 **Re-shoot after a fix, and expect the next pass to catch what this one caused.**
 A critic gives you a direction, never a distance, and two objects usually touch
