@@ -323,7 +323,8 @@ given as an expression that came out NEGATIVE, so ironwork grew upward out of th
 the card. Neither instance was visible in the source or in a still.
 
 `tools/rect-check.js` — every rectangle the game draws, checked for a negative or non-finite
-dimension. A few seconds. It wraps `fillRect`, `strokeRect`, `rect` and `clearRect`, sweeps
+dimension. About a minute, not the "few seconds" this said for a while. It wraps
+`fillRect`, `strokeRect`, `rect` and `clearRect`, sweeps
 30s of the opening, the whole course at 140-unit steps with somebody in every lane, a solved
 run through the finale, and all sixteen closing-reel vignettes across their whole clock, and
 reports every offending call BY CALL SITE with its script line.
@@ -336,6 +337,28 @@ Three instances in one day, in two people's code, is why this is a tool and not 
 throwaway lines that found the first one. A check that has been run once, by hand, will not
 be run again. The reel is in the sweep because a sweep of the course never reaches it: the
 reel draws on an end screen only, and two of the three were in it.
+
+**Its sweep drew panels 392 times and never once reached the press keypad**, until a pass
+over every verb's panel was added on 2026-09-19. A solved run opens and clears a room in
+the same frame and the sweep samples every third one, so WHICH panels got drawn was luck,
+and the keypad lost. Every verdict this tool had ever given about a panel painter was
+silence rather than a pass. The pass opens each verb by hand, at five difficulties, stepped
+through its own states. It cost no measurable time.
+
+`tools/path-check.js` — every path the game strokes or fills, checked for a subpath appended
+to a path something else has already inked. The canvas current path is NOT context state:
+`save`/`restore` do not carry it, and `rect`, `moveTo` and `arc` APPEND, so a helper that
+builds a shape without `beginPath` sweeps up whatever the last helper left and inks that
+too. Found in the last room, where one callback of six in `markInk` omitted it and the
+stroke re-inked a figure's arm -- the other five were identical in form and correct, which
+is what makes it worth a sweep rather than a reading. Nothing throws and the extra subpath
+lands somewhere plausible in the current style, so it reads as "that mark is heavy" rather
+than as a defect. Same family as the negative rect above, and it borrows that sweep.
+
+It does not flag `fill(); stroke();` on one path -- that is how an inked outline is drawn,
+20 times in index.html -- so a clean run means something. Both tools take an optional path
+argument now, which is what a falsifier needs; without it a broken copy is ignored and the
+real file is swept, and the run comes back clean looking like proof.
 
 `tools/panel-check.js` — the two rows a puzzle panel shares between the verb and the frame:
 the title against the status, and the status against the arrival readout, which sit at

@@ -1,36 +1,37 @@
-// Every rectangle the game draws, checked for a negative or non-finite dimension.
+// Every path the game strokes or fills, checked for a subpath appended to a path that was
+// already consumed.
 //
-//   node tools/rect-check.js
+//   node tools/path-check.js [path/to/index.html]
 //
-// WHY THIS IS A TOOL AND NOT A ONE-OFF. Three instances of this fault turned up in one day,
-// in two people's code, and the sweep that found the third was twenty throwaway lines run
-// by hand. A check that has been run once, by hand, will not be run again -- and this is now
-// a known-live fault class in this file, so it needs something that can be re-run.
+// WHAT THE FAULT IS. The canvas current path is not context state. `ctx.save()` does not
+// save it and `ctx.restore()` does not restore it, and `rect`, `moveTo`, `arc` and the rest
+// APPEND to whatever path is already there. So a helper that builds a shape without calling
+// `beginPath()` first does not draw its own shape -- it sweeps up whatever the last helper
+// left behind and inks that too.
 //
-// WHAT THE FAULT IS. `fillRect(x, y, w, h)` with a negative w or h does not fail and does not
-// warn: the rectangle simply grows the other way, leftward or upward from its x,y. Canvas is
-// perfectly happy. It appears when a dimension is written as an ARITHMETIC EXPRESSION rather
-// than as a length -- `fillRect(x, -74, 8, by - 74 + 74)` looks like arithmetic and is a sign
-// error -- or when a width is multiplied by a direction, `8 * dir`.
+// It was found in the last room: one callback of six in `markInk` omitted `beginPath`, and
+// the stroke re-inked a figure's arm from the previous shape. The others were identical in
+// form and correct, which is what makes this worth a sweep -- the missing one is invisible
+// beside five that look the same.
 //
-// AND THE WORST CASE PRODUCES THE RIGHT PICTURE. The buffer stop's head timber was
-// `fillRect(sx - 8 * dir, y - 13, 8 * dir, 4.5)`: on every leftward run the width was -8, and
-// because the x was mirrored by the same `dir` the two errors cancelled and the timber landed
-// exactly where it was meant to, 138 times a frame. Nothing ever pointed at it. The two in
-// the closing reel threw ironwork clean off the top of the card and at least announced
-// themselves. A trap that draws correctly is the worse one to have, because the next person
-// to touch that line inherits it silently -- which is the whole argument for a sweep rather
-// than for looking.
+// AND IT DRAWS A PLAUSIBLE FRAME. Nothing throws. The extra subpath is usually somewhere
+// reasonable, drawn in the current fill or stroke style, so the result reads as "that mark
+// is a bit heavy" or "why is there a line there" rather than as a defect -- and if the two
+// shapes happen to overlap, it reads as nothing at all. Same family as the negative rect in
+// tools/rect-check.js, which is why this borrows that file's sweep wholesale.
 //
-// WHAT IT COVERS. The opening, the whole course at 140-unit steps, the finale, and every one
-// of the closing reel's sixteen death vignettes across their whole clock. The reel matters
-// here: it is drawn only on an end screen, so a sweep of the course alone never reaches it,
-// and two of the three known instances were in it.
+// WHAT COUNTS AS THE FAULT, precisely: a path-BUILDING call (moveTo, lineTo, rect, arc,
+// arcTo, ellipse, quadraticCurveTo, bezierCurveTo, roundRect, closePath) made after a
+// fill/stroke/clip has consumed the path, with no beginPath in between. Consuming the SAME
+// path twice is not a fault and is not flagged -- `fill(); stroke();` on one shape is the
+// ordinary way to ink an outline, and a check that flagged it would cry wolf on every
+// figure in the game.
+//
+// WHAT IT COVERS. The same ground as rect-check: the opening, the whole course at 140-unit
+// steps with somebody in every lane, a solved run through the finale, and all sixteen
+// closing-reel vignettes plus both podiums.
 const fs = require('fs'), path = require('path');
 const root = path.join(__dirname, '..');
-// Takes an optional path, so a deliberately broken copy can be run through it. Without this
-// the falsifier silently sweeps the REAL file and comes back all clear, which reads as the
-// check being sound when it has not been tested at all.
 const raw = fs.readFileSync(process.argv[2] || path.join(root, 'index.html'), 'utf8');
 const src = raw.split('<script>')[1].split('</script>')[0].replace("'use strict';", '');
 
@@ -46,16 +47,16 @@ function blame() {
   const name = f.replace(/^at\s+/, '').replace(/\s*\(.*$/, '');
   return (name || '?') + (line ? '  script line ' + line[1] : '');
 }
-function note(kind, w, h) {
-  const which = [];
-  if (!(w >= 0)) which.push('w=' + (Number.isFinite(w) ? w.toFixed(2) : String(w)));
-  if (!(h >= 0)) which.push('h=' + (Number.isFinite(h) ? h.toFixed(2) : String(h)));
-  if (!which.length) return;
-  // Keyed on the CALL SITE, not on the value. Keyed on the value, one fault whose number
-  // varies fragments into an entry per number and buries a rarer second one -- the exact
-  // reporting bug the audio mock hit, recorded in CLAUDE.md.
+// PER-CONTEXT path state. The game builds offscreen canvases (grain, textures), and those
+// have their own current path -- tracking one global flag would blame a helper for a
+// beginPath that happened on a different canvas entirely.
+function note(c, kind) {
+  if (c.__fresh) return;                 // a path is open; appending to it is the normal way
+  // Keyed on the CALL SITE, not on the shape. Keyed on the shape, one fault drawn at many
+  // sizes fragments into an entry per size and buries a rarer second one -- the reporting
+  // bug the audio mock hit, recorded in CLAUDE.md.
   const key = blame() + ' | ' + kind;
-  const e = BAD.get(key) || { key, n: 0, sample: which.join(' ') };
+  const e = BAD.get(key) || { key, n: 0, sample: kind };
   e.n++; BAD.set(key, e);
 }
 
@@ -63,14 +64,29 @@ function makeCtx() {
   const grad = { addColorStop() {} };
   const c = {
     canvas: { width: 960, height: 540 },
-    save() {}, restore() {}, translate() {}, scale() {}, rotate() {}, clip() {}, setTransform() {},
-    beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, bezierCurveTo() {},
-    fill() {}, stroke() {}, clearRect(x, y, w, h) { note('clearRect', w, h); },
-    fillRect(x, y, w, h) { note('fillRect', w, h); },
-    strokeRect(x, y, w, h) { note('strokeRect', w, h); },
-    rect(x, y, w, h) { note('rect', w, h); },
-    arc(a, b, r) { if (!isFinite(r) || r < 0) throw new Error('IndexSizeError: bad radius ' + r); },
-    arcTo() {}, ellipse() {}, setLineDash() {}, drawImage() {},
+    // __fresh: a beginPath has happened and nothing has consumed the path since.
+    // It starts FALSE deliberately: the very first builder on a context with no beginPath
+    // before it is the same fault, appending to the empty initial path and then inking
+    // whatever a later consumer picks up.
+    __fresh: false,
+    // save/restore do NOT touch the current path. That is the whole point of this check, so
+    // they must not touch __fresh either -- carrying it across a save would hide exactly the
+    // case where a helper wraps its work in save/restore and forgets beginPath.
+    save() {}, restore() {}, translate() {}, scale() {}, rotate() {}, setTransform() {},
+    beginPath() { c.__fresh = true; },
+    closePath() { note(c, 'closePath'); },
+    moveTo() { note(c, 'moveTo'); }, lineTo() { note(c, 'lineTo'); },
+    quadraticCurveTo() { note(c, 'quadraticCurveTo'); }, bezierCurveTo() { note(c, 'bezierCurveTo'); },
+    rect(x, y, w, h) { note(c, 'rect'); },
+    roundRect() { note(c, 'roundRect'); },
+    arcTo() { note(c, 'arcTo'); },
+    ellipse() { note(c, 'ellipse'); },
+    arc(a, b, r) { if (!isFinite(r) || r < 0) throw new Error('IndexSizeError: bad radius ' + r); note(c, 'arc'); },
+    // consumers. They do not flag -- filling and then stroking one shape is ordinary -- but
+    // they close the path, so the NEXT builder must open a new one.
+    fill() { c.__fresh = false; }, stroke() { c.__fresh = false; }, clip() { c.__fresh = false; },
+    clearRect() {}, fillRect() {}, strokeRect() {},
+    setLineDash() {}, drawImage() {},
     fillText() {}, strokeText() {},
     measureText(t) { return { width: String(t).length * 6 }; },
     createLinearGradient() { return grad; }, createRadialGradient() { return grad; },
@@ -130,10 +146,9 @@ const OUT = eval(src + `
   // ---- EVERY VERB'S PANEL, deliberately. A solved run draws panels 392 times and still
   // never once reaches VERBS.code.draw: devSolve clears a room in the frame it opens it and
   // the sweep samples every third frame, so which panels get drawn is down to luck and the
-  // press keypad loses. Found while building tools/path-check.js, which shares this sweep:
-  // an injected fault in thumbMark came back ALL CLEAR because nothing ever drew it. Every
-  // negative-rect verdict this file has given about a panel painter was the same silence.
-  // Panels are opened here by hand instead,
+  // press keypad loses. The first version of this file reported "all clear" while executing
+  // none of the press room, and a beginPath deliberately removed from thumbMark did not
+  // fail it -- a green about code it had never run. Panels are opened here by hand instead,
   // every verb, each stepped through its own states so the branches inside draw() run too.
   reset(); startRun();
   const verbsSeen = new Set();
@@ -189,14 +204,25 @@ const OUT = eval(src + `
 console.log(`swept ${OUT.frames} frames: 30s of the opening, ${OUT.acts.join(', ')}\n`);
 const rows = [...BAD.values()].sort((a, b) => b.n - a.n);
 if (!rows.length) {
-  console.log('  no rectangle drawn with a negative or non-finite dimension');
+  console.log('  every path that is stroked or filled was opened with beginPath');
   console.log('\nall clear');
   process.exit(0);
 }
-console.log('calls with a negative or non-finite dimension, by call site:\n');
+console.log('subpaths appended to an already-consumed path, by call site:\n');
 for (const r of rows) console.log(`  ${String(r.n).padStart(6)}x  ${r.sample.padEnd(16)}  ${r.key}`);
 console.log(`\n${rows.length} FAILED`);
-console.log('A negative dimension grows the rect the other way. It may still land correctly --');
-console.log('the buffer stop did, because its x was mirrored by the same factor -- so fix the');
-console.log('expression rather than the picture: write the two edges and subtract them.');
+console.log('Each of these appends to a path something else already inked, so whatever that');
+console.log('path held gets drawn again in the current style. Add ctx.beginPath() before the');
+console.log('shape. ctx.save() does NOT do this for you -- the path is not context state.');
 process.exit(1);
+
+// PROVED ABLE TO FAIL, and the first attempt was not. Removing the beginPath from
+// thumbMark's ring loop in a copy reports "1500x ellipse  thumbMark script line 567" and
+// exits 1. Before the per-verb panel pass above existed, that same injected fault came back
+// ALL CLEAR: the sweep drew panels 392 times without once reaching VERBS.code.draw, so the
+// check was green about code it had never executed. Proving the mechanism is not proving the
+// coverage, and this file had the mechanism right and the coverage wrong.
+//
+// It also has to stay quiet on the ordinary idiom. `ctx.fill(); ctx.stroke();` on one path
+// is how an inked outline is drawn and appears 20 times in index.html; none of them is
+// flagged, which is what makes the clean run mean something rather than nothing.
