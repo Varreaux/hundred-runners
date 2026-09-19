@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '131 act three has room to open in';
+const BUILD = '132 the country comes out from behind the rock';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -455,6 +455,17 @@ const ENC = {
   // ground whenever the view began left of the seam -- the same stretch drew in two
   // different materials depending on where the camera happened to be.
   inside: wx => wx >= CFG.exit + 48,
+  // HOW FAR THE LAND IS BUILT BEHIND THE MOUNTAIN. The hill used to begin exactly at x0, so
+  // leaving the tunnel the whole of act three arrived on a vertical line -- Morgan described
+  // it as the forest starting out of nowhere. It is generated 900 units further back now and
+  // drawn BEFORE drawMountain, so the mountain's own silhouette is what hides it and the
+  // country comes out from behind the rock instead of switching on beside it.
+  //
+  // 900 is safe rather than arbitrary: act two's last fork merges at 11000 and act three's
+  // first is at 13100, so encTopLane returns 0 across the whole of 11438..13300 and the
+  // surface behind the rock is the same single terrace it is at the mouth. Reach further
+  // back than 11000 and the hill would start climbing to meet act two's tunnels.
+  behind: 900,
 };
 // where each tunnel exists: tunnel 0 runs the whole mountain, others exist between their fork and merge
 const LANE_SPANS = [];
@@ -5183,11 +5194,16 @@ function draw() {
   // world space: scaled by zoom, river pinned to the bottom
   ctx.translate(0, H - CFG.worldBottom * V.zoom); ctx.scale(V.zoom, V.zoom);
   drawOutside();
-  drawMountain();
+  // THE LAND AND ITS TREES GO BEHIND THE MOUNTAIN, not beside it. These two ran after
+  // drawMountain, so the hill was painted ON TOP of the rock and had to stop dead at ENC.x0
+  // or it would have covered the mountain -- which is exactly the vertical cut you could see
+  // leaving the tunnel. mountainPath is a closed silhouette that clips, so drawing them
+  // first lets the rock occlude them and the country emerges from behind it.
   drawEncLand();
+  encFlora();
+  drawMountain();
   // After the land and before the boundaries: trees stand ON the hill and BEHIND the
   // fences, which is the order they exist in.
-  encFlora();
   drawEncBounds();
   drawRiver();
   carveTunnels();
@@ -10455,7 +10471,7 @@ function drawEncLand() {
   // x1 is NOT clamped to the course's end. Clamped to finale.x + 300 the hill stopped at
   // world 15900 while drawOutside's lake had already been painted across the whole frame,
   // so the last thing past the finish line was a rectangle of act one's river.
-  const x0 = Math.max(ENC.x0, V.left - 80), x1 = V.left + V.vw + 80;
+  const x0 = Math.max(ENC.x0 - ENC.behind, V.left - 80), x1 = V.left + V.vw + 80;
   if (x1 <= x0) return;
   const step = 24;
   // The silhouette is sampled on a grid SNAPPED TO THE WORLD, not started at the camera's
@@ -10723,12 +10739,14 @@ function encTree(px, baseY, h, hv, sway, bare, seed) {
   sunShade(px, baseY + 2, r * 0.9, h * 0.5, 0.18);
 }
 function encFlora() {
-  // ENC.x0, not ENC.x0 - 200. drawEncLand starts its ground at ENC.x0; flora started 200
-  // units earlier, so in the establishing shot of the act 200 units of woodland was planted
-  // on the mountainside with no ground under it -- trunks running into the rock face where
-  // the cliff was higher, and canopies hanging in open sky where it was lower. The jitter
-  // below can still throw a trunk 17 left, hence the +17.
-  const x0 = Math.max(ENC.x0 + 17, V.left - 240), x1 = V.left + V.vw + 240;
+  // TIED TO THE GROUND'S OWN START, which is the whole of the rule this comment was written
+  // for. Flora once began 200 units before drawEncLand's ground, so the establishing shot of
+  // the act planted woodland on the mountainside with nothing under it -- trunks running into
+  // the rock face where the cliff was higher, canopies in open sky where it was lower. The
+  // fix then was to pin it to ENC.x0; the fix now is to pin it to the same expression the
+  // ground uses, so extending one extends the other and they cannot come apart again. The
+  // jitter below can still throw a trunk 17 left, hence the +17.
+  const x0 = Math.max(ENC.x0 - ENC.behind + 17, V.left - 240), x1 = V.left + V.vw + 240;
   if (x1 <= x0) return;
   // A far treeline on the back ridges first, hazed toward the sky, so the crest trees have
   // something behind them and the hill has depth instead of one green plane.
