@@ -992,6 +992,11 @@ does: `?drill=7&st=0.3`, `&st=1.0`, `&st=1.6` and so on caught a fingertip press
 between two swatches and a mark appearing before the finger arrived, neither of which was
 visible in any single frame.
 
+`?start&skip=N&solve&blast=T` fires the wall and pins the explosion clock T seconds in, so the
+bang can be held still; it advances the debris by exactly T as well, because a fixed advance
+showed chunks that had already landed. `&packed=N` and `&fuse=T` set the blast room's charges
+and light its fuse through the mini-game's own fields.
+
 `?start&skip=N&solve&open=VERB` arms and opens the next room of that kind ahead of the
 crowd. A panel is only on screen for the second or two it takes to beat the room, so
 photographing one AGAINST THE ROAD -- the only way to see how much of the world it hides --
@@ -999,6 +1004,19 @@ otherwise meant guessing a skip time and shooting until one happened to be up. I
 `armRoom`, not `state = 'armed'`: set by hand the panel drew its title as "ROOM null" and
 then threw on an `mg` that did not exist, which looks exactly like a layout bug in the
 thing being photographed.
+
+**Three ways it drew nothing at all, all of which read as the flag being broken.** Out on the
+hillside nine rooms are armed at once, so `freeHotkey()` returns null, `armRoom` RETURNS
+WITHOUT ARMING, and `S.active` then points at a dormant room with no `mg` -- the quiet cousin
+of "ROOM null". On a `&solve` run the bot had already cleared the room before the flag looked
+for one, since every room arms long before the crowd arrives. And the fix for that -- holding
+the whole verb back from the bot -- meant nobody cleared the `dig` rooms and the run ended
+with 0 of 100 on the podium. It now holds only the room still out of reach, and releases one
+somebody is queued at.
+
+**A held room still KILLS, which photographs as a death report rather than as the thing you
+wanted.** `?blast` suppresses that for the room it holds; the first clean-looking attempt came
+back with 24 LOST and a red plate over the explosion.
 
 ## Two more instruments, both from the panels
 
@@ -1016,6 +1034,21 @@ It was itself wrong first, in the way this file keeps warning about: binned on h
 it could not see width at all, and pronounced a 620-wide panel "the same as the sweeper" on
 the strength of 218 being near 210. It has two falsifiers now and needs both -- a forced
 scale and a forced width -- because a height-only bug passes a height-only falsifier.
+
+`tools/blast-check.js` — the wall's verb, and the one thing no bot can reach. `blast` wins
+OUTSIDE `key()`: one SPACE banks `m.won` and `m.inputT = FUSE_BURN`, and the room clears when
+that clock runs out. The clock is ticked in TWO PLACES and only one runs at a time -- the
+verb's own `update` while the panel is open, the room loop's `pendingClear` branch while it is
+closed. Both bots sit in the room they are solving, so they only ever exercise the first; if
+the second is missing the room never clears, the crowd piles against the wall, and it is a
+hang with no exception in it -- `probe` says "no exception" and a screenshot says "a queue".
+
+**It exists because the obvious instrument could not answer the question.** `drill-check`'s
+puzzle total spreads **7.2 to 8.9 seconds on byte-identical code**, and the fix under test was
+worth 1.7s. The number moved the WRONG WAY and meant nothing. Driving `updateDrill` directly
+and counting frames gives 1.15s with the fix and 0.02s without. When an effect is smaller than
+an instrument's own spread, do not reach for a bigger sample -- reach for a different
+instrument. Take any number twice before you believe its direction, not just its value.
 
 `tools/wire-check.js` — drives 4000 random cable rooms through the real `key()` using only
 the two keys a player has, and asserts every one reaches 'done', that each wire lands on a
