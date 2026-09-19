@@ -74,7 +74,14 @@ eval(src + `
       r.lane = target.lane; r.y = laneY(target.lane);
       r.x = S.cam + r.slot; r.atRoom = null; r.doom = null; r.held = false;
     }
-    const rec = { type: target.type, hazard: target.hazard, gap: roomIsGap(target), outcomes: new Set(), deaths: 0 };
+    // THE THIRD STATEMENT, and the only one written independently of the other two. The
+    // closing reel gives every trap a ground line: GY.gap for the crossings, GY.machine or
+    // GY.gantry for anything the body comes to rest ON. It is drawn by the art, not derived
+    // from SOLID_TYPE, and it is the evidence that settled both the wall and the thorn by
+    // hand -- TRAPS.wall stands the body against the brick, TRAPS.thorn sits on GY.machine.
+    const card = TRAPS[target.type];
+    const rec = { type: target.type, hazard: target.hazard, gap: roomIsGap(target),
+                  reelGap: card ? card.gy === GY.gap : null, outcomes: new Set(), deaths: 0 };
     for (let f = 0; f < 60 * 25; f++) {
       update(1 / 60);
       for (const r of S.runners) {
@@ -93,46 +100,61 @@ eval(src + `
   out.opened = rows.length;
   out.mode = S.mode; out.cam = S.cam; out.camMax = S.camMax;
   out.running = S.runners.filter(r => r.state === 'run').length;
-  out.rows = rows.map(v => ({ type: v.type, hazard: v.hazard, gap: v.gap,
+  out.rows = rows.map(v => ({ type: v.type, hazard: v.hazard, gap: v.gap, reelGap: v.reelGap,
                               deaths: v.deaths, outcomes: [...v.outcomes] }));
 })();
 `);
 
 console.log(`one room per type, crowd placed in its lane with every other room solved`);
 console.log(`${out.opened} types driven\n`);
-console.log('room          hazard    deck    died as            verdict');
-let bad = 0, silent = 0;
+console.log('room          hazard    deck    reel    died as            verdict');
+let bad = 0, silent = 0, split = 0;
 for (const r of out.rows) {
   const how = r.outcomes.length ? r.outcomes.join('+') : '(nobody died)';
+  const reel = r.reelGap === null ? '-' : r.reelGap ? 'hole' : 'solid';
   let verdict = 'ok';
   if (!r.outcomes.length) { verdict = 'NO DEATH -- unproven'; silent++; }
   else if (!r.gap && r.outcomes.includes('fall')) { verdict = 'FALL AT A SOLID ROOM'; bad++; }
-  console.log(`${r.type.padEnd(13)} ${r.hazard.padEnd(9)} ${(r.gap ? 'hole' : 'solid').padEnd(7)} ${how.padEnd(18)} ${verdict}`);
+  else if (r.reelGap !== null && r.reelGap !== r.gap) {
+    verdict = 'DECK AND REEL DISAGREE'; split++;
+  }
+  console.log(`${r.type.padEnd(13)} ${r.hazard.padEnd(9)} ${(r.gap ? 'hole' : 'solid').padEnd(7)} ${reel.padEnd(7)} ${how.padEnd(18)} ${verdict}`);
 }
 console.log('');
 if (bad) console.log(`${bad} room(s) drop a body down something solid.`);
+if (split) console.log(`${split} room(s) are classified one way by SOLID_TYPE and the other by the reel's ground line.`);
 if (silent) console.log(`${silent} room(s) killed nobody, so this says NOTHING about them -- fix the driver, not the room.`);
-if (!bad && !silent) console.log('every room kills in a shape that matches its ground.');
-process.exitCode = bad || silent ? 1 : 0;
+if (!bad && !silent && !split) console.log('deck, reel and death agree for every room type.');
+process.exitCode = bad || silent || split ? 1 : 0;
 
-// PROVED ABLE TO FAIL, and the second falsifier found this check's own boundary.
+// WHAT "ok" DEPENDS ON, because the next person to change the bot or the seam will not
+// otherwise know. Every row here is a verdict only because the driver put a crowd in front
+// of that room, and two things make that true rather than obvious:
+//
+//   * `S.seam.phase = 'done'` after placing. Without it, six types past the cave door report
+//     "nobody died" -- the door fires when the crowd is placed beyond it and holds them for
+//     a sequence far longer than this budget.
+//   * the crowd is moved into the room's OWN lane. Without it, anything outside lane 0 never
+//     queues and reports the same reassuring silence.
+//
+// Break either and this file prints rows about rooms nobody stood at. It counts a room that
+// killed nobody as a FAILURE of the check rather than a pass for the room, and exits 1, so
+// the silence cannot be read as a green -- but only the count is automatic, not the cause.
+//
+// PROVED ABLE TO FAIL, three ways, and the third closed a hole the first two left.
 //
 //   put the old `room.type === 'wall'` branch back      thorn: FALL AT A SOLID ROOM, exit 1
-//   add `bridge` to SOLID_TYPE (a real gap, misclassed) bridge: crush, "ok"  <-- PASSES
+//   add `bridge` to SOLID_TYPE (a real gap, misclassed) bridge: DECK AND REEL DISAGREE, exit 1
+//   remove the seam line above                          six types: NO DEATH, exit 1
 //
-// The second one matters. This compares the deck against the death and reports DISAGREEMENT,
-// which is exactly what the wall and thorn were. It cannot tell you the classification itself
-// is wrong: misclassify a gap as solid and both statements move together, so a body is
-// crushed on the lip of a hole and nothing here objects.
+// The middle one used to PASS, and that was this check's boundary: with the kill branch
+// reading roomIsGap, the deck and the death are one statement and cannot contradict each
+// other, so a misclassified room moved both together and nothing objected. The third opinion
+// fixes it. TRAPS[type].gy is drawn by the art -- GY.gap for a crossing, GY.machine or
+// GY.gantry for anything a body comes to rest ON -- and owes nothing to SOLID_TYPE. It is
+// also the evidence that settled the wall and the thorn by hand, so making it automatic was
+// only ever writing down what two people had already done twice with their eyes.
 //
-// That boundary got wider with the fix it was written for. The kill branch used to name
-// `wall` by hand, so deck and death were two independent statements and this tool sat
-// between them; keying it off roomIsGap makes them ONE statement, which is why the next
-// solid room cannot repeat the fault -- and also why this can no longer cross-check the
-// classification. A bug that cannot happen is worth more than a bug that is merely
-// detectable, so the trade is right, but the remaining risk has MOVED rather than gone.
-// What would cover it is a different assertion entirely -- does this room's art stand on
-// ground the lane actually has -- which belongs beside enc-check's terraces test.
-//
-// What this still guards, and it is not nothing: anyone re-introducing a type-named branch
-// here, and any new room type whose death shape does not match its ground.
+// What is still NOT covered: all three could be wrong together. Nothing here looks at the
+// drawn world and asks whether the deck really has ground where the room's art stands on it.
+// That is an enc-check-shaped assertion and it remains unbuilt.
