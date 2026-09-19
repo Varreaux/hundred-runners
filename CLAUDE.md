@@ -804,6 +804,18 @@ simply implement:
   of act two would have corrected four hundred units of it. Settled: the lamp
   stays.
 
+**"Cut the breach back to real piers" is refused at 140.** An art pass worked out that the
+wall's blast hole removes 236 of its 244 units, leaving 4-unit slivers under 1336 units of
+masonry, and asked for 45-55 units of stone left standing each side. `enc-check` scores that
+at **140 units of solid wall the crowd is drawn walking through** -- four times what that
+guard allows, and the exact defect it was installed for, when six of the forty finale dancers
+were found standing inside the right jamb. The other reviewer disagreed with the first on the
+same frames and was right: the wall continues into and out of the view plane, so the masonry
+over the hole is not standing on those slivers and it is not a structural claim at all.
+The impression behind it was sound -- the wall visibly loses nothing -- and the answer is to
+take the material back HIGHER UP, where no body stands, plus spoil on the ground. If it is
+raised again, ask for the enc-check number first.
+
 **Act two being "the brightest card" has now been raised and withdrawn twice.** The second
 time was on the closing reel's own backdrops, and the critic checked its impression against
 the constants rather than restating it: `reelMillBack` composites to luminance 30.3 (40.7,
