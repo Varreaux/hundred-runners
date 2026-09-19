@@ -1,0 +1,52 @@
+<!doctype html>
+<!-- Sample a delivered PNG, rather than a render the bench made for itself.
+       tools/frame-probe.html?img=../shots/spot/dark-contract.png&shot
+     Prints, for a grid over the ALTERED painting, the luminance against the SAME point on the
+     ORIGINAL 471px to its left -- which is the comparison the player's eye actually makes.
+     Exists because tools/spot-check.html measured a card as clean that could then be
+     photographed and read, and a bench that disagrees with the frame is the thing at fault. -->
+<html><head><meta charset="utf-8"><title>frameprobe</title>
+<style>html,body{margin:0;background:#0d0f16;color:#cfe;font:11px monospace}pre{padding:8px}</style></head>
+<body><pre id="out">loading</pre>
+<script>
+const Q = new URLSearchParams(location.search);
+const img = new Image();
+img.onload = () => {
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0);
+  const D = g.getImageData(0, 0, img.width, img.height).data;
+  const lum = (x, y) => {
+    // a PATCH, never one pixel
+    let s = 0, n = 0;
+    for (let j = y - 3; j <= y + 3; j++) for (let i = x - 5; i <= x + 5; i++) {
+      const p = (j * img.width + i) * 4; n++;
+      s += 0.2126 * D[p] + 0.7152 * D[p + 1] + 0.0722 * D[p + 2];
+    }
+    return s / n;
+  };
+  const rgb = (x, y) => { const p = (y * img.width + x) * 4; return [D[p], D[p + 1], D[p + 2]]; };
+  // canvas sits at (160,90) in a 1280x720 window; paintings at canvas (24,84) and (495,84)
+  const OX = 160 + 24, OY = 90 + 84, GAP = 471, W = 441, H = 300;
+  const rows = [];
+  for (let v = 10; v < H; v += 10) for (let u = 10; u < W; u += 10) {
+    const ax = OX + u, ay = OY + v;          // ORIGINAL
+    const bx = ax + GAP;                      // ALTERED
+    const la = lum(ax, ay), lb = lum(bx, ay);
+    const d = lb - la;
+    if (Math.abs(d) >= +(Q.get('t') || 2.5)) rows.push({ u: u, v: v, a: +la.toFixed(1), b: +lb.toFixed(1), d: +d.toFixed(1), rgbB: rgb(bx, ay) });
+  }
+  rows.sort((p, q) => Math.abs(q.d) - Math.abs(p.d));
+  const art = rows.map(r => ({ ...r, ax: +(r.u * 330 / W).toFixed(0), ay: +(r.v * 214 / H).toFixed(0) }));
+  document.getElementById('out').textContent =
+    'image ' + img.width + 'x' + img.height + '   ' + rows.length + ' sample points differ by more than the threshold\n' +
+    'u,v are painting px; ax,ay are FINALE_ART units; a is ORIGINAL luminance, b is ALTERED\n\n' +
+    art.slice(0, 40).map(r => ('  u' + String(r.u).padStart(4) + ' v' + String(r.v).padStart(4) +
+      '   art ' + String(r.ax).padStart(4) + ',' + String(r.ay).padStart(4) +
+      '   orig ' + String(r.a).padStart(6) + '  alt ' + String(r.b).padStart(6) +
+      '  delta ' + String(r.d).padStart(6) + '   rgb ' + r.rgbB.join(','))).join('\n');
+};
+img.onerror = () => { document.getElementById('out').textContent = 'could not load ' + Q.get('img'); };
+img.src = Q.get('img') || '../shots/spot/dark-contract.png';
+</script></body></html>

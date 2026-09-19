@@ -29,6 +29,16 @@ const FAULTS = [
     want: /FAIL {2}the crew does not buy aim/,
     edit: s => s.replace('  const hitR = CFG.finale.hitRadius;',
                          '  const hitR = Math.max(36, Math.min(r * 0.35, 90));') },
+  { name: 'a difference you can find without the lamp',
+    want: /FAIL {2}no difference in contract {2}can be found unlit/,
+    // the contract's marks at full weight: dark ink on parchment at luminance 195 gives far
+    // more contrast than the read floor asks for, and 7% of it survives the veil
+    // Strip BOTH the card weight and the per-mark weights, so the contract's marks go back to
+    // full contrast on the brightest ground in the room. Anchored on the kinds rather than on
+    // one number, because the numbers are tuned every round and an anchor that names a value
+    // goes stale silently -- which this one already did once, and said so.
+    edit: s => s.replace(/markWeight: [\d.]+, markInk: '[^']*',/, '')
+                .replace(/(\{ x: \d+, y: \d+), w: [\d.]+(, kind: '(?:stamp|seal|thumb|hourglass|shackle|inkblot|tear)' \})/g, '$1$2') },
   { name: 'two differences inside one press',
     want: /FAIL {2}no two differences in line/,
     edit: s => s.replace("{ x: 173, y: 188, kind: 'bloodSpot' }", "{ x: 116, y: 177, kind: 'bloodSpot' }") },

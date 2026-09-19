@@ -91,7 +91,7 @@ async function get(port, p) {
     }
     const dom = cp.execFileSync(chrome, ['--headless=new', '--disable-gpu', '--no-sandbox', '--dump-dom',
       '--virtual-time-budget=15000', '--window-size=1280,900',
-      'http://127.0.0.1:' + port + '/tools/spot-check.html?shot'],
+      'http://127.0.0.1:' + port + '/tools/spot-check.html?shot' + (process.env.SPOT_Q ? '&' + process.env.SPOT_Q : '')],
       { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
     const m = /<pre id="out">([\s\S]*?)<\/pre>/.exec(dom);
     if (!m) { console.log('FAIL  the bench produced no report.'); process.exit(2); }
@@ -113,13 +113,18 @@ async function get(port, p) {
       for (const r of s.rows.slice().sort((a, b) => a.dpx - b.dpx)) {
         console.log('    ' + r.kind.padEnd(15) + String(r.at).padStart(10) +
           '  moved ' + String(r.dpx).padStart(4) + 'px  read ' + String(r.strong).padStart(4) +
+          '  unlit blob ' + String(r.leak).padStart(4) +
           '  peak ' + String(r.peak).padStart(3) +
           '  ground ' + String(r.bg).padStart(5) + ' -> ' + String(r.alt).padStart(5) +
           '  ink ' + String(r.off).padStart(5) + 'px off' +
-          (r.faint ? '   TOO FAINT TO SEE' : '') + (r.offset ? '   NOT WHERE YOU PRESS' : ''));
+          (r.faint ? '   TOO FAINT TO SEE' : '') + (r.offset ? '   NOT WHERE YOU PRESS' : '') +
+          (r.leaks ? '   VISIBLE WITH THE LAMP ELSEWHERE' : ''));
       }
       ok('every difference in ' + s.scene.padEnd(9) + ' is visible', faint.length === 0,
          faint.length ? faint.map(r => r.kind).join(', ') : '10 of 10');
+      const leak = s.rows.filter(r => r.leaks);
+      ok('no difference in ' + s.scene.padEnd(9) + ' can be found unlit', leak.length === 0,
+         leak.length ? leak.map(r => r.kind + ' ' + r.leak + 'px').join(', ') : 'the lamp is the only way in');
       ok('every difference in ' + s.scene.padEnd(9) + ' is where you press it', off.length === 0,
          off.length ? off.map(r => r.kind + ' ' + r.off + 'px').join(', ') : 'all within ' + F.off + 'px');
       ok('the paintings in ' + s.scene.padEnd(9) + ' differ ONLY where the puzzle says', s.stray < 120,

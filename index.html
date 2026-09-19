@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '117 the last room tells the truth';
+const BUILD = '118 the lamp is the only way in';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2689,15 +2689,15 @@ const FINALE_SCENES = [
       { x: 42, y: 48, kind: 'extraSmoke' }, { x: 118, y: 36, kind: 'goldClock' }, { x: 253, y: 20, kind: 'bossHat' },
       // 70,110 was 120px from the worker this removes -- marking the gap you can SEE was a
       // wrong answer and cost a body. It sits on the actor now.
-      { x: 110, y: 169, gy: 187, kind: 'missingWorker' }, { x: 160, y: 102, kind: 'redBanner' }, { x: 240, y: 120, kind: 'coinStack' },
-      { x: 118, y: 98, kind: 'brokenGear' }, { x: 173, y: 188, kind: 'bloodSpot' }, { x: 220, y: 170, kind: 'cage' }, { x: 275, y: 90, kind: 'priceTag' },
+      { x: 110, y: 169, gy: 187, kind: 'missingWorker' }, { x: 160, y: 102, kind: 'redBanner' }, { x: 240, y: 120, w: 0.62, kind: 'coinStack' },
+      { x: 121, y: 96, kind: 'brokenGear' }, { x: 173, y: 188, kind: 'bloodSpot' }, { x: 220, y: 182, kind: 'cage' }, { x: 275, y: 90, kind: 'priceTag' },
     ],
   },
   {
     id: 'vault', title: 'WAGES VS VAULT',
     diffs: [
-      { x: 36, y: 44, kind: 'ledger' }, { x: 118, y: 40, kind: 'goldBar' }, { x: 247, y: 52, kind: 'safeCrack' },
-      { x: 70, y: 98, kind: 'emptyPocket' }, { x: 100, y: 146, kind: 'chain' }, { x: 245, y: 115, kind: 'diamond' },
+      { x: 36, y: 56, w: 0.58, kind: 'ledger' }, { x: 110, y: 56, w: 0.64, kind: 'goldBar' }, { x: 247, y: 52, kind: 'safeCrack' },
+      { x: 69, y: 101, kind: 'emptyPocket' }, { x: 100, y: 146, kind: 'chain' }, { x: 190, y: 184, w: 0.46, kind: 'diamond' },
       { x: 40, y: 165, kind: 'tinCup' }, { x: 140, y: 184, kind: 'boot' }, { x: 230, y: 168, kind: 'receipt' }, { x: 278, y: 78, kind: 'percent' },
     ],
   },
@@ -2705,25 +2705,25 @@ const FINALE_SCENES = [
     id: 'banquet', title: 'THEIR TABLE, YOUR FLOOR',
     diffs: [
       { x: 50, y: 38, kind: 'chandelier' }, { x: 108, y: 78, kind: 'wine' }, { x: 228, y: 80, kind: 'roast' },
-      { x: 64, y: 105, kind: 'servant' }, { x: 168, y: 100, kind: 'cigar' }, { x: 248, y: 112, kind: 'mask' },
-      { x: 45, y: 170, kind: 'crumb' }, { x: 150, y: 175, gy: 189, kind: 'kneel' }, { x: 225, y: 172, kind: 'rat' }, { x: 284, y: 60, kind: 'bill' },
+      { x: 64, y: 105, kind: 'servant' }, { x: 168, y: 100, kind: 'cigar' }, { x: 152, y: 50, kind: 'mask' },
+      { x: 45, y: 184, kind: 'crumb' }, { x: 150, y: 175, gy: 189, kind: 'kneel' }, { x: 225, y: 184, kind: 'rat' }, { x: 284, y: 80, kind: 'bill' },
     ],
   },
   {
     id: 'ticker', title: 'NUMBERS EAT BODIES',
     diffs: [
       { x: 40, y: 36, kind: 'arrowUp' }, { x: 140, y: 44, kind: 'arrowDown' }, { x: 250, y: 38, kind: 'crash' },
-      { x: 60, y: 98, kind: 'screen' }, { x: 140, y: 136, kind: 'headset' }, { x: 242, y: 98, kind: 'chart' },
+      { x: 60, y: 98, kind: 'screen' }, { x: 143, y: 137, kind: 'headset' }, { x: 242, y: 98, kind: 'chart' },
       // 48,166 was 72px from the worker this removes; same fault as the line scene.
-      { x: 96, y: 176, gy: 189, kind: 'fallen' }, { x: 158, y: 172, kind: 'briefcase' }, { x: 240, y: 180, kind: 'tie' }, { x: 280, y: 74, kind: 'bull' },
+      { x: 96, y: 176, gy: 189, kind: 'fallen' }, { x: 168, y: 181, kind: 'briefcase' }, { x: 240, y: 178, kind: 'tie' }, { x: 280, y: 74, kind: 'bull' },
     ],
   },
   {
-    id: 'contract', title: 'SIGN HERE FOREVER',
+    id: 'contract', title: 'SIGN HERE FOREVER', markWeight: 0.36, markInk: 'rgba(132,108,78,0.6)',
     diffs: [
-      { x: 56, y: 42, kind: 'stamp' }, { x: 145, y: 38, kind: 'quill' }, { x: 252, y: 48, kind: 'seal' },
-      { x: 68, y: 108, kind: 'fineprint' }, { x: 165, y: 102, kind: 'thumb' }, { x: 245, y: 118, kind: 'shackle' },
-      { x: 42, y: 168, kind: 'inkblot' }, { x: 138, y: 162, kind: 'tear' }, { x: 218, y: 181, kind: 'hourglass' }, { x: 120, y: 78, kind: 'X' },
+      { x: 56, y: 42, w: 0.36, kind: 'stamp' }, { x: 145, y: 38, kind: 'quill' }, { x: 252, y: 48, w: 0.27, kind: 'seal' },
+      { x: 68, y: 108, kind: 'fineprint' }, { x: 165, y: 102, w: 0.58, kind: 'thumb' }, { x: 262, y: 184, w: 0.72, kind: 'shackle' },
+      { x: 42, y: 168, w: 0.8, kind: 'inkblot' }, { x: 138, y: 162, w: 0.8, kind: 'tear' }, { x: 218, y: 181, w: 0.38, kind: 'hourglass' }, { x: 120, y: 78, kind: 'X' },
     ],
   },
   {
@@ -2731,13 +2731,22 @@ const FINALE_SCENES = [
     diffs: [
       { x: 38, y: 40, kind: 'stackSmoke' }, { x: 116, y: 34, kind: 'mansion' }, { x: 248, y: 44, kind: 'sunMoney' },
       { x: 90, y: 174, gy: 189, kind: 'cough' }, { x: 158, y: 100, kind: 'filter' }, { x: 240, y: 112, kind: 'pipe' },
-      { x: 46, y: 180, kind: 'puddle' }, { x: 190, y: 14, kind: 'bird' }, { x: 226, y: 172, kind: 'maskGas' }, { x: 282, y: 26, kind: 'chimney' },
+      { x: 46, y: 200, kind: 'puddle' }, { x: 190, y: 14, kind: 'bird' }, { x: 198, y: 167, kind: 'maskGas' }, { x: 282, y: 26, kind: 'chimney' },
     ],
   },
 ];
 function pickFinaleScene() { return FINALE_SCENES[Math.floor(Math.random() * FINALE_SCENES.length)]; }
 function makeFinaleDiffs(scene) {
-  return scene.diffs.map((d, i) => ({ ...d, id: i }));
+  // markWeight rides along on every diff so drawDiffMark, which never sees the scene, can
+  // read it. The contract is painted on parchment at luminance 195 while the ticker's floor
+  // is 14 -- and dark-on-light hands you far more contrast than you asked for. At full weight
+  // its marks measured peaks of 173 to 183 against a band whose ceiling is about 140, so 7%
+  // of them survived the lamp veil and the card could be read in the dark: the X, the stamp,
+  // the quill, the seal and the fineprint all legible with the lamp elsewhere and nothing at
+  // those places on the other painting. Photographed at crew 12 before believing it, because
+  // a threshold that accuses two thirds of what it measures is usually the threshold's fault.
+  // This time it was not.
+  return scene.diffs.map((d, i) => ({ ...d, id: i, w: d.w || scene.markWeight || 0.95, ink: scene.markInk || INK }));
 }
 function finaleFx(f, k, x, y, o = {}) {
   const n = o.n || 1, vx = o.vx || [-20, 20], vy = o.vy || [-40, -10], lf = o.life || [0.35, 0.8];
@@ -3024,20 +3033,30 @@ function drawFoundChecks(f, L, spotR) {
       // through to finaleWrong, so a press on a difference you have already marked costs a
       // body -- and a tick you cannot see in the dark is then not merely quiet, it is a trap
       // that kills somebody. Legibility of what you have already spent is not decoration.
-      ctx.strokeStyle = INK; ctx.lineWidth = 4;
+      // LESS INK AT THE SAME LEGIBILITY. At twelve survivors the lamp is 88px across and
+      // three of these together covered more of the card than the light did -- and they were
+      // the only fully saturated hue in a room painted from rust, soot and gold, so the eye
+      // went nowhere else. The ring stays the same SIZE, because it has to enclose the mark
+      // to mean "this one"; what comes off is weight and saturation. The badge lost its
+      // middle stroke: three concentric strokes on a 5.4 disc is unreadable at any crew and
+      // was pure mass. #2ecc71 is the ticker's CRT green and belongs to a screen, not to
+      // paint on a canvas -- this is the muted version of it.
+      //
+      // Still fully above the veil, and that is deliberate. finaleConfirm skips ids already
+      // found and falls through to finaleWrong, so a press on a difference you have already
+      // marked costs a body: a tick that dims in the dark is not quiet, it is a trap.
+      ctx.strokeStyle = INK; ctx.lineWidth = 2.2;
       ctx.beginPath(); ctx.arc(0, 0, 11, 0, 6.28); ctx.stroke();
       ctx.globalAlpha = faint ? faintA : 1;
-      ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 2.2;
+      ctx.strokeStyle = '#6fae7f'; ctx.lineWidth = 1.6;
       ctx.beginPath(); ctx.arc(0, 0, 11, 0, 6.28); ctx.stroke();
-      ctx.fillStyle = 'rgba(16, 70, 36, 0.9)';
-      ctx.beginPath(); ctx.arc(8.6, -8.6, 5.4, 0, 6.28); ctx.fill();
-      ctx.strokeStyle = INK; ctx.lineWidth = 2.6;
-      ctx.beginPath(); ctx.arc(8.6, -8.6, 5.4, 0, 6.28); ctx.stroke();
-      ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 1.6;
-      ctx.beginPath(); ctx.arc(8.6, -8.6, 5.4, 0, 6.28); ctx.stroke();
-      ctx.strokeStyle = '#b8f5c8'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.fillStyle = 'rgba(18, 62, 34, 0.86)';
+      ctx.beginPath(); ctx.arc(8.6, -8.6, 5, 0, 6.28); ctx.fill();
+      ctx.strokeStyle = INK; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.arc(8.6, -8.6, 5, 0, 6.28); ctx.stroke();
+      ctx.strokeStyle = '#9ed8ab'; ctx.lineWidth = 1.7; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.beginPath();
-      ctx.moveTo(6.2, -8.8); ctx.lineTo(7.9, -6.6); ctx.lineTo(11.2, -11); ctx.stroke();
+      ctx.moveTo(6.4, -8.8); ctx.lineTo(7.9, -6.9); ctx.lineTo(11, -10.8); ctx.stroke();
       ctx.globalAlpha = 1;
       ctx.restore();
     }
@@ -3270,6 +3289,26 @@ function paintSil(x, y, sc = 1, a = 0.35) {
 // Alpha is 0.95, not 0.82. The marks are meant to be paint on the canvas like everything
 // else in the frame; 0.82 was a softening applied on top of shapes that were already too
 // faint, and it cost every one of them a fifth of what little contrast it had.
+// THE INK IS THE LEAK ON A LIGHT GROUND, and no amount of damping highlights touches it.
+// Every mark is outlined in INK, a near-black. On five of the six cards that outline is
+// invisible under the veil because the ground is already near-black. The contract's parchment
+// is the one large flat bright field in the room -- it transmits about 22 through the veil
+// where its marks' ink transmits about 9 -- so a dark coherent shape silhouettes on it, which
+// is the exact mirror of the fault the highlight ceiling was written for.
+//
+// So the outline is scene-relative: MK_INK, set from the diff and defaulting to INK. This is
+// the honest version of the previous attempt, which cut the whole card's alpha to 0.46 and
+// took its leak count to zero -- by moving the marks out of the check's range rather than out
+// of sight. The photograph still showed them; the check had simply stopped looking.
+let MK_INK = INK;
+function markFill(c, x, y, w, h, r = 0) {
+  ctx.fillStyle = MK_INK;
+  if (r) { roundRect(x - 1.2, y - 1.2, w + 2.4, h + 2.4, r + 1); ctx.fill(); }
+  else ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+  ctx.fillStyle = c;
+  if (r) { roundRect(x, y, w, h, r); ctx.fill(); }
+  else ctx.fillRect(x, y, w, h);
+}
 function markInk(draw, lw) {
   // An ink outline the way every body and machine in the game carries one: the same path
   // stroked fat in INK first, so the shape has an edge whatever colour it lands on.
@@ -3282,13 +3321,26 @@ function markInk(draw, lw) {
   // visible, on no hit point, so spotting it and pressing on it cost a body. A path is not
   // state and ctx.save() does not carry it, which is exactly why this belongs in one place.
   ctx.beginPath();
-  ctx.strokeStyle = INK; ctx.lineWidth = lw + 2.6; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.strokeStyle = MK_INK; ctx.lineWidth = lw + 2.6; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   draw(); ctx.stroke();
 }
+// A MARK LIVES IN A BAND, and until this pass only the bottom of it was written down.
+// The floor is the read: tools/spot-check.js wants 45 pixels moving by 40 of 255, or nobody
+// finds the difference. The CEILING is the lamp veil. veilPaintingSpot lays 0.93 alpha over
+// everything the pool is not on, which transmits about 7% -- so a mark with 200 of contrast
+// still shows 14 in the dark, and the eye finds a bright spot in a black field faster than
+// it finds anything inside the pool. At that point the room stops being a search: you clear
+// the card without ever steering, which deletes the mechanic rather than the art.
+//
+// 7% of 143 is 10, so peak contrast belongs under about 140, and the floor only asks for 45.
+// The band is wide and every highlight here had been pushed past the top of it -- alphas of
+// 0.68 to 0.92 in near-white hues. That was the overcorrection from the opposite fault, when
+// marks were moving 5 of 255 and the answer was "a lit face on everything"; the rule was
+// right and had no number bounding it, so it ran until something else broke.
 function markBlob(dx, dy, rx, ry, rot, fill, hi) {
   // ink, fill, then a lit crown on the upper left -- the light in this room comes from the
   // lamp the player is holding, so every mark is lit from wherever they are looking from.
-  ctx.fillStyle = INK;
+  ctx.fillStyle = MK_INK;
   ctx.beginPath(); ctx.ellipse(dx, dy, rx + 1.3, ry + 1.3, rot, 0, 6.28); ctx.fill();
   ctx.fillStyle = fill;
   ctx.beginPath(); ctx.ellipse(dx, dy, rx, ry, rot, 0, 6.28); ctx.fill();
@@ -3305,7 +3357,7 @@ function markPlate(dx, dy, w, h, fill, hi) {
   // from the same upper-left the rest of the room is lit from, not a strip inset into a
   // border. What it costs is nothing; what it buys is the marks reading as paint.
   const x0 = dx - w / 2, y0 = dy - h / 2;
-  inkFill(fill, x0, y0, w, h, 0);
+  markFill(fill, x0, y0, w, h, 0);
   if (hi) {
     // The first cut of this handed the whole sheen to a gradient that was transparent by 62%
     // of the way across, and the check caught what the eye would have: four marks fell under
@@ -3323,7 +3375,8 @@ function drawDiffMark(d, x, y, on) {
   if (!on) return;
   const dx = x + d.x, dy = y + d.y, k = d.kind;
   ctx.save();
-  ctx.globalAlpha = 0.95;
+  MK_INK = d.ink || INK;
+  ctx.globalAlpha = d.w || 0.95;
   if (k === 'extraSmoke' || k === 'stackSmoke') {
     // A plume drawn at 0.35 over a chimney that is already smoking moved 34 of 255 at best,
     // and its ink sat 35 units above the point you have to press -- so the thing you could
@@ -3337,27 +3390,35 @@ function drawDiffMark(d, x, y, on) {
     ctx.beginPath(); ctx.ellipse(dx + 3, dy + 4, 7, 5.5, -0.3, 0, 6.28); ctx.fill();
   } else if (k === 'goldClock' || k === 'goldBar' || k === 'diamond' || k === 'sunMoney' || k === 'coinStack') {
     // nested brick of gold, same palette as vault bars - easy to miss
-    markPlate(dx, dy, 13, 9, '#8a6a28', 'rgba(255,230,160,0.5)');
+    markPlate(dx, dy, 13, 9, '#68511f', 'rgba(166,148,102,0.3)');
+    // a cord to whatever is above it, for the two of these that hang on a wall
+    if (k === 'goldClock') {
+      ctx.strokeStyle = MK_INK; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(dx, dy - 5); ctx.lineTo(dx - 1.5, dy - 14); ctx.stroke();
+    }
   } else if (k === 'bossHat') {
     // A 14x5 plate in #1a1210 measures luminance 20 and the ticker's two grounds measure 12
     // and 20, so on that card the plate WAS the ground: everything the eye had to work with
     // was a 5x6 block in the corner of it. The check passed these on 280 pixels moved and a
     // peak of 137 and they were still invisible, which is what added the third floor to
     // tools/spot-check.js -- how much of the mark moves ENOUGH TO READ, not just at all.
-    markPlate(dx, dy, 16, 5, '#4a4150', 'rgba(232,220,204,0.7)');
-    markPlate(dx, dy - 5, 9, 6, '#39313e', 'rgba(210,196,182,0.6)');
+    markPlate(dx, dy, 16, 5, '#4a3f33', 'rgba(188,170,140,0.48)');
+    markPlate(dx, dy - 5, 9, 6, '#3a3128', 'rgba(176,158,130,0.46)');
   } else if (k === 'cigar') {
-    markPlate(dx, dy, 14, 4.5, '#6b5340', 'rgba(228,202,160,0.55)');
+    markPlate(dx, dy, 14, 4.5, '#6b5340', 'rgba(190,170,134,0.44)');
     ctx.fillStyle = 'rgba(255,146,54,0.92)';
     ctx.beginPath(); ctx.arc(dx + 7, dy, 2.1, 0, 6.28); ctx.fill();
     ctx.fillStyle = 'rgba(255,232,180,0.7)';
     ctx.beginPath(); ctx.arc(dx + 7, dy, 1, 0, 6.28); ctx.fill();
   } else if (k === 'tie') {
-    markInk(() => { ctx.moveTo(dx - 3.6, dy - 7); ctx.lineTo(dx + 3.6, dy - 7); ctx.lineTo(dx + 2.4, dy + 8); ctx.lineTo(dx - 2.4, dy + 8); ctx.closePath(); }, 1.4);
-    ctx.fillStyle = 'rgba(148,38,40,0.94)';
-    ctx.beginPath(); ctx.moveTo(dx - 3.6, dy - 7); ctx.lineTo(dx + 3.6, dy - 7);
-    ctx.lineTo(dx + 2.4, dy + 8); ctx.lineTo(dx - 2.4, dy + 8); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = 'rgba(236,196,186,0.5)'; ctx.fillRect(dx - 2.6, dy - 6, 2.2, 12);
+    // 15 units on a 28.8-unit body put the knot under his chin and the point on his sole.
+    // Eight units runs collar to belt. Filled at 0.8 rather than 0.94 as well: the brokers in
+    // that row are drawn at alpha 0.92, so the mark was more opaque than the man wearing it,
+    // which is most of why it read as pasted on rather than worn.
+    const tie = () => { ctx.moveTo(dx - 3.2, dy - 4); ctx.lineTo(dx + 3.2, dy - 4); ctx.lineTo(dx + 2, dy + 4.4); ctx.lineTo(dx - 2, dy + 4.4); ctx.closePath(); };
+    markInk(tie, 1.4);
+    ctx.fillStyle = 'rgba(148,38,40,0.8)'; ctx.beginPath(); tie(); ctx.fill();
+    ctx.fillStyle = 'rgba(206,168,160,0.42)'; ctx.fillRect(dx - 2.3, dy - 3.2, 1.9, 6.6);
   } else if (k === 'bull') {
     // The far horn is shorter and rides higher, so the head is turned rather than facing out
     const horns = () => {
@@ -3365,7 +3426,7 @@ function drawDiffMark(d, x, y, on) {
       ctx.moveTo(dx + 7, dy - 0.5); ctx.quadraticCurveTo(dx + 6.5, dy - 6, dx + 2, dy - 4.6);
     };
     markInk(horns, 2.2);
-    ctx.strokeStyle = 'rgba(236,224,198,0.92)'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(172,160,138,0.52)'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
     ctx.beginPath(); horns(); ctx.stroke();
     markBlob(dx - 0.8, dy + 1, 4.2, 4.6, 0.12, 'rgba(48,38,34,0.92)', 'rgba(198,186,166,0.4)');
   } else if (k === 'missingWorker' || k === 'fallen' || k === 'kneel' || k === 'cough') {
@@ -3388,14 +3449,22 @@ function drawDiffMark(d, x, y, on) {
     // luminance 14 to 194 -- but a cast shadow is an absence of light and cannot be lit from
     // above. The warm edge goes on the ground BESIDE it, where the light the body was
     // blocking now reaches, which reads as the same thing and is true.
+    // ONE band, not two. A second on the near flank was geometrically defensible -- the lamp
+    // is at the viewer, so light should reach both sides -- and it read as a dark stripe
+    // sandwiched between two light ones, which is how a tyre or a coiled rope is drawn. A
+    // cast shadow on a flat floor has one soft edge and no banding. Geometry was right and
+    // the read was wrong, and the read is what the mark is for.
     ctx.fillStyle = 'rgba(176,152,116,0.30)';
     ctx.beginPath(); ctx.ellipse(dx + 1, gy - 3.1, 8.5, 2.4, 0.15, 0, 6.28); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(dx + 0.5, gy + 2.6, 8.2, 2.1, 0.15, 0, 6.28); ctx.fill();
     ctx.fillStyle = 'rgba(10,7,8,0.5)';
     ctx.beginPath(); ctx.ellipse(dx, gy - 0.6, 7.4, 2.6, 0.15, 0, 6.28); ctx.fill();
   } else if (k === 'redBanner' || k === 'priceTag' || k === 'bill' || k === 'receipt') {
-    markPlate(dx, dy, 15, 10, '#6e2f26', 'rgba(242,212,144,0.68)');
-    ctx.fillStyle = 'rgba(18,12,10,0.7)'; ctx.fillRect(dx - 5, dy + 1.6, 10, 1.8);
+    markPlate(dx, dy, 15, 10, '#5a3128', 'rgba(168,144,100,0.34)');
+    ctx.fillStyle = 'rgba(34,24,20,0.55)'; ctx.fillRect(dx - 5, dy + 1.6, 10, 1.8);
+    // two nails and a sag. A notice on a wall with no fixing reads as a decal however well
+    // it is painted, and this family hangs on bare brick in two of the three scenes it is in.
+    ctx.fillStyle = MK_INK;
+    ctx.fillRect(dx - 5.4, dy - 6.4, 1.6, 2.2); ctx.fillRect(dx + 3.8, dy - 6.4, 1.6, 2.2);
   } else if (k === 'bloodSpot' || k === 'inkblot' || k === 'puddle') {
     // The one that changed NOTHING. rgba(18,22,28,0.5) is the contract scene's own floor
     // colour at that height, so the blot was painted in the exact value it was painted over.
@@ -3410,32 +3479,66 @@ function drawDiffMark(d, x, y, on) {
     // The reflection IS the mark on a dark floor: the blot itself is close to the value of
     // every surface it can be spilled on, and the only thing that says "wet" is the light
     // sitting on top of it. Painted too politely, that was the difference that moved nothing.
-    ctx.fillStyle = 'rgba(228,220,208,0.55)';
+    ctx.fillStyle = 'rgba(192,184,172,0.44)';
     ctx.beginPath(); ctx.ellipse(dx - 2.6, dy - 1.5, 4.4, 2, 0.35, 0, 6.28); ctx.fill();
     ctx.fillStyle = 'rgba(228,220,208,0.3)';
     ctx.beginPath(); ctx.ellipse(dx + 3.4, dy + 1.2, 2.4, 1.2, 0.35, 0, 6.28); ctx.fill();
-  } else if (k === 'cage' || k === 'chain' || k === 'shackle') {
+  } else if (k === 'shackle') {
+    // The tableau draws its own six shackles under ctx.scale(1, 0.42), lying on the floor at
+    // the same y this one sits at, 63 units to its left. Drawn round, the mark was the same
+    // object on the same floor in a different orientation. chain cannot take this squash --
+    // it hangs on vertical bars and has to stay circular -- so it is per-kind, not shared.
+    ctx.save(); ctx.translate(dx, dy); ctx.scale(1, 0.42);
+    markInk(() => { ctx.arc(-4.5, 0, 4.4, 0, 6.28); ctx.moveTo(8.5, 1.2); ctx.arc(4, 1.2, 4.4, 0, 6.28); }, 2.6);
+    ctx.strokeStyle = 'rgba(132,138,146,0.6)'; ctx.lineWidth = 2.6;
+    ctx.beginPath(); ctx.arc(-4.5, 0, 4.4, 0, 6.28); ctx.stroke();
+    ctx.beginPath(); ctx.arc(4, 1.2, 4.4, 0, 6.28); ctx.stroke();
+    ctx.restore();
+  } else if (k === 'cage' || k === 'chain') {
     // TWO arcs in one path with no moveTo between them, and canvas joins the end of the
     // first to the start of the second with a straight line -- so the ink pass laid a bar
     // through both rings while the colour pass below, which strokes them separately, never
     // covered it. Two grey rings bridged and bisected by a black bar: a pair of spectacles.
     markInk(() => { ctx.arc(dx - 4.5, dy, 4.2, 0, 6.28); ctx.moveTo(dx + 8.2, dy + 1.2); ctx.arc(dx + 4, dy + 1.2, 4.2, 0, 6.28); }, 1.8);
-    ctx.strokeStyle = 'rgba(158,164,172,0.85)'; ctx.lineWidth = 1.8;
+    ctx.strokeStyle = 'rgba(132,138,146,0.6)'; ctx.lineWidth = 1.8;
     ctx.beginPath(); ctx.arc(dx - 4.5, dy, 4.2, 0, 6.28); ctx.stroke();
     ctx.beginPath(); ctx.arc(dx + 4, dy + 1.2, 4.2, 0, 6.28); ctx.stroke();
-  } else if (k === 'brokenGear' || k === 'filter' || k === 'pipe' || k === 'chimney' || k === 'percent') {
+  } else if (k === 'brokenGear' || k === 'percent') {
+    // Five nouns shared this open arc and SMOG CARRIED THREE OF THEM -- filter, pipe and
+    // chimney, on one card. One spinner is a shape; three at three places is a motif, and a
+    // motif is how a UI reads. The two left are the two the arc actually suits: a gear with a
+    // piece out of it, and a per-cent ring on a vault door.
     markInk(() => ctx.arc(dx, dy, 6.4, 0.4, 5.0), 2.2);
-    ctx.strokeStyle = 'rgba(176,156,124,0.85)'; ctx.lineWidth = 2.2;
+    ctx.strokeStyle = 'rgba(146,130,104,0.6)'; ctx.lineWidth = 2.2;
     ctx.beginPath(); ctx.arc(dx, dy, 6.4, 0.4, 5.0); ctx.stroke();
     ctx.fillStyle = 'rgba(26,20,16,0.7)';
     ctx.beginPath(); ctx.arc(dx, dy, 2.2, 0, 6.28); ctx.fill();
+  } else if (k === 'filter') {
+    // a canister with a band and a lug
+    markPlate(dx, dy, 10, 13, '#3a352c', 'rgba(170,158,132,0.46)');
+    ctx.fillStyle = 'rgba(18,15,12,0.62)'; ctx.fillRect(dx - 5, dy - 1.4, 10, 2.8);
+    markPlate(dx, dy - 8, 5, 3.4, '#2a251f', 'rgba(158,146,122,0.4)');
+  } else if (k === 'pipe') {
+    // a straight run with one bend, which is what a pipe is and an arc is not. Thicker than
+    // the first cut of it: at 2.6 the run measured 13 readable pixels against a floor of 45,
+    // which is the fault the whole check exists for, introduced while fixing a different one.
+    const run = () => { ctx.moveTo(dx - 9, dy + 5); ctx.lineTo(dx + 2, dy + 5); ctx.lineTo(dx + 2, dy - 6); };
+    markInk(run, 4.4);
+    ctx.strokeStyle = 'rgba(152,140,116,0.72)'; ctx.lineWidth = 4.4; ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
+    ctx.beginPath(); run(); ctx.stroke();
+    markPlate(dx + 2, dy - 7, 6.5, 3, '#2e2a22', 'rgba(170,158,132,0.46)');
+    markPlate(dx - 9.5, dy + 5, 3, 6.5, '#2e2a22', 'rgba(170,158,132,0.46)');
+  } else if (k === 'chimney') {
+    // a stack standing proud, with a cap -- the scene's own three chimneys are drawn this way
+    markPlate(dx, dy + 1.5, 6.5, 13, '#241e1c', 'rgba(150,138,124,0.44)');
+    markPlate(dx, dy - 6.5, 9.5, 3.2, '#191412', 'rgba(158,146,132,0.4)');
   } else if (k === 'arrowUp' || k === 'arrowDown' || k === 'crash' || k === 'chart') {
     const up = !(k === 'arrowDown' || k === 'crash');
     markInk(() => {
       ctx.moveTo(dx - 7, dy + (up ? 4 : -4));
       ctx.quadraticCurveTo(dx, dy + (up ? -6 : 6), dx + 7, dy + (up ? -3 : 3));
     }, 2.4);
-    ctx.strokeStyle = up ? 'rgba(96,186,132,0.9)' : 'rgba(198,84,76,0.9)';
+    ctx.strokeStyle = up ? 'rgba(84,152,112,0.54)' : 'rgba(150,70,64,0.54)';
     ctx.lineWidth = 2.4; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(dx - 7, dy + (up ? 4 : -4));
     ctx.quadraticCurveTo(dx, dy + (up ? -6 : 6), dx + 7, dy + (up ? -3 : 3));
@@ -3444,10 +3547,16 @@ function drawDiffMark(d, x, y, on) {
     // The only branch that passed hi = null, so the one mark with no lit face was also the
     // one that read most like a floating tooltip -- a flat pale plate with three ruled lines,
     // on a parchment that already has ruled lines at that height.
-    markPlate(dx, dy, 14, 11, '#cbb89a', 'rgba(255,248,224,0.55)');
+    // Turned five degrees off the page. A pale ruled plate square to a document that is
+    // itself square, at the same height as the document's own ruled lines, is a tooltip
+    // however well it is shaded -- the alignment is the tell, not the value. Off the
+    // horizontal it is a separate leaf laid on top, which is what it is meant to be.
+    ctx.save(); ctx.translate(dx, dy); ctx.rotate(-0.09);
+    markPlate(0, 0, 14, 11, k === 'ledger' ? '#6a5e4a' : '#a89878', 'rgba(158,148,128,0.3)');
     ctx.fillStyle = 'rgba(50,35,25,0.62)';
-    for (let i = 0; i < 3; i++) ctx.fillRect(dx - 5, dy - 3 + i * 3, 10 - i * 2, 1.3);
-    ctx.fillStyle = 'rgba(96,72,44,0.5)'; ctx.fillRect(dx - 7, dy + 4.4, 14, 1.2);
+    for (let i = 0; i < 3; i++) ctx.fillRect(-5, -3 + i * 3, 10 - i * 2, 1.3);
+    ctx.fillStyle = 'rgba(96,72,44,0.5)'; ctx.fillRect(-7, 4.4, 14, 1.2);
+    ctx.restore();
   } else if (k === 'chandelier') {
     // Four nouns used to resolve to one gold bead, and three of them sat in a row across the
     // top of the banquet card at the same height -- which stops reading as three objects and
@@ -3456,58 +3565,92 @@ function drawDiffMark(d, x, y, on) {
     // the ceiling band and the fitting hung from its own air -- while the tableau's own
     // chandelier, drawn two hundred lines away, does reach. And three drops evenly spaced at
     // one height is a border; at three heights it is a thing hanging in a room.
+    // y + 18 is drawFinaleScene's own ceiling band (inkFill('#3a1c1a', x, y + 18, w, 74)),
+    // read off the painting's origin rather than as a dy-relative constant. It was dy - 20,
+    // which is the same number arrived at by subtraction and goes stale silently the first
+    // time either the band or the mark moves.
     const arm = () => {
-      ctx.moveTo(dx, dy - 20); ctx.lineTo(dx, dy - 2);
+      ctx.moveTo(dx, y + 18); ctx.lineTo(dx, dy - 2);
       ctx.moveTo(dx - 7, dy - 3.5); ctx.lineTo(dx + 6, dy - 1);
     };
     markInk(arm, 1.6);
     ctx.strokeStyle = 'rgba(196,164,84,0.9)'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
     ctx.beginPath(); arm(); ctx.stroke();
     for (const [ox, oy, r] of [[-6.4, 1.4, 2.5], [0.2, 3, 2.2], [5.8, 4.2, 1.8]]) {
-      markBlob(dx + ox, dy + oy, r, r * 1.5, 0.1, 'rgba(180,148,70,0.9)', 'rgba(255,242,190,0.72)');
+      markBlob(dx + ox, dy + oy, r, r * 1.5, 0.1, 'rgba(180,148,70,0.9)', 'rgba(236,210,150,0.46)');
     }
   } else if (k === 'wine') {
     markInk(() => { ctx.moveTo(dx, dy + 1); ctx.lineTo(dx, dy + 6); ctx.moveTo(dx - 3.4, dy + 6.5); ctx.lineTo(dx + 3.4, dy + 6.5); }, 1.4);
-    ctx.strokeStyle = 'rgba(206,196,176,0.85)'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(172,164,148,0.6)'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(dx, dy + 1); ctx.lineTo(dx, dy + 6);
     ctx.moveTo(dx - 3.4, dy + 6.5); ctx.lineTo(dx + 3.4, dy + 6.5); ctx.stroke();
     markBlob(dx, dy - 2.5, 4.4, 4.6, 0, 'rgba(110,26,34,0.9)', 'rgba(238,208,196,0.5)');
   } else if (k === 'roast') {
     markBlob(dx, dy - 1, 7.5, 5, 0, 'rgba(126,72,36,0.92)', 'rgba(232,186,118,0.52)');
     markInk(() => { ctx.moveTo(dx - 9, dy + 4.5); ctx.lineTo(dx + 9, dy + 4.5); }, 1.8);
-    ctx.strokeStyle = 'rgba(198,192,178,0.85)'; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(166,160,150,0.6)'; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(dx - 9, dy + 4.5); ctx.lineTo(dx + 9, dy + 4.5); ctx.stroke();
   } else if (k === 'mask') {
     // Same turn as the gas mask, and for the same reason: face-on it was an emoji hanging
     // on the table rail.
-    markBlob(dx, dy, 6, 7, 0.2, 'rgba(188,158,78,0.9)', 'rgba(255,238,178,0.5)');
-    ctx.fillStyle = 'rgba(18,14,12,0.85)';
+    // AN EYE-MASK, not an egg. At 6x7 the ink bbox was 14.7 x 16.5 against a head 13.2 x 13.2
+    // and centred 3.9 units low, so it covered the face, the jaw, the hair and 3.7 units of
+    // chest, leaving 2.2 units of crown -- the emptyPocket fault applied to a head. Nothing
+    // about the POSITION fixed that; the mark was simply bigger than its wearer. It goes under
+    // the ten-unit guide in height, and the guide is a guide: the check measures what is
+    // actually readable and this still clears it, because a band across the eyes on a lit face
+    // is high contrast over a small area rather than low contrast over a large one.
+    markBlob(dx, dy, 5.4, 3.1, 0.2, 'rgba(146,122,64,0.88)', 'rgba(182,160,116,0.4)');
+    // The eye slits, not the gold, were carrying the mask past the ceiling: near-black cut
+    // into a lit head is the largest contrast anywhere on that card.
+    ctx.fillStyle = 'rgba(46,36,28,0.7)';
     ctx.beginPath(); ctx.ellipse(dx - 2.3, dy - 1.2, 2, 1.3, -0.1, 0, 6.28); ctx.fill();
-    ctx.fillStyle = 'rgba(18,14,12,0.6)';
+    ctx.fillStyle = 'rgba(46,36,28,0.5)';
     ctx.beginPath(); ctx.ellipse(dx + 2.7, dy - 2, 1.2, 0.95, 0.4, 0, 6.28); ctx.fill();
   } else if (k === 'servant' || k === 'crumb' || k === 'rat' || k === 'boot' || k === 'tinCup') {
     // The worst branch in the room: a 4x2.5 ellipse of rgba(40,28,22,0.45), which is roughly
     // the colour of every floor it was dropped on. Five of the sixty differences came through
     // here and four of them were among the faintest measured -- the tin cup moved six pixels.
     // Twice the size, an ink edge, and a lit top, so it reads as a small object lying there.
-    markBlob(dx, dy, 7.2, 4.8, 0.2, 'rgba(62,45,34,0.94)', 'rgba(212,196,168,0.66)');
+    markBlob(dx, dy, 7.2, 4.8, 0.2, 'rgba(62,45,34,0.94)', 'rgba(178,164,142,0.5)');
   } else if (k === 'stamp') {
     // faint rectangular ink pad on parchment
-    markInk(() => ctx.rect(dx - 8, dy - 6, 16, 12), 1.6);
-    ctx.strokeStyle = 'rgba(138,38,38,0.8)'; ctx.lineWidth = 1.6;
-    ctx.strokeRect(dx - 8, dy - 6, 16, 12);
-    ctx.fillStyle = 'rgba(122,32,32,0.34)'; ctx.fillRect(dx - 6.6, dy - 4.6, 13.2, 9.2);
+    // NO BORDER. A strokeRect with a fill inset inside it is a button in cross-section, and
+    // moving it onto the paper only made it a maroon button on cream. An ink impression is a
+    // smeared block with a broken edge and a corner that did not take -- that broken edge is
+    // the whole read, and it is what a border destroys.
+    // 0.85 and 0.72, not 0.5 and 0.42. Removing the border was right and was asked for; it
+    // landed in the same edit as the card-wide weight, so this was the one mark in the room
+    // that took the damping TWICE -- 0.5 x 0.46 -- and it went under findability with the lamp
+    // on it. The card's weight does the damping; a branch should not do it again.
+    // ONE PATH, not five overlapping rects. The rects were the right idea -- an ink impression
+    // has a broken edge and that is the whole read -- but two of them overlapped across the
+    // middle, so alpha compounded from 0.85 to about 0.98 there and the stamp kept a solid
+    // high-contrast core that silhouetted through the veil however far its weight was cut. It
+    // was the last mark in the room failing the unlit test, and the fault was the overlap
+    // rather than the value. One ragged polygon has the same broken edge at one alpha.
+    ctx.fillStyle = 'rgba(122,32,32,0.85)';
+    ctx.beginPath();
+    ctx.moveTo(dx - 7.4, dy - 5.2); ctx.lineTo(dx + 3.4, dy - 5.6); ctx.lineTo(dx + 3.6, dy - 2.2);
+    ctx.lineTo(dx + 7.2, dy - 2.6); ctx.lineTo(dx + 7.6, dy + 3.2); ctx.lineTo(dx + 2.2, dy + 5.4);
+    ctx.lineTo(dx - 4.4, dy + 4.8); ctx.lineTo(dx - 8.2, dy + 1.6); ctx.lineTo(dx - 7.8, dy - 2.4);
+    ctx.closePath(); ctx.fill();
+    // the two places it did not take, BITTEN OUT rather than painted over, so nothing stacks
+    ctx.save(); ctx.globalCompositeOperation = 'destination-out'; ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(dx + 4.6, dy - 4.2, 2.6, 1.8, 0.3, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(dx - 5.6, dy + 2.6, 1.9, 1.4, -0.2, 0, 6.28); ctx.fill();
+    ctx.restore();
   } else if (k === 'seal') {
     // cracked wax drip - not a bright UI disc
-    markBlob(dx, dy, 6, 5, 0.3, 'rgba(112,28,32,0.9)', 'rgba(232,150,140,0.42)');
+    markBlob(dx, dy, 6, 5, 0.3, 'rgba(112,28,32,0.9)', 'rgba(196,128,120,0.36)');
     ctx.fillStyle = 'rgba(96,24,28,0.75)';
     ctx.beginPath(); ctx.ellipse(dx + 3.4, dy + 6, 2.4, 3.6, 0.2, 0, 6.28); ctx.fill();
   } else if (k === 'quill') {
-    inkFill('#2a2018', dx - 1.4, dy - 9, 3, 16, 1);
-    inkFill('#8a7040', dx - 3, dy - 12, 7, 5, 1);
-    ctx.fillStyle = 'rgba(248,240,214,0.5)'; ctx.fillRect(dx - 2, dy - 11, 3, 2);
+    markFill('#2a2018', dx - 1.4, dy - 9, 3, 16, 1);
+    markFill('#8a7040', dx - 3, dy - 12, 7, 5, 1);
+    ctx.fillStyle = 'rgba(206,198,178,0.4)'; ctx.fillRect(dx - 2, dy - 11, 3, 2);
   } else if (k === 'thumb' || k === 'tear') {
-    markBlob(dx, dy, 5.2, 6.4, 0.1, 'rgba(52,38,30,0.86)', 'rgba(214,202,182,0.44)');
+    markBlob(dx, dy, 5.2, 6.4, 0.1, 'rgba(104,86,66,0.7)', 'rgba(170,158,138,0.36)');
   } else if (k === 'X') {
     // scratched cancel mark in ink, thin
     markInk(() => {
@@ -3527,7 +3670,7 @@ function drawDiffMark(d, x, y, on) {
     ctx.beginPath(); ctx.moveTo(dx - 5, dy - 7); ctx.lineTo(dx + 5, dy - 7);
     ctx.lineTo(dx, dy); ctx.lineTo(dx + 5, dy + 7); ctx.lineTo(dx - 5, dy + 7); ctx.lineTo(dx, dy);
     ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = 'rgba(206,178,116,0.85)'; ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(172,150,100,0.6)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(dx - 5, dy - 7); ctx.lineTo(dx + 5, dy - 7);
     ctx.lineTo(dx, dy); ctx.lineTo(dx + 5, dy + 7); ctx.lineTo(dx - 5, dy + 7); ctx.lineTo(dx, dy);
     ctx.closePath(); ctx.stroke();
@@ -3535,7 +3678,7 @@ function drawDiffMark(d, x, y, on) {
     // bottom in wood it is an object, and the sand says which way up it is.
     markPlate(dx, dy - 8.2, 14, 2.6, '#6a5330', 'rgba(226,198,140,0.5)');
     markPlate(dx, dy + 8.2, 14, 2.6, '#6a5330', 'rgba(226,198,140,0.5)');
-    ctx.fillStyle = 'rgba(226,202,144,0.75)';
+    ctx.fillStyle = 'rgba(190,170,122,0.5)';
     ctx.beginPath(); ctx.moveTo(dx - 3.6, dy + 6.4); ctx.lineTo(dx + 3.6, dy + 6.4); ctx.lineTo(dx, dy + 1.6); ctx.closePath(); ctx.fill();
   } else if (k === 'mansion') {
     // Eight nouns used to share one 12x10 chip -- a house, a crack, a screen, a case, a
@@ -3550,30 +3693,38 @@ function drawDiffMark(d, x, y, on) {
     ctx.fillStyle = 'rgba(226,190,120,0.45)'; ctx.fillRect(dx - 2, dy + 0.5, 4, 4);
   } else if (k === 'safeCrack') {
     markInk(() => { ctx.moveTo(dx - 7, dy - 7); ctx.lineTo(dx - 1, dy - 1); ctx.lineTo(dx - 4, dy + 2); ctx.lineTo(dx + 6, dy + 8); }, 2);
-    ctx.strokeStyle = 'rgba(214,198,166,0.9)'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(180,166,140,0.62)'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(dx - 7, dy - 7); ctx.lineTo(dx - 1, dy - 1); ctx.lineTo(dx - 4, dy + 2); ctx.lineTo(dx + 6, dy + 8); ctx.stroke();
   } else if (k === 'screen') {
     markPlate(dx, dy, 14, 11, '#101820', null);
-    ctx.fillStyle = 'rgba(120,214,166,0.5)'; ctx.fillRect(dx - 5, dy - 3.5, 10, 7);
+    ctx.fillStyle = 'rgba(96,170,134,0.44)'; ctx.fillRect(dx - 5, dy - 3.5, 10, 7);
     ctx.fillStyle = 'rgba(20,32,26,0.7)';
     for (let i = 0; i < 3; i++) ctx.fillRect(dx - 4, dy - 2.4 + i * 2.4, 8 - i * 2, 1);
   } else if (k === 'headset') {
     // near cup full size, far cup narrow and higher: a band seen from three-quarters
-    markInk(() => ctx.arc(dx - 0.6, dy + 1, 7, Math.PI * 1.02, Math.PI * 1.86), 2.2);
-    ctx.strokeStyle = 'rgba(188,180,170,0.9)'; ctx.lineWidth = 2.2;
-    ctx.beginPath(); ctx.arc(dx - 0.6, dy + 1, 7, Math.PI * 1.02, Math.PI * 1.86); ctx.stroke();
-    markPlate(dx - 7, dy + 2.5, 4.4, 6.4, '#1c1a1e', 'rgba(198,190,180,0.42)');
-    markPlate(dx + 5.6, dy + 0.5, 2.8, 4.6, '#16151a', 'rgba(170,164,156,0.34)');
+    // Scaled to the head rather than to the mark-size guide: the far row draws at 0.82, so a
+    // skull there is 8.2 across and a 15-wide band with two cups was a crash helmet.
+    markInk(() => ctx.arc(dx - 0.5, dy + 1, 5, Math.PI * 1.02, Math.PI * 1.86), 2);
+    ctx.strokeStyle = 'rgba(188,180,170,0.9)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(dx - 0.5, dy + 1, 5, Math.PI * 1.02, Math.PI * 1.86); ctx.stroke();
+    markPlate(dx - 5, dy + 2.2, 3, 4.5, '#26242a', 'rgba(170,164,156,0.36)');
+    markPlate(dx + 4, dy + 0.4, 2, 3.4, '#1f1e24', 'rgba(150,146,140,0.3)');
   } else if (k === 'briefcase') {
     markPlate(dx, dy + 1.5, 15, 10, '#3a2a1c', 'rgba(216,180,112,0.40)');
     markInk(() => { ctx.arc(dx, dy - 3.5, 3.6, Math.PI, 0); }, 1.6);
     ctx.strokeStyle = 'rgba(206,172,108,0.9)'; ctx.lineWidth = 1.6;
     ctx.beginPath(); ctx.arc(dx, dy - 3.5, 3.6, Math.PI, 0); ctx.stroke();
   } else if (k === 'emptyPocket') {
-    markInk(() => { ctx.moveTo(dx - 6, dy - 5); ctx.lineTo(dx + 6, dy - 5); ctx.lineTo(dx + 4, dy + 6); ctx.lineTo(dx - 4, dy + 6); ctx.closePath(); }, 1.6);
-    ctx.fillStyle = '#2f2820';
-    ctx.beginPath(); ctx.moveTo(dx - 6, dy - 5); ctx.lineTo(dx + 6, dy - 5); ctx.lineTo(dx + 4, dy + 6); ctx.lineTo(dx - 4, dy + 6); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = 'rgba(206,186,148,0.42)'; ctx.fillRect(dx - 5.4, dy - 4.4, 10.8, 2.2);
+    // The mark-size floor ("nothing under about ten units across") met a figure drawn at
+    // scale 0.88, whose torso is 8.6 wide and 10.5 tall -- so a 12x11 trapezoid was 1.9x the
+    // width of the man wearing it and covered his trunk, both arms and the tops of his
+    // thighs. A pocket is a detail ON a body; at torso size it is a sandwich board, and it
+    // deleted the one colour that tells the prisoners apart from the bars. The floor is a
+    // floor for a mark in open ground, not for one worn by the smallest figure in the room.
+    const pk = () => { ctx.moveTo(dx - 3.6, dy - 3); ctx.lineTo(dx + 3.6, dy - 3); ctx.lineTo(dx + 2.6, dy + 3.4); ctx.lineTo(dx - 2.6, dy + 3.4); ctx.closePath(); };
+    markInk(pk, 1.5);
+    ctx.fillStyle = '#2f2820'; ctx.beginPath(); pk(); ctx.fill();
+    ctx.fillStyle = 'rgba(190,172,136,0.44)'; ctx.fillRect(dx - 3.1, dy - 2.5, 6.2, 1.7);
   } else if (k === 'bird') {
     // TURNED, like everything else in these six paintings. Every machine, body, bottle and
     // building here is drawn three-quarter on with one side foreshortened -- and the marks
@@ -3581,12 +3732,18 @@ function drawDiffMark(d, x, y, on) {
     // height, which is what makes a shape read as an emblem rather than as a painted thing.
     // Two of them became faces. The near wing is long and low, the far one short and high
     // and behind the body, so the bird is flying across rather than at you.
+    // A BODY BETWEEN THE WINGS. Every other turned silhouette kept a mass to turn around --
+    // the gas mask has its oval, the bull its muzzle, the headset its band. This one was
+    // turned and given nothing, and two asymmetric curves with a 1-unit gap between them
+    // stop being wings and become a stroke: at play scale it read as a tilde. The symmetric
+    // version at least said gull.
+    markBlob(dx - 0.5, dy + 0.5, 3, 1.8, -0.2, 'rgba(60,52,44,0.9)', 'rgba(170,160,144,0.4)');
     const wing = () => {
-      ctx.moveTo(dx - 10, dy + 3); ctx.quadraticCurveTo(dx - 5, dy - 5.5, dx - 0.5, dy + 0.5);
-      ctx.moveTo(dx + 0.5, dy - 0.5); ctx.quadraticCurveTo(dx + 4, dy - 5, dx + 6.5, dy - 1.5);
+      ctx.moveTo(dx - 10, dy + 3); ctx.quadraticCurveTo(dx - 5, dy - 5.5, dx - 2.4, dy + 0.2);
+      ctx.moveTo(dx + 2.2, dy - 0.8); ctx.quadraticCurveTo(dx + 4.5, dy - 5, dx + 7, dy - 1.5);
     };
     markInk(wing, 2);
-    ctx.strokeStyle = 'rgba(224,214,198,0.82)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(192,180,160,0.56)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
     ctx.beginPath(); wing(); ctx.stroke();
   } else if (k === 'maskGas') {
     // A bilaterally symmetric oval with two symmetric eyes is the one shape the eye finds
@@ -3594,9 +3751,9 @@ function drawDiffMark(d, x, y, on) {
     // three-quarter on: the far eye is smaller and higher, the canister swings to the near
     // side, and the whole thing tilts off the vertical.
     markBlob(dx, dy, 6.6, 6.2, 0.22, 'rgba(42,44,40,0.92)', 'rgba(168,176,160,0.34)');
-    ctx.fillStyle = 'rgba(214,220,206,0.55)';
+    ctx.fillStyle = 'rgba(180,186,172,0.44)';
     ctx.beginPath(); ctx.ellipse(dx - 2.4, dy - 1.2, 2.1, 1.9, 0.22, 0, 6.28); ctx.fill();
-    ctx.fillStyle = 'rgba(214,220,206,0.4)';
+    ctx.fillStyle = 'rgba(180,186,172,0.34)';
     ctx.beginPath(); ctx.ellipse(dx + 2.9, dy - 2.1, 1.3, 1.2, 0.22, 0, 6.28); ctx.fill();
     markPlate(dx - 1.6, dy + 5.6, 5, 4, '#1e201c', 'rgba(150,158,144,0.34)');
   } else {

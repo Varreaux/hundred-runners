@@ -54,6 +54,29 @@ const bench = `
   // three numbers, not two: how much moved AT ALL, how far the best pixel moved, and how much
   // of it moved ENOUGH TO READ.
   const STRONG = +(QZ.get('s') || 40);        // a channel step that carries at a glance
+  // MEASURED OFF A DELIVERED FRAME, not reasoned from the veil's transmission. 10 was the
+  // reasoned number -- 0.93 alpha passes about 7%, so 10 of 255 looked like the floor of what
+  // could survive -- and it let through a contract card that could then be photographed and
+  // read. tools/frame-probe.html samples the actual PNG the shot pipeline produced and says
+  // the marks outside the pool differ from the other painting by 4.6 to 7.6 of luminance:
+  // real, visible, coherent, and entirely under the reasoned floor. Never compute a pixel
+  // from the source when you can sample the frame.
+  const LEAK = +(QZ.get('l') || 5);           // a channel step still readable THROUGH the veil
+  // The unit is a CONNECTED BLOB, not a total, and the number is bracketed by two
+  // photographs. shots/spot/dark-ticker.png measures 125 at its worst and nothing on it can
+  // be picked out but the gap where a body is missing. shots/spot/dark-contract.png measures
+  // 293 and the X, stamp, quill, seal, hourglass and shackle are all plainly there with the
+  // lamp on the far side of the card. 140 sits above the readable-as-clean card and well
+  // under the one that is not.
+  //
+  // This number has been raised once before, which is the move to be suspicious of, so the
+  // order is recorded: the severe cases are fixed by art FIRST and the floor is set where the
+  // frames put it afterwards, never the reverse.
+  //
+  // The removed-body marks will always sit high: a whole figure absent changes the
+  // composition and no damping hides that. It is the one difference that should be findable
+  // from a wide view, and it is one of ten.
+  const MAX_LEAK = +(QZ.get('ln') || 140);   // largest connected unlit blob a mark may show
   const MIN_STRONG = +(QZ.get('sn') || 45);   // and how many pixels must carry it
   const MAX_OFF = +(QZ.get('off') || 16);      // how far the ink may sit from its hit point
   const MAX_AREA = +(QZ.get('area') || 0.20);  // how much of the painting may score
@@ -62,7 +85,7 @@ const bench = `
   const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
   const out = { painting: [L.left.w, L.left.h], thresh: THRESH,
                 floors: { dpx: MIN_DPX, peak: MIN_PEAK, off: MAX_OFF, area: MAX_AREA,
-                          strong: STRONG, strongN: MIN_STRONG },
+                          strong: STRONG, strongN: MIN_STRONG, leak: LEAK, leakN: MAX_LEAK },
                 hitRadius: CFG.finale.hitRadius, scenes: [], tolerance: [] };
   S.t = 0;
 
@@ -81,6 +104,38 @@ const bench = `
     for (let i = 0, p = 0; i < w * h; i++, p += 4) {
       D[i] = Math.max(Math.abs(A[p] - B[p]), Math.abs(A[p + 1] - B[p + 1]), Math.abs(A[p + 2] - B[p + 2]));
     }
+    // ---------------------------------------------------- and now through the LAMP VEIL
+    // THE BARE CANVAS IS THE ONE STATE THE PLAYER NEVER SEES. Everything above measures the
+    // painting with no veil over it, which answers "can this mark be seen" and not "can this
+    // mark be seen ONLY when the lamp is on it" -- and the second is the room's entire
+    // mechanic. The rule that fixed the invisible marks, a lit face on everything, overshot
+    // into marks whose highlight beats a 93% veil: at luminance 200 a mark still comes
+    // through at about 23 against a ground of 12, and the eye finds a bright spot in a dark
+    // field faster than it finds anything inside the pool. You could clear a card without
+    // ever steering.
+    //
+    // So both paintings are re-drawn and veiled with the lamp parked in the FAR CORNER from
+    // the mark under test, and what survives is what a player sees for free.
+    const D2 = new Uint8Array(w * h);
+    {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+      drawFinaleScene(scene, L.left.x, L.left.y, L.left.w, L.left.h, false, diffs, new Set(), 0);
+      drawFinaleScene(scene, L.right.x, L.right.y, L.right.w, L.right.h, true, diffs, new Set(), 0);
+      // A real search lamp: the radius a mid crew gets, parked bottom-left of each painting.
+      const fullR = finaleSpotFullR(L), lampR = Math.max(44, fullR * 0.5);
+      veilPaintingSpot(L.left, L.left.x + w * 0.08, L.left.y + h * 0.92, lampR, fullR);
+      veilPaintingSpot(L.right, L.right.x + w * 0.08, L.right.y + h * 0.92, lampR, fullR);
+      const A2 = ctx.getImageData(L.left.x, L.left.y, w, h).data;
+      const B2 = ctx.getImageData(L.right.x, L.right.y, w, h).data;
+      for (let i = 0, q = 0; i < w * h; i++, q += 4) {
+        D2[i] = Math.max(Math.abs(A2[q] - B2[q]), Math.abs(A2[q + 1] - B2[q + 1]), Math.abs(A2[q + 2] - B2[q + 2]));
+      }
+      // and blank the pool itself, since a mark the lamp IS on is supposed to be visible
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (Math.hypot(x - w * 0.08, y - h * 0.92) < lampR * 1.5) D2[y * w + x] = 0;
+      }
+    }
     const sxS = w / FINALE_ART.w, syS = h / FINALE_ART.h;
     const pts = diffs.map(d => ({ d: d, x: d.x * sxS, y: d.y * syS }));
     // Every changed pixel is attributed to its NEAREST difference, never to a window round
@@ -88,7 +143,8 @@ const bench = `
     // difference in every scene sits about 55px from the ninth -- so the first cut of this
     // reported the SAME blob against both, with identical counts, and called each of them
     // displaced by the distance to the other. Two differences cannot own one pixel.
-    const own = pts.map(() => ({ n: 0, strong: 0, peak: 0, sum: 0, wx: 0, wy: 0, wsum: 0 }));
+    const own = pts.map(() => ({ n: 0, strong: 0, leak: 0, peak: 0, sum: 0, wx: 0, wy: 0, wsum: 0 }));
+    const OWN = new Int16Array(w * h).fill(-1);
     let stray = 0;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const v = D[y * w + x];
@@ -99,10 +155,46 @@ const bench = `
         if (dd < bd) { bd = dd; bi = i; }
       }
       if (bi < 0) { stray++; continue; }
+      OWN[y * w + x] = bi;
       const a = own[bi];
       a.n++; a.sum += v; if (v > a.peak) a.peak = v;
       if (v >= STRONG) a.strong++;
       a.wx += x * v; a.wy += y * v; a.wsum += v;
+    }
+    // ------------------------------------------- and the unlit leak, as an AREA not a count
+    // A PIXEL COUNT IS THE WRONG STATISTIC FOR LEGIBILITY IN THE DARK. The eye integrates
+    // over a region and locks onto a straight edge, so a solid 14x11 plate can have every one
+    // of its pixels under a per-pixel floor and still be unmistakable, while the same number
+    // of pixels scattered through a busy card is nothing. That is exactly how the first cut
+    // of this passed a contract card that could then be photographed and read: the count was
+    // under the floor and the SHAPE was a rectangle. So the leak is scored as the largest
+    // CONNECTED component of above-floor pixels belonging to one mark.
+    //
+    // It also explains the calibration gap honestly. 167-267 readable on the contract against
+    // 35-59 unreadable on the ticker is fourfold, and almost none of that was the marks: the
+    // ticker's ground is dark, busy and cut up by chart lines and bodies, and the contract's
+    // is one large flat bright field where any coherent shape silhouettes.
+    {
+      const seen2 = new Uint8Array(w * h);
+      for (let i = 0; i < w * h; i++) {
+        if (seen2[i] || D2[i] < LEAK || OWN[i] < 0) continue;
+        const stack = [i]; seen2[i] = 1;
+        const tally = {}; let size = 0;
+        while (stack.length) {
+          const j = stack.pop(), jx = j % w, jy = (j / w) | 0;
+          size++; tally[OWN[j]] = (tally[OWN[j]] || 0) + 1;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            const nx = jx + dx, ny = jy + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const k = ny * w + nx;
+            if (!seen2[k] && D2[k] >= LEAK && OWN[k] >= 0) { seen2[k] = 1; stack.push(k); }
+          }
+        }
+        // the component belongs to whichever mark holds most of it
+        let bestOwner = -1, bestShare = 0;
+        for (const o in tally) if (tally[o] > bestShare) { bestShare = tally[o]; bestOwner = +o; }
+        if (bestOwner >= 0 && size > own[bestOwner].leak) own[bestOwner].leak = size;
+      }
     }
     const rows = [];
     for (let i = 0; i < pts.length; i++) {
@@ -117,10 +209,11 @@ const bench = `
         }
       const off = a.n ? Math.hypot(a.wx / a.wsum - px, a.wy / a.wsum - py) : -1;
       rows.push({ kind: d.kind, at: [Math.round(px), Math.round(py)],
-                  dpx: a.n, strong: a.strong, peak: a.peak,
+                  dpx: a.n, strong: a.strong, leak: a.leak, peak: a.peak,
                   bg: +(bl / bn).toFixed(1), alt: +(al / bn).toFixed(1),
                   off: a.n ? +off.toFixed(1) : -1,
                   faint: a.n < MIN_DPX || a.peak < MIN_PEAK || a.strong < MIN_STRONG,
+                  leaks: a.leak > MAX_LEAK,
                   offset: !a.n || off > MAX_OFF });
     }
     // spacing, and how much of the picture a blind press would score
