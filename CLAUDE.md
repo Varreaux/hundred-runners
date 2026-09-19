@@ -596,6 +596,25 @@ from `index.html` with the `'use strict'` line removed.
   deleted. That is how a `let placedUI = []` declaration vanished and shipped a
   crash. Anchor on a small unique string and replace that, and assert the anchor
   appears exactly once before writing.
+- **And then GREP FOR WHAT YOU JUST WROTE, because a batch that aborts writes
+  nothing.** The scripts we all use accumulate edits in memory, assert each anchor
+  appears exactly once, and write at the end. That is the right design -- a partial
+  write leaves the file in a state nobody intended and nobody can name -- but it
+  means ONE stale anchor silently loses the whole batch. It happened at BUILD 124:
+  a three-edit script asserted on its third anchor, lost all three, and two later
+  scripts that did land made the file look edited. A commit message then went out
+  saying a value had been raised when the shipped build still held the old one, by
+  name. Nobody reads a stack trace scrolled past ten lines ago.
+
+  **The reviewer caught it with one grep and would not confirm a value that was
+  not in the file**, having also worked out that the frames could not settle it and
+  should not be asked to -- 4.5 of luminance on a 1.6-unit stroke is invisible in a
+  screenshot. That is the useful pair: this project's usual rule is to trust the
+  delivered frame over the bench, and the exception is a change too small to
+  photograph, where the SOURCE is the stronger evidence. Two edits later the same
+  session audited its whole run this way and found 30 of 32 present, the missing
+  two superseded rather than lost. A session's claims about its own landed work are
+  worth one grep each.
 - **Verify by evaluating, not by reading.** Source text lies. The roster writes
   one name with an escape and the `LOOKS` table writes it with the literal
   character, so a grep reports that neither matches the other; evaluated as
