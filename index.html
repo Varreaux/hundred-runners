@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '128 the machine, framed in timber';
+const BUILD = '129 the land opens in stages';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -210,10 +210,28 @@ const CFG = {
     // claimed it and snapped r.y to the new lane's height -- a 38-unit jump, most of a
     // body, three times on the way down, on a frame boundary. The drawn ramps overran
     // their lane's span by the same 40 and ended in mid-air. tools/enc-check.js tests this.
-    { x: 12520, from: 0, to: 1, merge: 14860, split: 0.5 },
-    { x: 12760, from: 1, to: 2, merge: 14640, split: 0.5 },
-    { x: 13000, from: 2, to: 3, merge: 14420, split: 0.5 },
-    { x: 13240, from: 3, to: 4, merge: 14200, split: 0.5 },
+    // THE LAND OPENS IN STAGES, and it used not to. These were 240 apart from a mouth at
+    // 12290, so the first split came 230 units out and all five paths existed by 13240 --
+    // four fifths of the act was already five lanes wide, and the moment you left the
+    // mountain the camera pulled back to fit them. Morgan asked for it progressive, and for
+    // longer on one path before the first division.
+    //
+    // One lane now runs 510 units rather than 230, and the gaps then CLOSE -- 320, 280, 260.
+    // That is the act's own argument drawn in its geometry: the country opens, and then it
+    // stops opening, and the last choices arrive faster than the first. The merges are
+    // unchanged in spacing and moved later, to 220 apart ending at 14980, which is what buys
+    // the room for the forks to spread; enc-check tests that spacing and the rule that a
+    // nested fork merges before its parent.
+    //
+    // A lane exists from f.x + CFG.rampLen to f.merge (see LANE_SPANS), so moving a fork
+    // moves the ground out from under every room standing on its lane. Four rooms moved with
+    // these and tools/room-check.js is what says so -- it refuses a room whose lane does not
+    // exist where it stands, which is how four of Linh's shipped rooms were once found
+    // hanging in open sky.
+    { x: 12800, from: 0, to: 1, merge: 14980, split: 0.5 },
+    { x: 13120, from: 1, to: 2, merge: 14760, split: 0.5 },
+    { x: 13400, from: 2, to: 3, merge: 14540, split: 0.5 },
+    { x: 13660, from: 3, to: 4, merge: 14320, split: 0.5 },
   ],
   gates: [3150, 8150, 13260],
   gateArm: 140, holdMax: 8,
@@ -324,13 +342,13 @@ const CFG = {
     // Nothing between the mouth at 12290 and 13500: the crowd comes out into open country
     // and runs through it unthreatened, because the stretch has to be worth losing.
     { x: 12450, lane: 0, type: 'gears', diff: 4 },
-    { x: 12850, lane: 1, type: 'conveyor', diff: 4 },
+    { x: 13060, lane: 1, type: 'conveyor', diff: 4 },
     { x: 12950, lane: 0, type: 'ditch', diff: 4, warn: 480 },
-    { x: 13100, lane: 2, type: 'wiring', diff: 4, warn: 840 },
-    { x: 13350, lane: 3, type: 'sweeper', diff: 4, warn: 1350 },
+    { x: 13400, lane: 2, type: 'wiring', diff: 4, warn: 840 },
+    { x: 13680, lane: 3, type: 'sweeper', diff: 4, warn: 1350 },
     { x: 13400, lane: 1, type: 'winch', diff: 4 },
     { x: 13500, lane: 0, type: 'presses', diff: 5 },
-    { x: 13600, lane: 4, type: 'calculation', diff: 5, warn: 500 },
+    { x: 13920, lane: 4, type: 'calculation', diff: 5, warn: 500 },
     { x: 13650, lane: 2, type: 'ditch', diff: 4, warn: 480 },
     // THE MISHMASH. Act three used to hold only the four enclosure types, so the last act
     // introduced four new rooms and brought nothing back. Morgan asked for all of them
@@ -339,7 +357,7 @@ const CFG = {
     // bridge over the stream, a rickety crossing. The machine families -- lever, gear,
     // wiring, trace, calculation -- stay in the mill and the mountain, because a conveyor
     // in a hedgerow is a drawing nobody has made.
-    { x: 13700, lane: 3, type: 'conveyor', diff: 4 },
+    { x: 13880, lane: 3, type: 'conveyor', diff: 4 },
     { x: 13950, lane: 1, type: 'thorn', diff: 4 },
     // ---- ACT THREE OPENS WITH ALL SIX MACHINE FAMILIES, so the last act contains every game
     // in the course. Morgan asked for all of them combined here; act three previously held
@@ -351,11 +369,11 @@ const CFG = {
     // drawRoom dispatches `machine` and `press` hazards to drawMachineRoom BEFORE it tests
     // ENC.inside, and drawMachineRoom reads nothing but room.x, V.left and the lane -- which
     // is also why the enclosure's own types cannot make the reverse trip into act two.
-    { x: 13950, lane: 4, type: 'winch', diff: 5 },
-    { x: 14000, lane: 3, type: 'wiring', diff: 5, warn: 840 },
+    { x: 14120, lane: 4, type: 'winch', diff: 5 },
+    { x: 14080, lane: 3, type: 'wiring', diff: 5, warn: 840 },
     { x: 14050, lane: 0, type: 'mantrap', diff: 5, warn: 620 },
     { x: 14150, lane: 2, type: 'gears', diff: 5 },
-    { x: 14300, lane: 3, type: 'mantrap', diff: 5, warn: 620 },
+    { x: 14290, lane: 3, type: 'mantrap', diff: 5, warn: 620 },
     { x: 14500, lane: 1, type: 'sweeper', diff: 5, warn: 1350 },
     { x: 14500, lane: 2, type: 'rickety', diff: 5 },
     { x: 14600, lane: 0, type: 'calculation', diff: 5, warn: 500 },
