@@ -4830,14 +4830,29 @@ function update(dt) {
         front.doom = room;
         front.held = false; front.atRoom = null;
         if (room.hazard === 'machine') killRunner(front, room.type === 'wiring' ? 'electric' : 'crush');
-        // A WALL IS NOT A HOLE. This fell through to the gap branch, so a body dropped 70
-        // units down the front of 244 units of solid masonry and died "somewhere in the
-        // dark" -- and up to eleven of them do, because the room keeps killing for the whole
-        // 1.15s of the fuse. The closing reel has always disagreed: TRAPS.wall draws the body
-        // running INTO the brick and coming to rest against it. The reel card is chosen by
-        // room type rather than by `how`, so this only ever contradicted the play, never the
-        // card. The splash was fixed for exactly this case and the fall was left.
-        else if (room.type === 'wall') { front.x = holdLine(room); killRunner(front, 'crush'); }
+        // A SOLID ROOM IS NOT A HOLE. This is asked of roomIsGap rather than of a list of
+        // type names, so the question "is there a hole here" has exactly ONE answer in the
+        // file. It used to name `wall` alone, and that was a second, independently written
+        // statement about the same ground -- which is how the fault survived: the deck said
+        // solid, the kill said hole, and nothing compared them.
+        //
+        // The wall was found by hand. THORN was found by driving it: a solid room whose
+        // hazard is 'half', so it is neither a machine nor the wall and fell through to the
+        // gap branch, dropping a body down the face of a hedge that is standing on the
+        // ground. Both now take this branch, and so will the next solid room, without
+        // anyone remembering to add it here.
+        //
+        // The closing reel had always disagreed with the play on both. TRAPS.wall draws the
+        // body running INTO the brick and coming to rest against it; TRAPS.thorn sits on
+        // GY.machine, the same ground line as the machine rooms. The card is chosen by room
+        // type rather than by `how`, so this only ever contradicted the play, never itself.
+        //
+        // tools/death-shape-check.js is the check: it places the crowd at one room of every
+        // type with the rest solved and compares how a body dies against whether the deck
+        // has a hole. Only two hazards can reach here at all -- 'press' and 'burst' rooms
+        // never set atRoom, so the presses, the crusher and the mantrap are excluded by the
+        // queue and cannot take this branch however they are classified.
+        else if (!roomIsGap(room)) { front.x = holdLine(room); killRunner(front, 'crush'); }
         else {
           // nudged over the edge, so they go INTO the gap rather than dropping down its face
           front.x = Math.max(front.x, room.x + killFrom(room) + 5);
