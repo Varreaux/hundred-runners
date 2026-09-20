@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '136 the wall spells UNBOUND';
+const BUILD = '137 the jaws forgive a hand at every difficulty';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1501,6 +1501,14 @@ const VERBS = {
       // needle speed. The number that matters is the HALF-band, because that is the timing
       // error the room forgives: 148ms at difficulty 1 down to 110ms at 4.
       //
+      // AND THE 0.22 IS A FLOOR, NOT A TUNING. The ramp was sized to land exactly on Morgan's
+      // +/-110ms at difficulty 4 and was never extended past it, so when the enclosure started
+      // placing mantraps at difficulty 5 the band fell off the end of a deliberate design and
+      // came out at +/-97.5ms -- inside ordinary timing error, which is a bug and not a
+      // difficulty setting. tools/lift-check.js verdicted BAD on it. 0.22/2 IS 110ms, so the
+      // clamp holds the floor and leaves 1 to 4 untouched; difficulty 5 is still harder than 4
+      // because `rate` keeps climbing and the needle reaches the band sooner.
+      //
       // The first version ran 0.24s down to 0.15s, i.e. +/-75ms at the hardest, and
       // tools/lift-check.js showed a hand aiming at the middle of the band and arriving
       // 120ms late overshooting on EVERY attempt -- 42 misses in a row, the jaws never
@@ -1523,7 +1531,7 @@ const VERBS = {
       // room, spending it on a word.
       return { open: 0, got: 0, gauge: 0, at: 0, holding: false, snapped: 0, recoil: 0, inputT: 0.3,
                verdict: 0, hit: 0, late: 0,
-               rate, zone: 0.78, half: rate * (0.32 - 0.025 * diff) / 2, pulls: 3 };
+               rate, zone: 0.78, half: rate * Math.max(0.22, 0.32 - 0.025 * diff) / 2, pulls: 3 };
     },
     key(m, k) {
       if (k !== ' ') return null;
