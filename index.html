@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '137 the jaws forgive a hand at every difficulty';
+const BUILD = '138 the tally, the door and the kill band';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1540,7 +1540,10 @@ const VERBS = {
       // grip is still held and the gauge is at zero, so a press ran letGo on a needle that had
       // not moved, scored TOO SOON, and dropped the grip the comment below says survives. Two
       // further presses to get back to where they already were.
-      if (m.recoil > 0) return 'ok';
+      // ONLY WHILE THE GRIP IS STILL HELD. release() drops it during the recoil without
+      // scoring it, and a press that re-takes a grip the player has let go of is the one
+      // press in this window that is not mashing -- swallowed, it costs them the re-grip.
+      if (m.recoil > 0 && m.holding) return 'ok';
       if (m.holding) VERBS.lift.letGo(m); else { m.holding = true; m.gauge = 0; m.verdict = 0; }
       // `got`, not `open`: open is an eased animation of the pull count that only approaches
       // its target, so a test on it is one that fires late or, with any decay at all, never.
@@ -1548,7 +1551,9 @@ const VERBS = {
       // real win -- this line only catches the case where a second keydown was the release.
       return m.got >= m.pulls ? 'done' : 'ok';
     },
-    release(m, k) { if (k === ' ' && m.holding) VERBS.lift.letGo(m); },
+    // THE KEY COMING UP DURING THE RECOIL IS NOT A RELEASE either, and for the same reason:
+    // the gauge is frozen at zero, so letGo scores TOO SOON on a needle that has not moved.
+    release(m, k) { if (k !== ' ' || !m.holding) return; if (m.recoil > 0) { m.holding = false; return; } VERBS.lift.letGo(m); },
     // ONE resolution, whether the hand came off the key or a second press toggled it off.
     // Two copies of this drift, and the one the bot reaches is not the one the player does.
     letGo(m) {
@@ -1557,7 +1562,12 @@ const VERBS = {
       m.hit = Math.abs(m.gauge - m.zone) <= m.half ? 1 : 0;
       m.late = m.gauge > m.zone ? 1 : 0;
       m.verdict = 0.5;
-      if (m.hit) m.got = Math.min(m.pulls, m.got + 1);
+      // AND BANK THE WIN HERE, because this is the one resolution point both routes reach.
+      // keyup dispatches release to EVERY room -- a grip survives the panel closing -- but
+      // update() runs for S.active alone, so a last pull released after moving off the room
+      // scored `got` and never `won`: no pendingClear, the trap sits armed, and nothing is
+      // on screen to say so since the panel is shut. Line 1598 stays as the backstop.
+      if (m.hit) { m.got = Math.min(m.pulls, m.got + 1); if (m.got >= m.pulls) m.won = true; }
       m.gauge = 0;
     },
     update(m, dt) {
@@ -2399,6 +2409,11 @@ const MUSIC = {
     // unmute. Whichever track owns the moment is the one to begin.
     if (this.bed && this.intro && this.intro.ended && this.bed.paused) this.bed.play().catch(() => {});
     else if (S && S.mode === 'intro' && this.tut && this.tut.paused) this.tut.play().catch(() => {});
+    // A run already under way has no branch above it: start()'s own cue was refused at
+    // startRun, so re-cue it here. It is idempotent, and on the end screens the looping bed
+    // is the track that owns the moment rather than the intro.
+    else if (S && (S.mode === 'play' || S.mode === 'finale')) this.start();
+    else if (S && (S.mode === 'win' || S.mode === 'lose') && this.bed && this.bed.paused && (!this.intro || this.intro.paused)) this.bed.play().catch(() => {});
   },
 };
 const AU = {
@@ -2975,12 +2990,21 @@ function gateSlam(g) {
 function releaseGate(g, spread) {
   for (const r of S.runners) {
     if (r.state !== 'run' || !r.held) continue;
+    // THE SLOT IS ONLY REASSIGNED AT A REAL GATE, and that is a deliberate limit rather than
+    // an oversight -- see the seam's own call, which passes null. A gate holds the few people
+    // standing at it for a second or two; the cave door holds all hundred for the length of a
+    // speech and five drill puzzles, and reassigning a hundred slots off a file compressed
+    // against one line hands nearly everybody a slot near packFront. The pack then travels as
+    // one bunch instead of a column, and room-check measures 1.1s LESS road at every room in
+    // acts two and three -- enough to put the conveyor at difficulty 4 over the impossible
+    // line at 4.04 keys/sec. Nothing teleports without it: r.x is integrated toward the
+    // target and never assigned, so the file simply re-forms on the slots it already had.
     const wander = Math.sin(S.t * 0.7 + r.jit) * r.jitAmp;
     // a runner the camera has left behind would otherwise be handed a slot behind the pack and stay there
     // for good, drifting off the left edge; the back of the pack is as far back as anyone is ever placed
-    r.slot = Math.max(CFG.packBack, CFG.packFront - (S.cam + CFG.packFront + wander - r.x) / spread);
+    if (g) r.slot = Math.max(CFG.packBack, CFG.packFront - (S.cam + CFG.packFront + wander - r.x) / spread);
     r.held = false;
-    r.catchUp = 1;                       // a burst of pace, spent as they rejoin the pack
+    if (g) r.catchUp = 1;                // a burst of pace, spent as they rejoin the pack
   }
 }
 // ---------------------------------------------------------------- the cave door
@@ -3067,7 +3091,10 @@ function updateSeamGate(dt) {
     // The STOP is on position alone. Gated on `!S.active` as well, a room armed as they
     // arrived let the whole crowd run through the doorway and then snapped them backwards to
     // seamLine() on the frame the room cleared. A closed door does not wait for a puzzle.
-    if (lead >= seamLine() - 6) { g.phase = 'gather'; g.t = 0; }
+    // The panel goes with it: seamHolding() swallows every key from here, ESCAPE included, so
+    // a room left open is stuck on screen under the band and the drill panels. Progress lives
+    // on the room, not on S.active, so reopening it after the burst picks up where it stopped.
+    if (lead >= seamLine() - 6) { g.phase = 'gather'; g.t = 0; S.active = null; }
     return;
   }
   g.t += dt;
@@ -3159,10 +3186,13 @@ function updateSeamGate(dt) {
     g.open = Math.min(1, 1 - Math.pow(1 - Math.min(1, g.t / SEAM.burst), 0.4));
     if (g.open >= 1) {
       g.phase = 'done'; g.camLock = null;
-      // releaseGate ignores its first argument: it releases every held runner, recomputing
-      // each one's slot from where they actually ended up rather than snapping anybody. That
-      // is the whole reason this does not write its own release -- a compressed crowd handed
-      // fresh positions teleports, and this already solves it by reassigning slots instead.
+      // releaseGate ignores its first argument: it releases every held runner. Passing null
+      // also asks it NOT to reassign slots or hand out a catch-up burst, which is what a
+      // gate's release does -- see the note there for the road it costs. Nothing snaps either
+      // way: r.x is integrated toward a target and never assigned, so the file re-forms on the
+      // slots it already had. Until the file-spacing pass below started flagging the crowd
+      // `held`, this call reached the leader and nobody else, so the whole hold released
+      // silently; that is the behaviour being kept, not a new one being chosen.
       releaseGate(null, 1 + CFG.tire * (S.cam / S.camMax));
     }
   }
@@ -3673,7 +3703,9 @@ function finaleWrong() {
   const near = f.deck.filter(d => d.arrived).sort((a, b) => b.x - a.x)[0];
   const r = near ? (f.line.splice(f.line.indexOf(near.r), 1)[0] || f.line.pop()) : f.line.pop();
   if (r) {
-    r.state = 'gone'; r.doom = 'final'; r.deathT = S.t;
+    // The scoreboard has to move with the body: this one was banked as arrived when they
+    // reached the wall, so without both halves the summary counts a drowning as a survivor.
+    r.state = 'gone'; r.doom = 'final'; r.deathT = S.t; S.stats.dead++; S.stats.arrived--;
     const slot = f.deck.find(d => d.r === r);
     // Off the END of the belt, not from where they were standing. A body dropped at the slot
     // fell inside the deck rect and across the face of the drive drum for the first sixth of
@@ -4878,8 +4910,24 @@ function finaleFail() { finaleWrong(); }
 
 // ================================================================ update
 function update(dt) {
+  // AU.ambient is the only writer of the rumble, the footstep bed and the stone tail, and it
+  // sits below every early return in here -- so a pause or an ending froze all three at their
+  // last live value and the cave went on rumbling under the whole closing reel. Guarded on the
+  // NODES and not on AU.ctx: init() sets ctx first and builds these three afterwards, so a
+  // throw in between leaves ctx set and the gains null, and a TypeError here is a freeze.
+  if (AU.rumble && AU.bedGain && AU.tail && (S.paused || (S.mode !== 'play' && S.mode !== 'intro'))) {
+    const k = Math.min(1, dt * 3);
+    AU.rumble.gain.value *= 1 - k; AU.bedGain.gain.value *= 1 - k; AU.tail.gain.value *= 1 - k;
+  }
   if (S.paused) return;
   S.t += dt;
+  // THE SPIKE CLOCKS TICK HERE, not in frame(). Only a browser ever calls frame(), and every
+  // tool and every ?dev flag drives update()/draw() direct -- so the first spike of a scripted
+  // run stayed lit for the rest of it: a red wash over every later frame, and chatter() and
+  // drawBubbles() skipped for good, both of which return early on S.spike. It also meant
+  // spikeCool never ran down, so no scripted run could ever raise a second spike.
+  if (S.spike) { S.spike.t -= dt; if (S.spike.t <= 0) S.spike = null; }
+  if (S.spikeCool > 0) S.spikeCool -= dt;
   S.wrongFlash = Math.max(0, S.wrongFlash - dt);
   S.shake = Math.max(0, S.shake - dt * 14);
   updateFx(dt);
@@ -5038,7 +5086,8 @@ function update(dt) {
                           .sort((a, b) => b.x - a.x);
     let back = seamLine();
     for (const p of file) {
-      if (p.x > back) p.x = back;
+      // flag whoever this pass actually stops: the clamp above only ever reaches the leader
+      if (p.x > back) { p.x = back; p.held = true; }
       back = p.x - (4.6 + hash(p.jit * 3.7) * 2.4);
     }
   }
@@ -5194,7 +5243,10 @@ function update(dt) {
         // ONE. Jaws close on whoever is under them, not on everyone standing in a fifty-unit
         // band -- this loop used to take up to ten people on a single frame. The slam's own
         // 1.6s period already spaces them, so it needs no reload of its own.
-        const victim = S.runners.find(r => r.state === 'run' && r.lane === room.lane && r.x >= room.x + 35 && r.x < room.x + 85);
+        // NOT WHILE THEY ARE ON A RAMP. The runner loop's `if (r.ramp) continue;` only stops
+        // them queueing; the slam is decided HERE, and the mantrap at 19300 sits under the
+        // merge at 19330, so it was taking bodies 185 units up the hillside from its jaws.
+        const victim = S.runners.find(r => r.state === 'run' && !r.ramp && r.lane === room.lane && r.x >= room.x + 35 && r.x < room.x + 85);
         if (victim) { victim.doom = room; killRunner(victim, 'crush'); room.deaths++; }
       }
       if (room.slamT >= CFG.crusherPeriod) room.slamT -= CFG.crusherPeriod;
@@ -5568,8 +5620,24 @@ const hopAt = r => {
 // how far off the ground a hop has a body, for everything that has to follow it up. The only
 // hop left is the fork's skip up onto a ramp: nothing jumps a hazard any more.
 const hopLift = r => { const k = hopAt(r); return k < 0 ? 0 : Math.sin(k * Math.PI) * r.hopAmp; };
+// THE FAR EDGE of a kill band, where killFrom is the near edge. For every hazard that holds a
+// QUEUE the two are the same place -- the crowd stops at the lip and the kill happens there --
+// but the runner loop `continue`s past 'press' and 'burst' (they keep their own rota and their
+// own slam), so the pack walks straight through those bays and is killed well past killFrom.
+// The rota fires at |x - centre| < 19 about room.x + 20/60/100, so it reaches +119 against a
+// killFrom of 1; the slam takes +35 to +85 against a killFrom of 35.
+//
+// Asked at the near edge, such a room declared itself over the moment the LAST runner stepped
+// INSIDE it: state 'passed', hotkey handed back, panel pulled shut under the player, and either
+// a TOO LATE or -- worse -- a CLEAN awarded over a dozen people it had not finished crushing,
+// since both kill branches only skip a 'solved' room and 'passed' is not 'solved'.
+//
+// A table, for the same reason CFG.killFrom is one: a hazard that is not in it kills at its
+// own killFrom and needs no entry.
+const KILL_TO = { press: 119, burst: 85 };
+const killTo = room => KILL_TO[room.hazard] ?? killFrom(room);
 function canReach(r, room) {
-  if (r.x >= room.x + killFrom(room)) return false;
+  if (r.x >= room.x + killTo(room)) return false;
   const lanes = new Set([room.lane]);
   let grew = true;
   while (grew) {
@@ -5595,7 +5663,13 @@ const footY = r => r.y + (r.dy + 22) * 0.3 * (r.stagger === undefined ? 1 : r.st
 function approaching(room) {
   let n = 0, maxX = -1e9;
   for (const r of S.runners) {
-    if (r.state !== 'run' || r.lane !== room.lane || r.x >= room.x + killFrom(room) || r.x < room.x - 700) continue;
+    // Not a bare lane test: canReach follows the forks and the merges, so anyone on an upper
+    // lane that rejoins this one before the room is counted. The wiring room at 5800 stands
+    // 200 units past lane 1's merge and read "50 coming" while a hundred walked into it. The
+    // room-closing sweep already asks canReach, so the two agreed about nobody being left and
+    // disagreed about how many. Same lane is canReach's own answer, so ask that first and skip
+    // the fork walk for most of the pack.
+    if (r.state !== 'run' || r.x >= room.x + killTo(room) || r.x < room.x - 700 || (r.lane !== room.lane && !canReach(r, room))) continue;
     n++; if (r.x > maxX) maxX = r.x;
   }
   // killFrom(room), NOT a literal 8. This was the one place left that still assumed the old
@@ -5606,7 +5680,10 @@ function approaching(room) {
   // most to, and it also dropped anyone already inside the machine out of the count while
   // they were still alive and still going to die. Exact for 'all' and 'half', which is why
   // it never showed.
-  return { n, eta: n ? (room.x + killFrom(room) - maxX) / CFG.scroll : 99 };
+  // Floored at zero, and killTo rather than killFrom: counting the people already standing in
+  // a press bay means maxX can be past the first kill point, and the raw subtraction then goes
+  // negative -- which prints as "-1.1s" and hands panelGauges a bar of negative width.
+  return { n, eta: n ? Math.max(0, room.x + killTo(room) - maxX) / CFG.scroll : 99 };
 }
 
 // ---------------------------------------------------------------- end sequence
@@ -5672,7 +5749,7 @@ function nameAt(r, x, y, at, dim) {
   const p = clamp01((S.endT - at) / 0.3);
   if (p <= 0) return;
   ctx.save();
-  ctx.globalAlpha = Math.min(1, p * 1.6) * (dim ? 0.72 : 1);
+  ctx.globalAlpha *= Math.min(1, p * 1.6) * (dim ? 0.72 : 1);
   ctx.translate(0, (1 - easeOut(p)) * -5);
   ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(r.name, x + 1, y + 1);
   ctx.fillStyle = readable(r.shirt); ctx.fillText(r.name, x, y);
@@ -14468,7 +14545,7 @@ function drawOverlays() {
         ctx.fillStyle = '#233'; ctx.fillRect(edge - 22, by + 27, bw0, 4);
         ctx.fillStyle = f0 < 0.3 ? '#ff4646' : '#fff'; ctx.fillRect(edge - 22, by + 27, bw0 * f0, 4);
         ctx.restore();
-        ctx.textAlign = 'left';
+        ctx.textAlign = 'center'; // the rest of the pass is centred -- 'left' here shifted every later label
         continue;
       }
       const z = Math.max(0.6, Math.min(1, V.zoom + 0.14));
@@ -14521,11 +14598,14 @@ function drawOverlays() {
   // When the doors open the whole hundred are still clumped at the gate, so twenty-odd tags
   // stack five rows deep over the one thing the opening has spent five seconds building to,
   // and the gateway cannot be seen at all. They earn nothing there — nobody has died yet and
-  // no room is armed — so they fade in once the pack has spread. S.t is still 0 at the
-  // handover because updateIntro returns before the clock starts, so this is measured from
-  // the doors opening. Suppressed rather than merely transparent: a claimed rect from a tag
-  // nobody can see would still push the speech bubbles around.
-  const tagFade = clamp01((S.t - 0.9) / 0.7);
+  // no room is armed — so they fade in once the pack has spread. Measured off the ROAD and
+  // not off S.t: update() ticks S.t from page load, through the title and the whole opening
+  // drill, so it is long past 1.6 by the handover and this suppressed nothing at all. The
+  // camera stands still until startRun and then runs at CFG.scroll, so S.cam / CFG.scroll is
+  // seconds since the doors opened -- and on a ?skip, where the pack is already spread, the
+  // tags are up from the first frame. Suppressed rather than merely transparent: a claimed
+  // rect from a tag nobody can see would still push the speech bubbles around.
+  const tagFade = clamp01((S.cam / CFG.scroll - 0.9) / 0.7);
   const tags = [];
   ctx.save(); ctx.globalAlpha *= tagFade;
   for (const r of S.runners) {
@@ -14716,7 +14796,12 @@ function drawHud() {
     const cx = tx + tw * Math.min(1, (S.cam + CFG.packFront) / CFG.finale.x);
     ctx.fillStyle = '#fff'; ctx.fillRect(cx - 1, 6, 2, 28);
   }
-  if (S.mode === 'play') {
+  // ...and NOT while the cave door owns the keyboard. This block was gated on the mode alone,
+  // written when the only drill ran in mode 'intro'; the second drill runs inside 'play', so
+  // both hintBar calls fired in one frame -- the 0.6 wash laid twice, and the road's one line
+  // printed between the drill's two. It was also a lie: from phase 'gather' on, keydown hits
+  // `if (seamHolding()) return;` and discards ESCAPE, ENTER and every digit this line names.
+  if (S.mode === 'play' && !drilling && !seamHolding()) {
     let hint = (ENC.inside(S.cam + CFG.packFront) ? 'the land is being fenced \u2014 keep them moving' : 'watch the tunnels ahead');
     const armed = S.rooms.filter(r => r.state === 'armed');
     const gate = S.gates.find(g => g.state === 'armed' || g.state === 'holding');
@@ -17526,7 +17611,9 @@ function drawPodiumCard(sy, at) {
   for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.ellipse(px[k], base + 5, 74, 7, 0, 0, 6.28); ctx.fill(); }
   ctx.restore();
   ctx.textAlign = 'center';
-  const survived = R.out.length > 0;
+  // The verdict is the RUN's, not the roster's: losing on the search clock leaves the whole
+  // crew in state 'arrived', so the roll comes back full on a run already declared lost.
+  const survived = S.mode === 'win' && R.out.length > 0;
   const head = clamp01(at / 0.3);
   ctx.save(); ctx.globalAlpha *= Math.min(1, head * 1.8);
   ctx.font = 'bold 34px monospace';
@@ -17715,8 +17802,7 @@ let last = performance.now();
 function frame(now) {
   const real = Math.min(0.05, (now - last) / 1000); last = now;
   update(real); draw();
-  if (S.spike) { S.spike.t -= real; if (S.spike.t <= 0) S.spike = null; }
-  if (S.spikeCool > 0) S.spikeCool -= real;
+  // the spike clocks moved into update(), which is the only thing every driver calls
   requestAnimationFrame(frame);
 }
 reset();
@@ -17749,6 +17835,9 @@ function devSolve() {
     const d = S.drill;
     if (d.phase === 'play' && d.room) {
       const v = VERBS[d.room.verb];
+      // `bar` has no solveKey and banks no `won`, so neither arm below fires and the drill
+      // stops dead on the winch. Same special case as the road loop's.
+      if (d.room.verb === 'bar') { const m = d.room.mg; m.pos = m.zone + m.zoneW / 2; fire(' '); return; }
       const k = v.solveKey ? v.solveKey(d.room.mg) : null;
       if (k) fire(k); else if (d.room.mg && d.room.mg.won) drillSolved();
     }
@@ -17957,7 +18046,15 @@ if (qs.has('seam')) {
     }
   }
   if (qs.has('hits')) S.seam.hits = Math.max(0, Math.min(SEAM.hits, +qs.get('hits')));
-  if (want === 'burst') S.seam.open = Math.max(0.0001, Math.min(1, +(qs.get('open') || 0.5)));
+  // The settle frame below RECOMPUTES open from the burst clock, so forcing open here is
+  // thrown away and every shot came back a shut door. Wind the CLOCK instead -- 2.5 is the
+  // exact inverse of the 0.4 ramp -- less the frame the settle is about to add. The 0.9999
+  // ceiling keeps the phase in 'burst': at 1 the settle frame flips it to 'done', which
+  // releases the held crowd in the frame being photographed.
+  if (want === 'burst') {
+    const o = Math.max(0.0001, Math.min(0.9999, +(qs.get('open') || 0.5)));
+    S.seam.t = SEAM.burst * (1 - Math.pow(1 - o, 2.5)) - 1 / 60;
+  }
   // one frame so everything downstream of the phase has been computed at least once
   update(1 / 60);
 }
@@ -18103,7 +18200,9 @@ function canvasToGame(e) {
 }
 function finalePointerAt(sx, sy, click) {
   const f = S.finale;
-  if (!f || S.mode !== 'finale' || f.phase !== 'search' || f.wrongT > 0 || f.winT > 0) return;
+  // paused is checked here too: update() and key() each enforce it separately, and the
+  // pointer is the third input path -- without this, clicks score while the clock is stopped.
+  if (!f || S.paused || S.mode !== 'finale' || f.phase !== 'search' || f.wrongT > 0 || f.winT > 0) return;
   const L = finaleLayout();
   let side = null;
   if (sx >= L.left.x && sx <= L.left.x + L.left.w && sy >= L.left.y && sy <= L.left.y + L.left.h) side = L.left;
@@ -18119,7 +18218,9 @@ function finalePointerAt(sx, sy, click) {
 // still being evaluated, which takes out probe, drill-check, enc-check and the harness in
 // one go -- the game must never be the reason its own instruments cannot run.
 if (typeof cv.addEventListener === 'function') {
-  cv.addEventListener('pointerdown', e => { const p = canvasToGame(e); finalePointerAt(p.x, p.y, true); });
+  // Primary button only. pointerdown fires for EVERY button, so a right-click -- on a Mac a
+  // two-finger trackpad tap -- confirmed a mark under the context menu and drowned a runner.
+  cv.addEventListener('pointerdown', e => { if (e.button !== 0) return; const p = canvasToGame(e); finalePointerAt(p.x, p.y, true); });
   cv.addEventListener('pointermove', e => { if (!(e.buttons & 1)) return; const p = canvasToGame(e); finalePointerAt(p.x, p.y, false); });
   if (cv.style) cv.style.touchAction = 'none';
 }
