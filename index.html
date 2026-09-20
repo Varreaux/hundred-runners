@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '139 rooms that draw what they are';
+const BUILD = '140 a held key, a bad flag, and a dead branch';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2608,6 +2608,21 @@ const AU = {
   },
 };
 
+// Chrome stops requestAnimationFrame in a hidden tab and leaves the audio graph running, so
+// update()'s ambient duck -- the only thing that ever turns these three down -- stops running
+// while the brown-noise rumble and the footstep bed hold their last live value. Neither
+// S.paused nor S.mode changes when a tab is backgrounded, so that duck cannot see this state.
+// Suspending the context freezes the sound exactly as the frame loop is frozen, and takes any
+// already-scheduled tone with it; init() resumes a suspended ctx too, so input still works.
+// Guarded like the canvas listeners at the foot of the file: the headless tools' stub document
+// has no addEventListener, and an unguarded one here kills every instrument at eval time.
+if (typeof document.addEventListener === 'function') {
+  document.addEventListener('visibilitychange', () => {
+    if (!AU.ctx) return;
+    if (document.hidden) AU.ctx.suspend(); else AU.ctx.resume();
+  });
+}
+
 // ================================================================ particles
 // Each kind carries its own gravity, drag, size curve, shape and blend, so one
 // emitter covers water, dust, sparks, embers, smoke, stone chips and light motes.
@@ -3208,6 +3223,16 @@ const seamHolding = () => S.seam.phase !== 'off' && S.seam.phase !== 'done';
 // ten places where one has been altered. Wrong marks cost bodies; the search timer costs
 // the rest. Transplanted whole rather than reimplemented -- it is her design and her art.
 const HELD = Object.create(null);
+// A keyup that never arrives strands a key for the life of the page -- Cmd+S, alt-tab, or a
+// click in the address bar with W still down -- and the lamp then drives at that edge for ever,
+// while the opposite key only cancels it back to nothing. Losing focus is the one signal we get
+// that the release went somewhere else. R is no help: reset() rebuilds S, and HELD is not in S.
+const clearHeld = () => { for (const k in HELD) HELD[k] = false; };
+window.addEventListener('blur', clearHeld);
+// Guarded like the canvas listeners near the bottom of the file: the headless tools' document
+// stub has no addEventListener, and an unguarded one here throws at eval and takes probe and the
+// harness with it. blur is the load-bearing half; this only catches a tab switch that skips it.
+if (typeof document.addEventListener === 'function') document.addEventListener('visibilitychange', () => { if (document.hidden) clearHeld(); });
 const FINALE_BLACKOUT = 1.55; // 3 flicker beats before generator restarts
 const FINALE_INTRO_WALL = 2.6;   // red flicker + FINAL WALL (longer scare beat)
 const FINALE_INTRO_SPEECH = 8.5; // boss monologue — hold long enough to read
@@ -9995,7 +10020,8 @@ function drawSeamPortal(y) {
     ctx.fillStyle = 'rgba(255,224,176,0.12)'; ctx.fillRect(px - 7, y - th - 3, 3.4, th + 4);
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(px + 3.4, y - th - 3, 3.6, th + 4);
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    for (let k = 0; k < 7; k++) ctx.fillRect(px - 6, y - th + 8 + k * 18 + hash(k + px) * 5, 12, 1.4);
+    // seeded in WORLD space: px is a screen x, so hash(k + px) re-rolled the grain every frame
+    for (let k = 0; k < 7; k++) ctx.fillRect(px - 6, y - th + 8 + k * 18 + hash(k + px + V.left) * 5, 12, 1.4);
     // iron strap
     ctx.fillStyle = '#3e3a44'; ctx.fillRect(px - 8.6, y - 40, 17.2, 6);
     ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(px - 8.6, y - 40, 17.2, 1.2);
@@ -11255,7 +11281,11 @@ function drawEncLand() {
     ctx.strokeStyle = `rgba(190,182,144,${0.16 + hv * 0.16})`;
     ctx.beginPath();
     let first = true;
-    for (let wx = x0; wx <= x1; wx += 26) {
+    // Snapped to the world, like every other loop in here that PLACES something. The
+    // dropout hash below is a step function of wx, so sampling from the camera's edge
+    // re-rolls every gap as the view slides and the dashes boil at 60Hz. (The cloud-shadow
+    // loop above is unsnapped on purpose: cloudShadeAt is smooth, so it cannot step.)
+    for (let wx = Math.floor(x0 / 26) * 26; wx <= x1; wx += 26) {
       const top = encSurfaceY(wx);
       const y = top + 22 + (band + hv) * 25 + Math.sin(wx * 0.0043 + band * 1.7) * 6;
       // a track fades out where it would run off the bottom, rather than pooling on the edge
@@ -15741,18 +15771,22 @@ function drawBossFace(cx, cy, R, b) {
   // under everything the face draws, so it colours the planet and not his moustache.
   // (the red lives in drawBossGlobe now, under the continents rather than over them)
   const ey = cy - R * 0.20, eo = R * 0.36;
+  const ew = R * 0.20, eh = R * 0.24 * lid;       // the white's radii, and the pupil's clip, from one pair
   // eyes
   for (const s of [-1, 1]) {
     ctx.fillStyle = '#f6f2e6';
-    ctx.beginPath(); ctx.ellipse(cx + s * eo, ey, R * 0.20, R * 0.24 * lid, 0, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx + s * eo, ey, ew, eh, 0, 0, 6.28); ctx.fill();
     ctx.strokeStyle = INK; ctx.lineWidth = 1.3; ctx.stroke();
-    if (lid > 0.3) {
+    if (lid >= 0.3) {                             // rage's lid IS 0.30: > drops its pupils entirely
+      ctx.save();                                 // clipped, because a 2.4-unit slit cannot hold a 2.5-unit pupil
+      ctx.beginPath(); ctx.ellipse(cx + s * eo, ey, ew, eh, 0, 0, 6.28); ctx.clip();
       ctx.fillStyle = INK;
       ctx.beginPath();
       ctx.arc(cx + s * eo + R * (alarm ? 0.02 : rage ? -0.04 : 0.05),
-              ey + R * (alarm ? -0.06 : rage ? 0.10 : 0.02),
+              ey + R * (alarm ? -0.06 : rage ? 0.04 : 0.02),   // 0.10 put the whole disc below the slit
               R * (alarm ? 0.062 : rage ? 0.075 : 0.085), 0, 6.28);
       ctx.fill();
+      ctx.restore();
     }
   }
   // brows, angled inward: pleased with himself
@@ -16499,9 +16533,11 @@ function drawFinalePanel() {
     const fy = fl.sy - (1 - Math.min(1, fl.life)) * 18;
     ctx.textAlign = 'center';
     ctx.font = fl.big ? 'bold 26px monospace' : 'bold 15px monospace';
+    // alpha BEFORE the shadow, as drawOverlays does it. Set between the two passes, the
+    // black copy held at 0.75 for the whole life while the colour faded out from under it.
+    ctx.globalAlpha = a2;
     ctx.fillStyle = 'rgba(0,0,0,0.75)';
     ctx.fillText(fl.txt, fl.sx + 1.5, fy + 1.5);
-    ctx.globalAlpha = a2;
     ctx.fillStyle = fl.color || '#f0e6d0';
     ctx.fillText(fl.txt, fl.sx, fy);
     ctx.globalAlpha = 1;
@@ -17831,7 +17867,10 @@ function drawPodiumCard(sy, at) {
     // the time is 209px wide, so all three ran into each other and none of them could be read.
     // The time is on it because a run where everyone dies at one room gives three identical
     // distances, and three identical captions carry no information at all.
-    if (arrived) ctx.fillText('walked out', px[k], base + 19);
+    // 'walked out' is the RUN's claim, not the roster's. A finale lost on the search clock
+    // leaves the whole crew alive in state 'arrived' but still in the chamber, so the WORD is
+    // read off `survived`; the figure stays on r.state, because a live person is not a body.
+    if (arrived) ctx.fillText(survived ? 'walked out' : 'still inside', px[k], base + 19);
     else {
       ctx.fillText(`${Math.round(endReach(r) / CFG.finale.x * 100)}% · ${reelWhen(r.deathT)}`, px[k], base + 19);
       ctx.fillStyle = 'rgba(190,168,168,0.7)'; ctx.font = '11px monospace';
@@ -18395,10 +18434,20 @@ if (typeof cv.addEventListener === 'function') {
 // be overwritten; without ?shot the next updateView takes the zoom straight back.
 //   &at=X   centre on a world x instead of on the pack, for a room the crowd has not reached
 if (qs.has('zoom')) {
-  V.zoom = Math.max(0.2, Math.min(6, +qs.get('zoom')));
-  V.vw = W / V.zoom;
-  const mid = qs.has('at') ? +qs.get('at') : S.cam + CFG.packFront;
-  V.left = mid - 0.5 * V.vw;
+  // Math.max/Math.min are NOT a clamp: NaN passes through both, so ?zoom=2x left V.zoom,
+  // V.vw and V.left all NaN and the first draw threw in drawSky's createRadialGradient --
+  // a bare sky gradient and a loop that never reschedules, which reads as a broken build
+  // rather than as a typo in the URL, and NaN is absorbing so updateView cannot take it
+  // back. A rejected flag leaves the default view instead, which is visibly not the
+  // close-up that was asked for.
+  const z = +qs.get('zoom');
+  const at = qs.has('at') ? +qs.get('at') : NaN;
+  if (Number.isFinite(z)) {
+    V.zoom = Math.max(0.2, Math.min(6, z));
+    V.vw = W / V.zoom;
+    const mid = Number.isFinite(at) ? at : S.cam + CFG.packFront;
+    V.left = mid - 0.5 * V.vw;
+  }
 }
 if (qs.has('shot')) draw(); else requestAnimationFrame(frame);
 </script>
