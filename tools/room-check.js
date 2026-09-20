@@ -231,12 +231,13 @@ const WORDLEN = [3, 4, 5, 6, 6];
 // prices should stop, not quietly price the room off a guess.
 const BLAST = (() => {
   const fuse = src.match(/const FUSE_BURN = ([\d.]+)/);
-  const blk = src.match(/\n  blast: \{[\s\S]*?\n    start\(diff\) \{([\s\S]*?)\n    \},/);
-  if (!fuse || !blk) throw new Error('room-check: cannot find FUSE_BURN or blast.start in index.html -- the wall was rewritten, and this tool cannot price it until it is pointed at the new numbers.');
-  const n = blk[1].match(/const n = (\d+) \+ Math\.min\((\d+), Math\.floor\(diff \/ (\d+)\)\);/);
-  if (!n) throw new Error('room-check: blast.start no longer computes its hole count as `const n = A + Math.min(B, Math.floor(diff / C))`.');
-  const [, A, B, C] = n.map(Number);
-  return { fuse: Number(fuse[1]), holes: d => A + Math.min(B, Math.floor(d / C)) };
+  // The wall spells ONE FIXED WORD, so its cost no longer varies with difficulty: one charge
+  // per letter, plus the SPACE to light the fuse. Parsed rather than written down, so changing
+  // the word in index.html reprices the room here without anyone remembering to edit this
+  // file, and a rename throws instead of quietly pricing a wall that no longer exists.
+  const word = src.match(/const BLAST_WORD = '([A-Z]+)'/);
+  if (!fuse || !word) throw new Error('room-check: cannot find FUSE_BURN or BLAST_WORD in index.html -- the wall was rewritten, and this tool cannot price it until it is pointed at the new numbers.');
+  return { fuse: Number(fuse[1]), word: word[1], holes: () => word[1].length };
 })();
 const SWEEP = (() => {
   const m = src.match(/const SWEEP = (\{[^}]*\})/);
@@ -294,8 +295,8 @@ const cost = {
   // presses and the arm delay after the room stopped having either, and a tool that states a
   // fact about the game goes stale by lying rather than by failing. Both numbers now come out
   // of blast's own source, and a rename throws instead of quietly pricing the old room.
-  blast:  d => ({ keys: BLAST.holes(d) + 1, kind: 'distinct',
-                  secs: BLAST.fuse, note: `${BLAST.holes(d)} charges, then one SPACE and a ${BLAST.fuse}s fuse` }),
+  blast:  d => ({ keys: BLAST.holes() + 1, kind: 'distinct',
+                  secs: BLAST.fuse, note: `${BLAST.word}: ${BLAST.holes()} charges, then one SPACE and a ${BLAST.fuse}s fuse` }),
 };
 // keys per second a person can actually manage, by what kind of pressing it is
 const CEIL = { distinct: { bug: 3.2, hard: 2.4 }, same: { bug: 6.5, hard: 5.0 }, alt: { bug: 6.5, hard: 5.0 } };

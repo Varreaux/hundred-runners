@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '135 nobody falls down a hedge';
+const BUILD = '136 the wall spells UNBOUND';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -88,7 +88,6 @@ const CFG = {
   worldBottom: 540,
   rampLen: 200,
   gapWidth: 120,
-  keyPool: 'QWERASDF',
   types: {
     gears:    { verb: 'gears',  title: 'align the drive train',      hazard: 'machine', color: '#ff9a3c' },
     conveyor: { verb: 'levers', title: 'stop the conveyor',          hazard: 'machine', color: '#ff9a3c' },
@@ -570,11 +569,6 @@ const LOOKS = {
   'Wilson':     { skin: '#f0d5b8', hair: '#17110d', style: 'short',    h: 1.00, shirt: '#0984e3' },
   'BOOM\u{1F4A3}':    { skin: '#eccfa8', hair: '#17110d', style: 'short', h: 1.00, shirt: '#b2bec3' },
 };
-function makeSeq(n) {
-  const s = []; let last = '';
-  while (s.length < n) { const k = pick(CFG.keyPool); if (k !== last) { s.push(k); last = k; } }
-  return s;
-}
 function roundRect(x, y, w, h, r) {
   // A radius larger than half the box cannot be drawn, and the arcTo chain does not fail --
   // it collapses into a wedge and fills it. An empty strain gauge, roundRect(bx, by, 0, 19,
@@ -651,6 +645,22 @@ function thumbMark(x, y, rank, s) {
 // How long the blast's fuse takes to run home. ONE number: the win countdown reads it and so
 // does the drawn flame, so the flame cannot arrive before or after the room clears.
 const FUSE_BURN = 1.15;
+// THE WALL SPELLS ITS OWN ANSWER. Morgan, 2026-09-20: not random letters. One word, packed
+// into the wall a stick at a time and then blown off it -- so the last thing the player types
+// in the game is what the game is about, rather than five draws from an eight-key pool.
+//
+// Parsed out of here by tools/room-check.js to price the room, so changing the word reprices
+// it without anyone editing the tool: every letter is one charge, and the cost is
+// length + 1 for the SPACE. Seven letters is 8 presses against 8.00s of road, 1.00/s, well
+// under the 2.4/s a distinct-letter room is allowed.
+//
+// It replaced makeSeq() and CFG.keyPool, which had no other caller between them.
+const BLAST_WORD = 'UNBOUND';
+// How long a stick takes to seat once its letter is pressed. It is a LOOK and nothing waits
+// on it: the charge counts as packed on the keypress exactly as before, the cord attaches on
+// the keypress, and `lit` forces every stick flush -- so a panel closed halfway through an
+// insertion cannot leave one hanging in the air while the fuse burns past it.
+const PACK_IN = 0.26;
 // The wall coming down, after the fuse arrives. BLAST_OPEN is the FRACTION of that clock the
 // arch takes to open: the hole is the way through, and the crowd is already running at it, so
 // it has to be there in 0.35s. The other 1.85 is smoke, which nobody has to walk past.
@@ -1799,18 +1809,25 @@ const VERBS = {
       return m.idx < m.holes.length ? m.holes[m.idx].k : ' ';
     },
     start(diff) {
-      const n = 3 + Math.min(2, Math.floor(diff / 2));
+      // `diff` is deliberately unused. The wall is one room at one difficulty and the word is
+      // the room, so scaling its length by difficulty would mean the drill -- which runs every
+      // verb at diff 1 -- spelling a three-letter fragment of it in the opening minute.
       // inputT is NOT optional for a verb that banks m.won -- see the note in `lift`. It is
       // the fuse's burn time as well as the win delay, and FUSE_BURN is the one number both
       // the countdown and the drawn flame read, so the flame cannot arrive early or late.
-      return { idx: 0, holes: makeSeq(n).map(k => ({ k, packed: false })),
+      // `in` is the seating clock, one per charge; see PACK_IN.
+      return { idx: 0, holes: BLAST_WORD.split('').map(k => ({ k, packed: false, in: 0 })),
                lit: 0, inputT: 0, won: false };
     },
     key(m, k) {
       if (m.lit) return null;
       // beat one: pack a stick into each borehole, in order along the wall
       if (m.idx < m.holes.length) {
-        if (k !== m.holes[m.idx].k) return CFG.keyPool.includes(k) ? 'wrong' : null;
+        // Any letter, not the old eight-key pool: the word draws on the whole alphabet, so a
+        // pool test would have swallowed most wrong keys silently -- no buzz, no red flash,
+        // which reads as a dead keyboard rather than as a miss. Letters only, so the digits
+        // that pick a room and the arrows that scroll still pass through untouched.
+        if (k !== m.holes[m.idx].k) return /^[A-Z]$/.test(k) ? 'wrong' : null;
         m.holes[m.idx].packed = true;
         m.idx++;
         return 'ok';
@@ -1820,7 +1837,10 @@ const VERBS = {
       m.lit = 1; m.won = true; m.inputT = FUSE_BURN;
       return 'ok';
     },
-    update(m, dt) { m.inputT = Math.max(0, m.inputT - dt); },
+    update(m, dt) {
+      m.inputT = Math.max(0, m.inputT - dt);
+      for (const h of m.holes) if (h.packed && h.in < 1) h.in = Math.min(1, h.in + dt / PACK_IN);
+    },
     // Counted in PRESSES, so the bar agrees with the count printed four pixels from it. It
     // was `packed * 0.67`, which showed 27% beside a label reading (2/5) and 67% beside one
     // reading 5/5 -- a bar lying about a number in its own row. There are n packing presses
@@ -1832,13 +1852,37 @@ const VERBS = {
     },
     draw(m, px, py, pw) {
       const cx = px + pw / 2;
-      const FACE = py + 38, faceH = 54;
+      // THE PLATE HAS TO FIT WHAT IS DRAWN ON IT. It was py+38 by 54 and its contents wanted
+      // more, so its own edge sliced the flame's bloom and every detonation flash flat for the
+      // whole 1.15s of the room's climax, and cut the fuse cap off a stick on the first frame of
+      // its drop. Nothing looked broken: a guillotined glow reads as a glow.
+      //
+      // 64 = 30 above the bore line + 34 below. What actually wants room, measured from hy0 and
+      // re-derived after every change in this round, worst margin first:
+      //   above  flash disc at pop->0        30     0 (its alpha is 0 there)
+      //          flame glow at knot height   29    +1
+      //          fuse cap at h.in = 0        26    +4
+      //          dust at k = 1            21.85  +8.2
+      //   below  flame glow at the free end  48    +2   (this is why pts[0] is faceH-16)
+      //          loose-coil sag + line     30.75  +3.3
+      //          free-end bead bottom        31    +3
+      //          cord sag, first segment   29.2   +4.8
+      //          swollen 20px glyph        28.2   +5.8
+      // Two of those are zero-or-one margins. Anything added to this plate needs the table
+      // redone, not a glance.
+      const FACE = py + 33, faceH = 64;
       // THE PLATE IS THAT WALL, not a dark bar. It was #4a4048 with three black lines --
       // violet-grey against the wall's warm brown-grey, about 40 of luminance apart and a
       // different masonry -- so the one place that can say "these charges are going into THAT
-      // wall" said nothing. Same colours as drawEncWall's coursing, at the scale the charges
-      // themselves imply: they span 208 panel units against 92 world units, so 2.26x, which
-      // turns the world's 28x11 blocks on a 13 pitch into 63x25 on a 29.4 pitch.
+      // wall" said nothing.
+      //
+      // 2.26 IS ANCHORED ON drawEncWall, NOT ON THE CHARGES. This comment used to derive it
+      // from the charges' own span -- "208 panel units against 92 world units" -- which was
+      // 4 x 52 for five charges and silently became 222.9 the moment the word made it seven:
+      // a justification computing to 2.42 printed beside a constant still reading 2.26. The
+      // scale that matters is the one that makes this masonry the SAME masonry. At 2.26 the
+      // world's 28x13 blocks on a 30 x-step come out 63.3 x 29.4 on 67.8, which is what
+      // drawEncWall draws. The charges sit on this coursing; they do not set it.
       const BSC = 2.26, bh = 13 * BSC, bw2 = 28 * BSC, bstep = 30 * BSC;
       ctx.fillStyle = '#5b5148'; ctx.fillRect(cx - 150, FACE, 300, faceH);
       ctx.save(); ctx.beginPath(); ctx.rect(cx - 150, FACE, 300, faceH); ctx.clip();
@@ -1853,7 +1897,12 @@ const VERBS = {
         }
       }
       ctx.restore();
-      const n = m.holes.length, step = Math.min(58, 260 / n);
+      // THE SPAN OF THE BORE CENTRES, not 260/n. That expression's cap was dead (58 needs
+      // n <= 4) and its 260 was attached to nothing on the plate, so it would not have noticed
+      // the word changing length. At 223 the outermost rim still clears the 300-wide plate by
+      // 29.5 either side, and the cap stays live for a short word.
+      const n = m.holes.length, BORE_SPAN = 223;
+      const step = n > 1 ? Math.min(58, BORE_SPAN / (n - 1)) : 0;
       const burn = m.lit ? 1 - m.inputT / FUSE_BURN : 0;
       // ONE CORD, THREADED THROUGH THE CHARGES, LIT FROM THE CROWD'S SIDE. Three faults in
       // one line of geometry, all found by the reviewers:
@@ -1876,52 +1925,272 @@ const VERBS = {
       // The control point of each quadratic sits at the segment's midpoint in x, which makes
       // x(t) exactly linear in t -- so the flame's position along the cord can be found from
       // its x without integrating arc length, and the sag is free.
-      const hy0 = FACE + 22, SAG = 6;   // the holes' own centre line, not a second copy of it
-      const pts = [{ x: cx - 146, y: hy0 - 18 }].concat(
-        m.holes.map((h, i) => ({ x: cx + (i - (n - 1) / 2) * step, y: hy0 - 13, on: h.packed }))
-               .filter(q => q.on));
-      const seg = i => { const a = pts[i], b = pts[i + 1];
-        // slack belongs BETWEEN two charges, where it says they are joined; the lead-in from
-        // the free end is only going somewhere, so it is straight
-        const sag = a.on && b.on ? SAG : 0;
-        return { a, b, c: { x: (a.x + b.x) / 2, y: Math.max(a.y, b.y) + sag } }; };
-      const fx0 = pts[0].x, fx1 = pts[pts.length - 1].x;
+      const hy0 = FACE + 30, SAG = 6;   // the holes' own centre line, not a second copy of it
+      // R, HOISTED. The bore was a hardcoded 12 in five places and was never re-cut when the
+      // word took the pitch from 52 units down to 37. Holes 24 across and 13 apart read as a
+      // perforated rule rather than as seven placed charges, and the dark discs became the
+      // loudest rhythm on the plate. At 9 there are 19 units of stone between them, a stick
+      // fills its hole instead of floating in it, and a swollen letter clears the bore's
+      // bottom rather than touching it.
+      const R = 9;
+      // A STICK IS PUT IN, it does not appear. How far above its seat one is, in units.
+      //
+      // THE EASE RUNS THE OTHER WAY NOW, and this was the whole reason the first version still
+      // read as a sticker appearing. `1 - (1-u)^3` DECELERATES: it spent half the travel in the
+      // first 41ms and all of it by 104ms, leaving 156ms of a two-pixel settle, and then fired
+      // the arrival dust four frames after the stick had already stopped. A thing driven into a
+      // hole ACCELERATES and arrives at an instant. `u^2` lands exactly at FALL, which is also
+      // where the dust now starts -- one event, rather than two a tenth of a second apart.
+      const DROP = 13, SEAT = 1.6, FALL = 0.62;
+      const stickDy = h => {
+        // NO `m.lit` TEST. It used to return 0 the moment the fuse was lit, which snapped every
+        // still-seating stick flush in a single frame -- and a player typing UNBOUND in 0.7s
+        // has three or four of them mid-seat when SPACE lands, so three or four jumped 12
+        // screen pixels on the most important keypress in the game. The clocks are ticked with
+        // the panel shut as well now (see updateRoom), so nothing needs the lie.
+        if (!h.packed || h.in >= 1) return 0;
+        if (h.in < FALL) { const e = Math.pow(h.in / FALL, 2); return -DROP * (1 - e) + SEAT * e; }
+        return SEAT * (1 - (h.in - FALL) / (1 - FALL));
+      };
+      // x FIRST, THEN y. The flame's position is a function of x alone, so every x and both
+      // ends are settled before any y is computed -- which is what lets a vertex know whether
+      // its own charge has already gone off without the two definitions circling each other.
+      const holeX = i => cx + (i - (n - 1) / 2) * step;
+      const inCord = m.holes.map((h, i) => ({ h, i })).filter(q => q.h.packed);
+      const fx0 = cx - 146;
+      const fx1 = inCord.length ? holeX(inCord[inCord.length - 1].i) : fx0;
       const flameX = m.lit ? fx0 + burn * (fx1 - fx0) : fx0;
+      // The cord rides on the stick it is tied to, so a charge still going in does not have a
+      // fuse already reaching a seat it has not arrived at. A BLOWN one drops its vertex into
+      // the socket: the cord used to hold its knot at cap height over every empty hole, so the
+      // burnt length ran as a row of sharp peaks tied to wicks that had just been deleted.
+      //
+      // The free end hangs BELOW the charge line and sags like every other span. It used to sit
+      // 5 units ABOVE it, dead straight, with nothing at its end holding it up -- one rope in
+      // two tension states, the taut half anchored to air.
+      // AND THE KNOT SINKS AS THE CHARGE GOES, over the same 34 units the flash fades across.
+      // Dropping it the instant `flameX` crossed the hole moved the vertex 11 units in ONE
+      // frame -- 15 screen px, seven times in 1.15s, four times the flame's own per-frame
+      // travel -- so the rope kinked downward just ahead of the fire each time. The ramp is
+      // continuous with the unfired height at the moment of firing, because `pop` is 1 there.
+      const knot = i => (m.lit && flameX >= holeX(i)
+        ? 11 * (1 - Math.max(0, 1 - (flameX - holeX(i)) / 34)) : 0);
+      // -16, NOT -7. Dropping the free end to 7 above the plate's bottom edge put the flame's
+      // 16-unit glow 9 units through it for the first five frames of the burn -- which is the
+      // exact fault the plate was grown from 54 to 64 to cure, moved from the top edge to the
+      // bottom-left corner by the same hand that cured it. At 16 the glow's bottom lands on the
+      // plate's edge, and 18 of the 34 units below the bore line still read as running to the
+      // ground. (12 units are still cut off the LEFT at burn 0; fixing that means moving fx0
+      // right, which shortens a lead-in already foreshortened -- left alone deliberately, and
+      // it reads as the wall continuing past the plate.)
+      const pts = [{ x: fx0, y: FACE + faceH - 16 }].concat(
+        inCord.map(q => ({ x: holeX(q.i), y: hy0 - 13 + knot(q.i) + stickDy(q.h) })));
+      // A ROPE WITH NOTHING ON THE END OF IT IS STILL A ROPE. `pts` held one point until the
+      // first letter, so the whole cord block was skipped and the fuse -- which the hint band
+      // is already talking about at 0/7 -- did not exist until a keypress made it. The pop
+      // moved from press 7 to press 1 rather than going away. A loose coil of slack stands in
+      // until there is a charge to tie to; SPACE is inert until all seven are in, so this can
+      // never become the flame's far end.
+      if (pts.length === 1) pts.push({ x: fx0 + 26, y: FACE + faceH - 11 });
+      const seg = i => { const a = pts[i], b = pts[i + 1];
+        return { a, b, c: { x: (a.x + b.x) / 2, y: Math.max(a.y, b.y) + SAG } }; };
       // Everything below is inside the plate. The flame's 16-unit glow used to spill off the
       // masonry onto the panel body, which reads as the cord not being on the wall at all.
       ctx.save();
       ctx.beginPath(); ctx.rect(cx - 150, FACE, 300, faceH); ctx.clip();
+      // ONE FIELD UNDER THE WORD. The plate's bed joints fall on a 67.8 pitch against a letter
+      // pitch of 37.2, so a joint lands between U|N, between B|O and between U|N and nowhere
+      // else -- and a joint between two letters reads as a word-space. The row came out as
+      // UN BO UN D. This band erases the vertical joints under the letters and gives the seven
+      // of them one shared ground, which is what lets them read as a word instead of as seven
+      // keycaps standing near each other.
+      // Soft ends, because a flat stripe with two crisp vertical edges running the full 300
+      // units reads as a painted rail across the masonry rather than as shading. It fades over
+      // the outer 46.5 units either side -- and the outermost bore centres are 38.5 from the
+      // plate edge, so U and D DO sit in the fade, on about 0.166 of band against 0.20 under the
+      // middle five. That is ~3.7 of luminance less separation under the two end glyphs; it is
+      // inside the measured range and it is not "no letters to carry", which is what this said.
+      const bnd = ctx.createLinearGradient(cx - 150, 0, cx + 150, 0);
+      bnd.addColorStop(0, 'rgba(0,0,0,0)'); bnd.addColorStop(0.155, 'rgba(0,0,0,0.20)');
+      bnd.addColorStop(0.845, 'rgba(0,0,0,0.20)'); bnd.addColorStop(1, 'rgba(0,0,0,0)');
+      // The height is DERIVED. Written as a literal 22 it was flush with the plate's bottom
+      // only because faceH happened to be 64, so the next person to grow the plate would have
+      // left a lit strip under the word without touching this line.
+      ctx.fillStyle = bnd; ctx.fillRect(cx - 150, hy0 + 12, 300, FACE + faceH - (hy0 + 12));
       m.holes.forEach((h, i) => {
-        const hx = cx + (i - (n - 1) / 2) * step, hy = hy0;
+        const hx = holeX(i), hy = hy0;
         // has the flame reached this one? `pop` is how recently, for the flash
         const fired = m.lit && h.packed && flameX >= hx;
         const pop = fired ? Math.max(0, 1 - (flameX - hx) / 34) : 0;
-        ctx.fillStyle = '#14121a'; ctx.beginPath(); ctx.arc(hx, hy, 12, 0, 6.28); ctx.fill();
+        ctx.fillStyle = '#14121a'; ctx.beginPath(); ctx.arc(hx, hy, R, 0, 6.28); ctx.fill();
         if (h.packed && !fired) {
           // A STICK, not a dot. Red paper body, a band, and a fuse cap on top -- the mark of
           // the puzzle is that you can see how many are in and how many are not.
-          ctx.fillStyle = '#8c2a22'; ctx.fillRect(hx - 4.5, hy - 9, 9, 19);
-          ctx.fillStyle = '#b8392c'; ctx.fillRect(hx - 4.5, hy - 9, 9, 6);
-          ctx.fillStyle = 'rgba(255,224,190,0.30)'; ctx.fillRect(hx - 4.5, hy - 9, 2.4, 19);
-          ctx.fillStyle = '#e2c98a'; ctx.fillRect(hx - 1.4, hy - 13, 2.8, 5);
+          // sy is the body's own top edge, carried by stickDy; every rect below is written as
+          // an offset from it rather than as an expression that could come out negative.
+          // A STICK IS READ BY BEING LONG AND THIN. At 11 x 17 this was 1:1.5 and read as a pot
+          // or a jam jar with a wick; 8 x 16 is 1:2. The width had been raised to fill the bore
+          // -- but the bore is the thing that should have narrowed, and R came down with it.
+          //
+          // SB IS THE BODY'S DEPTH BELOW sy, and it is the ONE number the height, the highlight
+          // and the foot shadow are all fed from, because three copies of it drift. It is
+          // bounded by the lip that has to cover the foot, at the CORNERS rather than on the
+          // centre line: sqrt(4^2 + (SB + SEAT)^2) must stay inside the lip's outer radius of
+          // 10.0. At 7 that is 9.49. The previous 17-unit body put the corners at 11.06, i.e.
+          // 1.06 OUTSIDE the lip and 2.06 outside the bore, so two red slivers were painted on
+          // bare masonry at the overshoot -- on every charge, at the exact frame the dust and
+          // the letter swell are tuned to, which is the fault the 19->17 cut was aimed at and
+          // missed by one step.
+          const SB = 7, sy = hy + stickDy(h);
+          // AND THE HEAD IS BOUNDED TOO, not just the foot. SB fixed the bottom corners at 9.49
+          // against the near lip's 10.0 and nobody checked the top: at a body top of sy - 9 the
+          // upper corners were sqrt(4^2 + 9^2) = 9.849 from the bore centre, outside both the
+          // bore's own R of 9 and the top lip's ink, so a thin red shoulder was painted on bare
+          // stone either side of every seated charge. At sy - 8 the corners are 8.94, inside R.
+          ctx.fillStyle = '#8c2a22'; ctx.fillRect(hx - 4, sy - 8, 8, 8 + SB);
+          ctx.fillStyle = '#b8392c'; ctx.fillRect(hx - 4, sy - 8, 8, 6);
+          ctx.fillStyle = 'rgba(255,224,190,0.30)'; ctx.fillRect(hx - 4, sy - 8, 2.0, 8 + SB);
+          ctx.fillStyle = '#e2c98a'; ctx.fillRect(hx - 1.4, sy - 13, 2.8, 5);
+          // AND THE FOOT GOES DARK INTO THE HOLE. Nothing was ever drawn in front of the stick,
+          // and a bright object painted whole over a dark disc is a sticker on a wall however
+          // well it is animated. Occlusion is the only cue that can say "inside", so the bore's
+          // near lip is re-inked over the foot below (outside this branch, because an empty
+          // bore has the same lip) and the foot itself darkens under it.
+          // AND IT ONLY DARKENS ONCE IT IS IN THE HOLE. Drawn flat, this shaded the foot of a
+          // stick still 12 units up in the air, which reads as a dirty stick rather than as one
+          // entering shadow. `ins` is how far in it is: 0 while it is clear of the bore, 1 when
+          // it is home, so the shadow arrives with the stick.
+          const ins = Math.max(0, Math.min(1, 1 + (sy - hy) / 9));
+          if (ins > 0) {
+            const fg = ctx.createLinearGradient(0, sy + 1, 0, sy + SB);
+            fg.addColorStop(0, 'rgba(0,0,0,0)');
+            fg.addColorStop(1, `rgba(0,0,0,${(0.58 * ins).toFixed(3)})`);
+            ctx.fillStyle = fg; ctx.fillRect(hx - 4, sy + 1, 8, SB - 1);
+          }
+          // ARRIVAL, not travel. What says a hole was packed is the bore answering: rock dust
+          // knocked out of it as the charge lands. Derived from the stick's own clock rather
+          // than pushed into a pool -- it cannot leak, cannot outlive the panel, and draws
+          // identically on a frozen frame.
+          //
+          // Radius and alpha used to be perfectly ANTI-CORRELATED: brightest while the specks
+          // were still sitting on the rim, and clear of the hole only once they had faded to
+          // 17%. So what the eye actually got was a ring of bright dots stuck to the bore. They
+          // rode seven FIXED rays as well, because the angle hash had no time term in it, and
+          // every one of them went up and none came back. Brightest in mid-flight now, angle
+          // moving with the clock, and a gravity term that pulls the tail back down the face.
+          if (h.in > FALL && h.in < 1) {
+            const k = (h.in - FALL) / (1 - FALL);
+            const a = Math.min(1, 3 * k) * (1 - k);
+            for (let d = 0; d < 7; d++) {
+              // upper hemisphere: y is down, so PI..2PI is the rim a stick displaces
+              // THE CLOCK GOES OUTSIDE THE HASH, NOT INSIDE IT. `hash` is frac(sin(n*127.1)*43758)
+              // -- a pure hash with no continuity -- so feeding `k` into its argument moved the
+              // sine's phase 49 radians per frame and re-rolled every bearing every frame. The
+              // last version's fault was seven FIXED rays; this one replaced them with a
+              // shimmer, which is not closer. A fixed bearing per speck with a slow sweep is
+              // what a chip thrown off a rim actually does.
+              //
+              // And it starts AT the rim. Beginning 2 units clear of it meant no frame ever
+              // showed anything leaving the hole -- the specks arrived already dispersed, up
+              // beside the fuse cap, where pale flecks read as sparks off the wick.
+              // TWO FANS, WITH THE CONE OVER THE WICK LEFT EMPTY. A single 3.35..6.30 band
+              // contains 4.712 -- straight up -- so specks climbed to cap height either side of
+              // an UNLIT fuse, which is fire on an unlit fuse and the exact "sparks off the
+              // wick" read the comment above says this aims away from. Dust leaves a bore
+              // sideways out of its mouth; nothing needs to go over the top of the charge.
+              const side = hash(d * 11.3 + i) < 0.5;
+              const an = (side ? 3.35 + hash(d * 5.7 + i) * 0.95
+                               : 5.00 + hash(d * 5.7 + i) * 0.90) + k * 0.40 * (side ? -1 : 1);
+              const rr = R + k * 13 * (0.55 + hash(d * 2.3 + i) * 0.9);
+              ctx.fillStyle = `rgba(214,201,180,${(0.60 * a).toFixed(3)})`;
+              ctx.fillRect(hx + Math.cos(an) * rr, hy + Math.sin(an) * rr + k * k * 6, 1.6, 1.6);
+            }
+          }
         } else if (fired) {
-          // gone off: a blown-out socket, and a flash for as long as it is fresh
-          ctx.fillStyle = '#2a1c16';
-          ctx.beginPath(); ctx.arc(hx, hy, 12, 0, 6.28); ctx.fill();
+          // gone off: a SOOTED socket, and a flash for as long as it is fresh.
+          // #2a1c16 measured 30.5 of luminance in a delivered frame against 19.0 for an unfired
+          // bore, and warm against its cold blue-grey -- so blowing a charge made the hole
+          // BRIGHTER. A blown socket is the darkest thing on the plate.
+          ctx.fillStyle = '#0b0908';
+          ctx.beginPath(); ctx.arc(hx, hy, R, 0, 6.28); ctx.fill();
           if (pop > 0) {
+            // BRIGHTEST AT THE RIM, not at the centre. A centre-bright radial gradient filled
+            // over a disc is a sphere by definition, and the fired bores were reading as bronze
+            // balls sitting on the wall beside the concave ones. Light comes OUT of a hole past
+            // its edge. The radius is capped at 30 so the flash fits the plate that holds it --
+            // it was 36 against a plate of 64, clipped top and bottom at full spread. Both
+            // copies of that number are one const now; they are the same number twice.
+            const fr = 10 + 20 * (1 - pop);
             ctx.save(); ctx.globalCompositeOperation = 'lighter';
-            const pg = ctx.createRadialGradient(hx, hy, 0, hx, hy, 10 + 26 * (1 - pop));
-            pg.addColorStop(0, `rgba(255,236,190,${0.9 * pop})`);
-            pg.addColorStop(0.45, `rgba(255,164,60,${0.5 * pop})`);
+            const pg = ctx.createRadialGradient(hx, hy, 0, hx, hy, fr);
+            // 0.02, not 0.30. A gradient still carrying 30% at stop 0 is only 43% down from its
+            // peak, and the eye integrates that as a solid ball: the fired bores were reading as
+            // amber beads sitting proud of the wall, which is the very thing moving the peak to
+            // the rim was meant to cure. The hole's centre stays black and the light comes out
+            // past the edge.
+            pg.addColorStop(0, `rgba(255,214,150,${0.02 * pop})`);
+            pg.addColorStop(0.55, `rgba(255,186,80,${0.70 * pop})`);
             pg.addColorStop(1, 'rgba(230,110,30,0)');
             ctx.fillStyle = pg;
-            ctx.beginPath(); ctx.arc(hx, hy, 10 + 26 * (1 - pop), 0, 6.28); ctx.fill();
+            ctx.beginPath(); ctx.arc(hx, hy, fr, 0, 6.28); ctx.fill();
             ctx.restore();
           }
         }
-        ctx.textAlign = 'center'; ctx.font = 'bold 15px monospace';
-        ctx.fillStyle = fired ? '#6e5a4e' : h.packed ? '#6ee7a0' : i === m.idx ? '#5ce1ff' : '#a9b2c4';
-        ctx.fillText(h.k, hx, hy + 26);
+        // THE BORE'S NEAR LIP, over whatever is in the hole. The plate lights from above --
+        // every course carries a highlight on its top 2.2 units and a shadow on its bottom --
+        // so the top lip of a hole is the edge that casts INTO it, and the lit surface is the
+        // lower inner wall. The first version put a near-white arc across the TOP: the
+        // brightest thing on the plate, painted on the surface that should be darkest, at a
+        // constant alpha and a constant width, which read as a selection ring rather than as
+        // stone. A fired bore does not get one; the blast wrecked its rim.
+        // A FIRED BORE KEEPS ITS LIP, in a darker ink. Dropping it altogether did not just
+        // remove a highlight: the lip inks radii 6.8 to 10.0, so without it the black disc's
+        // silhouette GREW. Measured on a delivered frame across the bore's lower half, an empty
+        // bore read 16px of dark against a fired one's 22px, and at the very bottom row 0px
+        // against 16px -- a hole in a wall changing size when it goes off. The blast damage
+        // belongs in the ink, not in the diameter.
+        ctx.strokeStyle = fired ? 'rgba(52,44,38,0.9)' : 'rgba(150,140,126,0.85)';
+        ctx.lineWidth = 3.2;
+        ctx.beginPath(); ctx.arc(hx, hy, R - 0.6, 0.50, 2.64); ctx.stroke();
+        // and the top lip casts INTO the hole -- the one mark that gives the stone thickness.
+        // Without it the bore was a flat fill with a single bright arc, on a plate where every
+        // course and every stick carries both a lit and a shaded edge.
+        ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 2.4;
+        ctx.beginPath(); ctx.arc(hx, hy, R - 1.1, 3.50, 5.92); ctx.stroke();
+        // The letter swells as its charge ARRIVES and settles back. It used to peak at the
+        // keypress and be finished at h.in 0.55 -- 18ms BEFORE the dust began -- so one press
+        // produced two small confirmations a tenth of a second apart instead of one event. It
+        // peaks at FALL now, with the impact, and pulses about its own centre rather than
+        // growing upward out of an alphabetic baseline into its own bore.
+        //
+        // `seat`, not `pop`: the fired-charge flash above already owns that name in this
+        // callback, and a second const of it is a SyntaxError that kills the whole script.
+        //
+        // A SPENT LETTER IS THE SAME INK GONE COLD, not a different colour. #6e5a4e measured
+        // 14.8 to 26.5 of separation from the brick beneath it across the seven glyphs -- three
+        // of them under the 20 floor, and varying by which course a glyph happened to sit on,
+        // so some spent letters read and others vanished and the word broke in half as it
+        // burned. Measured off a delivered frame, not computed from the source colour.
+        // THE GLYPH LIGHTS AS THE CHARGE LANDS, not as the key goes down. The swell already
+        // peaked at FALL, but the LOUD half of the confirmation -- a 90-point luminance jump
+        // and a hue change -- still fired on the press, 0.62 of the seating clock earlier. The
+        // eye reads the colour, so the room said "done" and a stick arrived afterwards, which
+        // is most of why the drop read as decoration. It ramps on the same clock the fall uses.
+        const land = Math.min(1, h.in / FALL);
+        const lerp = (a, b) => Math.round(a + (b - a) * land);
+        const litCol = `rgb(${lerp(169, 110)},${lerp(178, 231)},${lerp(196, 160)})`;
+        const seat = h.packed && !fired ? Math.max(0, 1 - Math.abs(h.in - FALL) / 0.30) : 0;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.font = `bold ${(15 + 5 * seat).toFixed(1)}px monospace`;
+        // A SPENT LETTER SITS ABOVE ITS GROUND, and the ground is no longer the brick. #2f5a44
+        // was picked against unbanded masonry at 111.6 and then the band below dropped that to
+        // 76-98 in the same pass, leaving about 8 of separation whose SIGN FLIPPED across the
+        // row -- some spent letters readable, others gone, which is exactly the failure the
+        // colour was changed to fix. Measured on a delivered frame: 13.0 to 15.4. Going paler
+        // rather than darker keeps it clear of the band at every course, and ash is pale.
+        ctx.fillStyle = fired ? '#6f8d7e' : h.packed ? litCol : i === m.idx ? '#5ce1ff' : '#a9b2c4';
+        ctx.fillText(h.k, hx, hy + 21);
+        ctx.textBaseline = 'alphabetic';
       });
       // The cord, drawn whole and then over-drawn in BURNT as far as the flame -- so the two
       // lengths are one path evaluated at two points and cannot disagree about where the
@@ -1943,7 +2212,33 @@ const VERBS = {
       };
       ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       if (pts.length > 1) {
-        ctx.strokeStyle = '#6e5a3e'; cordTo(fx1); ctx.stroke();
+        // #6e5a3e measured 90.5 against a brick of 111.6 -- 21 of separation, sitting exactly
+        // on the legibility floor, for the one object that says the seven charges are a single
+        // chain. Darkened to about 50 below the stone.
+        // TO THE LAST POINT, NOT TO fx1. With nothing packed yet `fx1` is `fx0`, which is
+        // pts[0].x -- so cordTo took its de Casteljau branch at t = 0 and emitted a
+        // quadraticCurveTo onto its own start point. The loose coil existed in `pts` and was
+        // never inked, so the room opened with a bead sitting on bare masonry and no rope under
+        // it: the fix for the popping end landed in the data and not in the paint, and a
+        // zero-length path throws nothing and photographs as a design choice. The world copy of
+        // this function already had the right shape -- it strokes to Infinity.
+        ctx.strokeStyle = '#4a3a26'; cordTo(pts[pts.length - 1].x); ctx.stroke();
+        // THE END OF A ROPE IS NOT CREATED BY THE SEVENTH KEYPRESS. This was drawn only while
+        // `m.idx >= holes.length && !m.lit`, so one physical object popped into existence on
+        // the last letter and vanished again on SPACE: two pops, both on a keypress, on the
+        // very thing SPACE acts on. It is drawn whenever there is a cord to end. At burn 0 the
+        // flame's 4.2-radius core covers under half of it -- the 16-unit glow washes the rest,
+        // so it looks right; the claim that the core covers it did not.
+        // and it SOOTS once the fire has been over it. The burnt over-stroke is 3 wide against
+        // a 4-radius bead, so 2.5 units of clean grey survived at the end of a cord that had
+        // been consumed -- the object the player lit, still bright, on the length that burned.
+        const gone = m.lit && flameX > fx0 + 4;
+        ctx.fillStyle = gone ? '#3a3630' : '#8f98a8';
+        ctx.beginPath(); ctx.arc(fx0 + 4, pts[0].y, 4, 0, 6.28); ctx.fill();
+        if (!gone) {
+          ctx.fillStyle = 'rgba(255,255,255,0.32)';
+          ctx.beginPath(); ctx.arc(fx0 + 2.8, pts[0].y - 1.3, 1.5, 0, 6.28); ctx.fill();
+        }
         if (m.lit) {
           ctx.strokeStyle = '#2a2320';
           const f = cordTo(flameX);
@@ -1962,10 +2257,6 @@ const VERBS = {
             ctx.fillStyle = `rgba(255,${160 + h2 * 80 | 0},60,${0.5 + h2 * 0.4})`;
             ctx.fillRect(f.x - 4 - h2 * 12, f.y - 4 + hash(i * 3.1) * 8, 1.6, 1.6);
           }
-        } else if (m.idx >= m.holes.length) {
-          // the free end, on the side a person can reach, so it is obvious what SPACE does
-          ctx.fillStyle = '#a9b2c4';
-          ctx.beginPath(); ctx.arc(fx0 + 4, pts[0].y, 4, 0, 6.28); ctx.fill();   // inset, or it breaks the plate's corner
         }
       }
       ctx.restore();
@@ -2619,7 +2910,7 @@ window.addEventListener('keydown', e => {
   if (S.mode === 'finale') { HELD[k] = true; if (k === ' ') finaleConfirm(); return; }
 });
 // The other half of a held key. `e.repeat` is dropped at the top of keydown, so a held key
-// delivers exactly one keydown; verbs that are ABOUT holding (lift, blast) need to be told
+// delivers exactly one keydown; verbs that are ABOUT holding (lift) need to be told
 // when it ends rather than being hammered. Only verbs declaring takesHold see this, so
 // nothing else has to know keyup exists. A verb whose panel closes mid-hold never gets its
 // release, which is why every hold verb also decays its own state in update().
@@ -4773,6 +5064,12 @@ function update(dt) {
     // auto-close from stealing the room inside that window. Only tick the hold
     // for a room the player has CLOSED -- an open one is already ticking in
     // VERBS.update, and doing both halves the time the last light is visible.
+    // The wall's seating clocks tick with the panel SHUT as well, exactly as the fuse below
+    // does. Without this a charge packed a frame before ESC stays in the air for good, and
+    // stickDy would have to lie about it -- which is what it used to do, at the cost of
+    // snapping three or four still-seating sticks flush on the SPACE that lights the fuse.
+    if (room.verb === 'blast' && room.mg && S.active !== room)
+      for (const h of room.mg.holes) if (h.packed && h.in < 1) h.in = Math.min(1, h.in + dt / PACK_IN);
     if (room.state === 'armed' && room.mg && room.mg.won) {
       room.pendingClear = true;
       if (S.active !== room) room.mg.inputT = Math.max(0, room.mg.inputT - dt);
@@ -12515,14 +12812,24 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
     // so a momentary flash of daylight through a new hole glowed for the rest of the act and
     // through the finale. It is a FLASH: full while the dust is in the air, then a sixth.
     ctx.globalAlpha = ease * (0.17 + 0.83 * Math.max(0, 1 - bl / 0.5));
-    const spill = ctx.createLinearGradient(aMid, y - 100, aMid, y + 40);
+    // ONE VARIABLE FOR THE GRADIENT AND THE FILL, which is this file's standing rule and was
+    // not followed here. The ramp ran y-100 to y+40 under a polygon spanning y-120 to y+46, and
+    // createLinearGradient holds its end colour beyond its endpoints -- so the top 20 units
+    // carried a FLAT 0.26 that stopped dead on a straight polygon edge 244 units wide. At
+    // y-120 the breach itself is only about 40% of that width, so the edge lay on masonry, not
+    // in the hole: about +44 of luminance along a hard horizontal line while the dust is up,
+    // and +11 for the rest of the act and the whole finale. Nothing in a still says it is a
+    // gradient fault rather than a course of lighter stone. Found by a logic pass on the blast
+    // room; unrelated to the charges, fixed here because it is two lines and the same wall.
+    const SP0 = y - 120, SP1 = y + 46;
+    const spill = ctx.createLinearGradient(aMid, SP0, aMid, SP1);
     spill.addColorStop(0, 'rgba(255,244,206,0.26)');
-    spill.addColorStop(0.55, 'rgba(255,240,196,0.13)');
+    spill.addColorStop(0.46, 'rgba(255,240,196,0.13)');
     spill.addColorStop(1, 'rgba(255,240,196,0)');
     ctx.fillStyle = spill;
     ctx.beginPath();
-    ctx.moveTo(bL + 4, y - 120); ctx.lineTo(bR - 4, y - 120);
-    ctx.lineTo(bR + 74, y + 46); ctx.lineTo(bL - 74, y + 46);
+    ctx.moveTo(bL + 4, SP0); ctx.lineTo(bR - 4, SP0);
+    ctx.lineTo(bR + 74, SP1); ctx.lineTo(bL - 74, SP1);
     ctx.closePath(); ctx.fill();
     ctx.restore();
     // rubble on the ground and a burnt rim, so the hole was made rather than left
@@ -12674,11 +12981,13 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
   } else {
     // The boreholes the puzzle is charging, drilled along the base -- and a stick standing in
     // each one the player has packed. The COUNT and the packed flags come from the room's own
-    // minigame, not from a 5 written down here: the puzzle makes 3 to 5 holes by difficulty,
-    // so a fixed five drew two charges nobody could account for on an easy wall. `prog` is
-    // only the fallback for a dormant room, which has no mg to read.
+    // minigame, not from a count written down here: a fixed five drew two charges nobody
+    // could account for back when the puzzle made 3 to 5 holes by difficulty. The wall now
+    // spells one word, so the count is the word's length -- and the fallback reads BLAST_WORD
+    // rather than restating it, or a DORMANT wall would show five bores and an armed one seven.
+    // `prog` is still the fallback for a dormant room, which has no mg to read.
     const hs = room.mg && room.mg.holes;
-    const n = hs ? hs.length : 5;
+    const n = hs ? hs.length : BLAST_WORD.length;
     const holeX = i => sx + 14 + (n === 1 ? 0.5 : i / (n - 1)) * (gw - 28);
     // THE FREE END IS ON THE CROWD'S SIDE, on the ground, just in front of the wall's face --
     // which is where the head of the queue is standing (holdLine puts them at
@@ -12697,10 +13006,20 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
       const pop = fired ? Math.max(0, 1 - (flameX - hx) / 26) : 0;
       ctx.fillStyle = 'rgba(206,198,184,0.5)';                  // dust collar round the hole
       ctx.beginPath(); ctx.ellipse(hx, y - 21, 6, 4, 0, 0, 6.28); ctx.fill();
-      ctx.fillStyle = fired ? 'rgba(38,22,16,0.95)' : 'rgba(16,12,14,0.92)';
+      // THE SAME EVENT, THE SAME DIRECTION, AS THE PANEL. rgba(38,22,16) composites to
+      // luminance 29.3 over a mid block against an unfired 20.9 -- i.e. blowing a charge made
+      // the hole BRIGHTER and warmer, which is the colour the panel condemned and replaced. The
+      // two functions were describing one event with an 18-point swing in opposite directions.
+      // The disc still grows: the rim really is wrecked. It just gets darker while it does.
+      ctx.fillStyle = fired ? 'rgba(6,5,4,0.98)' : 'rgba(16,12,14,0.92)';
       ctx.beginPath(); ctx.arc(hx, y - 22, fired ? 4.4 : 3.4, 0, 6.28); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,248,230,0.4)'; ctx.lineWidth = 1;   // lit upper lip
-      ctx.beginPath(); ctx.arc(hx, y - 22, 3.7, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+      // and the LOWER rim is the lit one, as on the plate: both walls light from above, so the
+      // top lip overhangs and casts into the hole. This drew a near-white arc across the TOP --
+      // and drew it before the fired branch, so a blown socket had it painted inside as well.
+      if (!fired) {
+        ctx.strokeStyle = 'rgba(150,140,126,0.85)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(hx, y - 22, 3.0, 0.50, 2.64); ctx.stroke();
+      }
       if (packed && !fired) {
         // a charge standing in the hole, 11 units against a 45-unit body: a stick of dynamite
         // at this scale is about a quarter of a forearm, and it is drawn as one rather than as
@@ -12710,12 +13029,19 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
         ctx.fillStyle = 'rgba(255,224,190,0.28)'; ctx.fillRect(hx - 2.2, y - 33, 1.3, 11);
       } else if (pop > 0) {
         ctx.save(); ctx.globalCompositeOperation = 'lighter';
-        const pg = ctx.createRadialGradient(hx, y - 26, 0, hx, y - 26, 8 + 20 * (1 - pop));
-        pg.addColorStop(0, `rgba(255,236,190,${0.85 * pop})`);
-        pg.addColorStop(0.45, `rgba(255,164,60,${0.45 * pop})`);
+        // RIM-BRIGHT AND ON THE HOLE, exactly as the plate draws it. This carried 0.85 at stop 0
+        // decreasing monotonically to the rim, which is the definition of a sphere and is the
+        // thing the panel's own comment condemns -- so the two paintings of one event had been
+        // reconciled on the socket colour and left contradicting each other here. It was also
+        // centred at y-26 against a bore at y-22, i.e. the ball floated 4 units above the hole
+        // it came out of, on a wall where a whole body is 45.
+        const wfr = 8 + 20 * (1 - pop);
+        const pg = ctx.createRadialGradient(hx, y - 22, 0, hx, y - 22, wfr);
+        pg.addColorStop(0, `rgba(255,236,190,${0.02 * pop})`);
+        pg.addColorStop(0.55, `rgba(255,186,80,${0.70 * pop})`);
         pg.addColorStop(1, 'rgba(230,110,30,0)');
         ctx.fillStyle = pg;
-        ctx.beginPath(); ctx.arc(hx, y - 26, 8 + 20 * (1 - pop), 0, 6.28); ctx.fill();
+        ctx.beginPath(); ctx.arc(hx, y - 22, wfr, 0, 6.28); ctx.fill();
         ctx.restore();
       }
     }
@@ -12723,8 +13049,14 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
     // not past them along the ground: a trunk line that touches none of its charges is five
     // sticks that are never going off, and the panel makes the same claim about the same
     // wall, so the two have to describe one arrangement.
-    if (hs && hs.some(h => h.packed)) {
-      const xs = hs.map((h, i) => (h.packed ? holeX(i) : null)).filter(v => v !== null);
+    // A LOOSE COIL STANDS IN HERE TOO. Guarded on `some(packed)`, 94 units of rope -- 78% of
+    // the wall's whole lead-in -- appeared on the first keypress, which is the pop the panel's
+    // comment records as fixed and which the bead beside it had already been corrected for. The
+    // two halves of one fix disagreed, and both paintings are on screen while the player types.
+    if (hs) {
+      const xs = hs.some(h => h.packed)
+        ? hs.map((h, i) => (h.packed ? holeX(i) : null)).filter(v => v !== null)
+        : [f0 + 26];
       // ONE PATH, evaluated at two points. The burnt length used to be a straight line at
       // y-30 while the cord it was meant to be consuming was a polyline at y-34 sagging to
       // y-32 -- a tan line with a black line drawn under it, the cord never shortening. The
@@ -12742,9 +13074,17 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
           ctx.quadraticCurveTo(c1x, c1y, ex, ey);
           return { x: ex, y: ey };
         };
-        let hit = step2(xs[0], y - 34, (f0 + xs[0]) / 2, y - 16);
-        for (let i = 1; i < xs.length && !hit; i++) hit = step2(xs[i], y - 34, (xs[i - 1] + xs[i]) / 2, y - 30);
-        return hit || { x: xs[xs.length - 1], y: y - 34 };
+        // THE KNOT SINKS WITH ITS CHARGE, as it does on the plate. `xs` is built from `packed`
+        // alone and `packed` stays true after firing, so every vertex stayed at y-34 -- the top
+        // of a stick the drawing had already stopped drawing -- and the burnt length ran as a
+        // row of peaks tied to wicks that no longer exist. That is verbatim the fault the panel
+        // records as fixed; this was the second instance of it. 26 is this function's own pop
+        // distance, so the sink and the flash fade together here too.
+        const ky = x => y - 34 + 10 * (room.mg.lit && flameX >= x
+          ? 1 - Math.max(0, 1 - (flameX - x) / 26) : 0);
+        let hit = step2(xs[0], ky(xs[0]), (f0 + xs[0]) / 2, y - 16);
+        for (let i = 1; i < xs.length && !hit; i++) hit = step2(xs[i], ky(xs[i]), (xs[i - 1] + xs[i]) / 2, y - 28);
+        return hit || { x: xs[xs.length - 1], y: ky(xs[xs.length - 1]) };
       };
       ctx.lineWidth = 1.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.strokeStyle = '#6e5a3e'; cord(Infinity); ctx.stroke();
@@ -12758,9 +13098,16 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
         ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(fp.x, fp.y, 14, 0, 6.28); ctx.fill();
         ctx.restore();
         ctx.fillStyle = '#ffd23c'; ctx.beginPath(); ctx.arc(fp.x, fp.y, 2.6, 0, 6.28); ctx.fill();
-      } else if (hs.every(h => h.packed)) {
-        ctx.fillStyle = '#c9c2b4'; ctx.beginPath(); ctx.arc(f0, fy0, 2.4, 0, 6.28); ctx.fill();
       }
+      // The free end, whenever there is a cord to end -- not `hs.every(packed)`, which popped it
+      // into being on the seventh letter and deleted it again on SPACE. Two pops, both on a
+      // keypress, on the one object SPACE acts on. Same correction as the plate's; once lit the
+      // flame's own core covers it.
+      // It SOOTS rather than vanishing, as the plate's does. Gating it on `!lit` still popped a
+      // pale ball out of existence on the keypress -- the same one-object-two-behaviours split
+      // this comment claims to have closed, left half-applied.
+      ctx.fillStyle = room.mg.lit && flameX > f0 + 2.4 ? '#4a463e' : '#c9c2b4';
+      ctx.beginPath(); ctx.arc(f0, fy0, 2.4, 0, 6.28); ctx.fill();
     }
   }
 }
@@ -17528,8 +17875,17 @@ if (qs.has('start')) {
       // photographed here is the panel the player gets.
       if (room.verb === 'blast' && qs.has('packed')) {
         const n = Math.max(0, Math.min(room.mg.holes.length, +qs.get('packed')));
-        for (let i = 0; i < n; i++) room.mg.holes[i].packed = true;
+        // `in: 1`, i.e. SEATED. This flag means "these charges are already in", and a charge
+        // whose seating clock is left at 0 draws its stick 12 units above the bore, hanging
+        // there for as long as the frame does -- which photographs as art that floats rather
+        // than as a clock nobody wound.
+        for (let i = 0; i < n; i++) { room.mg.holes[i].packed = true; room.mg.holes[i].in = 1; }
         room.mg.idx = n;
+        // &pin=0..1 holds the LAST of them partway in, which is the only way to photograph a
+        // seating: it runs on its own clock in update() rather than on S.t, so &st cannot
+        // freeze it and a still otherwise lands wherever the setup happened to stop. Same
+        // reason ?blast=T exists for the explosion and &st for the lamp flicker.
+        if (n > 0 && qs.has('pin')) room.mg.holes[n - 1].in = Math.max(0, Math.min(1, +qs.get('pin')));
       }
       if (room.verb === 'blast' && qs.has('fuse')) {
         for (const h of room.mg.holes) h.packed = true;

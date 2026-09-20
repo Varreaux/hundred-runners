@@ -55,7 +55,11 @@ for (const diff of [0, 1, 2, 3, 4, 5]) {
   for (let i = 0; i < n; i++) {
     if (m.idx !== i) orderHeld = false;
     // a key from the pool that is not the next one must be refused, not swallowed
-    const wrong = CFG.keyPool.split('').find(k => k !== m.holes[i].k);
+    // Any letter that is not the next one. This read CFG.keyPool, an eight-key pool that
+    // existed only to generate the wall's random letters and went with them; the room now
+    // treats the whole alphabet as a miss, so the check has to press from the whole alphabet
+    // or it would only ever prove the eight keys the room no longer cares about.
+    const wrong = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find(k => k !== m.holes[i].k);
     if (V.key(m, wrong) !== 'wrong' || m.idx !== i) wrongRejected = false;
     // and SPACE must do nothing until every charge is in: lighting a fuse on a half-packed
     // wall would blow a hole nobody could walk through, and there is no way back from it
