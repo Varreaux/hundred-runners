@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '138 the tally, the door and the kill band';
+const BUILD = '139 rooms that draw what they are';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -6747,10 +6747,20 @@ const roomIsGap = r => !SOLID_HAZ[r.hazard] && !SOLID_TYPE[r.type];
 // The second half used the ROOM's extent, and the wall's masonry reaches WALL_OVER past it
 // on each side -- so a post and a five-bar gate could stand in the 58-unit band the stone
 // covers, be drawn, and be buried, which is the fault this test exists to prevent.
-const buriedByRoom = (m, here) => {
+const buriedByRoom = (m, here, left = 46, right = 4) => {
   const over = m.type === 'wall' ? WALL_OVER : 0;
-  if (!(here > m.x - over - 4 && here < m.x + CFG.gapWidth + over + 4)) return false;
-  return roomIsGap(m) || !ENC_DRAWN[m.type] || m.type === 'wall';
+  // The window is the FURNITURE's, not the room's, and the two callers carry different
+  // furniture: a gate leaf reaches 42 units right of its post, a post reaches 3. One window
+  // for both deleted the last fence line in the game -- at 20330 the post stands 35 units
+  // clear of the wall's masonry and only the gate leaf overlapped it, by 6 units that the
+  // masonry is drawn over anyway, so a whole 47-unit piece of furniture went to hide nothing.
+  // Worse on the only live lane there: the drystone loop does not consult this at all, so its
+  // courses went on drawing 54 to 102 units above the deck with the post gone from under them.
+  if (!(here > m.x - over - left && here < m.x + CFG.gapWidth + over + right)) return false;
+  // ...and a mantrap is not a thing you can stand a five-bar gate on. The pitch sequence puts
+  // a line at 17261.8, inside the jaws at 17200 (17216..17304), and one at 19390.4 on the
+  // plate of the trap at 19300. It is the fault the note above names, one room type along.
+  return roomIsGap(m) || !ENC_DRAWN[m.type] || m.type === 'wall' || m.type === 'mantrap';
 };
 // The stretches of a gallery floor that actually exist. The track already breaks on these;
 // the drain did not, so a drainage channel was cut across a hole with a river under it.
@@ -7102,12 +7112,19 @@ function mineProps(wx0, wx1, y, lane) {
   // following a contour line rather than going anywhere.
   const BUCKET = 900;
   const railedAt = wx => hash(lane * 9.7 + Math.floor(wx / BUCKET) * 2.3) > 0.44;
-  for (let b = Math.floor(lo / BUCKET); b <= Math.floor(hi / BUCKET); b++) {
+  const lastRail = Math.floor(hi / BUCKET);
+  for (let b = Math.floor(lo / BUCKET); b <= lastRail; b++) {
     if (!railedAt(b * BUCKET)) continue;
+    // A stop belongs at the end of a RUN, not of a bucket. Drawn a bucket at a time, two
+    // railed neighbours each planted one at the boundary between them: a pair of timber
+    // posts on track that carries straight on, and a sleeper lost under them.
+    let e = b;
+    while (e < lastRail && railedAt((e + 1) * BUCKET)) e++;
     // rails may run the full length of the rock: track that stops 40 units short of the
     // portal and the mouth is a tramway that carries nothing in or out
     drawRails(Math.max(Math.max(wx0, FAC.seam), b * BUCKET),
-              Math.min(Math.min(wx1, CFG.exit + 60), (b + 1) * BUCKET), y, lane);
+              Math.min(Math.min(wx1, CFG.exit + 60), (e + 1) * BUCKET), y, lane);
+    b = e;
   }
   for (let wx = first; wx < hi + STEP; wx += STEP) {
     if (wx < lo - STEP || wx > hi) continue;
@@ -7597,10 +7614,15 @@ function carveTunnels() {
   // across the sky. Clip each span to the mountain instead of skipping the lane, because
   // lane 0 runs the whole world and only part of it is underground.
   const rock = (a, b) => [Math.max(a, CFG.entrance - 60), Math.min(b, CFG.exit + 60)];
+  // ...and +-60 is a guess at where that rock ends. The flank leans left as it climbs, so at
+  // the exit the clamp paints interior 14 units past the silhouette at the floor and 36 at
+  // the ceiling. Clip to the mountain itself, as archway does, so the two cannot disagree.
+  ctx.save(); mountainPath(); ctx.clip();
   for (let k = 0; k < CFG.laneCount; k++) for (const [a0, b0] of LANE_SPANS[k]) {
     const [a, b] = rock(a0, b0);
     if (b > a) corridor(a, b, laneY(k), k);
   }
+  ctx.restore();
   for (const f of CFG.forks) {
     if (f.x > CFG.exit) continue;                 // an enclosure fork is a path up a hill
     slantCorridor(f.x, laneY(f.from), f.x + CFG.rampLen, laneY(f.to));
@@ -7750,6 +7772,9 @@ function rockCorridor(wx0, wx1, y, lane = 0) {
   const ribGap = 104 + lane * 13;
   for (let wx = Math.floor((x0 + V.left) / ribGap) * ribGap; wx < x1 + V.left + ribGap; wx += ribGap) {
     const rx = wx - V.left;
+    // x0/x1 are clamped to the SCREEN, so the 40 of slack below -- there so a rib half off the
+    // edge still draws -- would otherwise let ribs out past the corridor's own ends.
+    if (wx < wx0 || wx > wx1) continue;
     if (rx < x0 - 40 || rx > x1 + 40) continue;
     // no two ribs the same width or depth: identical strips at an identical pitch read
     // as wallpaper once the camera pulls back, whatever the pitch is
@@ -8702,6 +8727,13 @@ const engineCrank = gx => shaftPhase(gx) * (ENG.drum / ENG.rim) + hash(gx) * 6.2
 function millEngine(sx, y, gx, shy) {
   const DARK = '#100e16', BODY = '#28322f', LIT = '#3c4845', EDGE = 'rgba(198,222,244,0.3)';
   const BRASS = '#6e5a2e', SHEEN = 'rgba(228,200,130,0.3)';
+  // RIM IS A RADIUS HERE, NOT A COLOUR, and that is the whole bug this line caused. Its two
+  // siblings millHammer and millCupola both declare RIM as the rim-light rgba; in this one
+  // function the name was taken over by the belt's outer radius and the colour was renamed
+  // EDGE -- but the ten `ctx.fillStyle = RIM` lines were left alone. fillStyle takes a
+  // DOMString, 26.5 stringifies to "26.5", that is not a CSS colour, so the assignment is
+  // silently IGNORED and each of those highlights painted in whatever colour was set last.
+  // EDGE was declared above and used nowhere, which is the tell.
   const DRUM = ENG.drum, RIM = ENG.rim;
   const a = engineCrank(gx);
   const CL = y - 48;                              // centre line: piston, crosshead, crank
@@ -8716,21 +8748,30 @@ function millEngine(sx, y, gx, shy) {
   // clear floor under it, and a bed running the whole length would have it ploughing
   contactShadow(sx - 43, y, 64); contactShadow(sx + 57, y, 24);
   ctx.fillStyle = DARK; ctx.fillRect(sx - 104, y - 19, 130, 19);
-  const bg = ctx.createLinearGradient(0, y - 19, 0, y);
-  bg.addColorStop(0, '#39443f'); bg.addColorStop(0.35, '#28322f'); bg.addColorStop(1, '#1a211f');
+  // ONE RAMP PER EXTENT. This gradient was built for the 19-unit bedplate and then reused on
+  // the 43-unit column below, whose top 24 units -- 57% of it -- therefore sat flat at the
+  // first stop instead of shading. tools/grad-check.js names the two numbers. It is the fault
+  // this file records three times: a gradient and the fill that uses it drift apart, so they
+  // are fed from one place and given the extent they are actually painted over.
+  const iron = (top, bot) => {
+    const g = ctx.createLinearGradient(0, top, 0, bot);
+    g.addColorStop(0, '#39443f'); g.addColorStop(0.35, '#28322f'); g.addColorStop(1, '#1a211f');
+    return g;
+  };
+  const bg = iron(y - 19, y);
   ctx.fillStyle = bg; ctx.fillRect(sx - 103, y - 18, 128, 18);
-  ctx.fillStyle = RIM; ctx.fillRect(sx - 103, y - 18, 128, 1.5);
+  ctx.fillStyle = EDGE; ctx.fillRect(sx - 103, y - 18, 128, 1.5);
   ctx.fillStyle = 'rgba(0,0,0,0.4)';
   for (let i = -96; i < 14; i += 23) ctx.fillRect(sx + i, y - 13, 10, 2.6);
   ctx.fillStyle = 'rgba(206,228,250,0.07)';
   for (let i = -96; i < 14; i += 23) ctx.fillRect(sx + i, y - 13, 10, 0.9);
   ctx.fillStyle = DARK; ctx.fillRect(sx + 38, y - 44, 38, 44);
-  ctx.fillStyle = bg; ctx.fillRect(sx + 39, y - 43, 36, 43);
-  ctx.fillStyle = RIM; ctx.fillRect(sx + 39, y - 43, 3.4, 43);
+  ctx.fillStyle = iron(y - 43, y); ctx.fillRect(sx + 39, y - 43, 36, 43);
+  ctx.fillStyle = EDGE; ctx.fillRect(sx + 39, y - 43, 3.4, 43);
   ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(sx + 68, y - 43, 6, 43);
   ctx.fillStyle = DARK; ctx.fillRect(sx + 42, y - 60, 30, 17);
   ctx.fillStyle = LIT; ctx.fillRect(sx + 43, y - 59, 28, 15);
-  ctx.fillStyle = RIM; ctx.fillRect(sx + 43, y - 59, 28, 1.5);
+  ctx.fillStyle = EDGE; ctx.fillRect(sx + 43, y - 59, 28, 1.5);
   ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(sx + 43, y - 52, 28, 2.2);
 
   // ---- cylinder. Two to one, long and low: a barrel as tall as it is long reads as a
@@ -8758,7 +8799,7 @@ function millEngine(sx, y, gx, shy) {
   }
   ctx.fillStyle = DARK; ctx.fillRect(sx - 108, y - 69, 8, 41);
   ctx.fillStyle = LIT; ctx.fillRect(sx - 107, y - 68, 6, 39);
-  ctx.fillStyle = RIM; ctx.fillRect(sx - 107, y - 68, 6, 1.3);
+  ctx.fillStyle = EDGE; ctx.fillRect(sx - 107, y - 68, 6, 1.3);
   ctx.fillStyle = 'rgba(0,0,0,0.4)';
   for (let i = 0; i < 4; i++) ctx.fillRect(sx - 106, y - 63 + i * 10, 4, 1.8);
   ctx.fillStyle = BODY; ctx.beginPath(); ctx.arc(sx - 104, y - 48, 6, 0, 6.28); ctx.fill();
@@ -8766,14 +8807,14 @@ function millEngine(sx, y, gx, shy) {
   // valve chest on the top, and its steam pipe up into the overhead main
   ctx.fillStyle = DARK; ctx.fillRect(sx - 88, y - 79, 34, 14);
   ctx.fillStyle = LIT; ctx.fillRect(sx - 87, y - 78, 32, 12);
-  ctx.fillStyle = RIM; ctx.fillRect(sx - 87, y - 78, 32, 1.6);
+  ctx.fillStyle = EDGE; ctx.fillRect(sx - 87, y - 78, 32, 1.6);
   ctx.fillStyle = 'rgba(0,0,0,0.42)';
   for (let i = 0; i < 6; i++) ctx.fillRect(sx - 84 + i * 5.6, y - 76, 1.8, 1.8);
   ctx.fillStyle = DARK; ctx.fillRect(sx - 77, shy - 28, 11, 26);
   ctx.fillStyle = '#39424a'; ctx.fillRect(sx - 76, shy - 28, 9, 26);
   ctx.fillStyle = 'rgba(210,230,240,0.13)'; ctx.fillRect(sx - 76, shy - 28, 2.4, 26);
   ctx.fillStyle = LIT; ctx.fillRect(sx - 79, y - 84, 15, 5);
-  ctx.fillStyle = RIM; ctx.fillRect(sx - 79, y - 84, 15, 1.2);
+  ctx.fillStyle = EDGE; ctx.fillRect(sx - 79, y - 84, 15, 1.2);
   // exhaust standpipe, off the cylinder and up to the flue. It is the leak at this bend
   // that millEngineSmoke draws: an engine that never shows is an engine nobody believes.
   ctx.fillStyle = DARK; ctx.fillRect(sx - 52, y - 90, 14, 28);
@@ -8785,17 +8826,17 @@ function millEngine(sx, y, gx, shy) {
   ctx.fillStyle = 'rgba(214,230,248,0.13)'; ctx.fillRect(sx - 54, y - 74, 18, 1.2);
   ctx.fillStyle = DARK; ctx.fillRect(sx - 56, y - 92, 22, 7);
   ctx.fillStyle = LIT; ctx.fillRect(sx - 55, y - 91.4, 20, 5);
-  ctx.fillStyle = RIM; ctx.fillRect(sx - 55, y - 91.4, 20, 1.2);
+  ctx.fillStyle = EDGE; ctx.fillRect(sx - 55, y - 91.4, 20, 1.2);
 
   // ---- slide bars, crosshead, piston rod
   // the motion plate: the standard that carries the far end of the bars down to the bed
   ctx.fillStyle = DARK; ctx.fillRect(sx + 14, y - 63, 12, 45);
   ctx.fillStyle = BODY; ctx.fillRect(sx + 15, y - 62, 10, 44);
-  ctx.fillStyle = RIM; ctx.fillRect(sx + 15, y - 62, 3, 44);
+  ctx.fillStyle = EDGE; ctx.fillRect(sx + 15, y - 62, 3, 44);
   ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.beginPath(); ctx.arc(sx + 20, y - 40, 3, 0, 6.28); ctx.fill();
   ctx.fillStyle = DARK; ctx.fillRect(sx - 32, y - 62, 54, 6); ctx.fillRect(sx - 32, y - 40, 54, 6);
   ctx.fillStyle = LIT; ctx.fillRect(sx - 32, y - 61, 54, 4); ctx.fillRect(sx - 32, y - 39, 54, 4);
-  ctx.fillStyle = RIM; ctx.fillRect(sx - 32, y - 61, 54, 1.1); ctx.fillRect(sx - 32, y - 39, 54, 1.1);
+  ctx.fillStyle = EDGE; ctx.fillRect(sx - 32, y - 61, 54, 1.1); ctx.fillRect(sx - 32, y - 39, 54, 1.1);
   ctx.fillStyle = DARK; ctx.fillRect(sx - 38, y - 55, 8, 14);
   ctx.fillStyle = '#5c4d26'; ctx.fillRect(sx - 37, y - 54, 6, 12);
   ctx.fillStyle = SHEEN; ctx.fillRect(sx - 37, y - 54, 6, 1.3);
@@ -8803,7 +8844,7 @@ function millEngine(sx, y, gx, shy) {
   ctx.fillStyle = 'rgba(226,240,255,0.24)'; ctx.fillRect(sx - 32, y - 50.4, C - 9 - (sx - 32), 1.4);
   ctx.fillStyle = DARK; ctx.fillRect(C - 9, y - 62, 18, 28);
   ctx.fillStyle = LIT; ctx.fillRect(C - 8, y - 61, 16, 26);
-  ctx.fillStyle = RIM; ctx.fillRect(C - 8, y - 61, 16, 1.5);
+  ctx.fillStyle = EDGE; ctx.fillRect(C - 8, y - 61, 16, 1.5);
   ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(C - 8, y - 50, 16, 2.2);
   // the slippers riding the bars, so the block reads as held rather than floating
   ctx.fillStyle = 'rgba(220,238,255,0.2)';
@@ -9442,7 +9483,11 @@ function millCorridor(wx0, wx1, y, laneIn) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
     const bay = millBay(gx, lane, wx);
-    if (!bay.has || bay.feat >= 0) continue;     // a big engine has this bay; it is drawn later
+    // ...only if that engine is actually going to be DRAWN. featFits rejects a feature within
+    // 112 units of a span end, and the feature loop honours it while this one did not, so such
+    // a bay got no engine AND no plant -- an empty bay under a line shaft. Fixing the belt
+    // alone (it now drives an idler rather than a machine nobody drew) left the hole.
+    if (!bay.has || (bay.feat >= 0 && featFits(gx, wx0, wx1))) continue;
     millPlant(gx, y - 2, lane, bay.kind);
   }
   // cast-iron stanchions on the hall's front line: nothing was carrying the floors
@@ -9502,7 +9547,14 @@ function millCorridor(wx0, wx1, y, laneIn) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50, sx = gx - V.left;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
     const bay0 = millBay(gx, lane, wx);
-    const bay = featFits(gx, wx0, wx1) ? bay0 : { has: bay0.has, kind: bay0.kind, feat: -1 };
+    // a feature that does not fit is not drawn, and the plant loop skips the bay for its
+    // feat, so the bay is EMPTY: calling it plant belted the pulley to a machine nobody drew
+    // `has` SURVIVES. It was cleared here so bayDrive returned null and hung no belt, which
+    // was right while such a bay was empty -- but the plant loop now fills it, so clearing it
+    // left a lathe standing under a pulley with nothing between them: the mirror of the fault
+    // this line was added to cure. With has true and feat -1, bayDrive falls through to the
+    // kind-keyed landing point, which is the plant's own belt.
+    const bay = (featFits(gx, wx0, wx1) || bay0.feat < 0) ? bay0 : { has: bay0.has, kind: bay0.kind, feat: -1 };
     // hanger
     ctx.fillStyle = '#3f414a'; ctx.fillRect(sx - 12, cy + 24, 3.4, shy - cy - 24); ctx.fillRect(sx + 9, cy + 24, 3.4, shy - cy - 24);
     // pulley
@@ -9666,6 +9718,9 @@ function millDeck(wx0, wx1, y) {
     ctx.fillRect(wx - V.left, y + 3 + hv * 6, 9 + hv * 12, 2 + hv * 3);
   }
   ctx.restore();
+  // the nose and its splice plates run on the same world-aligned grids as the joints
+  // above, so they start before wx0 and past wx1: clip them to the deck as well
+  ctx.save(); ctx.beginPath(); ctx.rect(x0, y - 4, x1 - x0, 20); ctx.clip();
   // the lit nose of the plate: broken into plate lengths with splices and soot,
   // rather than one ruled highlight across the whole view
   for (let wx = Math.floor(wx0 / 26) * 26; wx < wx1 + 26; wx += 26) {
@@ -9682,6 +9737,7 @@ function millDeck(wx0, wx1, y) {
     ctx.fillStyle = '#9aa4b6'; ctx.fillRect(wx - V.left - 3, y - 2.6, 7, 5);
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(wx - V.left - 3, y + 1.4, 7, 1.4);
   }
+  ctx.restore();
   for (let wx = Math.floor(wx0 / 13) * 13; wx < wx1; wx += 13) {
     const hv = hash(wx * 2.7 + y * 1.1);
     if (hv < 0.35) continue;
@@ -9990,10 +10046,14 @@ function drawSeamPortal(y) {
   ctx.fillStyle = INK; ctx.fillRect(sx - 27, y - th + 3, 54, 17);
   ctx.fillStyle = '#c9a72e'; ctx.fillRect(sx - 25.6, y - th + 4.4, 51.2, 14.2);
   ctx.fillStyle = '#1b1519';
+  // clipped to the plate: the bars lean, so they are run past both ends to fill the corners
+  ctx.save();
+  ctx.beginPath(); ctx.rect(sx - 25.6, y - th + 4.4, 51.2, 14.2); ctx.clip();
   for (let i = -4; i < 7; i++) {
     ctx.beginPath(); ctx.moveTo(sx - 26 + i * 10, y - th + 18.6); ctx.lineTo(sx - 20 + i * 10, y - th + 4.4);
     ctx.lineTo(sx - 15 + i * 10, y - th + 4.4); ctx.lineTo(sx - 21 + i * 10, y - th + 18.6); ctx.closePath(); ctx.fill();
   }
+  ctx.restore();
   ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(sx - 25.6, y - th + 4.4, 51.2, 2);
   // a red lamp on the frame
   const bl = 0.5 + 0.5 * Math.sin(S.t * 2.6);
@@ -10102,10 +10162,13 @@ function millShutterBars(g, sx, y, th, holding) {
     ctx.fillStyle = INK; ctx.fillRect(sx - 36, y - 6, 72, 9);
     ctx.fillStyle = '#c9a72e'; ctx.fillRect(sx - 35, y - 5, 70, 7);
     ctx.fillStyle = '#1b1519';
-    for (let i = -4; i < 7; i++) {
+    // clipped to the plate: unclipped, the first stripes paint out onto the deck
+    ctx.save(); ctx.beginPath(); ctx.rect(sx - 35, y - 5, 70, 7); ctx.clip();
+    for (let i = 0; i < 7; i++) {
       ctx.beginPath(); ctx.moveTo(sx - 35 + i * 11, y + 2); ctx.lineTo(sx - 30 + i * 11, y - 5);
       ctx.lineTo(sx - 25 + i * 11, y - 5); ctx.lineTo(sx - 30 + i * 11, y + 2); ctx.closePath(); ctx.fill();
     }
+    ctx.restore();
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(sx - 35, y + 2, 70, 2.4);
   } else {
     // the weighted bottom rail, wherever the curtain has got to
@@ -11437,8 +11500,11 @@ function drawEncBounds() {
     // One body's worth of return says "this continues over the hill" without pretending to
     // draw the part that is edge-on to the camera.
     const topDeck = laneY(encTopLane(here));
-    const runTop = Math.max(crest, topDeck - 46);
-    for (let y = topDeck - 6; y > runTop; y -= 6) {
+    // ...which has to START ABOVE the track gap the test below reserves. At topDeck - 46
+    // every y in the run was inside the top deck's own 54-unit band, so nothing was drawn.
+    const runBot = topDeck - 54;
+    const runTop = Math.max(crest, topDeck - 100);
+    for (let y = runBot; y > runTop; y -= 6) {
       // leave a gap wherever a track passes through, and stand a gate in it
       let inGap = false;
       for (let k = 0; k < CFG.laneCount; k++) {
@@ -11471,7 +11537,17 @@ function drawEncBounds() {
       ctx.strokeStyle = '#5c4830'; ctx.lineWidth = 2.4;
       for (const off of (kind === 1 ? [7] : [6, 13])) {
         ctx.beginPath();
-        ctx.moveTo(sx + off, crest); ctx.lineTo(sx + off, topDeck - 6);
+        // BOTH ENDS READ THE NUMBERS THE TWO LOOPS BESIDE THEM USE. From `crest` the rail ran
+        // 138 units, 40 of them above the top of the 46-unit stone run, standing on open
+        // hillside; and moving its foot to runBot left it 20-30 units clear of the deck post
+        // it is supposed to land on, which is half a body of daylight.
+        // ...and STOPS WHERE THE FENCE STOPS. Landing it on the deck post was pass one's
+        // prescription and pass two retracted it: the 20-30 units between runBot and the post
+        // top is the TRACK OPENING the stone loop deliberately skips, and a rail run down into
+        // it crosses the gateway -- 21 units of a 45-unit body pass through a 2.4-wide bar on
+        // kind 1, over 14 of the act's 25 fence lines. The rails are 3-10 units to the side of
+        // the post anyway, so they never met it. Both ends now read the stone run's own two.
+        ctx.moveTo(sx + off, runTop); ctx.lineTo(sx + off, runBot);
         ctx.stroke();
       }
     }
@@ -11494,7 +11570,8 @@ function drawEncBounds() {
       // line at 14534.85 did the same to the sweeper -- drawn, buried, and costing a fence
       // line each from an act whose fencing IS its argument. 14095.96 lands on the mantrap's
       // own plate and stands a gate between the jaws.
-      if (S.rooms.some(m => m.lane === k && buriedByRoom(m, here))) continue;
+      // A POST'S OWN REACH, not the gate's: it is fillRect(sx - 3, .., 6, ..) and nothing more.
+      if (S.rooms.some(m => m.lane === k && buriedByRoom(m, here, 3, 3))) continue;
       const dy = laneY(k);
       sunShade(sx, dy + 2, 4, STAKE * 2.4, 0.18);
       ctx.fillStyle = kind === 3 ? '#8a8378' : '#5c4830';
@@ -11917,19 +11994,32 @@ function archway(wx, y, exit = false) {
   ctx.restore();
 }
 function signpost(wx, y) {
-  // Out of doors this is 40 tall rather than 66 -- 66 is measurably taller than two
+  // Out of doors this is 52 tall rather than 66 -- 66 is measurably taller than two
   // 45-unit runners standing on each other -- and the boards are knocked back out of
   // #d9c27a, which was the highest-chroma warm value anywhere in act three and repeated
   // six times a frame. The cave version keeps the pop; it needs it.
   const outdoors = ENC.inside(wx);
   if (inMill(wx)) return millSign(wx, y);
   if (!inView(wx, 100)) return;
+  // THE SIGN IS DRAWN 70 UNITS LEFT OF THE FORK IT ANNOUNCES, and act three's first fork
+  // stands 100 units inside the ditch at 14000 -- so the post, its footing block and its
+  // contact shadow were painted on a ground line drawLane had cut away, over open water.
+  // The test buriedByRoom makes for a fence post, against the FOOTPRINT (wx - 83 .. wx - 56)
+  // rather than the anchor: step the sign back clear of the near lip. Moving wx moves the
+  // sign and nothing below reads it -- outdoors, inMill and inView are all settled above.
+  for (const r of S.rooms.filter(m => laneY(m.lane) === y && roomIsGap(m)).sort((a, b) => b.x - a.x))
+    if (wx - 56 > r.x && wx - 83 < r.x + CFG.gapWidth) wx = r.x + 50;
   const sx = wx - V.left - 70;
   // a 5px post against a dark wall disappears at any zoom below 1 and the boards
   // are left hanging in the air; the ink outline and a footing are what hold it down
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.beginPath(); ctx.ellipse(sx + 1, y, 13, 3.4, 0, 0, 6.28); ctx.fill();
-  const PH = outdoors ? 40 : 66;
+  // 52, NOT 40. The two boards are 14 deep at y - PH + 8 and y - PH + 26, so at 40 they
+  // covered the post from y - 39 to y - 7 and left about five units of it showing: it read as
+  // two planks lying on the grass. The cave version at 66 leaves 27 units of bare post, which
+  // is why that one reads as a signpost. 52 leaves 13, and is still well under the two-runner
+  // ceiling the note above is guarding.
+  const PH = outdoors ? 52 : 66;
   ctx.fillStyle = INK; ctx.fillRect(sx - 4.4, y - PH - 1, 9.8, PH + 1);
   ctx.fillStyle = '#5a4630'; ctx.fillRect(sx - 2.6, y - PH, 6.2, PH);
   ctx.fillStyle = 'rgba(255,214,150,0.16)'; ctx.fillRect(sx - 2.6, y - PH, 1.8, PH);
@@ -12211,16 +12301,24 @@ function drawRoom(room, y) {
   // wherever the room stands; only the `outdoors` flag is genuinely about position, and it
   // still asks ENC.inside. Machine rooms already worked this way, which is why the mill's
   // six could open act three.
-  if (ENC.inside(room.x) || ENC_DRAWN[room.type]) {
+  // A CROSSING HAS NO ENCLOSURE PAINTER OF ITS OWN. drawEncRoom branches on the four
+  // ENC_DRAWN types and everything else falls through to its ditch cut, so the rickety at
+  // 19400 drew as a water-filled trench with no posts, carrying ropes or planks, and
+  // room.bridge -- the thing solving the room raises -- moved nothing in the crossing. The
+  // cut IS the right hole out here and the pit below is not, being the near-black of a
+  // shaft in rock. So a crossing past the mouth keeps the cut and the outdoor mark, skips
+  // the pit, and carries on to its own painter below instead of returning here.
+  const outdoors = ENC.inside(room.x);
+  if (outdoors || ENC_DRAWN[room.type]) {
     drawEncRoom(room, y);
-    if (room.state === 'armed') armedMark(room, y, room.x - V.left, CFG.gapWidth, ENC.inside(room.x));
-    return;
+    if (room.state === 'armed') armedMark(room, y, room.x - V.left, CFG.gapWidth, outdoors);
+    if (room.type !== 'rope' && room.type !== 'rickety') return;
   }
   const sx = room.x - V.left, gw = CFG.gapWidth;
   const b = room.bridge, prog = room.mg && room.state === 'armed' ? VERBS[room.verb].progress(room.mg) : 0;
   // in the mill the crossings are steel plate and wire rope; in the rock, timber and hemp
   const M = roomMaterial(room.x);
-  if (room.hazard !== 'burst') {
+  if (room.hazard !== 'burst' && !outdoors) {
     const depth = room.lane === 0 ? CFG.riverY - y : 60;
     const pit = ctx.createLinearGradient(0, y, 0, y + depth);
     pit.addColorStop(0, 'rgba(8,6,14,0.55)');
@@ -12278,6 +12376,15 @@ function drawRoom(room, y) {
       // planks, each one laid flat along the curve with a gap either side
       const step = 0.055;
       for (let t = 0.03; t < 1; t += step) {
+        // THIS DROPOUT IS INVISIBLE AND IS LEFT THAT WAY ON PURPOSE. step * gw is a 6.6-unit
+        // pitch against a plank 12.8 wide, so neighbours overlap by 48% and dropping one opens
+        // 0.4 units of daylight: solving a rickety changes the sag by 10 units and otherwise
+        // draws the same picture. Dropping whole BUCKETS instead was tried here and taken back
+        // out -- it opens 13-unit holes, and `rickety` carries hazard 'half', so half the
+        // arrivals cross an UNSOLVED crossing and `deckDrop` puts them on the carrying-rope
+        // curve, which knows nothing about which planks were skipped. Real holes therefore
+        // mean half the crowd walking on air. Making solving visible needs the art and the
+        // walk to read one list of planks; that is Morgan's, and it is reported with numbers.
         if (rickety && fixed < 1 && hash(room.x + t * 100) < 0.4) continue;
         const [px, py] = at(t);
         const [ax, ay] = at(Math.max(0, t - 0.02)), [bx2, by2] = at(Math.min(1, t + 0.02));
@@ -12291,15 +12398,28 @@ function drawRoom(room, y) {
       }
       ctx.globalAlpha = 1;
     }
+    // out here the cut and the armed mark are drawn above, under the planks rather than
+    // over them, and the tail's cave mark belongs to the tunnels
+    if (outdoors) return;
   } else if (room.type === 'crusher') {
     const th = CFG.tunnelH, t = room.slamT;
     let drop = 0;
-    if (room.state !== 'solved') {
-      if (t >= 1.0 && t < 1.15) drop = (t - 1.0) / 0.15;
-      else if (t >= 1.15 && t < 1.3) drop = 1;
-      else if (t >= 1.3) drop = 1 - (t - 1.3) / 0.3;
-    } else drop = Math.max(0, 0.15 - b);
-    const bw = 50, bh = 36, top = y - th + 6 + drop * (th - bh - 8);
+    // The fall lands ON the kill, as the mantrap's window does: the victim is taken when
+    // slamT crosses 1.0 (see update), and the block used to START falling there and arrive
+    // 0.15s late -- the thud sounded with the ram still parked at the tunnel roof.
+    if (t >= 0.85 && t < 1.0) drop = (t - 0.85) / 0.15;
+    else if (t >= 1.0 && t < 1.3) drop = 1;
+    else if (t >= 1.3) drop = 1 - (t - 1.3) / 0.3;
+    // AND IT IS WINCHED UP FROM WHERE IT WAS CAUGHT, not teleported. slamT stops advancing
+    // the moment the room is solved (see the burst branch in update), so the frozen `t` above
+    // is the ram's last live position and `bridge` lifts it from there. The old branch ignored
+    // that and eased from a fixed 0.15 instead: solving on the beat where the block is down
+    // moved it 78 units -- floor to roof -- in a single frame.
+    if (room.state === 'solved') drop *= 1 - b;
+    // 17, NOT 8. At full drop the block's underside reached y - 2 and its five teeth ran to
+    // y + 4 -- 9 units through the anvil's dressed face at y - 5 and 4 below the deck the
+    // crowd walks on. 17 lands the teeth on the anvil instead of through it.
+    const bw = 50, bh = 36, top = y - th + 6 + drop * (th - bh - 17);
     for (const rx of [sx + 36, sx + 84]) {
       ctx.fillStyle = INK; ctx.fillRect(rx - 2.5, y - th, 5, th); ctx.fillStyle = '#8a8aa0'; ctx.fillRect(rx - 1.2, y - th, 2.4, th);
     }
@@ -12412,7 +12532,30 @@ function drawEncRoom(room, y) {
     // And the window is re-centred so the extreme lands ON the kill: it peaked at phase 0.86
     // against a kill at 0.625, i.e. 0.376s late even at zero offset.
     const t = room.slamT / CFG.crusherPeriod;
-    const shut = solved ? 1 : t < 0.485 ? 0 : Math.sin((t - 0.485) / 0.28 * Math.PI);
+    // the window SHUTS at 0.765 as well as opening at 0.485: past it the sine turns negative and
+    // open = 46 * (1 - shut) swung on to 92, twice the rest opening, then popped back at the wrap
+    // THIS POSE IS UPSIDE DOWN AND IS LEFT THAT WAY ON PURPOSE. `open` is the jaw-tip HEIGHT,
+    // so open 46 is the meshed pose and open 0 is flat -- and `46 * (1 - shut)` therefore draws
+    // the trap CLAMPED for the 86% of its period it lies in wait and FLAT at t 0.625, which is
+    // the exact instant update() takes somebody. It is the wrong way round, both reviewers
+    // found it independently, and the game's other two drawings of this same object
+    // (TRAPS.mantrap, VERBS.lift.draw) agree: hinge at +/-7 on the plate, blade outward,
+    // `rotate(-shut * 1.44)`, shut 0 flat and shut 1 up.
+    //
+    // Inverting the sign alone was TRIED HERE AND TAKEN BACK OUT, because it makes things
+    // worse rather than better and the second art pass caught it. Flat, this construction is a
+    // bar on the ground with 7-unit teeth -- about 3px at play zoom -- so five hazard rooms
+    // became an empty patch of stripes for four fifths of every cycle; and `solved ? 0` made a
+    // defused trap geometrically identical to a live one, which is the defect the note below
+    // says was removed two builds ago.
+    //
+    // The real fix is not a sign. It is to port the reel's construction -- which also cures a
+    // blade that stretches 64% as it shuts, eight teeth that float up to 13 units off the
+    // curve they are meant to sit on, and two hinges standing 28 units outboard of the plate
+    // on bare grass -- and to draw the jaws in drawRoomProps so they close OVER the body
+    // rather than behind it. That needs a set-pose and a defused-pose authored, which is a
+    // decision about how three drawings should read, so it is Morgan's. Reported with numbers.
+    const shut = solved ? 1 : (t < 0.485 || t > 0.765) ? 0 : Math.sin((t - 0.485) / 0.28 * Math.PI);
     // `solved ? 46` used to override the `solved ? 1` on the line above it, which existed to
     // drive exactly this to zero -- so a solved mantrap drew at the identical geometry to an
     // armed one and only its stroke colour changed. Three clean pulls in the panel moved the
@@ -12620,8 +12763,13 @@ function drawEncRoom(room, y) {
     // the cut faces of the notch, so the gap reads as dug rather than as a missing pixel
     if (solved) {
       ctx.fillStyle = 'rgba(52,40,28,0.75)';
-      ctx.fillRect(sx + gw + 32, y - 116, 3, 116);
-      ctx.fillRect(sx + gw + 61, y - 116, 3, 116);
+      // AS TALL AS THE BANK IS AT THEIR OWN X, not 116. These two are drawn after the restore
+      // above, so the bank's clip does not hold them: at 116 they stood 79 and 84 units of
+      // 3-wide bar in open air over a bank that is 31 and 37 tall there -- getting on for two
+      // body heights, at every solved ditch. Solved from the bank's own quadratic rather than
+      // written down, so a change to DITCH_SPOIL or to the control point cannot orphan them.
+      const bankH = u => { const k = (-88 + Math.sqrt(7744 + 208 * u)) / 104; return 148 * k * (1 - k); };
+      for (const u of [32, 61]) ctx.fillRect(sx + gw + u, y + 2 - bankH(u), 3, bankH(u));
     }
     // fresh spoil showing through where the turf has not closed over
     ctx.fillStyle = 'rgba(86,68,46,0.7)';
@@ -12769,7 +12917,8 @@ function drawEncWall(room, y, sx, gw, solved, prog) {
   for (let by = top; by < bottom; by += 13) {
     const stag = (Math.floor(by / 13) % 2) * 15;
     for (let bx = wx0 - 30; bx < wx0 + ww; bx += 30) {
-      const hv = hash(bx * 0.3 + by * 0.7);
+      // seeded in WORLD space, or every block re-rolls its grey as the camera moves
+      const hv = hash((bx + V.left) * 0.3 + by * 0.7);
       ctx.fillStyle = `rgb(${Math.round(104 + hv * 30)},${Math.round(97 + hv * 27)},${Math.round(88 + hv * 24)})`;
       ctx.fillRect(bx + stag + 1, by + 1, 28, 11);
       ctx.fillStyle = 'rgba(255,248,230,0.13)'; ctx.fillRect(bx + stag + 1, by + 1, 28, 1);
@@ -13708,6 +13857,12 @@ function drawGateWall(y) {
   brickFill(x0 - 260, top - 150, 260, h + 168, 0.9);
   brickFill(x1, top - 150, 300, h + 168, 0.9);
   brickFill(x0, top - 150, x1 - x0, 150, 0.9);
+  // A string course tying the elevation together. Drawn BEFORE the windows, so the
+  // openings punch through it: it crosses them at top - 92, and painted afterwards it
+  // buried the bottom glazing bar and read as a second sill 5 units above the real one.
+  ctx.fillStyle = '#4a3f4c'; ctx.fillRect(x0 - 262, top - 150 + 58, x1 - x0 + 566, 6);
+  ctx.fillStyle = 'rgba(255,244,222,0.12)'; ctx.fillRect(x0 - 262, top - 150 + 58, x1 - x0 + 566, 1.4);
+  ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(x0 - 262, top - 150 + 64, x1 - x0 + 566, 3);
   // Windows. The largest surface in every frame was 674 x 290 of blank brick, and a
   // Victorian mill IS its windows -- that silhouette is the whole building. Pitched off
   // V.left the way brickFill keys its bond, so the openings stay in step with the courses
@@ -13729,10 +13884,6 @@ function drawGateWall(y) {
     ctx.fillStyle = 'rgba(255,244,222,0.18)'; ctx.fillRect(wx - 2, wTop + wH, wW + 4, 1.3);
     ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(wx - 2, wTop + wH + 4, wW + 4, 3);  // its shadow
   }
-  // a string course tying the elevation together
-  ctx.fillStyle = '#4a3f4c'; ctx.fillRect(x0 - 262, top - 150 + 58, x1 - x0 + 566, 6);
-  ctx.fillStyle = 'rgba(255,244,222,0.12)'; ctx.fillRect(x0 - 262, top - 150 + 58, x1 - x0 + 566, 1.4);
-  ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(x0 - 262, top - 150 + 64, x1 - x0 + 566, 3);
   // coping along the top, with the shadow it throws -- it sat on 290 units of brick and
   // cast nothing, which is most of why the wall read as printed rather than lit
   ctx.fillStyle = '#524657';                          // millYard's coping colour, not a lavender of my own
@@ -13928,9 +14079,12 @@ function drawYardDoors(y) {
 // and then buried it. An open door with light behind it and no pool in front of
 // it reads as a hole cut in a flat.
 function drawDoorSpill() {
-  if (introAlpha() <= 0 || S.doorOpen <= 0.04) return;
+  // Gated like drawIntro, not on introAlpha. The gateway stopped fading at cam 260 and
+  // this did not, so the lit interior outlived the pool in front of it by 4.6 seconds --
+  // exactly the hole-cut-in-a-flat the comment above says this function exists to prevent.
+  if (S.doorOpen <= 0.04 || !inView(CFG.intro.doors, 420)) return;
   const c = I(), y = laneY(0), cx = c.doors - V.left, half = c.half;
-  const swing = Math.pow(S.doorOpen, 1.7) * introAlpha();
+  const swing = Math.pow(S.doorOpen, 1.7);
   // Light out of a doorway lands on the GROUND in front of it and fades in every
   // direction. The old version was an axis-aligned rect 156 tall running up the brick
   // as well, with hard vertical edges at the jambs, so it read as a pale beige panel
@@ -14339,8 +14493,16 @@ function deckDrop(r) {
   for (const m of S.rooms) {
     if (m.lane !== r.lane || (m.type !== 'rope' && m.type !== 'rickety') || r.x < m.x || r.x > m.x + CFG.gapWidth) continue;
     if (m.type === 'rope' && m.state !== 'solved') return 0;
-    const t = (r.x - m.x) / CFG.gapWidth, sag = 26 + (m.type === 'rickety' ? 14 * (1 - m.bridge) : 0);
-    return 2 * t * (1 - t) * sag;
+    // THE WALKWAY'S OWN NUMBER. This said 26 (40 unsolved) against drawRoom's 14 (24), so a
+    // body at midspan was drawn 6 units under the plank it was crossing -- the "sunk to the
+    // knee" fault, in its floating form. The walkway's figure is the one that was chosen (the
+    // comment beside it says a deeper belly reads as a boat), so the bodies come up to it.
+    const t = (r.x - m.x) / CFG.gapWidth, sag = 14 + (m.type === 'rickety' ? 10 * (1 - m.bridge) : 0);
+    // AND THE WOBBLE, which drawRoom adds to the same belly and this did not -- so an unsolved
+    // crossing's planks swung +/-1.5 units at 9 rad/s through the feet of people standing on
+    // them. Same two-numbers-for-one-quantity fault as the sag above, one term along.
+    const wob = m.type === 'rickety' && m.bridge < 1 ? Math.sin(S.t * 9) * 3 : 0;
+    return 2 * t * (1 - t) * (sag + wob);
   }
   return 0;
 }
@@ -17262,7 +17424,7 @@ const TRAPS = {
     for (let x = -140; x <= 150; x += 17) ctx.lineTo(x, -36 - Math.sin(x * 0.09) * 3 - hash(x * 0.5) * 3);
     ctx.stroke();
     const k = clamp01((t - 0.3) / 0.28);
-    if (t < 0.3) reelFigure(r, -104 + 62 * (t / 0.3), 0, S.t * 13, 0, 1);
+    if (t < 0.3) reelFigure(r, -104 + (-34 + 104) * (t / 0.3), 0, S.t * 13, 0, 1);
     // Caught IN the hedge and held by it, which is what a laid hedge is for -- so this one
     // does not go to the ground, and half the stems are drawn IN FRONT of the body. Drawn
     // entirely behind it, a man thrown into a hedge reads as a man lying on a fence.
