@@ -291,6 +291,23 @@ const cost = {
   // measures the road from a run. Returning null here prints the same "no cost model" row
   // that calculation gets, which is an admission rather than a fiction.
   lift:   () => ({ skip: 'six presses at every difficulty; the cost is time, not keys -- run tools/lift-check.js' }),
+  // ALSO NOT MODELLED, and until now not SAID. calculation fell through to the generic
+  // "no cost model for verb" line, which reads as a note rather than as an admission: lift
+  // declines out loud and points at a tool, this one just went quiet. The row above already
+  // claimed calculation's silence as the honest shape to copy, so this is that row keeping
+  // its own word.
+  //
+  // It is the one room whose cost is THINKING. It takes one or two keystrokes, so counting
+  // keys against road would score it trivial and bless whatever warn it was given -- the
+  // failure being a confident 'ok', not a blank.
+  //
+  // The only pricing that exists is a hand estimate, and it lives in prose: index.html, in
+  // the comment block above VERBS.calculation -- 1.2 to 2.0s of arithmetic, ~0.5s reading,
+  // ~0.4s typing, about 2.9s worst case, against a SIGHTED 4.11s at x 6900. Nothing checks
+  // it and nothing will notice when it stops being true. That is a named hole and not a
+  // measurement, which is the whole reason it is named here: a tool that stays silent about
+  // a room it cannot see is indistinguishable from a tool that has passed it.
+  calculation: () => ({ skip: 'the cost is arithmetic in the head, not keys; the only pricing is a hand estimate of ~2.9s in prose above VERBS.calculation, and no tool checks it' }),
   // Parsed, not written down. This entry carried `+ 5 + 1` and `secs: 0.45` for the payout
   // presses and the arm delay after the room stopped having either, and a tool that states a
   // fact about the game goes stale by lying rather than by failing. Both numbers now come out
