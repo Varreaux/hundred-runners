@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '143 a set max, a set min, a crew-paced fade';
+const BUILD = '144 the lamp reads as a lamp';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -445,6 +445,21 @@ const CFG = {
             // that shows one figure and the ground under it -- the end of a run should be a
             // candle, not a keyhole.
             lampMinR: 44,
+            // The other end. As a fraction of the painting's HEIGHT, not its diagonal: the
+            // diagonal gave 296 against a picture 300 tall, so the disc was taller than the
+            // thing it was lighting and the lamp stopped reading as a lamp.
+            //
+            // 0.62 had the same fault one step down and nobody measured it: a radius of 186
+            // is a DIAMETER of 372 against a 441x300 painting -- 124% of its height and 84%
+            // of its width -- so the opening frame of every run lit essentially the whole
+            // card. Morgan, 2026-09-21: "the maximum brightness is much too bright." At 0.36
+            // the pool is 108, about half the width of the card and under three quarters of
+            // its height, which is a lamp with a dark card around it rather than a lit card.
+            lampMaxFrac: 0.36,
+            // How far the veil thins when the lamp is at full size, 0 to 1. See
+            // veilPaintingSpot. 0 means the card outside the pool is always the same dim
+            // ghost, which is what makes the lamp read as a lamp.
+            lampFlood: 0,
             dimAt: c => 0.5 + 0.5 * Math.min(1, Math.max(0, c) / 100) },
 };
 // The mountain's MOUTH, which is no longer the end of the course. These were one number
@@ -3477,13 +3492,11 @@ function finaleFillFrac(f) {
   const need = f.packNeed || Math.max(1, (f.line && f.line.length) || 1);
   return clamp01((f.packDone || 0) / need);
 }
+// ONE dial, in CFG beside the minimum it is the other end of. It was a literal here, which
+// is why a pool wider than the card it lit survived unexamined: a fraction on its own says
+// nothing, and the two ends of the lamp were written three hundred lines apart.
 function finaleSpotFullR(L) {
-  // Keyed to the painting's HEIGHT, not its diagonal. The diagonal gave 296 against a
-  // picture 300 tall, so from about 55 survivors the disc was already taller than the thing
-  // it was lighting and the lamp stopped reading as a lamp -- everything above that crew
-  // count looked the same. At 0.62 of the height the pool is generous at 100 and still has
-  // an edge you can see.
-  return L.left.h * 0.62;
+  return L.left.h * CFG.finale.lampMaxFrac;
 }
 function finaleSpotRadius(f, L) {
   const full = finaleSpotFullR(L);
@@ -3528,14 +3541,23 @@ const VEIL = 0.93;
 function veilPaintingSpot(side, cx, cy, r, fullR) {
   // Pitch-black veil with a circular hole so painting art shows through the lamp.
   // evenodd path — reliable; destination-out previously left some builds fully black.
-  // No early-out. It used to return here at 98% of full, which switched off the veil, the
-  // rim, the warm core, the spill and the dust in a single frame -- so the BEST outcome of a
-  // whole run produced the least light in the room, and it popped between 0.979 and 0.98.
-  // A flooded room should look flooded, so the veil thins toward nothing instead of vanishing.
-  // Capped at 0.55, not 0.85. Thinning the veil to 0.14 made the whole card bright and flat
-  // and the lamp vanished into it -- which moved the old pop rather than removing it, and
-  // still left the best outcome of a run with the least readable light.
-  const flood = clamp01((r - fullR * 0.75) / (fullR * 0.25)) * 0.647;
+  // NO FLOOD ANY MORE. The veil used to thin as the pool approached full, down to 0.42 of
+  // its strength -- so at full radius more than half of the unlit card was plainly readable
+  // and the lamp barely mattered. That was written when the radius scaled with the crew and
+  // reaching full was the BEST OUTCOME of a whole run, worth rewarding; since 143 full is
+  // simply where every run opens, so it fired at the start of every game and made the first
+  // stretch of the room a lit card rather than a lamp. Morgan, 2026-09-21: "the maximum
+  // brightness is much too bright."
+  //
+  // It cannot bring back the pop it was written against either: that was an early-out at 98%
+  // of full which switched the veil, the rim, the core, the spill and the dust off in one
+  // frame, and the early-out is gone. The veil is one strength now, with a hole in it.
+  //
+  // Kept as a dial rather than deleted, at 0, because how dark the rest of the card should
+  // be is a judgement and not a fact. At 0.647 -- what it computed at full radius -- the
+  // unlit painting was 58% readable. Both the flat veil and the rim gradient read it, which
+  // is the point: they are two halves of one edge and must not be dimmed separately.
+  const flood = clamp01(CFG.finale.lampFlood || 0);
   r = Math.max(5, r);
   ctx.save();
   ctx.beginPath();
@@ -18438,6 +18460,22 @@ if (qs.has('trap')) {
   S.endRoll = roll;
   S.endT = REEL.at + (+(qs.get('tt') || 0.8)) * roll.anim;
   S.t = +(qs.get('st') || 3.1);
+}
+//   ?lampmax=N  the last room's biggest lamp pool, as a fraction of the painting's height.
+//               Set before anything reads it, so a real played run honours it too and not
+//               only ?finale -- picking this number by eye means comparing two whole runs,
+//               and a flag that only worked on the shortcut would be answering with a
+//               different room from the one being tuned.
+if (qs.has('lampmax')) {
+  const v = +qs.get('lampmax');
+  if (isFinite(v) && v > 0.02 && v <= 1.5) CFG.finale.lampMaxFrac = v;
+}
+//   ?veil=N     how far the veil thins at full lamp, 0 to 1. 0 keeps the card outside the
+//               pool at one dim strength; 0.647 is what it used to compute, where more than
+//               half the unlit painting could be read.
+if (qs.has('veil')) {
+  const v = +qs.get('veil');
+  if (isFinite(v) && v >= 0 && v <= 1) CFG.finale.lampFlood = v;
 }
 // ?finale jumps to the last room. It used to build the OLD QTE state literal by hand, which
 // is how a dev shortcut rots: the real constructor moved on and this one silently kept
