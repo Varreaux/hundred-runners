@@ -12,7 +12,8 @@
 //   the lamp opens at FULL and closes to its SET MINIMUM, the same two ends every game
 //   and the SPEED between them is the one thing the crew changes: two survivors are at the
 //     candle by the halfway mark, a hundred are still losing light in the final second
-//   bodies leave one at a time, evenly, from the END of the belt and into the water
+//   bodies leave one at a time, evenly, over the LEFT end -- the end the belt carries them
+//     toward -- and into the water
 //   the queue behind steps up, so a hundred survivors keep the belt full to about two thirds
 //   a wrong mark spends a body OUT OF TURN and so brings the end forward by exactly one gap
 //   the scoreboard moves with every body, whichever of the two took them
@@ -166,14 +167,24 @@ eval(src + `
   // ---------------------------------------------------------------- the belt stays full behind
   {
     const g = searching(100);
-    const deckAt = {};
-    play(g, CFG.finale.searchTime + 2, (t) => { deckAt[Math.floor(t)] = g.deck.length; });
+    const deckAt = {}, lineAt = {};
+    play(g, CFG.finale.searchTime + 2, (t) => {
+      deckAt[Math.floor(t)] = g.deck.length; lineAt[Math.floor(t)] = g.line.length;
+    });
     const cap = Math.max(...Object.values(deckAt));
-    const third = deckAt[Math.floor(CFG.finale.searchTime / 3)];
-    const late = deckAt[Math.floor(CFG.finale.searchTime * 0.9)];
-    ok('a hundred survivors keep the belt full while there is still a queue behind it',
-       third >= cap - 1 && late < cap * 0.3,
-       cap + ' slots, ' + third + ' at a third, ' + late + ' at nine tenths');
+    const at = k => Math.floor(CFG.finale.searchTime * k);
+    // THE MECHANISM, not a fraction somebody picked. This asserted late < cap * 0.3 and then
+    // failed at 10 drawn of 33 -- a belt that had visibly thinned to under a third, reported
+    // as a fault, because the gap at the left took 74 units off the deck and moved cap. The
+    // claim worth making has two halves and no arbitrary number in either: while a queue is
+    // still waiting the belt runs AT capacity, and once the queue is exhausted the drawn
+    // count IS the crew, so the belt thins with the survivors from there on.
+    const fullEarly = deckAt[at(1 / 3)] === cap && lineAt[at(1 / 3)] > cap;
+    const thinLate = deckAt[at(0.9)] === lineAt[at(0.9)] && lineAt[at(0.9)] < cap;
+    ok('the belt runs full while a queue waits, then thins with the crew once it is gone',
+       fullEarly && thinLate,
+       cap + ' slots: at a third ' + deckAt[at(1 / 3)] + ' drawn of ' + lineAt[at(1 / 3)] +
+       ' alive, at nine tenths ' + deckAt[at(0.9)] + ' of ' + lineAt[at(0.9)]);
   }
 
   // ---------------------------------------------------------------- bodies go in the water
@@ -189,11 +200,13 @@ eval(src + `
         // FLAGGED, not timed. A test on the body's own age was true on more than one
         // frame at some dt and double-counted every body: 4 over the end against 2 in the
         // water, which reads as half of them landing somewhere else.
-        if (!fl._seenOff) { fl._seenOff = true; if (fl.x >= L.deck.x + L.deck.w) offEnd++; }
+        // THE LEFT end. The belt's top scrolls in -x, so that is the end a body the belt has
+        // beaten goes over; this read the right end for as long as the drop was wrongly there.
+        if (!fl._seenOff) { fl._seenOff = true; if (fl.x <= L.deck.x) offEnd++; }
         if (fl.splashed && !fl._seen) { fl._seen = true; splashed++; }
       }
     });
-    ok('every body the clock spends leaves the END of the belt and reaches the water',
+    ok('every body the clock spends leaves the LEFT end of the belt and reaches the water',
        offEnd > 0 && splashed === offEnd, offEnd + ' over the end, ' + splashed + ' splashed');
     ok('and the scoreboard moves with each of them',
        S.stats.dead - dead0 === offEnd && arrived0 - S.stats.arrived === offEnd,

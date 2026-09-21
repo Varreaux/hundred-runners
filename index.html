@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '145 a tighter pool and a 75-second room';
+const BUILD = '146 the belt drops people off its own end';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3789,23 +3789,26 @@ function finaleConfirm(atU, atV) {
   return false;
 }
 // ONE place decides how a body leaves the belt, because two things push people over the end
-// now: a wrong mark, and the clock itself. Always the slot NEAREST the drum -- popping the
-// end of the line dropped every body from the far left, 453 units from the drawn whirlpool,
-// and nothing ever went into the drain.
+// now: a wrong mark, and the clock itself. Always the slot NEAREST THE DROP, which is the
+// LEFTmost -- the front of the queue, the next one the belt will put over the edge. It took
+// the rightmost while the drop was wrongly at the drive end; before that it popped the end
+// of the line, which dropped every body from the far side of the room, hundreds of units
+// from the drawn undertow, so nothing ever went into the water.
 function finaleTakeBody(f, L) {
-  const near = f.deck.filter(d => d.arrived).sort((a, b) => b.x - a.x)[0];
+  const near = f.deck.filter(d => d.arrived).sort((a, b) => a.x - b.x)[0];
   const r = near ? (f.line.splice(f.line.indexOf(near.r), 1)[0] || f.line.pop()) : f.line.pop();
   if (!r) return null;
   // The scoreboard has to move with the body: this one was banked as arrived when they
   // reached the wall, so without both halves the summary counts a drowning as a survivor.
   r.state = 'gone'; r.doom = 'final'; r.deathT = S.t; S.stats.dead++; S.stats.arrived--;
-  // Off the END of the belt, not from where they were standing. A body dropped at the slot
-  // fell inside the deck rect and across the face of the drive drum for the first sixth of a
-  // second. People who go off a conveyor leave at the end of it. vy -80 threw the body UP
+  // Off the LEFT end of the belt, not from where they were standing. A body dropped at the
+  // slot fell inside the deck rect for the first sixth of a second. vy -80 threw the body UP
   // first, so for 0.57 of a 0.62s fall it hovered at belt height among the standing crew and
-  // only the last fifth was over water. The drift is toward the drum, where the drain is.
-  f.falling.push({ r, t: 0, x: L.deck.x + L.deck.w + 6, y: L.deck.y - 2,
-                   vx: rand(4, 40), vy: -18, rot: rand(-0.4, 0.4) });
+  // only the last fifth was over water. The drift is NEGATIVE now, out over the gap: the
+  // belt's top surface runs that way, and a body it has beaten keeps going the way it was
+  // being carried.
+  f.falling.push({ r, t: 0, x: L.deck.x - L.deck.drumR - 7, y: L.deck.y - 2,
+                   vx: -rand(4, 40), vy: -18, rot: rand(-0.4, 0.4) });
   f.deck = f.deck.filter(d => d.r !== r);
   // Close the gap. The slot INDEX is the one statement of where somebody stands, so
   // re-packing it here is what carries the rest of the line forward when the person in front
@@ -3825,13 +3828,13 @@ function finaleRollOff(f) {
   const r = finaleTakeBody(f, L);
   if (!r) return;
   if (f.line.length <= 4 || Math.random() < 0.3) {
-    // OVER THE WATER, at the drum end, which is where the body is going. The first attempt
+    // OVER THE WATER, at the DROP end, which is where the body is going. The first attempt
     // put it at deck.y - 30 and that is head height: the crowns sit about 35 above the sole
     // line at deck.y + 3, so the name was stamped across the faces of the people still
     // standing. Exactly the fault the status line above it carries a comment about, repeated
     // one function away. Floaters rise 18 over their life, so this stays inside the water
-    // band for all of it, and it clears the generator housing at deck.x + deck.w.
-    S.floaters.push({ sx: L.deck.x + L.deck.w - 56, sy: L.water.y + 26,
+    // band for all of it, and it sits over the gap rather than over the belt.
+    S.floaters.push({ sx: L.deck.x + 40, sy: L.water.y + 26,
                       txt: r.name || 'ONE MORE', life: 1.05, color: '#c9a86a' });
   }
 }
@@ -3873,11 +3876,30 @@ function finaleLayout() {
   const paintH = Math.min(300, deckTop - paintTop - 22); // ~+40% height vs 214
   const left = { x: px + sidePad, y: paintTop, w: paintW, h: paintH };
   const right = { x: left.x + paintW + gap, y: paintTop, w: paintW, h: paintH };
-  // Meets the chamber wall at the left, as the water does, and stops at the generator at the
-  // right. It used to be px+32 .. px+pw-32, so both ends were finished rounded corners 28
-  // units short of the walls, hanging over open water with one pulley and no support -- and
-  // the generator sat 30 units INSIDE it, painting over the drum and both drive bands.
-  const deck = { x: px + 4, y: deckTop, w: (px + pw - 130) - (px + 4), h: 36 };
+  // THE GAP IS AT THE LEFT, because that is the end the belt carries people toward. The top
+  // of the belt scrolls in -x -- the crew run +x to stand still on it, which is the premise
+  // of the room -- so anyone the belt beats drifts LEFT and goes over the LEFT end. The belt
+  // used to meet the chamber wall here with no tail drum and no gap at all, while every
+  // falling body, the undertow and the whole queue were arranged around the RIGHT end at the
+  // generator. Morgan, 2026-09-21: "the gap is also on the right and people are falling off
+  // the right, as if they were running faster than the belt lol."
+  //
+  // 74 leaves a body's width of open water beyond the tail drum's own radius, so a figure is
+  // in clear air before it passes belt level. The right end is unchanged: it still carries
+  // the head drum, the drive bands and the dynamo.
+  const DROP = 74;
+  // drumR rides along on the deck because TWO things need it and they are 12,000 lines
+  // apart: drawChamberBase, which draws the head and tail drums ON the ends so the slats
+  // wrap them, and finaleTakeBody, which has to launch a body CLEAR of the tail drum. It was
+  // a literal in the drawing, so the first body dropped at deck.x - 6 spawned inside the
+  // drum it was supposed to be falling past -- the same fault the head drum's own comment
+  // was written about, reappearing at the other end the moment that end grew a drum.
+  // An object literal cannot read its own sibling, so the height is hoisted rather than
+  // written twice: drumR: 36 * 0.46 beside h: 36 is the very fault this field exists to
+  // remove, one line further in.
+  const deckH = 36;
+  const deck = { x: px + 4 + DROP, y: deckTop, w: (px + pw - 130) - (px + 4 + DROP), h: deckH,
+                 drumR: deckH * 0.46 };
   // Runs wall to wall and down to the floor. It used to be a floating blue rectangle 20 units
   // short of each side with bare panel visible under it, and 38 deep against a body 45 tall --
   // so a body could not fit in it and was drawn sinking through the pool floor and across the
@@ -4860,27 +4882,32 @@ function updateFinale(dt) {
   }
   f.falling = f.falling.filter(fall => fall.t < 2.2);
 
-  // Run to a fixed belt slot (right → left, even spacing). Arrive -> +1, STAY standing.
+  // Run to a fixed belt slot, even spacing. Arrive -> +1, STAY standing.
+  //
+  // THE QUEUE RUNS THE WAY THE BELT DOES. Slot 0 is the LEFTmost, hard by the gap: the front
+  // of the line, the next one the belt will put over the edge. They board at the far end,
+  // by the drive, and the line closes toward the drop as people go off it. It was the other
+  // way round -- boarding at the left and filling from the right -- which put the newest
+  // arrival next to the hole and the queue walking away from its own exit.
   const live = f.phase !== 'intro';
-  // They start ON the belt. startX was L.deck.x - 70 = -34, off the left of a 960-wide canvas,
-  // so a body walked 70 units through the chamber wall with its contact shadow drawn on
-  // nothing before the deck began.
-  const startX = L.deck.x + 13;   // the whole figure AND its contact shadow land on the deck
-  const beltLeft = L.deck.x + 36;
-  const beltRight = L.gen.x - 40;
-  const minGap = 100;
+  // They start ON the belt: the whole figure AND its contact shadow land on the deck. It was
+  // once L.deck.x - 70 = -34, off the left of a 960-wide canvas, so a body walked 70 units
+  // through the chamber wall with its shadow drawn on nothing before the deck began.
+  const startX = L.deck.x + L.deck.w - 13;
+  const beltDrop = L.deck.x + 36;          // slot 0, clear of the tail drum's own radius
+  const beltFar = L.gen.x - 40;            // the last slot, clear of the head drum
   // Fast enough that the longest walk lands inside the boarding beat. The first one aboard
   // has the furthest to go, so that walk is what sets this, not the last.
   // 0.42 gave 1848 px/s -- 16.8 times CFG.scroll and two body-widths per frame, which is a
   // blur rather than a walk. 1.5 gives about 520, fast but readable as running, and BOARD
   // carries the timing as it was always meant to.
-  const runSpd = Math.max(340, (beltRight - startX) / 1.5);
+  const runSpd = Math.max(340, (startX - beltDrop) / 1.5);
   if (!f.packQueue) f.packQueue = [];
   if (f.packDone == null) f.packDone = 0;
   if (f.packNeed == null) f.packNeed = Math.max(1, f.line.length);
   if (f.spawnI == null) f.spawnI = 0;
   const nNeed = Math.max(1, f.packNeed);
-  const span = Math.max(40, beltRight - beltLeft);
+  const span = Math.max(40, beltFar - beltDrop);
   // A figure is about 20 units wide with its shadow, so the belt really holds span/20. At
   // 100 survivors the pitch was 7.2 and every body overlapped its neighbours by 64% -- an
   // unreadable mash at exactly the moment the crowd you saved is supposed to be the reward.
@@ -4923,22 +4950,25 @@ function updateFinale(dt) {
     f.spawnT -= cadence;
     {
       const r = f.packQueue.shift();
-      // i=0 rightmost (near gen), then fill leftward. No targetX is stamped here: the slot
-      // INDEX is the one statement of where somebody stands, and it is read below, where the
-      // belt's own constants live. Stamped at spawn it could not be carried forward when the
-      // person in front went over the end of the belt.
+      // i=0 leftmost, at the gap, then fill away from it. No targetX is stamped here: the
+      // slot INDEX is the one statement of where somebody stands, and it is read below, where
+      // the belt's own constants live. Stamped at spawn it could not be carried forward when
+      // the person in front went over the end of the belt.
       f.deck.push({ r, i: f.spawnI, enter: 0, x: startX, arrived: false });
       f.spawnI++;
     }
   }
   for (const d of f.deck) {
-    const targetX = beltRight - d.i * slotStep;
+    const targetX = beltDrop + d.i * slotStep;
     d.targetX = targetX;
     if (!d.arrived) {
       d.enter += dt;
-      if (d.x < startX + 1) d.x = startX;
-      d.x = Math.min(targetX, d.x + runSpd * dt);
-      if (d.x >= targetX - 2) {
+      if (d.x > startX - 1) d.x = startX;
+      // LEFTWARD, toward the gap. They board at the drive end and walk down the belt, which
+      // is also the direction the belt is carrying them, so the walk-on reads as stepping
+      // onto something already moving rather than as fighting it.
+      d.x = Math.max(targetX, d.x - runSpd * dt);
+      if (d.x <= targetX + 2) {
         d.x = targetX;
         d.arrived = true;
         f.packDone = (f.packDone || 0) + 1;
@@ -16256,10 +16286,11 @@ function drawChamberBase(f, L, t, still) {
   ctx.strokeStyle = 'rgba(140,210,255,0.35)'; ctx.lineWidth = 1.5;
   for (let i = 0; i < 3; i++) {
     ctx.beginPath();
-    // Under the end of the belt the bodies come off, not at 55% of the pool. Three stroked
-    // ellipses at three angles also read as an atom, so this is concentric and flattened --
-    // an undertow, not a science icon.
-    ctx.ellipse(L.gen.x - 20, L.water.y + 20, 16 + i * 13, 4 + i * 2.4, 0, 0, 6.28);
+    // Under the end of the belt the bodies come off -- the LEFT end, under the gap, which is
+    // the end the belt carries people toward. It sat under the drive drum at the far right,
+    // where nobody has fallen since the drop moved. Three stroked ellipses at three angles
+    // also read as an atom, so this is concentric and flattened: an undertow, not an icon.
+    ctx.ellipse(L.deck.x - 24, L.water.y + 20, 16 + i * 13, 4 + i * 2.4, 0, 0, 6.28);
     ctx.stroke();
   }
   // Clipped to the pool. A ripple is rx = r.r * 1.5 and reached 28 units left of the water's
@@ -16294,6 +16325,11 @@ function drawChamberBase(f, L, t, still) {
   const piers = [];
   for (let pxx = L.deck.x + 54; pxx < L.deck.x + L.deck.w - 40; pxx += 118) piers.push(pxx);
   piers.push(L.deck.x + L.deck.w - 14);
+  // And one under the TAIL drum, for the same reason the drive end has one: that end is no
+  // longer resting against the chamber wall, and a belt end over open water needs a bearing
+  // under it. Without this the new gap put the tail drum, the whole return side and every
+  // body standing in slot 0 on nothing.
+  piers.push(L.deck.x + 14);
   for (const pxx of piers) {
     ctx.fillRect(pxx - 4, pierTop, 9, pierFoot - pierTop);
     ctx.fillRect(pxx - 11, pierTop - 2, 23, 5);
@@ -16354,7 +16390,27 @@ function drawChamberBase(f, L, t, still) {
   ctx.fillRect(L.gen.x + L.gen.w - 17, L.gen.y + L.gen.h - 2, 7, legH);
   inkFill('#2c333c', L.gen.x, L.gen.y, L.gen.w, L.gen.h, 4);
   const drumX = L.deck.x + L.deck.w, drumY = L.deck.y + L.deck.h / 2;   // ON the end, so the slats wrap it
-  const drumR = L.deck.h * 0.46;
+  const drumR = L.deck.drumR;
+  // THE TAIL DRUM, at the drop end. An idler: no bands, no dynamo, it is simply what the
+  // belt turns around before it goes back underneath -- and it is what makes the left end
+  // read as an end rather than as a belt that has been cut off. Drawn here, beside the head
+  // drum and from the same drumY and drumR, so the two ends of one machine cannot disagree
+  // about how thick the belt is. Spokes turn the same way for the same reason.
+  {
+    const tx = L.deck.x;
+    ctx.fillStyle = INK;
+    ctx.beginPath(); ctx.arc(tx, drumY, drumR + 1.6, 0, 6.28); ctx.fill();
+    const tail = ctx.createLinearGradient(tx - drumR, 0, tx + drumR, 0);
+    tail.addColorStop(0, '#4a3d2e'); tail.addColorStop(0.58, '#9a8259'); tail.addColorStop(1, '#6b5a44');
+    ctx.fillStyle = tail;
+    ctx.beginPath(); ctx.arc(tx, drumY, drumR, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = 'rgba(30,22,18,0.55)'; ctx.lineWidth = 1.6;
+    for (let i = 0; i < 4; i++) {
+      const a2 = -t * (beltSpd / Math.max(1, drumR)) + i * Math.PI / 2;
+      ctx.beginPath(); ctx.moveTo(tx, drumY);
+      ctx.lineTo(tx + Math.cos(a2) * drumR * 0.82, drumY + Math.sin(a2) * drumR * 0.82); ctx.stroke();
+    }
+  }
   ctx.fillStyle = INK;
   ctx.beginPath(); ctx.arc(drumX, drumY, drumR + 1.6, 0, 6.28); ctx.fill();
   const drum = ctx.createLinearGradient(drumX - drumR, 0, drumX + drumR, 0);
@@ -16579,7 +16635,7 @@ function drawFinalePanel() {
   // crew: FIXED world positions; run-in-place gait sells treadmill relative motion
   const pack = f.deck.slice().sort((a, b) => a.x - b.x);
   for (const d of pack) {
-    if (d.enter < 0 && d.x <= L.deck.x - 40) continue;
+    if (d.enter < 0 && d.x >= L.deck.x + L.deck.w + 40) continue;
     const working = d.arrived && f.phase !== 'blackout';
     const entering = !d.arrived && d.enter >= 0;
     // legs pump in place; body X does not travel
