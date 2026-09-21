@@ -9,8 +9,9 @@
 //
 // What it checks, at four crew sizes:
 //   the run lasts searchTime and not a second more or less, ending as the last body goes
-//   the lamp opens at FULL for every crew -- that is the whole point of the change
-//   and closes all the way down, monotonically, with nobody left standing in the dark
+//   the lamp opens at FULL and closes to its SET MINIMUM, the same two ends every game
+//   and the SPEED between them is the one thing the crew changes: two survivors are at the
+//     candle by the halfway mark, a hundred are still losing light in the final second
 //   bodies leave one at a time, evenly, from the END of the belt and into the water
 //   the queue behind steps up, so a hundred survivors keep the belt full to about two thirds
 //   a wrong mark spends a body OUT OF TURN and so brings the end forward by exactly one gap
@@ -69,16 +70,26 @@ eval(src + `
   const L0 = () => finaleLayout();
 
   // ---------------------------------------------------------------- the clock, at four sizes
+  const bottoms = {};
   for (const crew of [1, 5, 24, 100]) {
     const g = searching(crew);
     const full = finaleSpotFullR(L0());
     const openFrac = finaleLampFrac(g);
     const openR = finaleSpotRadius(g, L0());
     let minFrac = 1, worstRise = 0, prevFrac = 1, drops = [], prevLine = g.line.length, lastDropT = 0;
+    // When the lamp first sits on its minimum, and what it was doing in the last second
+    // before the room ended. Those two readings are the whole claim: the SPEED varies and
+    // the two ends do not.
+    let bottomedAt = null, lastSecondFall = 0, rPrev = finaleSpotRadius(g, L0());
+    const minR = CFG.finale.lampMinR;
     const ended = play(g, CFG.finale.searchTime + 6, (t) => {
       const fr = finaleLampFrac(g);
       if (fr > prevFrac + 1e-9) worstRise = Math.max(worstRise, fr - prevFrac);
       prevFrac = fr; minFrac = Math.min(minFrac, fr);
+      const r = finaleSpotRadius(g, L0());
+      if (bottomedAt == null && r <= minR + 0.5) bottomedAt = t;
+      if (t > CFG.finale.searchTime - 1) lastSecondFall += Math.max(0, rPrev - r);
+      rPrev = r;
       if (g.line.length < prevLine) { drops.push(+(t - lastDropT).toFixed(3)); lastDropT = t; prevLine = g.line.length; }
     });
     const want = CFG.finale.searchTime;
@@ -91,12 +102,65 @@ eval(src + `
     ok('a crew of ' + String(crew).padStart(3) + ' closes it all the way, and never reopens it',
        minFrac < 0.001 && worstRise < 1e-6,
        'fell to ' + (minFrac * 100).toFixed(1) + '%' + (worstRise ? ', ROSE by ' + worstRise.toFixed(3) : ''));
+    // THE CLAIM. Morgan: two people are at the minimum by the 45s mark and a full crew is
+    // still diminishing every second. Scored against dimAt and not against a number written
+    // down here, so moving the curve moves the check with it rather than failing at it.
+    const wantBottom = CFG.finale.searchTime * CFG.finale.dimAt(crew);
+    ok('a crew of ' + String(crew).padStart(3) + ' reaches the candle at ' + wantBottom.toFixed(0) + 's, not before or after',
+       bottomedAt != null && Math.abs(bottomedAt - wantBottom) < 1.2,
+       bottomedAt == null ? 'NEVER bottomed out' : 'bottomed at ' + bottomedAt.toFixed(1) + 's of ' + CFG.finale.searchTime);
+    bottoms[crew] = bottomedAt;
+    // A big crew must still be LOSING light at the end; a small one must already be flat.
+    // Reading only one of the two lets a fade that is merely slow pass as one that is paced.
+    const big = crew >= 90;
+    ok('a crew of ' + String(crew).padStart(3) + ' is ' + (big ? 'still losing light in the final second' : 'already flat at the end'),
+       big ? lastSecondFall > 0.4 : lastSecondFall < 0.01,
+       'the last second moved the lamp ' + lastSecondFall.toFixed(2) + 'px');
     const gaps = drops.slice(1);
     const spread = gaps.length ? Math.max(...gaps) - Math.min(...gaps) : 0;
     ok('a crew of ' + String(crew).padStart(3) + ' goes over the end one at a time, evenly',
        drops.length === crew && spread < 0.05,
        drops.length + ' of ' + crew + ' bodies, every ' + (gaps.length ? gaps[0].toFixed(2) : (want).toFixed(2)) + 's' +
        (spread >= 0.05 ? ', SPREAD ' + spread.toFixed(3) : ''));
+  }
+
+  // ---------------------------------------------------------------- the speed itself
+  {
+    // THE ASSERTION ABOVE CANNOT CATCH THIS ONE, and finding that out is why this exists.
+    // "reaches the candle at Ns" scores against CFG.finale.dimAt, so flattening dimAt to a
+    // constant -- deleting the entire feature -- moves the check with the fault and passes.
+    // The curve cannot be both the thing under test and the ruler it is measured with.
+    //
+    // So this says the PROPERTY, in Morgan's own numbers rather than the game's: a small
+    // crew is at the candle inside the first half, a full crew is not there until the end,
+    // and the order never inverts. Written down on purpose -- it is the specification, and
+    // a spec parsed out of the implementation is not a spec.
+    const half = CFG.finale.searchTime * 0.55;
+    ok('the fade is PACED by the crew: a thin line is dark early, a full one only at the end',
+       bottoms[1] != null && bottoms[100] != null &&
+       bottoms[1] <= half && bottoms[100] >= CFG.finale.searchTime * 0.9 &&
+       bottoms[1] < bottoms[5] + 0.1 && bottoms[5] < bottoms[24] && bottoms[24] < bottoms[100],
+       'candle at ' + [1, 5, 24, 100].map(c => c + ':' + (bottoms[c] == null ? 'never' : bottoms[c].toFixed(0) + 's')).join('  '));
+  }
+
+  // ---------------------------------------------------------------- the two ends are fixed
+  {
+    // Every game travels the same distance of light. It is the only thing the crew does NOT
+    // touch, and it is what "a set max and a set min" means: the check that fails if anyone
+    // reintroduces a crew-scaled opening or a floor that varies.
+    const opens = [], closes = [];
+    for (const crew of [2, 17, 100]) {
+      const g = searching(crew);
+      opens.push(finaleSpotRadius(g, L0()));
+      play(g, CFG.finale.searchTime + 2);
+      closes.push(finaleSpotRadius(g, L0()));
+    }
+    const full = finaleSpotFullR(L0()), minR = CFG.finale.lampMinR;
+    ok('every crew opens on the same maximum and ends on the same minimum',
+       Math.max(...opens) - Math.min(...opens) < 0.5 && Math.abs(opens[0] - full) < 0.5 &&
+       Math.max(...closes) - Math.min(...closes) < 0.5 && Math.abs(closes[0] - minR) < 0.5,
+       'opens ' + opens.map(r => r.toFixed(0)).join('/') + ' against ' + full.toFixed(0) +
+       ', closes ' + closes.map(r => r.toFixed(0)).join('/') + ' against ' + minR);
   }
 
   // ---------------------------------------------------------------- the belt stays full behind

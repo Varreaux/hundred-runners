@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '142 the belt is the clock';
+const BUILD = '143 a set max, a set min, a crew-paced fade';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -423,15 +423,29 @@ const CFG = {
   finale: { x: 20850, findCount: 10, searchTime: 90, hitRadius: 24,
             cursorSpeed: 1.15, cursorAccel: 4.5, cursorFriction: 10,
             baseLen: 6, keyTime: 0.9,
-            // THE CREW IS THE CLOCK. There is no timer drawn any more: the search still
-            // lasts exactly searchTime, and it is spent one survivor at a time off the end
-            // of the belt, with the lamp closing as the belt empties. This mixes the old
-            // absolute reading back in -- 0: every crew opens at full light and the fade
-            // always runs the whole way down whatever you arrived with; 1: the OPENING
-            // radius scales with how many you saved, as it used to, and then decays. At 0
-            // the crew buys you the score and the smoothness of the fade, not a brighter
-            // search, which is a difficulty judgement and Morgan's to make.
-            lampCrewWeight: 0 },
+            // THE CREW IS THE CLOCK, and there is no timer drawn any more: the search
+            // lasts exactly searchTime whatever you arrive with, and it is spent one
+            // survivor at a time off the end of the belt.
+            //
+            // The lamp has a SET MAX AND A SET MIN and always travels the whole way between
+            // them. The one thing the crew decides is how FAST -- which is a different claim
+            // from the one this shipped with at 141, where the lamp closed over the whole
+            // ninety seconds at every crew and only the size of each step moved.
+            //
+            // lampMinR is the tiny circle it ends on. dimAt is how much of the search has
+            // gone when it gets there, as a fraction of searchTime: two survivors are down
+            // to the candle by the halfway mark and spend the back half of the room in it,
+            // a full hundred are still losing a little every second and only bottom out at
+            // the end. Morgan's numbers, 2026-09-21: "if you only enter with 2 people it
+            // will go from full brightness to min brightness at the 45s mark; if you enter
+            // with 90 people it diminishes every second".
+            // 44, raised from 22 when the lamp was still crew-scaled: at 22 the readable art
+            // was about 15 units across, a pinhole in a 448x300 picture with ten things to
+            // find, and the found-ticks were drawn larger than the light itself. It is a pool
+            // that shows one figure and the ground under it -- the end of a run should be a
+            // candle, not a keyhole.
+            lampMinR: 44,
+            dimAt: c => 0.5 + 0.5 * Math.min(1, Math.max(0, c) / 100) },
 };
 // The mountain's MOUTH, which is no longer the end of the course. These were one number
 // until act three existed; everything that means "where the rock stops" reads CFG.exit,
@@ -3438,10 +3452,17 @@ function finaleCrewFrac(f) {
 // by the danger vignette and by the crew chip's colour, so they cannot drift apart the way
 // the light and the phase gate once did.
 function finaleLampFrac(f) {
-  const base = Math.max(1, f.crewAtSearch || f.crew0 || f.line.length || 1);
-  const left = clamp01(f.line.length / base);
-  const w = clamp01(CFG.finale.lampCrewWeight || 0);
-  return ((1 - w) + w * clamp01(base / 100)) * left;
+  // A CLOCK, not a head count. It was survivors-over-starting-crew, which sounds like the
+  // same thing and is not: that closes the lamp over the whole ninety seconds at every crew
+  // and lets only the step SIZE change, so two survivors held a half-lit room until the
+  // 45s mark and then had a pool the size of a chair for the rest. The size of a step is
+  // not the speed of a fade. Small crews bottom out early and sit in the dark; a full
+  // hundred loses a little every second and is still losing it at the end.
+  const crew = Math.max(1, f.crewAtSearch || f.crew0 || f.line.length || 1);
+  const span = Math.max(0.001, CFG.finale.searchTime * CFG.finale.dimAt(crew));
+  const t = f.searchT == null ? CFG.finale.searchTime : f.searchT;
+  const elapsed = CFG.finale.searchTime - Math.max(0, Math.min(CFG.finale.searchTime, t));
+  return 1 - clamp01(elapsed / span);
 }
 // The clock, made of people. Stamped when the generator catches, not when the room begins,
 // because a wrong mark during the charge would otherwise change how long the search runs.
@@ -3466,15 +3487,13 @@ function finaleSpotFullR(L) {
 }
 function finaleSpotRadius(f, L) {
   const full = finaleSpotFullR(L);
-  // Floor raised from 22. At 22 the readable art was about 15 units across -- a pinhole in a
-  // 448x300 picture, with ten things to find and ninety seconds to do it, and the found-ticks
-  // drawn larger than the light itself. 44 is a pool that shows one figure and the ground
-  // under it: five survivors should be a candle, not a keyhole.
-  // Reads the LAMP fraction, not the raw crew. On crew/100 the search opened at a candle for
-  // a small crew and then never moved for ninety seconds; it opens at full for everyone now
-  // and closes as people go over the end. The charge reads the same number so the pool the
-  // flywheel winds up to is the pool the search starts with, rather than popping at the thud.
-  const crewR = Math.max(44, full * finaleLampFrac(f));
+  // A SET MAX AND A SET MIN, travelled the whole way, every game. It was max(44, full * frac)
+  // -- a floor clamped onto a fade, which is not the same shape: the lamp hit the floor at
+  // 24% of the fade and the last quarter of every run was flat. Written as the two ends and
+  // an interpolation between them, the minimum is a number the room is designed around
+  // rather than wherever the multiply happens to cross it.
+  const minR = CFG.finale.lampMinR;
+  const crewR = minR + (full - minR) * finaleLampFrac(f);
   const pow = clamp01(f.beltPow || 0);
   if (f.wrongT > 0) {
     // A SMOOTH dip, not a square wave. `Math.sin(S.t * 26) > 0` is a hard on/off at 4.14 Hz
@@ -3491,7 +3510,9 @@ function finaleSpotRadius(f, L) {
     const pulse = 1 + Math.sin(S.t * 8) * 0.08 * pow;
     return Math.max(8, crewR * (0.06 + 0.94 * pow) * pulse);
   }
-  return Math.max(44, crewR);
+  // minR, not a second literal 44. crewR cannot go under it anyway, so this is a guard and
+  // not a floor -- and a floor written twice is a floor that gets moved once.
+  return Math.max(minR, crewR);
 }
 function finaleSpotCenters(f, L) {
   const u = clamp01(f.spot?.u ?? 0.5), v = clamp01(f.spot?.v ?? 0.45);

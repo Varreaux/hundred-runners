@@ -1,10 +1,16 @@
 // Proves tools/rolloff-check.js can FAIL.  node tools/rolloff-falsify.js
 //
 // A check that has only ever been seen to pass tells you nothing about the check, only about
-// the build. Three faults, each in a different one of the room's three new claims, and each
-// put where the driver has separately been confirmed to go -- a green falsifier that injected
-// its fault somewhere the sweep never reached is the failure mode this project has already
-// paid for once, in path-check.
+// the build. One fault per claim the room makes, each put where the driver has separately been
+// confirmed to go -- a green falsifier that injected its fault somewhere the sweep never
+// reached is the failure mode this project has already paid for once, in path-check.
+//
+// The fourth of these is the one that earned the file. Flattening CFG.finale.dimAt to a
+// constant deletes the whole crew-paced fade, and the assertion written to catch it PASSED,
+// because it scored the lamp against dimAt -- the thing the fault had just changed. A check
+// that reads its expectation out of the code under test cannot fail when that code is wrong,
+// only when it disagrees with itself. rolloff-check carries a separate assertion now that
+// states the property in Morgan's numbers instead.
 const fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process');
 const root = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -13,10 +19,18 @@ const CASES = [
     want: /lasts the 90s/,
     from: 'f.rollGap = Math.max(0.05, CFG.finale.searchTime / f.crewAtSearch);',
     to:   'f.rollGap = Math.max(0.05, CFG.finale.searchTime / (f.crewAtSearch * 2));' },
-  { name: 'the lamp opens on the raw crew again (a small crew should open at a candle)',
+  { name: 'the opening is scaled by the crew again (the max should be the same every game)',
     want: /opens the lamp at FULL/,
-    from: 'const crewR = Math.max(44, full * finaleLampFrac(f));',
-    to:   'const crewR = Math.max(44, full * finaleCrewFrac(f));' },
+    from: 'const crewR = minR + (full - minR) * finaleLampFrac(f);',
+    to:   'const crewR = minR + (full - minR) * finaleLampFrac(f) * clamp01(f.line.length / 100);' },
+  { name: 'the fade stops being paced by the crew (two survivors should bottom out at 45s)',
+    want: /the fade is PACED by the crew/,
+    from: 'dimAt: c => 0.5 + 0.5 * Math.min(1, Math.max(0, c) / 100) },',
+    to:   'dimAt: c => 1 },' },
+  { name: 'the lamp bottoms out below its set minimum',
+    want: /opens on the same maximum and ends on the same minimum/,
+    from: '  return Math.max(minR, crewR);',
+    to:   '  return Math.max(8, crewR - 20);' },
   { name: 'the timer chip is put back on the panel',
     want: /never tells the player how long is left/,
     from: "  const crewCol = finaleLampFrac(f) < 0.18 ? '#ff6b6b' : '#d4a84b';",
@@ -38,5 +52,5 @@ for (const c of CASES) {
   if (!caught) console.log(out.split('\n').filter(l => l.startsWith('FAIL')).slice(0, 4).map(l => '        ' + l).join('\n') || '        (nothing failed at all)');
   fs.rmSync(dir, { recursive: true, force: true });
 }
-console.log(bad ? '\n' + bad + ' NOT CAUGHT' : '\nall three faults are caught.');
+console.log(bad ? '\n' + bad + ' NOT CAUGHT' : '\nall ' + CASES.length + ' faults are caught.');
 process.exit(bad ? 1 : 0);
