@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '140 a held key, a bad flag, and a dead branch';
+const BUILD = '141 the belt is the clock';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -422,7 +422,16 @@ const CFG = {
   // comes over; the course stays ours.
   finale: { x: 20850, findCount: 10, searchTime: 90, hitRadius: 24,
             cursorSpeed: 1.15, cursorAccel: 4.5, cursorFriction: 10,
-            baseLen: 6, keyTime: 0.9 },
+            baseLen: 6, keyTime: 0.9,
+            // THE CREW IS THE CLOCK. There is no timer drawn any more: the search still
+            // lasts exactly searchTime, and it is spent one survivor at a time off the end
+            // of the belt, with the lamp closing as the belt empties. This mixes the old
+            // absolute reading back in -- 0: every crew opens at full light and the fade
+            // always runs the whole way down whatever you arrived with; 1: the OPENING
+            // radius scales with how many you saved, as it used to, and then decays. At 0
+            // the crew buys you the score and the smoothness of the fade, not a brighter
+            // search, which is a difficulty judgement and Morgan's to make.
+            lampCrewWeight: 0 },
 };
 // The mountain's MOUTH, which is no longer the end of the course. These were one number
 // until act three existed; everything that means "where the rock stops" reads CFG.exit,
@@ -3422,6 +3431,27 @@ function beginFinaleCharge(f) {
 function finaleCrewFrac(f) {
   return clamp01(Math.max(1, f.line.length) / 100);
 }
+// The search lamp, as a fraction of full. It opens at full and closes as the belt empties,
+// so the circle of light IS the clock -- there is no other one on the screen. Measured
+// against the crew that was standing when the search began and NOT against 100, so the fade
+// runs the whole way down whatever you arrived with. ONE number, read by the lamp itself,
+// by the danger vignette and by the crew chip's colour, so they cannot drift apart the way
+// the light and the phase gate once did.
+function finaleLampFrac(f) {
+  const base = Math.max(1, f.crewAtSearch || f.crew0 || f.line.length || 1);
+  const left = clamp01(f.line.length / base);
+  const w = clamp01(CFG.finale.lampCrewWeight || 0);
+  return ((1 - w) + w * clamp01(base / 100)) * left;
+}
+// The clock, made of people. Stamped when the generator catches, not when the room begins,
+// because a wrong mark during the charge would otherwise change how long the search runs.
+function beginFinaleSearch(f) {
+  f.crewAtSearch = Math.max(1, f.line.length);
+  // Floored so a divide can never produce a gap of zero and spin the while loop that spends
+  // it. At the real searchTime of 90 the smallest this can be is 0.9s, at a hundred aboard.
+  f.rollGap = Math.max(0.05, CFG.finale.searchTime / f.crewAtSearch);
+  f.rollT = f.rollGap;   // the first one goes over after a full gap, not on the first frame
+}
 function finaleFillFrac(f) {
   const need = f.packNeed || Math.max(1, (f.line && f.line.length) || 1);
   return clamp01((f.packDone || 0) / need);
@@ -3440,7 +3470,11 @@ function finaleSpotRadius(f, L) {
   // 448x300 picture, with ten things to find and ninety seconds to do it, and the found-ticks
   // drawn larger than the light itself. 44 is a pool that shows one figure and the ground
   // under it: five survivors should be a candle, not a keyhole.
-  const crewR = Math.max(44, full * finaleCrewFrac(f));
+  // Reads the LAMP fraction, not the raw crew. On crew/100 the search opened at a candle for
+  // a small crew and then never moved for ninety seconds; it opens at full for everyone now
+  // and closes as people go over the end. The charge reads the same number so the pool the
+  // flywheel winds up to is the pool the search starts with, rather than popping at the thud.
+  const crewR = Math.max(44, full * finaleLampFrac(f));
   const pow = clamp01(f.beltPow || 0);
   if (f.wrongT > 0) {
     // A SMOOTH dip, not a square wave. `Math.sin(S.t * 26) > 0` is a hard on/off at 4.14 Hz
@@ -3705,6 +3739,47 @@ function finaleConfirm(atU, atV) {
   finaleWrong();
   return false;
 }
+// ONE place decides how a body leaves the belt, because two things push people over the end
+// now: a wrong mark, and the clock itself. Always the slot NEAREST the drum -- popping the
+// end of the line dropped every body from the far left, 453 units from the drawn whirlpool,
+// and nothing ever went into the drain.
+function finaleTakeBody(f, L) {
+  const near = f.deck.filter(d => d.arrived).sort((a, b) => b.x - a.x)[0];
+  const r = near ? (f.line.splice(f.line.indexOf(near.r), 1)[0] || f.line.pop()) : f.line.pop();
+  if (!r) return null;
+  // The scoreboard has to move with the body: this one was banked as arrived when they
+  // reached the wall, so without both halves the summary counts a drowning as a survivor.
+  r.state = 'gone'; r.doom = 'final'; r.deathT = S.t; S.stats.dead++; S.stats.arrived--;
+  // Off the END of the belt, not from where they were standing. A body dropped at the slot
+  // fell inside the deck rect and across the face of the drive drum for the first sixth of a
+  // second. People who go off a conveyor leave at the end of it. vy -80 threw the body UP
+  // first, so for 0.57 of a 0.62s fall it hovered at belt height among the standing crew and
+  // only the last fifth was over water. The drift is toward the drum, where the drain is.
+  f.falling.push({ r, t: 0, x: L.deck.x + L.deck.w + 6, y: L.deck.y - 2,
+                   vx: rand(4, 40), vy: -18, rot: rand(-0.4, 0.4) });
+  f.deck = f.deck.filter(d => d.r !== r);
+  // Close the gap. The slot INDEX is the one statement of where somebody stands, so
+  // re-packing it here is what carries the rest of the line forward when the person in front
+  // goes over the end -- and dropping spawnI back to the new length is what lets somebody
+  // still waiting step on at the far end behind them.
+  f.deck.sort((a, b) => a.i - b.i).forEach((d, k) => { d.i = k; });
+  f.spawnI = f.deck.length;
+  return r;
+}
+// The clock ticking. Nobody is punished for this one -- no red flash, no shake, no locked
+// input and no fail sting -- it is the belt doing what a belt does, and it is the only clock
+// the room has. The floater is quieter than a wrong mark's on purpose: a wrong mark is your
+// fault and this is not. Named bodies are called out sparsely at a full belt and every time
+// at the end of one, where each is a larger share of the light you have left.
+function finaleRollOff(f) {
+  const L = finaleLayout();
+  const r = finaleTakeBody(f, L);
+  if (!r) return;
+  if (f.line.length <= 4 || Math.random() < 0.3) {
+    S.floaters.push({ sx: L.deck.x + L.deck.w - 34, sy: L.deck.y - 30,
+                      txt: r.name || 'ONE MORE', life: 1.05, color: '#c9a86a' });
+  }
+}
 function finaleWrong() {
   const f = S.finale;
   if (!f || f.phase !== 'search') return;
@@ -3725,30 +3800,11 @@ function finaleWrong() {
   S.shake = 10;
   AU.fail();
   const L = finaleLayout();
-  const near = f.deck.filter(d => d.arrived).sort((a, b) => b.x - a.x)[0];
-  const r = near ? (f.line.splice(f.line.indexOf(near.r), 1)[0] || f.line.pop()) : f.line.pop();
-  if (r) {
-    // The scoreboard has to move with the body: this one was banked as arrived when they
-    // reached the wall, so without both halves the summary counts a drowning as a survivor.
-    r.state = 'gone'; r.doom = 'final'; r.deathT = S.t; S.stats.dead++; S.stats.arrived--;
-    const slot = f.deck.find(d => d.r === r);
-    // Off the END of the belt, not from where they were standing. A body dropped at the slot
-    // fell inside the deck rect and across the face of the drive drum for the first sixth of
-    // a second. People pushed off a conveyor leave at the end of it.
-    const sx = L.deck.x + L.deck.w + 6;
-    const sy = L.deck.y - 2;
-    // Taken from the slot NEAREST the generator rather than by popping the end of the line.
-  // f.line.pop() always took the last spawned, whose slot is the far left of the belt, so
-  // every body in a run fell from the same point 453 units from the drawn whirlpool and
-  // nothing ever went into the drain.
-  // vy -80 threw the body UP first, so for 0.57 of a 0.62s fall it hovered at belt height
-  // among the standing crew and only the last fifth was over water. Somebody pushed off a
-  // moving belt goes over the edge and down. The drift is toward the drum, which is where
-  // the drain is.
-  f.falling.push({ r, t: 0, x: sx, y: sy, vx: rand(4, 40), vy: -18, rot: rand(-0.4, 0.4) });
-    f.deck = f.deck.filter(d => d.r !== r);
-    S.floaters.push({ sx: W / 2, sy: L.py + 56, txt: r.name ? (r.name + ' FALLS') : 'ONE IS LOST', life: 1.35, color: '#ff6b6b', big: true });
-  }
+  const r = finaleTakeBody(f, L);
+  // Louder and redder than the clock's own floater, and centred rather than over the drum:
+  // this body is your fault and the ones the belt takes are not, and the room has to say
+  // which is which now that both are happening.
+  if (r) S.floaters.push({ sx: W / 2, sy: L.py + 56, txt: r.name ? (r.name + ' FALLS') : 'ONE IS LOST', life: 1.35, color: '#ff6b6b', big: true });
   if (f.line.length <= 0) S.mode = 'lose';
 }
 function finaleLayout() {
@@ -4804,18 +4860,25 @@ function updateFinale(dt) {
   // A WHILE, not an if. At a hundred aboard the cadence is five milliseconds and a frame is
   // sixteen, so admitting one per frame would cap the wave at sixty people a second and the
   // walk would quietly become the clock again.
-  while (f.phase === 'charge' && f.packQueue.length && f.spawnI < shown && f.spawnT >= cadence) {
+  // 'search' as well as 'charge'. When somebody goes over the end of the belt, a body that
+  // was waiting behind steps on into the empty slot -- which is what a conveyor with a queue
+  // behind it does, and it is why a hundred survivors keep the belt full for the first two
+  // thirds of the search and only visibly thin out at the end of it.
+  while ((f.phase === 'charge' || f.phase === 'search') && f.packQueue.length && f.spawnI < shown && f.spawnT >= cadence) {
     f.spawnT -= cadence;
     {
       const r = f.packQueue.shift();
-      // i=0 rightmost (near gen), then fill leftward
-      const targetX = beltRight - f.spawnI * slotStep;
-      f.deck.push({ r, i: f.spawnI, enter: 0, x: startX, arrived: false, targetX });
+      // i=0 rightmost (near gen), then fill leftward. No targetX is stamped here: the slot
+      // INDEX is the one statement of where somebody stands, and it is read below, where the
+      // belt's own constants live. Stamped at spawn it could not be carried forward when the
+      // person in front went over the end of the belt.
+      f.deck.push({ r, i: f.spawnI, enter: 0, x: startX, arrived: false });
       f.spawnI++;
     }
   }
   for (const d of f.deck) {
-    const targetX = d.targetX != null ? d.targetX : beltRight;
+    const targetX = beltRight - d.i * slotStep;
+    d.targetX = targetX;
     if (!d.arrived) {
       d.enter += dt;
       if (d.x < startX + 1) d.x = startX;
@@ -4830,6 +4893,12 @@ function updateFinale(dt) {
           n: 3, sx: 6, vx: [-40, 40], vy: [-100, -20], life: [0.12, 0.3], c: '#ffe0a0',
         });
       }
+    } else if (Math.abs(d.x - targetX) > 0.25) {
+      // The belt carries them on when the one in front goes over the end. NOT a snap: a body
+      // that teleports forward a slot reads as a drawing error rather than as a belt. NOT at
+      // runSpd either -- that is a sprint, and these people are standing still being carried.
+      const step = 150 * dt;
+      d.x += Math.max(-step, Math.min(step, targetX - d.x));
     } else {
       d.x = targetX;
     }
@@ -4909,6 +4978,7 @@ function updateFinale(dt) {
       // how big the crew is, so a lone survivor's wheel jumped to full power the instant the
       // search began and stayed there -- which is the whole claim of the room, inverted.
       f.phase = 'search'; f.light = 1; f.genPulse = 0.5; AU.thud();
+      beginFinaleSearch(f);   // the belt becomes the clock from here
       finaleFx(f, 'spark', L.gen.x + 44, L.gen.y + 10, { // Halved to match its ambient sibling: at vy -200 this reached 82 units inside the
       // right-hand painting, drawn over an oil canvas hanging on the wall above it.
       n: 16, sx: 20, vx: [-90, 90], vy: [-95, -25], life: [0.18, 0.4], c: '#ffe0a0' });
@@ -4922,8 +4992,19 @@ function updateFinale(dt) {
       f.winT -= dt;
       if (f.winT <= 0) S.mode = 'win';
     } else {
+      // searchT still runs and is still the full searchTime; it is simply never drawn. It is
+      // the BACKSTOP now rather than the clock -- the run really ends when the last body goes
+      // over the end of the belt, and the two land together by construction, since rollGap is
+      // searchTime divided by the crew that was standing when the lamps came on. A wrong mark
+      // takes a body out of turn and so brings the end forward, which is the cost of one
+      // stated in the only currency this room has.
       f.searchT -= dt;
-      if (f.searchT <= 0) S.mode = 'lose';
+      if (f.rollGap == null) beginFinaleSearch(f);
+      f.rollT -= dt;
+      // A WHILE, not an if: at a hundred survivors the gap is 0.9s, and a long frame served
+      // after a stall must not quietly keep people the clock has already spent.
+      while (f.rollT <= 0 && f.line.length > 0) { f.rollT += f.rollGap; finaleRollOff(f); }
+      if (f.line.length <= 0 || f.searchT <= 0) S.mode = 'lose';
     }
   }
 }
@@ -16283,7 +16364,10 @@ function drawFinalePanel() {
   const L = finaleLayout();
   const light = finaleLightLevel(f);
   const t = S.t;
-  const danger = f.phase === 'search' ? clamp01(1 - f.searchT / CFG.finale.searchTime) : (f.phase === 'blackout' ? 1 : 0.25);
+  // Closes with the CREW, not with a clock nobody can see. Read off searchT the vignette was
+  // the one thing on screen still telling the player how long was left, which is exactly what
+  // taking the timer away was meant to stop -- and it read it more finely than the belt does.
+  const danger = f.phase === 'search' ? clamp01(1 - finaleLampFrac(f)) : (f.phase === 'blackout' ? 1 : 0.25);
 
   // sealed chamber - near full bleed
   ctx.fillStyle = `rgba(4,1,6,${0.88 + (1 - light) * 0.1})`; ctx.fillRect(0, 0, W, H);
@@ -16314,7 +16398,6 @@ function drawFinalePanel() {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#e8c96a'; ctx.font = 'bold 18px monospace';
   ctx.fillText(f.scene.title, W / 2, L.py + 26);
-  const mm = Math.floor(Math.max(0, f.searchT) / 60), ss = Math.floor(Math.max(0, f.searchT) % 60);
   const chipY = L.py + 38;
   const drawChip = (cx, label, val, col, fixedW) => {
     const text = label ? `${label} ${val}` : String(val);
@@ -16324,14 +16407,17 @@ function drawFinalePanel() {
     ctx.fillStyle = col; ctx.font = 'bold 13px monospace';
     ctx.fillText(text, cx, chipY + 16);
   };
-  const timerCol = f.searchT < 20 ? '#ff6b6b' : '#f1c40f';
+  // NO CLOCK. The timer chip was the first of three and it is gone: the search still lasts
+  // ninety seconds and the player is never told so, because the thing counting down is the
+  // line of people on the belt and the lamp closing in with it. CREW is the clock now, which
+  // is why it takes back the alarm red the timer used to own -- but only at the very end,
+  // where it means the last of your crew rather than merely fewer of them.
   // The count went in as `label` with an empty `val`, so the chip built "6/10 " with a
-  // trailing space and the glyphs sat about 4 units left of centre. CREW was alarm red --
-  // the same red as a wrong answer -- for the number that is the player's reward; it is gold
-  // now, and all three are one width so the row does not shuffle as people die.
-  drawChip(W / 2 - 130, '', `${mm}:${String(ss).padStart(2, '0')}`, timerCol, 86);
-  drawChip(W / 2, '', `${f.found.size}/${CFG.finale.findCount}`, '#2ecc71', 86);
-  drawChip(W / 2 + 130, 'CREW', f.line.length, '#d4a84b', 86);
+  // trailing space and the glyphs sat about 4 units left of centre. Both are one width so
+  // the row does not shuffle as people die.
+  const crewCol = finaleLampFrac(f) < 0.18 ? '#ff6b6b' : '#d4a84b';
+  drawChip(W / 2 - 65, '', `${f.found.size}/${CFG.finale.findCount}`, '#2ecc71', 86);
+  drawChip(W / 2 + 65, 'CREW', f.line.length, crewCol, 86);
 
   // paintings — then pitch-black veil with mirrored flashlight spots (the player control)
   drawFinaleScene(f.scene, L.left.x, L.left.y, L.left.w, L.left.h, false, f.diffs, f.found, t);
@@ -16427,7 +16513,10 @@ function drawFinalePanel() {
   ctx.fillText(f.phase === 'charge'
     ? (f.deck.length === 0 ? 'waiting for the first body…'
        : beltPow < 0.02 ? `${f.deck.length} coming aboard…`
-       : `wheel turning — lamps ${Math.round(finaleCrewFrac(f) * 100)}%`)
+       // The lamp opens at full for every crew now, so "lamps 87%" was a promise the search
+       // does not keep. What the crew still decides here is the WHEEL, so that is what it
+       // says, and beltPow is the number the drum and the dynamo are already drawn from.
+       : `wheel turning — ${Math.round(clamp01(beltPow) * 100)}% power`)
     : f.phase === 'blackout'
       ? 'lights failing - hold on'
       : 'ARROWS / click move lamps  ·  SPACE or click to mark', W / 2, L.left.y - 8);
