@@ -15,15 +15,20 @@ const fs = require('fs'), path = require('path'), os = require('os'), cp = requi
 const root = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const CASES = [
-  { name: 'the clock spends the crew twice as fast (the run should end at 45s)',
-    want: /lasts the 90s/,
+  // NO NUMBER IN THE PATTERN. This read /lasts the 90s/ and went stale the moment the search
+  // became 75, reporting NOT CAUGHT for a fault it had caught perfectly -- which reads as a
+  // hole in the check rather than as a stale ruler, and is the more expensive of the two to
+  // believe. A falsifier's pattern has to match the CLAIM and not the value, for the same
+  // reason the checks themselves derive their expectations from the game.
+  { name: 'the clock spends the crew twice as fast (the run should end halfway)',
+    want: /lasts the \d+s the clock was/,
     from: 'f.rollGap = Math.max(0.05, CFG.finale.searchTime / f.crewAtSearch);',
     to:   'f.rollGap = Math.max(0.05, CFG.finale.searchTime / (f.crewAtSearch * 2));' },
   { name: 'the opening is scaled by the crew again (the max should be the same every game)',
     want: /opens the lamp at FULL/,
     from: 'const crewR = minR + (full - minR) * finaleLampFrac(f);',
     to:   'const crewR = minR + (full - minR) * finaleLampFrac(f) * clamp01(f.line.length / 100);' },
-  { name: 'the fade stops being paced by the crew (two survivors should bottom out at 45s)',
+  { name: 'the fade stops being paced by the crew (a thin line should bottom out halfway)',
     want: /the fade is PACED by the crew/,
     from: 'dimAt: c => 0.5 + 0.5 * Math.min(1, Math.max(0, c) / 100) },',
     to:   'dimAt: c => 1 },' },

@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '144 the lamp reads as a lamp';
+const BUILD = '145 a tighter pool and a 75-second room';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -420,7 +420,7 @@ const CFG = {
   // forks, and her own merge note says in bold not to bring those across: they would turn
   // the public game into a short straight corridor with no branches. The finale SYSTEM
   // comes over; the course stays ours.
-  finale: { x: 20850, findCount: 10, searchTime: 90, hitRadius: 24,
+  finale: { x: 20850, findCount: 10, searchTime: 75, hitRadius: 24,
             cursorSpeed: 1.15, cursorAccel: 4.5, cursorFriction: 10,
             baseLen: 6, keyTime: 0.9,
             // THE CREW IS THE CLOCK, and there is no timer drawn any more: the search
@@ -433,12 +433,15 @@ const CFG = {
             // ninety seconds at every crew and only the size of each step moved.
             //
             // lampMinR is the tiny circle it ends on. dimAt is how much of the search has
-            // gone when it gets there, as a fraction of searchTime: two survivors are down
-            // to the candle by the halfway mark and spend the back half of the room in it,
-            // a full hundred are still losing a little every second and only bottom out at
-            // the end. Morgan's numbers, 2026-09-21: "if you only enter with 2 people it
-            // will go from full brightness to min brightness at the 45s mark; if you enter
-            // with 90 people it diminishes every second".
+            // gone when it gets there, as a FRACTION of searchTime -- not a count of
+            // seconds, which is why shortening the search from 90 to 75 moved this curve
+            // with it and needed no edit here. Two survivors are down to the candle by the
+            // halfway mark and spend the back half of the room in it; a full hundred are
+            // still losing a little every second and only bottom out at the end. Morgan's
+            // numbers, 2026-09-21, given when the search was 90 seconds: "if you only enter
+            // with 2 people it will go from full brightness to min brightness at the 45s
+            // mark; if you enter with 90 people it diminishes every second". At 75 that
+            // halfway mark is 37.5s, which is the same claim.
             // 44, raised from 22 when the lamp was still crew-scaled: at 22 the readable art
             // was about 15 units across, a pinhole in a 448x300 picture with ten things to
             // find, and the found-ticks were drawn larger than the light itself. It is a pool
@@ -452,10 +455,13 @@ const CFG = {
             // 0.62 had the same fault one step down and nobody measured it: a radius of 186
             // is a DIAMETER of 372 against a 441x300 painting -- 124% of its height and 84%
             // of its width -- so the opening frame of every run lit essentially the whole
-            // card. Morgan, 2026-09-21: "the maximum brightness is much too bright." At 0.36
-            // the pool is 108, about half the width of the card and under three quarters of
-            // its height, which is a lamp with a dark card around it rather than a lit card.
-            lampMaxFrac: 0.36,
+            // card. Morgan, 2026-09-21: "the maximum brightness is much too bright", and
+            // then "reduce it a bit more" once the veil had stopped thinning itself. 0.62
+            // was a radius of 186, 0.36 was 108, and 0.30 is 90: a DIAMETER of 180 against a
+            // 441x300 card, 41% of its width and 60% of its height. Multiplied out rather
+            // than left as a fraction, because a fraction on its own is what let a pool
+            // wider than its own painting sit here unexamined.
+            lampMaxFrac: 0.30,
             // How far the veil thins when the lamp is at full size, 0 to 1. See
             // veilPaintingSpot. 0 means the card outside the pool is always the same dim
             // ghost, which is what makes the lamp read as a lamp.
