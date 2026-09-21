@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '141 the belt is the clock';
+const BUILD = '142 the belt is the clock';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3776,7 +3776,13 @@ function finaleRollOff(f) {
   const r = finaleTakeBody(f, L);
   if (!r) return;
   if (f.line.length <= 4 || Math.random() < 0.3) {
-    S.floaters.push({ sx: L.deck.x + L.deck.w - 34, sy: L.deck.y - 30,
+    // OVER THE WATER, at the drum end, which is where the body is going. The first attempt
+    // put it at deck.y - 30 and that is head height: the crowns sit about 35 above the sole
+    // line at deck.y + 3, so the name was stamped across the faces of the people still
+    // standing. Exactly the fault the status line above it carries a comment about, repeated
+    // one function away. Floaters rise 18 over their life, so this stays inside the water
+    // band for all of it, and it clears the generator housing at deck.x + deck.w.
+    S.floaters.push({ sx: L.deck.x + L.deck.w - 56, sy: L.water.y + 26,
                       txt: r.name || 'ONE MORE', life: 1.05, color: '#c9a86a' });
   }
 }
