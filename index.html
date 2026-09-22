@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '152 the doors are the last panel of the tutorial';
+const BUILD = '153 the doors wear the room mark, not a plate';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -5607,6 +5607,11 @@ const BELT_H = 22;                                    // frame depth, hanging be
 // agreed today by luck, and one already meant something subtly different -- the spill's
 // jamb licks started 10 units below the head of the opening they were lighting.
 const GATE_H = 122, GATE_HEAD = 18, GATE_REVEAL = 10;
+// The gateway arch, hoisted out of drawGateWall because the door badge has to sit UNDER its
+// intrados and those are two numbers that would otherwise drift apart -- the same rule this
+// file applies to a gradient and its fill. ARCH_OVER is how far the ring springs past the
+// jambs, ARCH_W the depth of the voussoir band.
+const ARCH_OVER = 4, ARCH_W = 13;
 const introBeltY = () => laneY(0) - CFG.intro.lift;   // the surface a rider's feet are on
 const introGroundY = () => laneY(0);
 const STAIR_RISE = 7, STAIR_TREAD = 11;               // a 45-unit body wants a 7 riser, not a 13
@@ -6152,9 +6157,16 @@ function draw() {
   // sideways, until it had nothing to do with the person talking. Morgan saw it as the
   // dialog boxes not lining up with the crowd at the door. Reset here, as the overlay path
   // does, or the leak comes back the moment anything else draws bubbles on their own.
-  else if (S.drill && !S.drill.done) {
+  // ...and the SAME is true of the wait at the doors, which is the beat that follows it. The
+  // drill branch alone left the crowd silent for the whole of doorWaiting() -- indefinitely,
+  // since the doors now wait for a key rather than a clock -- while updateIntro went on
+  // calling chatter() and placedUI went on growing unreset. That is the leak the note above
+  // describes, in the one window it was not covering.
+  else if ((S.drill && !S.drill.done) || doorWaiting()) {
     placedUI = [];
     ctx.textAlign = 'center'; drawBubbles(); ctx.textAlign = 'left';
+    // the digit last, so it is over the grain exactly as the road's badge is
+    if (doorWaiting()) doorBadge();
   }
   // The plate names deaths, so it points at the deaths without standing on them: it takes
   // the opposite half of the screen and reaches across with a stem.
@@ -14264,7 +14276,7 @@ function drawGateWall(y) {
   // piece of plain geometry in the frame and it sat directly over the scene's focal point:
   // no wedges, no keystone, no light across the ring, and springing points that died in
   // the middle of a brick field with nothing to land on.
-  const acx = (x0 + x1) / 2, arr = (x1 - x0) / 2 + 4, aw = 13;
+  const acx = (x0 + x1) / 2, arr = (x1 - x0) / 2 + ARCH_OVER, aw = ARCH_W;
   const N = 15;
   for (let i = 0; i < N; i++) {
     const a0 = Math.PI + (i / N) * Math.PI, a1 = Math.PI + ((i + 1) / N) * Math.PI;
@@ -14331,30 +14343,6 @@ function drawGateWall(y) {
 function drawYardDoors(y) {
   const c = I(), cx = c.doors - V.left, h = GATE_H, half = c.half, jamb = c.jamb;
   const open = S.doorOpen;
-  // THE SAME DISC THE ROAD USES. drawRoom puts a coloured disc with the room's digit over an
-  // armed room and the player presses that digit; this is that, on the doors, so the first
-  // number anyone presses looks like every number after it. Cyan rather than a hazard colour
-  // for the same reason the panel frame is cyan: cyan is what "the thing you are working on"
-  // looks like in this game, and the doors are not a hazard.
-  //
-  // Drawn FIRST, under the leaves, so a disc cannot sit on top of the doors as they swing.
-  if (doorWaiting()) {
-    const pulse = 0.5 + 0.5 * Math.sin(S.t * 7);      // drawKeyBoxes' rate, as the SPACE cap uses
-    const by = y - h - 26, rad = 15;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    const gl = ctx.createRadialGradient(cx, by, 0, cx, by, rad * 3.2);
-    gl.addColorStop(0, `rgba(92,225,255,${0.16 + pulse * 0.12})`);
-    gl.addColorStop(1, 'rgba(92,225,255,0)');
-    ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(cx, by, rad * 3.2, 0, 6.28); ctx.fill();
-    ctx.restore();
-    ctx.fillStyle = '#5ce1ff'; ctx.beginPath(); ctx.arc(cx, by, rad, 0, 6.28); ctx.fill();
-    ctx.strokeStyle = `rgba(255,255,255,${0.35 + pulse * 0.5})`; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(cx, by, rad + 4, 0, 6.28); ctx.stroke();
-    ctx.fillStyle = '#111'; ctx.font = 'bold 18px monospace'; ctx.textAlign = 'center';
-    ctx.fillText(DOOR_HOTKEY, cx, by + 6);
-    ctx.textAlign = 'left';
-  }
   // Heavy: slow to start, then it runs. Two numbers here were wrong in opposite directions.
   // The leaf was `half - 3` wide and started `3` off the centreline, so two leaves of 41
   // could never close an opening of 88 and left a permanent 6-unit black slot down the
@@ -14467,6 +14455,43 @@ function drawYardDoors(y) {
   ctx.fillStyle = 'rgba(255,244,222,0.14)';
   ctx.fillRect(cx - half - jamb, voidTop, 2, h + 10);
   ctx.fillRect(cx - half - jamb, headY, half * 2 + jamb * 2, 1.6);
+  // THE ROOM'S OWN MARK, minus the half that means DANGER. An armed room wears three things
+  // (armedMark): a pulsing floor wash, crawling hazard chevrons, and a square bracket each
+  // side of the opening. The bracket and the wash say "this patch is live and it is THIS
+  // one"; the chevrons say "this will kill you", which a door does not. So two of the three
+  // come here and the chevrons stay on the road.
+  //
+  // This replaced a dark plate with a coloured stroke, which was the wrong one of three
+  // tokens: that plate is what drawOverlays draws for a room still OFF the right of the
+  // screen, with an arrow on it. Learning it at the mill door as "here, this object" and
+  // meeting it later as "not here, out there" is worse than no badge.
+  //
+  // 12 units of lip clearance outside the jambs, headY to y + 16, exactly armedMark's own
+  // extents. The bracket lands on brick and jamb and touches no part of a leaf. Its clock is
+  // armedMark's too -- 0.6 + 0.4 sin(S.t * 10), not the 0.5 + 0.5 sin(S.t * 7) this had --
+  // because a tutorial badge that breathes out of step with the thing it is teaching is
+  // teaching the wrong rhythm.
+  if (doorWaiting()) {
+    const pulse = 0.6 + 0.4 * Math.sin(S.t * 10);
+    const ex0 = cx - half - jamb - 12, ex1 = cx + half + jamb + 12;
+    // the ground the crowd is standing on, lit: it ties badge to doors to people. One
+    // variable feeds the gradient and the fill so they cannot disagree.
+    const washTop = y - 62;
+    const wash = ctx.createLinearGradient(0, washTop, 0, y);
+    wash.addColorStop(0, 'rgba(92,225,255,0)');
+    wash.addColorStop(1, `rgba(92,225,255,${(0.20 + 0.06 * pulse).toFixed(3)})`);
+    ctx.fillStyle = wash; ctx.fillRect(ex0, washTop, ex1 - ex0, y - washTop);
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.strokeStyle = '#5ce1ff'; ctx.lineWidth = 2.4 / V.zoom;
+    for (const [ex, dir] of [[ex0, 1], [ex1, -1]]) {
+      ctx.beginPath();
+      ctx.moveTo(ex + dir * 16, headY); ctx.lineTo(ex, headY);
+      ctx.lineTo(ex, y + 16); ctx.lineTo(ex + dir * 16, y + 16);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 // The pool on the ground, drawn AFTER the lanes. Light out of a doorway lands on
 // the threshold, and the threshold is exactly the band millYard's cinder apron
@@ -15054,6 +15079,42 @@ function drawFx() {
 // rectangles already taken by on-screen labels this frame, so nothing overlaps
 let placedUI = [];
 function claim(x, y, w, h) { placedUI.push({ x, y, w, h }); }
+// The digit over the mill doors, in SCREEN space and drawn on the overlay pass -- which is
+// where drawOverlays draws the identical disc over an armed room, AFTER the vignette and the
+// 0.16 grain. Drawn inside drawYardDoors instead it came through measurably grainier and
+// darker than the thing it is teaching, and it shrank with any zoom while the road's badge
+// holds a 0.6 floor on purpose.
+//
+// The same disc, exactly: radius 16 * z, digit #111 at bold 18 * z, baseline by + 6 * z. The
+// first version was r13 and 15px -- 19% smaller in radius and 17% in type than the token the
+// player is being asked to recognise later.
+//
+// NOTHING BEHIND IT. No plate, no white ring, no additive bloom. The road disc has none of
+// those, and the bloom in particular was laid over the one piece of masonry that is carefully
+// lit -- the voussoir ring -- greying out its modelling for 84 units. The liveliness lives in
+// the bracket's pulse, which is where armedMark keeps it.
+//
+// It teaches SHAPE, not hue, and that is worth saying out loud: on the road a room only turns
+// cyan once you have selected it, and every armed-room colour is a danger colour. Painting a
+// door red would be a lie about what the key does, so cyan is taken from the gate control --
+// the game's other press-a-key object that is not a hazard. Which makes it non-negotiable
+// that the shape matches: disc, digit, brackets, same pulse.
+function doorBadge() {
+  const c = I();
+  // centred in the clear void of the tympanum: below the hanger rail, inside the intrados.
+  // Both edges derived, so moving the arch or the head band carries the badge with them.
+  const arr = c.half + c.jamb + ARCH_OVER;
+  const headY = -GATE_H - GATE_HEAD;
+  const wy = laneY(0) + (headY - 7 + headY - (arr - ARCH_W / 2)) / 2;
+  const [bx, by] = toScreen(c.doors, wy);
+  const z = Math.max(0.6, Math.min(1, V.zoom + 0.14));
+  const rad = 16 * z;
+  claim(bx - 24 * z, by - rad, 48 * z, 44 * z);
+  ctx.fillStyle = '#5ce1ff'; ctx.beginPath(); ctx.arc(bx, by, rad, 0, 6.28); ctx.fill();
+  ctx.fillStyle = '#111'; ctx.font = `bold ${Math.round(18 * z)}px monospace`;
+  ctx.textAlign = 'center'; ctx.fillText(DOOR_HOTKEY, bx, by + 6 * z);
+  ctx.textAlign = 'left';
+}
 function drawOverlays() {
   ctx.textAlign = 'center'; placedUI = [];
   for (const room of S.rooms) {
