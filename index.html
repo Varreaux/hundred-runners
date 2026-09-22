@@ -15,13 +15,31 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '150 the yard teaches typing once';
+const BUILD = '151 they come out of the gate at a run, not a shot';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
   packBack: 120, packFront: 540,   // the pack holds slots in this band ahead of the camera anchor
   jitter: 30,
   tire: 0.15,             // how much the pack stretches by the end of the run
+  // THE SURGE AFTER A RELEASE -- a gate opening, a room clearing, the cave door letting the
+  // shift through. Morgan, 2026-09-22: "this catch-up is too fast. It's too brutal... they
+  // should speed towards where they are more slowly. They come out of the gate too fast."
+  //
+  // Measured before the change: the crowd went from 110 px/s to 300 -- 2.73x walking -- BETWEEN
+  // TWO FRAMES, and then sat pinned at exactly 300 for 0.8s before easing off. Both halves of
+  // that are the complaint. It was instant because nothing limited how fast a runner may
+  // change pace, and it saturated because the cap was so far above what the gap actually
+  // asked for that almost everyone released was clamped to it -- so the motion was not a
+  // catch-up at all, it was full speed until close, then a stop.
+  //
+  // catchTop is how much faster than walking the furthest-behind runner may END UP going.
+  // catchEase is how fast anyone may CHANGE pace, in units of "toward the target per second";
+  // at 2.4 the surge takes about half a second to arrive instead of one frame.
+  // These are the two dials. Lower catchTop for a gentler top speed, lower catchEase for a
+  // longer run-up to it.
+  catchTop: 55,           // was 110, i.e. a 300 px/s sprint against a 110 px/s walk
+  catchEase: 2.4,
   armDist: 240,           // the FLOOR: a room is never armed later than this (or its own warn)
   // How much of the gap between that floor and the far edge of the view a room waits out
   // before it can be opened. Morgan asked for this: a room used to arm the instant it came
@@ -2814,7 +2832,7 @@ function reset() {
       skin: pick(SKIN), shirt: pick(SHIRT), pants: pick(PANTS), hair: pick(HAIR), style: pick(STYLES), height: 1,
       name: null,
       phase: Math.random() * 6.28,
-      state: 'run', vy: 0, fy: 0, rot: 0, fallLimit: 70, hopFrom: 0, hopTo: 0, hopAmp: 16, rolled: null, fs: false, squash: 0, catchUp: 0,
+      state: 'run', vy: 0, fy: 0, rot: 0, fallLimit: 70, hopFrom: 0, hopTo: 0, hopAmp: 16, rolled: null, fs: false, squash: 0, catchUp: 0, rel: 0,
       doom: null, endX: 0, deathT: 0, how: null, atRoom: null, spared: null,
       lane: 0, lastForkX: -1, route: [], ramp: null, held: false,
       // when this one steps off the belt, spread across the delivery window
@@ -5229,9 +5247,20 @@ function update(dt) {
         // anyone left behind closes the gap under their own steam, faster the further back they are
         const behind = Math.max(0, target - r.x);
         r.catchUp = Math.max(r.catchUp - dt * 0.5, behind > 90 ? 1 : 0);
-        const cap = 80 + r.catchUp * 110;
-        const rel = Math.max(-80, Math.min(cap, (target - r.x) * 2));
-        r.x += (CFG.scroll + rel) * dt;
+        const cap = 80 + r.catchUp * CFG.catchTop;
+        const want = Math.max(-80, Math.min(cap, (target - r.x) * 2));
+        // A BODY CANNOT CHANGE PACE BETWEEN TWO FRAMES. `want` is where this runner would
+        // like to be going; `r.rel` is where they actually are, and it eases toward it. That
+        // one line is what turns the release from a teleport into a run-up.
+        //
+        // Zeroed while HELD, and that is load-bearing rather than tidy: r.held here is last
+        // frame's value, set after the move below, so without this a runner standing at a
+        // shut door spends the whole hold winding `rel` up against a target they cannot walk
+        // to -- and comes through the moment it opens already at full sprint, which is
+        // exactly the frame this was written to remove.
+        if (r.held) r.rel = 0;
+        r.rel += (want - r.rel) * Math.min(1, dt * CFG.catchEase);
+        r.x += (CFG.scroll + r.rel) * dt;
       }
       if (holdGate && holdGate.drop > 0.5 && r.x >= holdGate.x - 34 && r.x < holdGate.x + 6) { r.x = Math.min(r.x, holdGate.x - 8 - Math.abs(r.dy) * 1.2); r.held = true; }
       else r.held = false;
