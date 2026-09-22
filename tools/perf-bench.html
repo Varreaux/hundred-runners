@@ -1,0 +1,86 @@
+<!doctype html><html><head><meta charset="utf-8"><title>perf bench</title>
+<style>body{margin:0;background:#111;color:#ddd;font:13px monospace}canvas{display:block}</style></head>
+<body>
+<canvas id="c" width="960" height="540"></canvas>
+<pre id="out">running...</pre>
+<script>
+// REAL milliseconds in a REAL canvas, for the frame the game actually draws.
+// The node profiler counts calls, which is the portable number; this says what those
+// calls cost on a GPU. Interleaved A/B (see CLAUDE.md "Measuring the canvas"): each
+// variant is timed in alternating blocks, so drift across the window shows up instead
+// of hiding inside a before-and-after.
+// SYNCHRONOUS, deliberately, and not for tidiness. The only way to make headless Chrome
+// wait for an async result is --virtual-time-budget, and that virtualises
+// performance.now(): the first version of this bench printed 0.00ms for every row and
+// "Infinity fps", which the calibration line below caught. Doing the work before the load
+// event means --dump-dom finds the answer already on the page and the clock stays real.
+(() => {
+  const xhr = new XMLHttpRequest(); xhr.open('GET', '../index.html', false); xhr.send();
+  const raw = xhr.responseText;
+  const src = raw.split('<script>')[1].split('<\/script>')[0].replace("'use strict';", '');
+  const log = [];
+  window.__bench = {
+    log,
+    // time a function over N reps, discarding the first 10 frames: the first draw()
+    // after a camera jump is uncached and is not what a player sees.
+    time(fn, reps) {
+      for (let i = 0; i < 10; i++) fn();
+      const t0 = performance.now();
+      for (let i = 0; i < reps; i++) fn();
+      return (performance.now() - t0) / reps;
+    }
+  };
+  const params = new URLSearchParams(location.search);
+  window.__skip = +(params.get('skip') || 60);
+  window.__calib = params.get('calib') || '?';
+  eval(src + `
+;(function(){
+  const out = document.getElementById('out');
+  const say = s => { __bench.log.push(s); out.textContent = __bench.log.join('\\n'); };
+  S.mode = 'play'; S.introT = 0;
+  // drive the run forward so the camera is somewhere representative, not at the gate
+  for (let i = 0; i < __skip * 60; i++) { update(1/60); devSolve(); }
+  say('cam ' + S.cam.toFixed(0) + ' of ' + S.camMax + '  zoom ' + V.zoom.toFixed(2));
+  // CALIBRATION. Headless Chrome run under --virtual-time-budget virtualises
+  // performance.now(), which would make every number below a fiction that still looks
+  // like milliseconds. This is a fixed lump of pure JS whose real cost is known from
+  // node; if it reads near zero here, the clock is virtual and NOTHING below is a
+  // measurement. Print it beside the results rather than checking it once by hand.
+  {
+    const t0 = performance.now();
+    let x = 0; for (let i = 0; i < 3e7; i++) x += Math.sqrt(i);
+    say('clock calibration: 3e7 sqrt took ' + (performance.now()-t0).toFixed(1) +
+        'ms (node says ~' + (window.__calib||'?') + 'ms; near 0 means the clock is virtual)');
+  }
+  say('');
+  // ---- whole frame, and each heavy function on its own, interleaved
+  const PARTS = {
+    'draw() whole frame': () => draw(),
+    'drawMountain':  () => { ctx.save(); ctx.translate(0, H - CFG.worldBottom*V.zoom); ctx.scale(V.zoom,V.zoom); drawMountain(); ctx.restore(); },
+    'carveTunnels':  () => { ctx.save(); ctx.translate(0, H - CFG.worldBottom*V.zoom); ctx.scale(V.zoom,V.zoom); carveTunnels(); ctx.restore(); },
+    'drawRunners x6':() => { ctx.save(); ctx.translate(0, H - CFG.worldBottom*V.zoom); ctx.scale(V.zoom,V.zoom); for(let k=CFG.laneCount-1;k>=0;k--) drawRunners(k); ctx.restore(); },
+    'drawRiver':     () => { ctx.save(); ctx.translate(0, H - CFG.worldBottom*V.zoom); ctx.scale(V.zoom,V.zoom); drawRiver(); ctx.restore(); },
+    'drawOutside':   () => { ctx.save(); ctx.translate(0, H - CFG.worldBottom*V.zoom); ctx.scale(V.zoom,V.zoom); drawOutside(); ctx.restore(); },
+    'grain overlay': () => { ctx.save(); ctx.globalCompositeOperation='overlay'; ctx.globalAlpha=0.16; ctx.fillStyle=ctx.createPattern(grain(),'repeat'); ctx.fillRect(0,0,W,H); ctx.restore(); },
+  };
+  const names = Object.keys(PARTS), acc = {};
+  for (const n of names) acc[n] = [];
+  for (let block = 0; block < 4; block++)
+    for (const n of names) acc[n].push(__bench.time(PARTS[n], 25));
+  say('               median ms   spread        share of frame');
+  const med = a => a.slice().sort((x,y)=>x-y)[a.length>>1];
+  const frame = med(acc['draw() whole frame']);
+  for (const n of names) {
+    const a = acc[n], m = med(a);
+    say('  ' + n.padEnd(20) + m.toFixed(2).padStart(7) +
+        '   ' + (Math.min(...a).toFixed(2) + '-' + Math.max(...a).toFixed(2)).padStart(11) +
+        '   ' + (n === 'draw() whole frame' ? (1000/m).toFixed(0) + ' fps on THIS box'
+                                            : (100*m/frame).toFixed(0) + '%'));
+  }
+  say('');
+  say('DONE');
+})();
+`);
+})();
+</script>
+</body></html>

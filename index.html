@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '146 the belt drops people off its own end';
+const BUILD = '147 the frame stops drawing what is off it';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -649,9 +649,18 @@ function saveBest(n) { try { if (n > loadBest()) localStorage.setItem('hr_best',
 
 // ================================================================ view: camera anchor, zoom, world <-> screen
 // The world is drawn scaled by V.zoom with the river pinned to the bottom of the screen.
-const V = { left: 0, zoom: 1, vw: W };
+const V = { left: 0, zoom: 1, vw: W, vh: H, top: 0 };
 function updateView(dt) {
   V.vw = W / V.zoom;
+  // The VERTICAL half of the view, which nothing used to carry. The world transform is
+  // translate(0, H - worldBottom * zoom) then scale(zoom), so screen y 0 is world
+  // worldBottom - H/zoom and screen y H is worldBottom: that band is the whole of what
+  // can be seen, and it is a fraction of what the mountain draws. Derived from the zoom
+  // rather than written down, for the reason the harness note gives -- a constant that
+  // encodes a fact about the thing it measures goes stale the first time somebody
+  // changes that fact, and then fails by accusing the game.
+  V.vh = H / V.zoom;
+  V.top = CFG.worldBottom - V.vh;
   V.left = S.cam + CFG.packFront - 0.64 * V.vw;
   // zoom out so every tunnel active in view fits
   let top = 0;
@@ -664,6 +673,33 @@ function updateView(dt) {
 }
 const toScreen = (wx, wy) => [(wx - V.left) * V.zoom, H + (wy - CFG.worldBottom) * V.zoom];
 const inView = (wx, margin = 100) => wx > V.left - margin && wx < V.left + V.vw + margin;
+// The same question about the other axis, and about a SPAN rather than a point, because
+// what wants culling is mostly a band with a height: a strata course, a boulder, an old
+// working. World y, like inView's world x.
+//
+// The margin is generous on purpose. A stroke is drawn about its path rather than inside
+// it, a gradient fill can reach past the box, and the screen shake translates the whole
+// world by a few pixels after this has been decided -- so a tight test would take a
+// hairline off the edge of the frame in exactly the cases nobody photographs. 120 world
+// units of slack costs a handful of ops out of thousands.
+const inViewY = (wy0, wy1, margin = 120) => wy1 > V.top - margin && wy0 < CFG.worldBottom + margin;
+// x, for things already in VIEW-LOCAL coordinates (0..V.vw) rather than world ones --
+// which is what the mountain's parallax passes hand out, since parallaxRange has already
+// subtracted the camera. Passing one of those to inView() would test it against the
+// world origin and quietly cull the whole mountain, so the two are named apart.
+const inViewLocalX = (lx0, lx1, margin = 120) => lx1 > -margin && lx0 < V.vw + margin;
+// Where a world-x loop should START, given the grid it is phased on.
+//
+// The pattern all over the mill and the truss is `for (wx = floor(span0 / P) * P; wx < span1;
+// wx += STEP)`, walking the whole span -- thousands of units -- when the camera can see about
+// 1370 of it. The obvious clamp is to floor the VIEW to the grid instead, and it is wrong:
+// wx seeds hash() for every jitter, plate and rivet, and one loop below steps 52 off a
+// 26-aligned base, where flooring to 26 lands on the wrong parity and shifts the whole zigzag
+// half a panel. So step forward FROM the original base in whole STEPs: the sequence is a
+// suffix of the one that was always drawn, never a different sequence.
+const fromView = (base, step, margin = 60) =>
+  base + Math.max(0, Math.floor((V.left - margin - base) / step)) * step;
+const toView = (margin = 60) => V.left + V.vw + margin;
 
 // ================================================================ mini-game verbs
 
@@ -6454,22 +6490,41 @@ function drawMountain() {
   drawMillMass();
   ctx.restore();
   ctx.save(); seamClip(1); ctx.clip();
+  // top..bottom is 2240 world units of rock. The view is H/zoom tall -- about 770 at act
+  // one's zoom -- so roughly two thirds of these courses were built and filled entirely
+  // off the screen, and each one is a full-width path of about sixty segments.
+  //
+  // Culled on the BAND, not on the loop bounds, so `k` keeps counting from the same place:
+  // k picks the colour and seeds the wobble, and starting the loop at the first visible y
+  // instead would renumber every course and repaint the whole mountain.
   for (let y = top; y < bottom; y += 26) {
     const k = Math.floor(y / 26);
+    const y0 = y + hash(k) * 8, h = 9 + hash(k * 7) * 9;
+    if (!inViewY(y0 - 8, y0 + h + 8)) continue;   // +-8 for strataBand's own sine wobble
     ctx.fillStyle = k % 3 === 0 ? 'rgba(255,255,255,0.04)' : k % 3 === 1 ? 'rgba(0,0,0,0.11)' : 'rgba(150,100,130,0.07)';
-    strataBand(y + hash(k) * 8, 9 + hash(k * 7) * 9, k);
+    strataBand(y0, h, k);
   }
   rockFace(top, bottom);
   // Whole animals, before the boulder pass, so loose rock is drawn OVER them and the stone
   // partly buries what it holds. Their boxes are handed to the workings below so no drift is
   // cut through the middle of one.
   const skels = placeSkeletons(null);
-  for (const sk of skels) drawSkeleton(sk.cx - V.left, sk.cy, sk.L, sk.kind, sk.seed);
+  // PLACED in full, DRAWN when visible. The boxes are handed to the workings pass below so
+  // no drift is cut through an animal, so placing fewer of them would move the holes.
+  for (const sk of skels)
+    if (inViewLocalX(sk.cx - V.left - sk.L, sk.cx - V.left + sk.L) && inViewY(sk.cy - sk.L, sk.cy + sk.L))
+      drawSkeleton(sk.cx - V.left, sk.cy, sk.L, sk.kind, sk.seed);
   parallaxRange(1, 120, (seg, sx) => {
     for (let j = 0; j < 3; j++) {
       const h = hash(seg * 13 + j * 101); if (h < 0.6) continue;
       const bx = sx + hash(seg + j) * 120, by = top + hash(seg * 3 + j * 17) * (bottom - top);
       const rw = 12 + h * 28, rh = rw * (0.45 + hash(seg * 5 + j) * 0.4);
+      // by is spread over the whole 2240 units of the mass, so most boulders are nowhere
+      // near the view. Six paths of seven vertices each, for nothing. Nothing downstream
+      // reads a boulder, so this one can be culled outright.
+      // 1.12 is the largest facet scale (0.82 + 0.3), and the shadow face sits at +3,+5.
+      if (!inViewLocalX(bx - rw * 1.12, bx + rw * 1.12 + 3)) continue;
+      if (!inViewY(by - rh * 1.12, by + rh * 1.12 + 5)) continue;
       // A boulder set in the rock. At 10% white on a flat wall these read as grease on the
       // lens, so the body carries a real dark side, an ink rim and a contact shadow, and
       // the silhouette is faceted rather than a clean ellipse.
@@ -6535,6 +6590,13 @@ function drawMountain() {
     // drawn afterwards cut bones in half because this pass knew nothing about them.
     // Only the wide cuts. A vertical one is a shaft, and a shaft with a fossil in it is a
     // hole with a fossil in it.
+    // THE CULL GOES HERE, BELOW placed.push AND NOT ABOVE IT. Every cut tests itself
+    // against every cut already placed, so skipping a candidate because it is off screen
+    // would free the next one to sit where it could not have sat -- and the rock would
+    // quietly rearrange itself as the camera moved, which is the one failure a still of
+    // the frame you were looking at cannot show. Place them all; draw the visible ones.
+    const shown = inViewLocalX(xx, xx + w) && inViewY(yy, yy + hgt);
+    if (!shown) continue;
     if (!vert && hash(seg * 13.9 + j * 5.3) < FIND_RATE) {
       // r 20..34 clipped at 1.06r is 42 to 70 units wide against a 45-unit body: 1.6m to 2.7m,
       // which is the largest ammonite ever found, six times a screen. 14..22 is 0.55m to 0.86m.
@@ -6549,6 +6611,7 @@ function drawMountain() {
   parallaxRange(1, 300, (seg, sx) => {
     if (hash(seg * 7.7) < 0.62) return;
     const yy = -300 + hash(seg * 4.4) * 900, len = 60 + hash(seg * 2.2) * 130;
+    if (!inViewY(yy, yy + 26)) return;          // spread over 900 units, the view holds a fraction
     ctx.strokeStyle = 'rgba(170,150,190,0.1)'; ctx.lineWidth = 1.4;
     ctx.beginPath(); ctx.moveTo(sx, yy);
     ctx.quadraticCurveTo(sx + len * 0.5, yy + 26, sx + len, yy + 14); ctx.stroke();
@@ -6557,6 +6620,7 @@ function drawMountain() {
   parallaxRange(1, 140, (seg, sx) => {
     if (hash(seg * 11) < 0.5) return;
     const cx = sx + hash(seg) * 100, cy = top + hash(seg * 3) * (bottom - top);
+    if (!inViewY(cy, cy + 62)) return;          // the crack runs 62 units down from cy
     ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo(cx + 14, cy + 18, cx + 5, cy + 36); ctx.quadraticCurveTo(cx - 3, cy + 48, cx + 6, cy + 62); ctx.stroke();
   });
   drawSeamRock();
@@ -7761,9 +7825,23 @@ function rockFace(top, bottom) {
   const S1 = 74;
   const x0 = Math.floor(V.left / S1) * S1, x1 = V.left + V.vw + S1;
   const y0 = Math.floor(top / S1) * S1;
+  // The x loop has always started at the camera; the y loop ran the whole 2240 units of
+  // the mass, every frame, at every camera position. The view holds H/zoom of that -- about
+  // 770 at act one -- so roughly two thirds of this grid was built, faceted, filled, clipped,
+  // lit, shaded and stroked outside the frame. It was the single most expensive thing in the
+  // game: 16,980 canvas calls a frame against about 70,000 for everything else together.
+  //
+  // Each cell is a pure function of (wx, wy) -- nothing here carries from one to the next --
+  // so a cell may be skipped without moving any other. Tested per cell rather than by
+  // clamping the loop, so `wy` stays on the same grid: it seeds every hash in the block, and
+  // a start point rounded anywhere else would re-roll the whole rock face.
+  //
+  // +-84 is the block's own reach past its cell: jy wanders +-25.9 (S1 * 0.7 / 2) and the
+  // facets reach r2 * 1.22, at most 53.7. inViewY adds its own margin on top of that.
   for (let wx = x0; wx < x1; wx += S1) {
     const sx = wx - V.left;
     for (let wy = y0; wy < bottom; wy += S1) {
+      if (!inViewY(wy - 84, wy + 84)) continue;
       const n = hash(wx * 0.013 + wy * 0.029);
       if (n < 0.34) continue;
       const jx = sx + (hash(wx * 0.07 + wy * 0.011) - 0.5) * S1 * 0.7;
@@ -9635,6 +9713,19 @@ function millCorridor(wx0, wx1, y, laneIn) {
   const x0 = Math.max(-14, wx0 - V.left), x1 = Math.min(V.vw + 14, wx1 - V.left);
   if (x1 <= x0) return;
   const th = CFG.tunnelH, cy = y - th, lane = laneIn !== undefined ? laneIn : Math.round((CFG.baseY - y) / CFG.laneGap);
+  // THE SPAN IS NOT THE VIEW. Every wx loop below walked wx0..wx1 -- the whole length of
+  // the mill, which is thousands of units -- while the camera can only see V.vw of it, about
+  // 1370. The ctx.clip() above kept the surplus off the screen, so nothing ever LOOKED
+  // wrong; the paths were still built and handed to the canvas, and that surplus was the
+  // largest single block of wasted work in act two: 1,951 of millCorridor's 3,082 drawing
+  // ops a frame, drawn entirely outside the frame.
+  //
+  // Clamped, not re-phased. Each loop still floors to its own multiple, so wx lands on
+  // exactly the grid it always did -- wx seeds hash() for the window jitter, the bay
+  // contents and the valve spacing, and a start point off the grid would redraw the mill
+  // differently every time the camera moved. The per-feature `gx < wx0` guards below are
+  // untouched: they are about the span's ENDS, which is a different question.
+  const vx0 = V.left, vx1 = V.left + V.vw;
   const lift = Math.min(1, 0.4 + lane * 0.22);
   ctx.save();
   ctx.beginPath(); ctx.rect(x0, cy - 10, x1 - x0, th + 28); ctx.clip();
@@ -9653,24 +9744,24 @@ function millCorridor(wx0, wx1, y, laneIn) {
   }
   // windows and the daylight they throw, off a jittered pitch so the window and
   // lamp grids do not beat against each other
-  for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
+  for (let wx = Math.floor((Math.max(wx0, vx0) - 240) / 200) * 200; wx < Math.min(wx1, vx1) + 240; wx += 200) {
     const gx = wx + 104 + (hash(wx * 0.0037) - 0.5) * 46;
     if (gx < wx0 - 40 || gx > wx1 + 40) continue;
     millWindow(gx - V.left, cy, th, lift, gx);
   }
-  for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
+  for (let wx = Math.floor((Math.max(wx0, vx0) - 240) / 200) * 200; wx < Math.min(wx1, vx1) + 240; wx += 200) {
     const gx = wx + 104 + (hash(wx * 0.0037) - 0.5) * 46;
     if (gx < wx0 - 40 || gx > wx1 + 40) continue;
     millShaft(gx - V.left, cy, y, lift);
   }
   // wall furniture, on a different beat from the windows so nothing lines up
-  for (let wx = Math.floor((wx0 - 320) / 320) * 320; wx < wx1 + 320; wx += 320) {
+  for (let wx = Math.floor((Math.max(wx0, vx0) - 320) / 320) * 320; wx < Math.min(wx1, vx1) + 320; wx += 320) {
     const gx = wx + 212 + (hash(wx * 0.0071) - 0.5) * 70;
     if (gx < wx0 + 30 || gx > wx1 - 30) continue;
     millWallStuff(gx, cy, th);
   }
   // plant along the back of the hall, set between the windows
-  for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
+  for (let wx = Math.floor((Math.max(wx0, vx0) - 240) / 200) * 200; wx < Math.min(wx1, vx1) + 240; wx += 200) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
     const bay = millBay(gx, lane, wx);
@@ -9682,7 +9773,7 @@ function millCorridor(wx0, wx1, y, laneIn) {
     millPlant(gx, y - 2, lane, bay.kind);
   }
   // cast-iron stanchions on the hall's front line: nothing was carrying the floors
-  for (let wx = Math.floor((wx0 - 200) / 200) * 200; wx < wx1 + 200; wx += 200) {
+  for (let wx = Math.floor((Math.max(wx0, vx0) - 200) / 200) * 200; wx < Math.min(wx1, vx1) + 200; wx += 200) {
     const hj = hash(wx * 0.0091);
     const gx = wx + 172 + (hj - 0.5) * 50, sx = gx - V.left;
     if (gx < wx0 + 16 || gx > wx1 - 16) continue;
@@ -9711,12 +9802,12 @@ function millCorridor(wx0, wx1, y, laneIn) {
     ctx.fillStyle = 'rgba(255,255,255,0.11)'; ctx.fillRect(x0, py + off - r * 0.6, x1 - x0, 1.2);
   }
   ctx.fillStyle = '#4b4a55';
-  for (let wx = Math.floor((wx0 - 90) / 90) * 90; wx < wx1 + 90; wx += 90) {
+  for (let wx = Math.floor((Math.max(wx0, vx0) - 90) / 90) * 90; wx < Math.min(wx1, vx1) + 90; wx += 90) {
     const sx = wx - V.left;
     ctx.fillRect(sx, py - 4, 4.6, 26);
     ctx.fillRect(sx - 2, py - 7, 8.6, 3.4);
   }
-  for (let wx = Math.floor((wx0 - 720) / 720) * 720; wx < wx1 + 720; wx += 720) {
+  for (let wx = Math.floor((Math.max(wx0, vx0) - 720) / 720) * 720; wx < Math.min(wx1, vx1) + 720; wx += 720) {
     const sx = wx - V.left + 300;
     // a gate valve: body, bonnet, then a handwheel seen edge-on
     ctx.fillStyle = '#181620'; ctx.fillRect(sx - 6, py - 3, 12, 15);
@@ -9734,7 +9825,7 @@ function millCorridor(wx0, wx1, y, laneIn) {
   ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(x0, shy - 1.4, x1 - x0, 6);
   ctx.fillStyle = '#585a63'; ctx.fillRect(x0, shy - 2.6, x1 - x0, 4.4);
   ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(x0, shy - 2.6, x1 - x0, 1.2);
-  for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
+  for (let wx = Math.floor((Math.max(wx0, vx0) - 240) / 200) * 200; wx < Math.min(wx1, vx1) + 240; wx += 200) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50, sx = gx - V.left;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
     const bay0 = millBay(gx, lane, wx);
@@ -9787,7 +9878,7 @@ function millCorridor(wx0, wx1, y, laneIn) {
   // the big engines, on the same grid as the plant and AFTER the shafting: they are the
   // tall objects in here and they stand forward of the back wall, so the shaft and its
   // belts pass behind them. Still before the truss, which closes the room over the top.
-  for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
+  for (let wx = Math.floor((Math.max(wx0, vx0) - 240) / 200) * 200; wx < Math.min(wx1, vx1) + 240; wx += 200) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
     if (!featFits(gx, wx0, wx1)) continue;
@@ -9801,7 +9892,7 @@ function millCorridor(wx0, wx1, y, laneIn) {
   ctx.fillStyle = g2; ctx.fillRect(x0, cy + 18, x1 - x0, 48);
   // the engines' smoke, last of all, because that shadow is drawn straight across the
   // band the smoke gathers in and rubbed every plume out of the frame
-  for (let wx = Math.floor((wx0 - 240) / 200) * 200; wx < wx1 + 240; wx += 200) {
+  for (let wx = Math.floor((Math.max(wx0, vx0) - 240) / 200) * 200; wx < Math.min(wx1, vx1) + 240; wx += 200) {
     const gx = wx + 8 + (hash(wx * 0.0051) - 0.5) * 50;
     if (gx < wx0 - 60 || gx > wx1 + 60) continue;
     const bay = millBay(gx, lane, wx);
@@ -9827,7 +9918,7 @@ function millTruss(x0, x1, cy, wx0, wx1) {
   const d = 20;
   ctx.fillStyle = '#26242e'; ctx.fillRect(x0, cy - 2, x1 - x0, d + 4);
   // the chords are built out of plates, not ruled: no continuous bar underneath
-  for (let wx = Math.floor(wx0 / 26) * 26; wx < wx1 + 26; wx += 26) {
+  for (let wx = fromView(Math.floor(wx0 / 26) * 26, 26), wxE = Math.min(wx1 + 26, toView()); wx < wxE; wx += 26) {
     const hv = hash(wx * 1.3 + cy), sx = wx - V.left;
     const v = 0.55 + hv * 0.45;
     if (hv < 0.9) {
@@ -9844,12 +9935,12 @@ function millTruss(x0, x1, cy, wx0, wx1) {
   }
   ctx.strokeStyle = '#383a46'; ctx.lineWidth = 3.4;
   ctx.beginPath();
-  for (let wx = Math.floor(wx0 / 26) * 26; wx < wx1 + 26; wx += 52) {
+  for (let wx = fromView(Math.floor(wx0 / 26) * 26, 52), wxE = Math.min(wx1 + 26, toView()); wx < wxE; wx += 52) {
     const sx = wx - V.left;
     ctx.moveTo(sx, cy + 5); ctx.lineTo(sx + 26, cy + d - 4); ctx.lineTo(sx + 52, cy + 5);
   }
   ctx.stroke();
-  for (let wx = Math.floor(wx0 / 52) * 52; wx < wx1 + 52; wx += 52) {
+  for (let wx = fromView(Math.floor(wx0 / 52) * 52, 52), wxE = Math.min(wx1 + 52, toView()); wx < wxE; wx += 52) {
     const sx = wx - V.left;
     ctx.fillStyle = '#4a4c59';
     ctx.beginPath(); ctx.moveTo(sx - 6, cy + 5); ctx.lineTo(sx + 6, cy + 5); ctx.lineTo(sx, cy + 13); ctx.closePath(); ctx.fill();
