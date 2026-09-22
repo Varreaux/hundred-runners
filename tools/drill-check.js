@@ -142,19 +142,41 @@ eval(src + `
     const v = CFG.types[r.type].verb;
     if (!(v in firstAt)) firstAt[v] = r.x;
   }
+  // ...MINUS THE ONES THE OPENING DRILL DELIBERATELY SKIPS. Morgan, 2026-09-22: the drill
+  // ran keys, gears, word, levers, bar, wires, so the player typed a word, did one unrelated
+  // puzzle, and went straight back to typing another -- and keys and word are the same verb
+  // wearing two paintings (both themeWord, both advance on the right letter, both reset on a
+  // wrong one). One of them is enough to teach it.
+  //
+  // NO BACKTICKS IN HERE. This whole block lives inside a template literal that is eval'd
+  // against index.html, so one in a comment ends the string and the tool dies at load with a
+  // syntax error pointing at a line forty above, which reads as the tool being broken.
+  //
+  // READ OUT OF index.html, not restated here, so putting word back in the drill makes
+  // this tool expect it again with nobody editing the tool. That is the same reason the room
+  // list and the families are parsed rather than copied.
+  //
+  // This is a DECISION and not a derivation, so it is printed rather than hidden: a skipped
+  // verb genuinely is never drilled, and the line below says which, so a green here states
+  // what it is choosing to ignore instead of quietly covering less than it used to.
+  const skip = (typeof DRILL_ONE_SKIP !== 'undefined') ? DRILL_ONE_SKIP : new Set();
   const types = new Set();
-  for (const v of Object.keys(firstAt)) if (CFG.actAt(firstAt[v]) === 1) types.add(v);
+  for (const v of Object.keys(firstAt)) if (CFG.actAt(firstAt[v]) === 1 && !skip.has(v)) types.add(v);
   let total = 0;
   for (const e of log) { total += e.secs; console.log('  ' + e.verb.padEnd(8) + e.secs.toFixed(2).padStart(7) + 's'); }
   console.log('');
-  console.log('  reached ' + log.length + ' of ' + types.size + ' act-one types');
+  console.log('  reached ' + log.length + ' of ' + types.size + ' act-one types the drill owes');
+  const skipped = [...skip].filter(v => CFG.actAt(firstAt[v]) === 1);
+  if (skipped.length)
+    console.log('  deliberately NOT drilled: ' + skipped.join(', ') +
+                '  (same verb as one that is -- see DRILL_ONE_SKIP in index.html)');
   // Every verb must be taught by SOME drill before its first room. The opening drill covers
   // act one; the seam drill covers everything act one did not. A verb in neither is one the
   // player meets cold, which is the whole thing the drill exists to prevent.
   const seam = [];
   for (const v of Object.keys(firstAt)) if (CFG.actAt(firstAt[v]) !== 1) seam.push(v);
   console.log('  taught at the seam: ' + (seam.join(', ') || 'none'));
-  const untaught = Object.keys(firstAt).filter(v => !types.has(v) && !seam.includes(v));
+  const untaught = Object.keys(firstAt).filter(v => !types.has(v) && !seam.includes(v) && !skip.has(v));
   console.log('  never taught: ' + (untaught.join(', ') || 'none'));
   // Which one it died on matters more than the count. A stall here is usually the DRIVER,
   // not the room: bar and lift are not rate puzzles -- bar wants SPACE when the marker is

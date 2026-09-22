@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '149 the wall asks for the SPACE it wants';
+const BUILD = '150 the yard teaches typing once';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2960,7 +2960,7 @@ window.addEventListener('keydown', e => {
     // walk the whole speech at the keyboard's repeat rate, which is the skip by another name.
     if (S.boss && !S.boss.gone && !S.boss.auto) { if (!e.repeat && (k === ' ' || k === 'ENTER')) bossAdvance(); return; }
     // actVerbs(1), not a bare startDrill: its default is every verb on the course.
-    if (!S.boss) { const c = I(); S.introT = c.deliver + c.settle; startBoss(BOSS_SCRIPT, false, () => startDrill(actVerbs(1))); return; }
+    if (!S.boss) { const c = I(); S.introT = c.deliver + c.settle; startBoss(BOSS_SCRIPT, false, () => startDrill(drillOneVerbs())); return; }
     startRun(); return;
   }
   if (S.mode === 'win' || S.mode === 'lose') {
@@ -3157,6 +3157,24 @@ function actVerbs(act) {
   return out;
 }
 const act2Verbs = () => actVerbs(2);
+// TUTORIAL ONE TEACHES ONE TYPING ROOM, NOT TWO. Morgan, 2026-09-22: "a mini game that's
+// just 'type the word' just needs to show up once... you're teaching the same thing twice."
+//
+// The opening drill ran keys, gears, word, levers, bar, wires -- so the player typed a word,
+// did one unrelated puzzle, and went straight back to typing another word.
+//
+// They are not merely similar, they are the SAME VERB wearing two paintings: `keys` and
+// `word` both take their content from themeWord(diff), both advance on the correct letter,
+// both reset idx to 0 on a wrong one, and both finish on the last. The only line that
+// differs between them is which painter draws it -- drawKeyBoxes' key caps against
+// drawWordPrompt's word. Nothing mechanical is lost by drilling one of them.
+//
+// THE OPENING DRILL ONLY, which is the whole of what was asked for. actVerbs is untouched,
+// so both rooms stand on the course exactly where they stood; the cave-door drill is
+// untouched too, and could not have been affected anyway -- it teaches acts two and three,
+// and `word` first appears at the rope bridge in act one, so it was never in that list.
+const DRILL_ONE_SKIP = new Set(['word']);
+const drillOneVerbs = () => actVerbs(1).filter(o => !DRILL_ONE_SKIP.has(o.verb));
 // The whole sequence, as a phase machine. `off` until the lead runner arrives, `done` for ever
 // after -- there is no path back, so a restart goes through reset() like everything else.
 function updateSeamGate(dt) {
@@ -5679,7 +5697,7 @@ function updateIntro(dt) {
     }
   }
   // The shift is assembled and the doors are still shut: run the drill in that gap.
-  if (S.introT >= gather && !S.drill && !S.boss) startBoss(BOSS_SCRIPT, false, () => startDrill(actVerbs(1)));
+  if (S.introT >= gather && !S.drill && !S.boss) startBoss(BOSS_SCRIPT, false, () => startDrill(drillOneVerbs()));
   if (drilling) {
     updateDrill(dt);
     if (S.introT > 0.8) chatter(dt);
