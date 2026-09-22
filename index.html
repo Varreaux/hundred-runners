@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '147 the frame stops drawing what is off it';
+const BUILD = '148 the worn-key keypad is gone';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -92,7 +92,6 @@ const CFG = {
     gears:    { verb: 'gears',  title: 'align the drive train',      hazard: 'machine', color: '#ff9a3c' },
     conveyor: { verb: 'levers', title: 'stop the conveyor',          hazard: 'machine', color: '#ff9a3c' },
     sweeper:  { verb: 'lights', title: 'shut down the sweeper',      hazard: 'machine', color: '#ff9a3c' },
-    presses:  { verb: 'code',   title: 'unlock the press controls',  hazard: 'press',   color: '#ffd23c' },
     calculation: { verb: 'calculation', title: 'clear the wages terminal', hazard: 'machine', color: '#ff9a3c' },
     wiring:   { verb: 'wires',  title: 'make the wiring safe',       hazard: 'machine', color: '#ff9a3c' },
     bridge:  { verb: 'keys', title: 'lower the drawbridge',   hazard: 'all',   color: '#ff4646' },
@@ -143,12 +142,10 @@ const CFG = {
     // Linh's Calculation room landed separately, at 6900 in the mountain. It is rank 5 on her
     // sheet and that is where it sits.
     calculation: { family: 'Calculation', rank: 5, weight: 0.5 },
-    // The presses room is NOT that room, and ranking it as though it were was wrong. Her
-    // sheet retires a three-digit fingerprint room; what is actually built here is the
-    // worn-key code, which is not one of her ten and carries no rating of hers. Ranked on
-    // what it costs a player -- read a keypad, deduce an order, type three digits -- which
-    // puts it beside Wiring rather than beside arithmetic.
-    presses:  { family: 'Code', rank: 3, weight: 1 },
+    // The Code family is GONE. Morgan, 2026-09-22: nobody liked the worn-key keypad -- the
+    // one where three greasy thumbprints told you which digit was pressed first -- so both
+    // its rooms were retired and the family with them. Linh's sheet never had an entry for
+    // it (see below), so nothing of hers is lost by its going.
     // The enclosure's rooms. These were ranked here by what they cost a player, and then
     // cross-checked against Linh's OWN encoding of the same sheet on origin/Linh2, which
     // carries a PUZZLE_FAMILIES table mapped onto our types. Hers runs 1..10 where this runs
@@ -158,10 +155,11 @@ const CFG = {
     // than Bank, Lift rather than Jaws.
     //
     //   hers:  Lever 1  Gear 2  Slider 3  Typo 4  Wiring 5  Dig 6  Lift 7  Blast 8  Trace 9  Calculation 10
-    //   here:  Lever 0  Gear 1  Slider 1  Typo 2  Code 3 / Wiring 3 / Dig 3  Lift 4 / Trace 4  Blast 5 / Calculation 5
+    //   here:  Lever 0  Gear 1  Slider 1  Typo 2  Wiring 3 / Dig 3  Lift 4 / Trace 4  Blast 5 / Calculation 5
     //
-    // Her table also has no entry at all for `presses`, which is the independent confirmation
-    // that the worn-key code is not one of her ten and should not be ranked as her Calculation.
+    // Her table had no entry at all for `presses`, which was the independent confirmation
+    // that the worn-key code was never one of her ten. It is retired now; `Code` above is
+    // kept in this list's history only as the note explaining why there is no such family.
     ditch:    { family: 'Dig',         rank: 3, weight: 1 },
     thorn:    { family: 'Typo',        rank: 2, weight: 1 },
     mantrap:  { family: 'Lift',        rank: 4, weight: 1 },
@@ -329,11 +327,13 @@ const CFG = {
     { x: 7600,  lane: 0, type: 'sweeper',     diff: 2, warn: 1350 },
     // ---- back to act one, the mill.
     //
-    // The presses keep their keypad and stay in the mill. Linh's sheet themes her Calculations
-    // room as exactly this room -- three stamping presses, one body per stroke, a code to get
-    // out -- but the puzzle actually built here is the worn-key code, which is not one of her
-    // ten and carries no difficulty rating, so the gate has nothing to say about it.
-    { x: 5300,  lane: 0, type: 'presses',  diff: 2 },
+    // This slot held the worn-key keypad until 2026-09-22, when it was retired. A second
+    // GEAR room takes it rather than the slot going empty: deleting it outright left lane 0
+    // running 4600 to 5800 with nothing on it, and act one is already six-sevenths Typo
+    // rooms, so another drawbridge or rope was the one thing it did not need. Gear keeps a
+    // machine in the mill, which is what the note at the top of this list argues for, and
+    // the nearest other gear room is 3550 back at 1750.
+    { x: 5300,  lane: 0, type: 'gears',  diff: 2 },
     // Same arithmetic fault as the sweeper. Splicing a wire costs a pull and a walk along
     // the sockets; the connect press is gone, since the splice makes itself the moment the
     // colours meet. Over 4000 layouts an optimal player needs 10 keys, worst 16. The
@@ -381,8 +381,22 @@ const CFG = {
     { x: 16000, lane: 2, type: 'wiring', diff: 4, warn: 840 },
     { x: 16900, lane: 3, type: 'sweeper', diff: 4, warn: 1350 },
     { x: 16200, lane: 1, type: 'winch', diff: 4 },
-    { x: 15600, lane: 0, type: 'presses', diff: 5 },
-    { x: 18300, lane: 4, type: 'calculation', diff: 5, warn: 500 },
+    // 15600 held the other worn-key keypad. It is not simply deleted, and the reason is
+    // measured: half the crowd (51% of runner-frames, act three) is on lane 0, and taking
+    // this room out left them running 14000 to 17200 -- 3200 units, 29.1s at CFG.scroll --
+    // with no crossing at all. The longest lane-0 gap anywhere else in the act is 1630.
+    //
+    // It could not be filled by ADDING a room either: tools/act-check.js requires the last
+    // act to carry every earlier family evenly (hi - lo <= 1), and act three holds exactly
+    // two of each, so any addition makes one family three and fails. Every candidate type
+    // was tried; all thirteen failed, and deleting outright was the only in-place swap that
+    // passed.
+    //
+    // So the wages terminal is MOVED here from 18300 rather than a new room invented. Family
+    // counts are untouched, the lane-0 gap goes back to 1630, and the room lands where it is
+    // actually met: 18300 was lane 4, which carries 2% of the crowd, against lane 0's 51%.
+    // The other lane-0 calculation is at 18800, 3200 clear of this one.
+    { x: 15600, lane: 0, type: 'calculation', diff: 5, warn: 500 },
     { x: 17400, lane: 2, type: 'ditch', diff: 4, warn: 480 },
     // THE MISHMASH. Act three used to hold only the four enclosure types, so the last act
     // introduced four new rooms and brought nothing back. Morgan asked for all of them
@@ -703,25 +717,6 @@ const toView = (margin = 60) => V.left + V.vw + margin;
 
 // ================================================================ mini-game verbs
 
-// One greasy thumbprint, at one of three wear ranks. Drawn in ONE place because the press
-// room's legend and its keypad both use it, and the entire puzzle is the claim that rank 0
-// looks heavier than rank 1 — if the worked example and the keys could drift apart on what
-// "heaviest" looks like, the legend would teach a rule the keypad does not follow.
-//
-// The three ranks differ in ink, in ring count AND in size rather than in one of those
-// alone: the print alone separated first from third at a glance but not second from third,
-// and second versus third is the comparison the player has to make twice.
-function thumbMark(x, y, rank, s) {
-  const ink = [0.92, 0.5, 0.2][rank], rings = [6, 4, 2][rank], grow = [1.15, 0.8, 0.5][rank] * s;
-  ctx.fillStyle = `rgba(150,132,98,${ink * 0.45})`;
-  ctx.beginPath(); ctx.ellipse(x, y, 9 * grow, 12 * grow, 0.15, 0, 6.28); ctx.fill();
-  ctx.strokeStyle = `rgba(214,196,156,${ink})`; ctx.lineWidth = 0.9;
-  for (let j = 0; j < rings; j++) {
-    ctx.beginPath();
-    ctx.ellipse(x, y, (2 + j * 1.5) * grow, (3.4 + j * 1.9) * grow, 0.15, 0.2, 5.4);
-    ctx.stroke();
-  }
-}
 // How long the blast's fuse takes to run home. ONE number: the win countdown reads it and so
 // does the drawn flame, so the flame cannot arrive before or after the room clears.
 const FUSE_BURN = 1.15;
@@ -895,235 +890,6 @@ const VERBS = {
         // pips sat inside it.
         ctx.beginPath(); ctx.arc(cx + (i - (m.seq.length - 1) / 2) * 14, py + 166, 4, 0, 6.28); ctx.fill();
       }
-      ctx.textAlign = 'left';
-    },
-  },
-  code: {
-    // WIDE, not tall. The legend below is the whole fix for this room, and stacking it
-    // above the keypad took the panel to 266 -- which tools/cover-check.js scores at 59.6%
-    // of the crowd hidden behind the panel on average and 100% on its worst frame, against
-    // 17.7% before. A room you cannot see past is not a legibility win. Beside the keypad
-    // instead, in a panel half again as wide, it costs 21.6% -- the same as the sweeper,
-    // the other 3x3 keypad. 200 is about the floor for any panel holding a 3x3 grid:
-    // 30 of header, an input line, 3 rows at 38, and the ~32 panelStep and panelGauges
-    // own at the bottom.
-    ph: 218, pw: 620,
-    takesDigits: true,
-    // panelStep moved to the bottom row, opposite the time-to-arrival readout, with a
-    // 376px budget -- it no longer collides with the title, which is why this can carry the
-    // rule as well as the count. It was a bare "0/3", the least instructive line in the set
-    // on the room with the most to teach.
-    now: m => (m.failed ? 'REJECTED \u2014 dirtiest first' : `dirtiest first  (${m.input.length}/3)`),
-    hint: 'three greasy keys · the dirtiest was pressed first, the cleanest last',
-    solveKey: m => m.secret[m.input.length],
-    start() {
-      const digits = Array.from({ length: 9 }, (_, i) => String(i + 1));
-      for (let i = digits.length - 1; i > 0; i--) { const j = Math.floor(rand(0, i + 1)); [digits[i], digits[j]] = [digits[j], digits[i]]; }
-      const secret = digits.slice(0, 3);
-      // The marks used to be SORTED, deliberately hiding the order, and the panel said so:
-      // "three prints, six possible orders". That is not a puzzle, it is a coin flipped
-      // three ways, and nothing on screen could tell you which. Measured: a player who
-      // knows the keys but not the order needs 10.5 presses on average and 18 at worst,
-      // against 2.18s of road, so 4.8 to 8.3 keys a second. The bot reported 1.38 because
-      // solveKey knows the answer, so every instrument called the room fine.
-      // The order is now legible instead: the finger is greasiest on the first press and
-      // leaves less each time, so wear rank 0 is pressed first. Three keys, three presses,
-      // no guessing.
-      return { secret: secret.join(''), wear: { [secret[0]]: 0, [secret[1]]: 1, [secret[2]]: 2 }, input: '', failed: false };
-    },
-    key(m, k) {
-      if (!/^[1-9]$/.test(k)) return null;
-      if (!m.input) m.failed = false;
-      m.input += k;
-      if (m.input.length < 3) return 'ok';
-      if (m.input === m.secret) return 'done';
-      m.input = ''; m.failed = true; return 'wrong';
-    },
-    update() {},
-    progress(m) { return m.input.length / 3; },
-    draw(m, px, py, pw) {
-      // Two columns: the worked example on the left, the keypad on the right.
-      // Kx is the centre of the right column, px+336 (the divider) to px+620, not a round
-      // number near it: at px+460 the keypad sat 18 units left of its own half, leaving 52
-      // of gap on one side and 88 on the other.
-      const Lx = px + 150, Kx = px + 478;
-      ctx.textAlign = 'center';
-
-      // THE LEGEND. Morgan: players were splitting evenly on whether to go dirtiest-first
-      // or cleanest-first, which means the rule was not on screen -- it was in a hint line
-      // at the bottom of the canvas, and in the player's own reasoning about how a finger
-      // works. "More grease means earlier" is a deduction, not a perception, and half of
-      // them deduced it the other way round.
-      //
-      // So the rule is stated here as a worked example, in the panel, above the keypad it
-      // applies to: three sample prints from heaviest to lightest, labelled 1st 2nd 3rd,
-      // with a ghost fingertip travelling along them in that order and leaving each mark
-      // as it goes. It shows the cause -- the finger gives up its grease as it presses --
-      // rather than asserting the consequence.
-      //
-      // It cannot leak the answer: these are three swatches in a row, not keys. Which of
-      // the nine keys carries which mark is still the thing the player has to read.
-      // Reading down the column, because that is the order the finger goes in and the
-      // order the answer is pressed in. Across, the eye has no reason to start at the left.
-      //
-      // NO TILE UNDER A SWATCH. A first pass drew each one on a rounded rectangle filled
-      // rgba(122,104,72, [0.5,0.26,0.1][rank]) -- which is character for character the fill
-      // a WORN KEY gets below, at the same corner radius and the same aspect. Three of them
-      // in a column read as three keys with prints on them, and a player starts hunting for
-      // which keys they are. The prints lie bare on the panel ground instead, so nothing in
-      // the example shares a surface with anything on the keypad.
-      const sy = k => py + 76 + k * 36;
-      // 144, ending at py + 184, the same line the divider stops on. At 148 the box ran to
-      // py + 188 and the step line's cap top is py + ph - 25 - 8 = py + 185.
-      ctx.fillStyle = 'rgba(255,255,255,0.045)'; roundRect(px + 16, py + 40, 268, 144, 6); ctx.fill();
-      ctx.font = 'bold 12px monospace'; ctx.fillStyle = 'rgba(180,196,220,0.8)';
-      ctx.textAlign = 'center';
-      // +12, not Lx: the prints sit on Lx but each carries its label to the right, so the
-      // group's optical centre is right of the column and a header centred on Lx reads as
-      // misaligned with the thing it heads.
-      ctx.fillText('MOST GREASE', Lx + 12, py + 58);
-      ctx.fillText('LEAST GREASE', Lx + 12, py + 178);
-      // The finger walks 1st, 2nd, 3rd on a four-second loop, pressing at each stop, and
-      // A MARK ONLY EXISTS ONCE THE FINGER HAS BEEN THERE. Drawing all three at full ink on
-      // every frame made the example assert the consequence -- here are three prints, they
-      // differ -- which is exactly the thing the player was already failing to reason from.
-      // Appearing under the finger shows the CAUSE: the press is what leaves the grease.
-      // ONE TIMELINE FOR ALL FOUR THINGS, because they were three separate curves that
-      // disagreed about when the press happens -- the finger arrived at 0.45, the dip peaked
-      // at 0.70 over the NEXT row, and the mark finished appearing at 0.32 under nothing at
-      // all, so the legend showed marks materialising on their own beside a hovering finger.
-      // That is the opposite of the thing it exists to demonstrate.
-      //
-      // Each stop is one unit of `press`, spent in four parts:
-      //   0.00 - 0.35  travel, from wherever it was to this row, still lifted
-      //   0.35 - 0.55  come down onto the mark
-      //   0.55 - 0.75  held down, and the mark appears in this window
-      //   0.75 - 1.00  lift off, leaving it behind
-      const walk = (S.t % 4) / 4 * 3, stop = Math.min(2, Math.floor(walk)), press = walk - stop;
-      const travel = clamp01(press / 0.35);              // 1 once it has arrived
-      const dip = clamp01((press - 0.35) / 0.2) * (1 - clamp01((press - 0.75) / 0.25));
-      for (let r2 = 0; r2 < 3; r2++) {
-        const y2 = sy(r2);
-        // 0 before the finger arrives, appearing while it is HELD DOWN, solid once it has
-        // gone -- so the grease is left by the press rather than turning up beside it
-        const born = r2 < stop ? 1 : r2 > stop ? 0 : clamp01((press - 0.55) / 0.2);
-        ctx.font = 'bold 12px monospace'; ctx.textAlign = 'left';
-        ctx.fillStyle = 'rgba(210,220,236,' + (0.28 + born * 0.47).toFixed(2) + ')';
-        ctx.fillText(['1st', '2nd', '3rd'][r2], Lx + 26, y2 + 4);
-        if (born > 0) {
-          ctx.save(); ctx.globalAlpha = born;
-          thumbMark(Lx, y2, r2, 0.85);
-          ctx.restore();
-        }
-        if (r2 < 2) {
-          ctx.strokeStyle = 'rgba(167,152,125,0.4)'; ctx.lineWidth = 1.2;
-          ctx.beginPath(); ctx.moveTo(Lx, y2 + 14); ctx.lineTo(Lx, y2 + 24); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(Lx - 3, y2 + 21); ctx.lineTo(Lx, y2 + 24); ctx.lineTo(Lx + 3, y2 + 21); ctx.stroke();
-        }
-      }
-      // The fingertip, on the mark rather than beside it. It used to ride x = Lx - 27 + dip
-      // * 12, so its right edge reached Lx - 9 while the print spans Lx - 7.5 to Lx + 7.5:
-      // it pressed the air next to the thing it was supposedly making, and being the same
-      // cream as the ink it read as a fourth, fainter print. It comes in from the left and
-      // lands ON Lx, over its own mark, with a nail so it is a finger and not an egg.
-      // stop is clamped to 2 but the travel was not, so for the last 0.73s of every loop
-      // the finger slid on to sy(3) = py + 184 and hung out of the box onto the step row.
-      // stop - 1 + travel, so beat N travels from swatch N-1 INTO swatch N and then presses
-      // it. At min(2, stop + travel) the third beat was clamped flat: the finger sat parked
-      // on the last swatch for the whole beat and never arrived anywhere, so that mark always
-      // appeared under a stationary finger.
-      const fy = sy(Math.max(0, stop - 1 + travel));
-      // ALWAYS ON THE COLUMN. The travel is expressed by moving DOWN it and by being lifted
-      // off the page, never by swinging out to one side and back: a finger that approaches
-      // horizontally reads as a separate object drifting past a column of marks, and for
-      // most of every stop its pad sat clear of the mark it was supposed to be making.
-      const fx = Lx;
-      // A fingertip coming down from the upper left: a short tapered shaft into a rounded
-      // pad with a nail on it. The shaft is 26 units and stops, rather than running to the
-      // panel edge -- at full width it was a 130-unit slab of flat cream straight across
-      // the legend and read as a plank lying on the prints, not as a hand.
-      // lifted while travelling, down on the page while pressing
-      const lift = (1 - dip) * 11;
-      ctx.save();
-      ctx.globalAlpha = 0.42 + dip * 0.38;
-      ctx.fillStyle = '#e4d2b6';
-      ctx.translate(0, -lift);
-      ctx.beginPath();
-      ctx.moveTo(fx - 3, fy - 8);
-      ctx.quadraticCurveTo(fx - 18, fy - 17, fx - 27, fy - 21);
-      ctx.lineTo(fx - 22, fy - 8);
-      ctx.quadraticCurveTo(fx - 14, fy - 2, fx - 4, fy + 4);
-      ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,246,232,0.6)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.ellipse(fx, fy - 1, 9, 7, -0.42, 0, 6.28); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = 'rgba(255,250,242,0.8)';
-      ctx.beginPath(); ctx.ellipse(fx - 2.6, fy - 4.2, 4.4, 2.8, -0.42, 0, 6.28); ctx.fill();
-      ctx.restore();
-      // the rule between the example and the thing it is an example of, on the midpoint of
-      // the two columns' edges -- the legend box ends at px + 284 and the leftmost key
-      // starts at px + 406, so that is px + 345, not the 336 a first pass rounded it to
-      ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(px + 345, py + 44); ctx.lineTo(px + 345, py + 184); ctx.stroke();
-
-      ctx.textAlign = 'center';
-      // Empty slots as underscores rather than middots: three 20px middots read as specks
-      // rather than as "you have entered one of three", which is the only thing this line
-      // is for.
-      // THREE SLOTS, drawn as three cells. Bare cyan underscores at py + 56 sat ten units
-      // above the top key row in the same cyan as the active-room frame and read as an
-      // underline under keys 1, 2 and 3 -- i.e. as the answer, in a puzzle whose entire
-      // content is which three keys. Cells say "three presses, this many so far" without
-      // pointing at anything, and they say it while empty, which underscores did not.
-      // The word REJECTED goes in the step line, not here: it is twice the width of the
-      // slots and setting it here would either overflow them or shrink the digits.
-      // ON THE KEYS' OWN PITCH AND WIDTH. Three 34-wide cells on a pitch of 38 over a grid
-      // of 44-wide keys on a pitch of 50 put every cell edge in the middle of a key column,
-      // which reads as misregistered printing rather than as a header for the grid. Both
-      // numbers come from the keypad below, one line apart, so they cannot drift again.
-      const KEY_W = 44, KEY_PITCH = 50;
-      for (let s2 = 0; s2 < 3; s2++) {
-        const sx3 = Kx - KEY_PITCH + s2 * KEY_PITCH, got = m.input[s2];
-        ctx.fillStyle = 'rgba(255,255,255,0.03)'; roundRect(sx3 - KEY_W / 2, py + 34, KEY_W, 30, 5); ctx.fill();
-        ctx.strokeStyle = m.failed ? 'rgba(255,119,119,0.55)'
-                        : got ? 'rgba(92,225,255,0.75)' : 'rgba(92,225,255,0.22)';
-        ctx.lineWidth = got ? 1.6 : 1; roundRect(sx3 - KEY_W / 2, py + 34, KEY_W, 30, 5); ctx.stroke();
-        if (got) { ctx.fillStyle = '#5ce1ff'; ctx.font = 'bold 20px monospace'; ctx.fillText(got, sx3, py + 56); }
-      }
-      for (let i = 0; i < 9; i++) {
-        const d = String(i + 1), rank = m.wear[d];
-        const marked = rank !== undefined, used = marked && m.input.includes(d);
-        const x = Kx - KEY_PITCH - KEY_W / 2 + (i % 3) * KEY_PITCH, y = py + 66 + Math.floor(i / 3) * 38;
-        ctx.fillStyle = '#2a2d3a'; roundRect(x, y, 44, 32, 5); ctx.fill();
-        // The whole key face darkens with wear, not just the print on it. The print alone
-        // separated first from third at a glance but not second from third, and second
-        // versus third is the only comparison the player actually has to make twice.
-        if (marked) {
-          ctx.fillStyle = `rgba(122,104,72,${[0.5, 0.26, 0.1][rank]})`;
-          roundRect(x, y, 44, 32, 5); ctx.fill();
-        }
-        ctx.strokeStyle = used ? '#6ee7a0' : marked ? '#a7987d' : '#4c4455';
-        ctx.lineWidth = marked ? 2 : 1;
-        roundRect(x, y, 44, 32, 5); ctx.stroke();
-        // THE PRINT STAYS BESIDE THE DIGIT, NOT OVER IT, and this is a refusal rather than
-        // an oversight. It looks more like a greasy key with the mark over the number, and
-        // an art pass asked for exactly that; it was tried and reverted, because a bold 17px
-        // digit is about 10.2 by 12 and thumbMark's rings run out to rx 10.9 / 5.2 / 1.8 for
-        // the three ranks. Centred, the digit hides 1 of rank 0's 6 rings, 3 of rank 1's 4,
-        // and 2 of rank 2's 2 -- the lightest mark vanishes completely, and telling rank 1
-        // from rank 2 is the comparison the player has to make twice. The key's face tint
-        // still carries the rank; the rings are the only thing that says how many presses of
-        // grease are on it. If this comes back, argue it at those numbers.
-        if (marked) {
-          ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2, 40, 28); ctx.clip();
-          thumbMark(x + 31, y + 17, rank, 1);
-          ctx.restore();
-        }
-        ctx.fillStyle = marked ? '#e8e4ea' : '#6a6270'; ctx.font = 'bold 17px monospace';
-        ctx.fillText(d, x + 14, y + 22);
-      }
-      // No footer line here. panelStep and panelGauges own the last ~32 units of the panel,
-      // and a caption in there printed across their bars and across "N reach this in Xs",
-      // which is the one readout that tells you whether to stay in the room or run.
       ctx.textAlign = 'left';
     },
   },
