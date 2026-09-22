@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '148 the worn-key keypad is gone';
+const BUILD = '149 the wall asks for the SPACE it wants';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -736,6 +736,20 @@ const BLAST_WORD = 'UNBOUND';
 // the keypress, and `lit` forces every stick flush -- so a panel closed halfway through an
 // insertion cannot leave one hanging in the air while the fuse burns past it.
 const PACK_IN = 0.26;
+// How long the SPACE prompt takes to arrive once the last charge is in. Short: it is a cue,
+// and a cue that takes its time reads as part of the scenery rather than as something that
+// just happened. See the prompt at the foot of blast.draw.
+const FUSE_CUE_IN = 0.22;
+// How long the SPACE cap is held down and green after the fuse is lit, before the burn has
+// the panel to itself. Long enough to be read as a press, short enough not to sit on top of
+// the thing that press started.
+const PRESS_HOLD = 0.14;
+// Where a stick has LANDED on its own seating clock: stickDy accelerates it into the bore
+// over 0..PACK_STUCK and then settles a 1.6-unit overshoot over the rest. Hoisted out of
+// stickDy because the SPACE cue waits on it as well, and the two restating it separately is
+// how the cue and the dust would drift apart -- they fire on the same instant by
+// construction now, which is what the note inside stickDy says it wants.
+const PACK_STUCK = 0.62;
 // The wall coming down, after the fuse arrives. BLAST_OPEN is the FRACTION of that clock the
 // arch takes to open: the hole is the way through, and the crowd is already running at it, so
 // it has to be there in 0.35s. The other 1.85 is smoke, which nobody has to walk past.
@@ -1666,7 +1680,19 @@ const VERBS = {
     // room is open and updateRoom ticks it while it is closed, and solveRoom fires when it
     // reaches zero. So the explosion in the world is triggered by the fuse arriving rather
     // than by the keypress, and the two cannot drift apart.
-    now: m => (m.lit ? 'stand clear' : m.idx < m.holes.length ? `pack the charges  (${m.idx}/${m.holes.length})` : 'SPACE to light the fuse'),
+    // '' ON THE READY BRANCH, DELIBERATELY. This used to read 'SPACE to light the fuse'
+    // there, and that line is what the SPACE cap below replaced -- printing both puts the
+    // same eleven characters twice, eighteen units apart, the second time in the 11px grey
+    // nobody was reading. Vacating the row is also what makes the cap FIT: with the status
+    // line occupied the band under the masonry is 19.4 units, and no cap that can hold
+    // legible type is that small. panelStep early-returns on a falsy string.
+    // ...and '' FOR THE HOLD AFTER LIGHTING TOO, for the same reason. The cap is held down
+    // and green for PRESS_HOLD past the press, and 'stand clear' comes back on the same row
+    // it is standing in -- so the two were printed through each other for 0.14s. Blank while
+    // the cap is down; 'stand clear' arrives as the cap leaves, which is the order the player
+    // reads anyway: you pressed it, now get out of the way.
+    now: m => (m.lit ? (FUSE_BURN - m.inputT < PRESS_HOLD ? '' : 'stand clear')
+             : m.idx < m.holes.length ? `pack the charges  (${m.idx}/${m.holes.length})` : ''),
     hint: 'press each letter to pack a charge into its hole — then SPACE once to light the fuse',
     solveKey(m) {
       if (m.lit) return null;
@@ -1680,8 +1706,9 @@ const VERBS = {
       // the fuse's burn time as well as the win delay, and FUSE_BURN is the one number both
       // the countdown and the drawn flame read, so the flame cannot arrive early or late.
       // `in` is the seating clock, one per charge; see PACK_IN.
+      // cueT is the SPACE prompt's own arrival clock; see the prompt at the foot of draw().
       return { idx: 0, holes: BLAST_WORD.split('').map(k => ({ k, packed: false, in: 0 })),
-               lit: 0, inputT: 0, won: false };
+               lit: 0, inputT: 0, won: false, cueT: 0 };
     },
     key(m, k) {
       if (m.lit) return null;
@@ -1704,6 +1731,31 @@ const VERBS = {
     update(m, dt) {
       m.inputT = Math.max(0, m.inputT - dt);
       for (const h of m.holes) if (h.packed && h.in < 1) h.in = Math.min(1, h.in + dt / PACK_IN);
+      // DERIVED from the state, not raised by the last keypress: `if the charges are all in
+      // and it is not lit, the cue is arriving`. So ?packed=7, which sets idx directly and
+      // never goes through key(), still describes a room whose prompt is up.
+      //
+      // That is not enough on its own, and the first version of this claimed it was. A still
+      // taken through ?packed never calls update() either, so cueT stayed 0, alpha stayed 0,
+      // and the frame came back identical to the build before the prompt existed. The flag
+      // winds this clock itself now, exactly as it already winds the seating clock.
+      // IT WAITS FOR THE LAST STICK TO LAND, not for the last keypress. idx increments on
+      // the press while that stick is still 13 units above its bore on a 0.26s seating
+      // clock, so cueing off idx alone put the prompt at full brightness 0.04s BEFORE the
+      // charge it was reporting arrived. That is the exact fault the note a hundred lines
+      // down in draw() was written about -- the loud half of a confirmation firing on the
+      // press, with the thing it confirms turning up afterwards -- and this would have
+      // reinstated it, louder. ?packed seats every stick, so that path is unaffected, and
+      // &pin=0.5 now correctly shows no prompt, which is what that flag is for.
+      // PACK_STUCK, NOT 1. The stick is physically home at PACK_STUCK -- that is where
+      // stickDy's acceleration ends and where the arrival dust fires -- and the remaining
+      // 0.38 of the clock is a 1.6-unit overshoot settling back. Waiting for the settle held
+      // the cue 0.26s after the keypress instead of 0.16s, and left a quarter second in
+      // which the status row is blank and the cap is not up yet. The cue now arrives on the
+      // same instant as the dust, which is the event the player actually sees.
+      const last = m.holes[m.holes.length - 1];
+      const ready = m.idx >= m.holes.length && !m.lit && last.in >= PACK_STUCK;
+      m.cueT = ready ? Math.min(1, (m.cueT || 0) + dt / FUSE_CUE_IN) : 0;
     },
     // Counted in PRESSES, so the bar agrees with the count printed four pixels from it. It
     // was `packed * 0.67`, which showed 27% beside a label reading (2/5) and 67% beside one
@@ -1714,7 +1766,7 @@ const VERBS = {
       const n = m.holes.length;
       return m.lit ? (n + (1 - m.inputT / FUSE_BURN)) / (n + 1) : m.idx / (n + 1);
     },
-    draw(m, px, py, pw) {
+    draw(m, px, py, pw, ph) {
       const cx = px + pw / 2;
       // THE PLATE HAS TO FIT WHAT IS DRAWN ON IT. It was py+38 by 54 and its contents wanted
       // more, so its own edge sliced the flame's bloom and every detonation flash flat for the
@@ -1805,7 +1857,7 @@ const VERBS = {
       // the arrival dust four frames after the stick had already stopped. A thing driven into a
       // hole ACCELERATES and arrives at an instant. `u^2` lands exactly at FALL, which is also
       // where the dust now starts -- one event, rather than two a tenth of a second apart.
-      const DROP = 13, SEAT = 1.6, FALL = 0.62;
+      const DROP = 13, SEAT = 1.6, FALL = PACK_STUCK;
       const stickDy = h => {
         // NO `m.lit` TEST. It used to return 0 the moment the fuse was lit, which snapped every
         // still-seating stick flush in a single frame -- and a player typing UNBOUND in 0.7s
@@ -2124,6 +2176,170 @@ const VERBS = {
         }
       }
       ctx.restore();
+      // ---------------------------------------------------------------- the SPACE prompt
+      // Morgan, 2026-09-22: most players spell the word and do not realise the room is not
+      // over -- it still wants one SPACE to light the fuse. The status line already said so,
+      // in 11px grey in the bottom-left corner of the panel, which is the least-looked-at
+      // pixel on it. This says the same thing where the eye already is: under the charges
+      // the player has just finished placing.
+      //
+      // It borrows drawKeyBoxes' "this is the key you press next" language -- an amber cap
+      // lifted off a darker body, with a pulsing white ring -- because that is already what
+      // a key this game wants pressed looks like, in every typing room. A new shape here
+      // would be a second vocabulary for one prompt.
+      //
+      // WIDE AND SHORT, which is measured rather than taste. The clear band between the
+      // plate (ends FACE + faceH) and the status line (11px on a py + ph - 25 baseline) is
+      // about 16 units, and buying more by raising blast's ph is expensive:
+      // tools/cover-check.js scores ph 150 at 9.3% of the crowd hidden on average and ph 176
+      // at 16.7%, and watching the crowd while you work is the whole game. Width costs
+      // nothing on that same measurement, so this grows sideways instead of downward.
+      //
+      // Drawn AFTER the restore above, deliberately: that save clips to the masonry, and the
+      // glow is meant to spill past the plate's bottom edge. Inside the clip it would be
+      // sliced flat along a straight line, which is the fault the note at the head of this
+      // function was written about.
+      // A KEY CAP, NOT A PILL, and the difference is this game's own vocabulary. The first
+      // version was 190 x 15 with a corner radius of 6 -- 12.7:1, radius 0.4 of its height --
+      // which is within a hair of `pill()` up in the HUD (radius h/2, a capsule) and nothing
+      // like `drawKeyBoxes` (40 x 40, radius 7, i.e. 0.175 of the side). It took the amber
+      // palette of a key and the PROPORTIONS of a status badge, and read, in order, as a
+      // progress bar, a web confirm button, a badge, and only then a key -- fifty pixels
+      // above an actual cyan progress bar, which did not help. Palette is not the language;
+      // shape is.
+      //
+      // So the legend is set OUTSIDE the cap as ordinary panel type and the cap carries only
+      // the key's name, with key-cap corners and a thin skirt. Width is the free axis here --
+      // cover-check scores a panel on HEIGHT (ph 150 hides 9.3% of the crowd, ph 176 hides
+      // 16.7%) -- so the room goes sideways, into the gap between legend and cap, which is
+      // what makes a key legend read as a key legend.
+      //
+      // AND IT GOES DOWN WHEN PRESSED. A cue that vanishes on the frame you press it never
+      // proves it was a key; it reads as a banner timing out. drawKeyBoxes owns the other
+      // half of that vocabulary -- `done` turns the cap green and drops its lift to zero --
+      // so the cap is held depressed and green for PRESS_HOLD after lighting, and then the
+      // fuse has the panel to itself. Its clock is FUSE_BURN - m.inputT, the fuse's own; a
+      // separate clock for a seventh of a second would be one more thing to keep in step.
+      //
+      // THE BAND IS DERIVED, both edges. bandTop is the masonry's own bottom, so moving or
+      // resizing the plate carries the prompt with it; bandBot is where panelGauges puts its
+      // first bar, which is the reason draw() is handed ph at all. That band is 97..130 and
+      // the cap's 22.8 units sit in it with about five clear either side. Checked against a
+      // delivered frame rather than trusted: sampling a column of a shot put the masonry's
+      // last row at panel y 97.0 and the bars at 130.6.
+      //
+      // LEFT-ALIGNED, AND THAT IS WHAT MAKES THE BAND 33 UNITS INSTEAD OF 19. Vacating `now`
+      // frees only the LEFT half of that bottom row: panelGauges still right-aligns "N reach
+      // this in Xs" on the same py + ph - 25 baseline, and a centred cap ran straight through
+      // it -- the first build of this shape put the words SPACE and "57 reach this in 4.2s"
+      // on the same pixels. Standing where the status text stood, at px + 22, the cap is
+      // clear of that readout by about 38 units horizontally, which is what lets it use the
+      // full depth down to the bars rather than the 19.4 between the plate and the readout's
+      // cap height. It is also still directly under the charges, which is where the eye is.
+      const bandTop = FACE + faceH, bandBot = py + ph - 20;
+      // GATED ON THE CLOCK, NOT ON idx. The clock is the thing that knows the last stick has
+      // actually landed -- update() only starts it once `in` reaches 1 -- and drawing on
+      // `idx >= holes.length` instead put the cap on screen on the KEYPRESS, at the 0.5
+      // alpha floor, with the seventh charge still 13 units in the air. That is the same
+      // fault this room's own note describes: the loud half of a confirmation arriving
+      // before the thing it confirms. Caught by ?packed=7&pin=0.5, which is the shot that
+      // exists to hold exactly that instant.
+      const since = m.lit ? FUSE_BURN - m.inputT : -1;
+      const armed = !m.lit && (m.cueT || 0) > 0;
+      if (armed || (m.lit && since < PRESS_HOLD)) {
+        const down = m.lit;
+        const cue = down ? 1 : Math.min(1, m.cueT || 0);
+        const pulse = 0.5 + 0.5 * Math.sin(S.t * 7);     // drawKeyBoxes' rate, so the two agree
+        const CH = 18, CW = 132, GAP = 12, RAD = 3;      // RAD/CH 0.167 against drawKeyBoxes' 0.175
+        // THE CAP DROPS INTO ITS BODY, and the body is FOUR units, not 1.8.
+        //
+        // Two faults in one line before this. The depress was `skirt = down ? 0 : 1.8`, with
+        // ctop fixed for both states -- so pressing held the top edge still and raised the
+        // BOTTOM, which is a key being withdrawn, not one going down; the hue was doing all
+        // the work, and a green badge is the family of misreading this cue was rebuilt to
+        // escape. And 1.8 units is 2.4 screen pixels at PANEL_SCALE: proportionally it is
+        // drawKeyBoxes' 4-of-40 exactly, and it renders as nothing. A DEPTH CUE HAS A PIXEL
+        // FLOOR AND DOES NOT SCALE -- that key's skirt lands at 5.4 screen pixels and reads;
+        // a tenth of an 18-unit cap cannot. Stripped of thickness what is left is a rounded
+        // rectangle with a border and a centred word, which is a button.
+        //
+        // So the BOTTOM is fixed and the cap falls the full SKIRT into it. The assembly is
+        // CH + SKIRT = 22 about its centre, i.e. panel y 102.5..124.5 inside the 97..130
+        // band, and the panel does not grow.
+        const SKIRT = 4, TOT = CH + SKIRT;
+        const bodyTop = -TOT / 2 + SKIRT;
+        ctx.save();
+        ctx.translate(px + 22, (bandTop + bandBot) / 2);
+        // The arrival is a LIGHT event, not a size event. An 8% scale wobble over 0.22s is
+        // two or three frames of sub-pixel change and simply switches on -- and the overshoot
+        // that produced it was also what drove the old ring up into the masonry. A flare of
+        // the glow is visible from where the player's eyes actually are, which is the crowd.
+        // The alpha floor is there for the reason the shape changed: at 0.33 an amber bar
+        // above a progress bar reads as a DISABLED control, the exact misreading this cue
+        // exists to prevent, at the moment it is most likely to be made.
+        ctx.globalAlpha = down ? 1 : 0.5 + 0.5 * Math.min(1, cue * 1.6);
+        ctx.font = 'bold 11px monospace';
+        const legend = 'PRESS', lw = ctx.measureText(legend).width;
+        const x0 = 0, capX = x0 + lw + GAP;
+        const ctop = bodyTop - (down ? 0 : SKIRT);       // pressed: the cap sits IN the body
+        // ONE RADIUS FEEDS THE GRADIENT AND THE FILL. Drawn the obvious way -- an ellipse
+        // 114 x 25.5 filled from a radial gradient of radius 114 -- the ramp is only 22%
+        // spent where the fill ends vertically, so it is cut off still holding 78% of its
+        // alpha and leaves a hard horizontal rim worth about 37 of luminance straight across
+        // the letters. That is the fault the gradient note in CLAUDE.md describes, and a
+        // comment here once claimed a transparent last stop ruled it out: true at the two
+        // horizontal extremes, false everywhere else on the rim. Squashing a CIRCLE makes the
+        // gradient and its fill the same circle under the same transform.
+        const GR = CW * 0.9;
+        const flare = down ? 0.34 : 0.14 + pulse * 0.10 + 0.30 * (1 - cue) * (1 - cue);
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        ctx.translate(capX + CW / 2, 0); ctx.scale(1, CH * 1.3 / GR);
+        const gl = ctx.createRadialGradient(0, 0, 0, 0, 0, GR);
+        gl.addColorStop(0, down ? `rgba(110,231,160,${flare})` : `rgba(255,196,86,${flare})`);
+        gl.addColorStop(1, down ? 'rgba(46,204,113,0)' : 'rgba(255,150,40,0)');
+        ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(0, 0, GR, 0, 6.28); ctx.fill();
+        ctx.restore();
+        // the legend as panel type, not printed on the keytop: a cap carries the key's name
+        // and nothing else, and an instruction on the keytop is the last push toward "this
+        // is a button in a web form"
+        ctx.fillStyle = down ? 'rgba(150,220,180,0.92)' : 'rgba(226,214,180,0.92)';
+        ctx.textAlign = 'left'; ctx.fillText(legend, x0, 4);
+        ctx.fillStyle = down ? '#1d6b42' : '#8a6d10';
+        roundRect(capX, bodyTop, CW, CH, RAD); ctx.fill();      // the body never moves
+        const cg = ctx.createLinearGradient(0, ctop, 0, ctop + CH);
+        if (down) { cg.addColorStop(0, '#6ee7a0'); cg.addColorStop(1, '#2ecc71'); }
+        else { cg.addColorStop(0, '#ffe07a'); cg.addColorStop(1, '#f1c40f'); }
+        ctx.fillStyle = cg; roundRect(capX, ctop, CW, CH, RAD); ctx.fill();
+        // the sheen at 0.3 of the cap, not the 0.42 the first pass carried over from a
+        // 40-unit key -- at half height it cut through the middle of the lettering
+        ctx.fillStyle = 'rgba(255,255,255,0.22)';
+        roundRect(capX + 3, ctop + 1.8, CW - 6, CH * 0.3, 2); ctx.fill();
+        // THE RING ONLY WHILE IT IS WAITING. drawKeyBoxes draws it inside `if (cur)` and a
+        // `done` key has none: the halo IS the "press this" mark, so a cap that has been
+        // pressed and still wears it says two things at once. Dropping it also gives the
+        // pressed state a second difference the eye can read instantly, besides the hue.
+        //
+        // At 2.5 out with a 2-wide stroke, as drawKeyBoxes has it -- at 1.5/1.5 the ring
+        // hugged the cap and read as its own outline rather than as a detached halo. Its
+        // outer edge lands at panel y 99.0, clear of the masonry at 97.
+        if (!down) {
+          ctx.strokeStyle = `rgba(255,255,255,${0.4 + pulse * 0.45})`;
+          ctx.lineWidth = 2;
+          // CH + 5 + SKIRT, so the outline encloses the body as well as the keytop. At
+          // CH + 5 the ring's own stroke lands across the skirt and covers all but 0.75 of
+          // it -- one screen pixel -- so the raised cap and the pressed one had identical
+          // silhouettes and the whole press came down to a change of hue. Enclosing the
+          // skirt leaves the full four units visible at rest, and the outline then vanishes
+          // on the press along with the lift, which is two readable differences instead of
+          // none.
+          roundRect(capX - 2.5, ctop - 2.5, CW + 5, CH + 5 + SKIRT, RAD + 2); ctx.stroke();
+        }
+        // 13px, not 11: the line this replaced was 11px, and at the same size only the amber
+        // was doing any shouting. 13 clears an 18-unit cap with four either side.
+        ctx.fillStyle = '#10131a'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+        ctx.fillText('SPACE', capX + CW / 2, ctop + CH / 2 + 4.5);
+        ctx.restore();
+      }
       ctx.textAlign = 'left';
     },
   },
@@ -5118,8 +5334,21 @@ function update(dt) {
     // does. Without this a charge packed a frame before ESC stays in the air for good, and
     // stickDy would have to lie about it -- which is what it used to do, at the cost of
     // snapping three or four still-seating sticks flush on the SPACE that lights the fuse.
-    if (room.verb === 'blast' && room.mg && S.active !== room)
+    // BRACED. This guard's body was a single `for`, so a second statement added under it
+    // ran for EVERY room -- and the next line dereferences room.mg, which is null on any
+    // room that is not armed. It threw on the first frame of the first run.
+    if (room.verb === 'blast' && room.mg && S.active !== room) {
       for (const h of room.mg.holes) if (h.packed && h.in < 1) h.in = Math.min(1, h.in + dt / PACK_IN);
+      // and the prompt's clock with them. These two are started by the same event and are
+      // 0.26 and 0.22 long, so ticking only one with the panel shut desynchronises them:
+      // press the last letter, hit ESC in the same frame, come back five seconds later and
+      // the cap plays its whole "this just happened" arrival over a wall that was finished
+      // five seconds ago. Nothing downstream reads cueT -- it is not inputT -- so this is
+      // about the two clocks agreeing, not about the win.
+      const rdy = room.mg.idx >= room.mg.holes.length && !room.mg.lit
+                  && room.mg.holes[room.mg.holes.length - 1].in >= PACK_STUCK;
+      room.mg.cueT = rdy ? Math.min(1, (room.mg.cueT || 0) + dt / FUSE_CUE_IN) : 0;
+    }
     if (room.state === 'armed' && room.mg && room.mg.won) {
       room.pendingClear = true;
       if (S.active !== room) room.mg.inputT = Math.max(0, room.mg.inputT - dt);
@@ -15372,7 +15601,7 @@ function drawPanel(room) {
     // cyan deliberately, NOT room.color: drawRoom already turns the ACTIVE room's badge and
     // frame cyan, so cyan is what "the room you are in" looks like out in the world. Colouring
     // the panel by hazard instead would break the one association the player has to follow.
-    v.draw(room.mg, px, py, pw);
+    v.draw(room.mg, px, py, pw, ph);
     panelStep(room, px, py, pw, ph);
     panelGauges(room, px, py, pw, ph);
   });
@@ -15992,7 +16221,7 @@ function drawDrill() {
   const dTop = Math.round(DRILL_MID - ph / 2);
   atPanelScale(DRILL_MID, () => {
   const [px, py] = panelFrame(pw, d.room.title, col, ph, dTop);
-  v.draw(d.room.mg, px, py, pw);
+  v.draw(d.room.mg, px, py, pw, ph);
   panelStep(d.room, px, py, pw, ph);
   // Both bars, not just the one. On the road panelGauges draws progress AND an urgency bar
   // under it; teaching a player to read the first bar they see, when on the road the first
@@ -18241,9 +18470,33 @@ if (qs.has('start')) {
         // freeze it and a still otherwise lands wherever the setup happened to stop. Same
         // reason ?blast=T exists for the explosion and &st for the lamp flicker.
         if (n > 0 && qs.has('pin')) room.mg.holes[n - 1].in = Math.max(0, Math.min(1, +qs.get('pin')));
+        // ...and WIND THE PROMPT'S CLOCK for the same reason the seating clock is wound
+        // above. cueT runs in update() and a still taken through this flag never calls it,
+        // so the SPACE prompt sat at alpha 0 and the frame came back looking exactly like
+        // the build before it was added -- a cue nobody could photograph, which is a cue
+        // nobody can review. &cue=0..1 holds it partway, as &pin does for a seating.
+        // ...and only if the last stick is SEATED, which is what the game itself requires.
+        // Set on idx alone, `&pin=0.5` -- the flag whose whole job is to hold that stick in
+        // mid-air -- came back with the prompt already up, which is the state the prompt is
+        // not supposed to be in and the one this shot is taken to check.
+        room.mg.cueT = (room.mg.idx >= room.mg.holes.length
+                        && room.mg.holes[room.mg.holes.length - 1].in >= PACK_STUCK) ? 1 : 0;
+        // &cue ADJUSTS the arrival, it does not conjure one. Written as a bare override it
+        // overwrote the readiness test on the line above -- the test added precisely because
+        // &pin=0.5 had come back with the prompt up -- so ?packed=3&cue=1 photographed a cap
+        // at full brightness with three charges in and SPACE inert, which is the one state
+        // the draw gate exists to make unreachable. With &shot that frame holds for ever and
+        // is indistinguishable from a real one.
+        if (qs.has('cue') && room.mg.cueT > 0) room.mg.cueT = Math.max(0, Math.min(1, +qs.get('cue')));
       }
       if (room.verb === 'blast' && qs.has('fuse')) {
-        for (const h of room.mg.holes) h.packed = true;
+        // `in: 1` HERE TOO. This set `packed` and left the seating clock at 0, so stickDy
+        // took its h.in < FALL branch and drew all seven sticks 13 units above their bores
+        // with the bore discs bare beneath them and the cord riding flat across the tops --
+        // the exact fault the &packed branch above carries a comment warning about, repeated
+        // five lines down. It cost two frames of an art pass: the pressed state was judged
+        // against a plate that was itself wrong.
+        for (const h of room.mg.holes) { h.packed = true; h.in = 1; }
         room.mg.idx = room.mg.holes.length;
         room.mg.lit = 1; room.mg.won = true;
         room.mg.inputT = Math.max(0.0001, Math.min(FUSE_BURN, +qs.get('fuse')));
