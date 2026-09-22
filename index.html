@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '153 the doors wear the room mark, not a plate';
+const BUILD = '154 the doors are red until you pick them';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3199,6 +3199,30 @@ const act2Verbs = () => actVerbs(2);
 // would be three things to keep in step, and the one that drifts is always the drawing --
 // a disc on a door that no longer wants a key, or a door waiting with nothing on it.
 const DOOR_HOTKEY = '1';
+// WHAT COLOUR THE DOORS ARE, and it is a state and not a decoration. Morgan, 2026-09-22:
+// "right now it's blue before you unlock it, which is the colour you get when you beat a
+// mini game. Red with the cool animation is reserved for before you start."
+//
+// He is right and the code says so: drawOverlays and armedMark both pick
+// `isActive ? '#5ce1ff' : room.color`, so cyan means THE ROOM YOU HAVE SELECTED and the
+// room's own colour -- #ff4646 for everything with hazard 'all' -- means armed and still
+// waiting for you. The first version of this badge was cyan the whole time, which showed
+// the player the "I have already dealt with this" state before they had touched anything.
+// For a beat whose entire job is to teach the sequence, that is the wrong half of it.
+//
+// So: red while it waits, and cyan for the moment after the key lands, fading out as the
+// leaves swing. Press it and it goes from "this one needs you" to "you have got it" in the
+// same two colours every room on the road uses, which is the lesson.
+//
+// One function, because the disc, the bracket and the floor wash are drawn in two different
+// passes and three copies of this would be three things to keep in step.
+function doorMark() {
+  if (S.mode !== 'intro') return null;
+  if (doorWaiting()) return { col: '#ff4646', rgb: '255,70,70', fade: 1 };
+  // the leaves are opening: hold the selected colour and let it go with them
+  if (S.doorKeyed && S.doorOpen < 1) return { col: '#5ce1ff', rgb: '92,225,255', fade: 1 - S.doorOpen };
+  return null;
+}
 function doorWaiting() {
   if (S.mode !== 'intro' || S.doorKeyed) return false;
   if (S.drill && !S.drill.done) return false;
@@ -6162,11 +6186,12 @@ function draw() {
   // since the doors now wait for a key rather than a clock -- while updateIntro went on
   // calling chatter() and placedUI went on growing unreset. That is the leak the note above
   // describes, in the one window it was not covering.
-  else if ((S.drill && !S.drill.done) || doorWaiting()) {
+  else if ((S.drill && !S.drill.done) || doorMark()) {
     placedUI = [];
     ctx.textAlign = 'center'; drawBubbles(); ctx.textAlign = 'left';
     // the digit last, so it is over the grain exactly as the road's badge is
-    if (doorWaiting()) doorBadge();
+    const dm = doorMark();
+    if (dm) doorBadge(dm);
   }
   // The plate names deaths, so it points at the deaths without standing on them: it takes
   // the opposite half of the screen and reaches across with a stem.
@@ -14471,19 +14496,20 @@ function drawYardDoors(y) {
   // armedMark's too -- 0.6 + 0.4 sin(S.t * 10), not the 0.5 + 0.5 sin(S.t * 7) this had --
   // because a tutorial badge that breathes out of step with the thing it is teaching is
   // teaching the wrong rhythm.
-  if (doorWaiting()) {
+  const mark = doorMark();
+  if (mark) {
     const pulse = 0.6 + 0.4 * Math.sin(S.t * 10);
     const ex0 = cx - half - jamb - 12, ex1 = cx + half + jamb + 12;
     // the ground the crowd is standing on, lit: it ties badge to doors to people. One
     // variable feeds the gradient and the fill so they cannot disagree.
     const washTop = y - 62;
     const wash = ctx.createLinearGradient(0, washTop, 0, y);
-    wash.addColorStop(0, 'rgba(92,225,255,0)');
-    wash.addColorStop(1, `rgba(92,225,255,${(0.20 + 0.06 * pulse).toFixed(3)})`);
+    wash.addColorStop(0, `rgba(${mark.rgb},0)`);
+    wash.addColorStop(1, `rgba(${mark.rgb},${((0.20 + 0.06 * pulse) * mark.fade).toFixed(3)})`);
     ctx.fillStyle = wash; ctx.fillRect(ex0, washTop, ex1 - ex0, y - washTop);
     ctx.save();
-    ctx.globalAlpha = pulse;
-    ctx.strokeStyle = '#5ce1ff'; ctx.lineWidth = 2.4 / V.zoom;
+    ctx.globalAlpha = pulse * mark.fade;
+    ctx.strokeStyle = mark.col; ctx.lineWidth = 2.4 / V.zoom;
     for (const [ex, dir] of [[ex0, 1], [ex1, -1]]) {
       ctx.beginPath();
       ctx.moveTo(ex + dir * 16, headY); ctx.lineTo(ex, headY);
@@ -15099,7 +15125,7 @@ function claim(x, y, w, h) { placedUI.push({ x, y, w, h }); }
 // door red would be a lie about what the key does, so cyan is taken from the gate control --
 // the game's other press-a-key object that is not a hazard. Which makes it non-negotiable
 // that the shape matches: disc, digit, brackets, same pulse.
-function doorBadge() {
+function doorBadge(mark) {
   const c = I();
   // centred in the clear void of the tympanum: below the hanger rail, inside the intrados.
   // Both edges derived, so moving the arch or the head band carries the badge with them.
@@ -15110,9 +15136,12 @@ function doorBadge() {
   const z = Math.max(0.6, Math.min(1, V.zoom + 0.14));
   const rad = 16 * z;
   claim(bx - 24 * z, by - rad, 48 * z, 44 * z);
-  ctx.fillStyle = '#5ce1ff'; ctx.beginPath(); ctx.arc(bx, by, rad, 0, 6.28); ctx.fill();
+  ctx.save();
+  ctx.globalAlpha = mark.fade;
+  ctx.fillStyle = mark.col; ctx.beginPath(); ctx.arc(bx, by, rad, 0, 6.28); ctx.fill();
   ctx.fillStyle = '#111'; ctx.font = `bold ${Math.round(18 * z)}px monospace`;
   ctx.textAlign = 'center'; ctx.fillText(DOOR_HOTKEY, bx, by + 6 * z);
+  ctx.restore();
   ctx.textAlign = 'left';
 }
 function drawOverlays() {
@@ -18781,6 +18810,15 @@ if (qs.has('doorcue')) {
   }
   for (let i = 0; i < 180 && !doorWaiting(); i++) update(1 / 60);   // let him finish leaving
   for (let i = 0; i < 6; i++) update(1 / 60);                       // and the leaves settle
+  // &keyed=0..1 presses the digit and holds the leaves that far open, which is the only way
+  // to photograph the SECOND half of the lesson -- the mark turning from armed red to
+  // selected cyan and going with the doors. Without it the beat lasts 1.2s of real time and
+  // a still lands wherever the setup happened to stop.
+  if (qs.has('keyed')) {
+    S.doorKeyed = true;
+    const want = Math.max(0, Math.min(1, +qs.get('keyed')));
+    for (let i = 0; i < 60 * 4 && S.doorOpen < want; i++) update(1 / 60);
+  }
 }
 // ?boss stops on the proprietor, before the drill exists, which is what he looks like in
 // play now that he speaks first. ?boss&bosst=9 puts him a given number of seconds in.
