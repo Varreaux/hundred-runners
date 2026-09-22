@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '151 they come out of the gate at a run, not a shot';
+const BUILD = '152 the doors are the last panel of the tutorial';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2820,7 +2820,7 @@ function reset() {
     stats: { dead: 0, arrived: 0 },
     finale: null, best: loadBest(), rollBottom: 254,
     endT: 0, endEmb: [], endSpawn: 0, endRoll: null,
-    introT: 0, doorOpen: 0, drill: null, boss: null, bossCave: false, bossOpen: false,
+    introT: 0, doorOpen: 0, doorKeyed: false, drill: null, boss: null, bossCave: false, bossOpen: false,
     // the cave door in the seam: the act two checkpoint. See updateSeamGate.
     seam: { phase: 'off', t: 0, hits: 0, swing: 0, open: 0, jolt: 0, camLock: null },
     recent: [], spike: null, spikeCool: 0, streak: 0, bestStreak: 0, lastScream: 0,
@@ -2979,6 +2979,11 @@ window.addEventListener('keydown', e => {
     if (S.boss && !S.boss.gone && !S.boss.auto) { if (!e.repeat && (k === ' ' || k === 'ENTER')) bossAdvance(); return; }
     // actVerbs(1), not a bare startDrill: its default is every verb on the course.
     if (!S.boss) { const c = I(); S.introT = c.deliver + c.settle; startBoss(BOSS_SCRIPT, false, () => startDrill(drillOneVerbs())); return; }
+    // THE DOOR TAKES ITS OWN DIGIT AND NOTHING ELSE, and that is the whole lesson. This line
+    // used to be a bare `startRun()`, i.e. ANY key opened the doors -- so a player mashing
+    // SPACE off the title went straight through and was never asked for a number. Pressing
+    // the wrong thing here does nothing, which is what sends the eye to the disc.
+    if (doorWaiting()) { if (k === DOOR_HOTKEY) { S.doorKeyed = true; AU.arm(); } return; }
     startRun(); return;
   }
   if (S.mode === 'win' || S.mode === 'lose') {
@@ -3175,6 +3180,31 @@ function actVerbs(act) {
   return out;
 }
 const act2Verbs = () => actVerbs(2);
+// THE DOORS ARE THE LAST PANEL OF THE TUTORIAL. Morgan, 2026-09-22: "I want to teach players
+// to press the numbers to activate the game... at the end of tutorial 1, instead of having the
+// door open automatically, we should just have it highlighted like a mini-game and you press
+// the 1 number to start."
+//
+// The gap was real and worse than it looks: the only place the game taught the number press
+// was a hint line on the ROAD -- "press 1 or 3 to open a flashing room" -- which first appears
+// when rooms are already armed and people are already walking into them. The core input was
+// being taught under time pressure, on the first run, with a hundred lives on it.
+//
+// Taught here instead, with nothing at stake, in exactly the vocabulary the road uses: a
+// numbered disc on the thing, and that digit opens it. The first number a player presses now
+// looks identical to every number they will press afterwards.
+//
+// ONE PREDICATE, read by updateIntro (which freezes the clock), by the key handler (which
+// releases it) and by the drawing (which puts the disc up). Three copies of this condition
+// would be three things to keep in step, and the one that drifts is always the drawing --
+// a disc on a door that no longer wants a key, or a door waiting with nothing on it.
+const DOOR_HOTKEY = '1';
+function doorWaiting() {
+  if (S.mode !== 'intro' || S.doorKeyed) return false;
+  if (S.drill && !S.drill.done) return false;
+  if (S.boss && !S.boss.gone) return false;
+  return S.introT >= I().deliver + I().settle;
+}
 // TUTORIAL ONE TEACHES ONE TYPING ROOM, NOT TWO. Morgan, 2026-09-22: "a mini game that's
 // just 'type the word' just needs to show up once... you're teaching the same thing twice."
 //
@@ -5693,7 +5723,11 @@ function updateIntro(dt) {
   const drilling = S.drill && !S.drill.done;
   if (S.boss) updateBoss(dt);
   // the doors must not open while he is still speaking, so he stops the clock as the drill does
-  const holding = drilling || (S.boss && !S.boss.gone);
+  // ...and they do not open at all until the player asks for them. Same clock, stopped a third
+  // time, rather than a second clock to drift: once doorKeyed is set, introT resumes and the
+  // leaves swing on exactly the ramp they always did, so the opening the player triggers is
+  // the opening that used to happen on its own.
+  const holding = drilling || (S.boss && !S.boss.gone) || doorWaiting();
   if (!holding) S.introT += dt;
   for (const r of S.runners) {
     if (S.introT < r.bornAt) { r.x = c.belt - 56; r.y = introBeltY(); r.onBelt = true; r.offLine = false; r.held = true; r.stagger = 0.06; continue; }
@@ -5740,6 +5774,14 @@ function updateIntro(dt) {
   // his mouth. It was invisible in the source because introT is FROZEN while he speaks:
   // doorOpen stays 0, the doors do not move, and the comment that used to sit here read
   // as though the doors were the cue. They were not. The cue is startRun().
+  // PINNED TO gather WHILE THE DOORS WAIT, which is not a tidy-up. introT overshoots the
+  // moment it crosses gather -- holding is still false on that frame, so it takes one more
+  // dt before the boss freezes it -- and doorOpen is computed straight off that overshoot.
+  // Measured: introT - gather 0.0333, doorOpen 0.0278, i.e. the leaves standing 1.2 units
+  // apart for the whole wait. Frozen, so they never moved, and small enough to read as a
+  // drawing seam rather than a fault -- on the one object the player is being asked to open.
+  // Pinning also means the ramp starts from a true zero when the key lands.
+  if (doorWaiting()) S.introT = gather;
   if (S.introT >= gather) S.doorOpen = Math.min(1, (S.introT - gather) / c.open);
   if (S.introT >= gather + c.open + c.hold) startRun();
   // a word from the floor while they wait
@@ -14289,6 +14331,30 @@ function drawGateWall(y) {
 function drawYardDoors(y) {
   const c = I(), cx = c.doors - V.left, h = GATE_H, half = c.half, jamb = c.jamb;
   const open = S.doorOpen;
+  // THE SAME DISC THE ROAD USES. drawRoom puts a coloured disc with the room's digit over an
+  // armed room and the player presses that digit; this is that, on the doors, so the first
+  // number anyone presses looks like every number after it. Cyan rather than a hazard colour
+  // for the same reason the panel frame is cyan: cyan is what "the thing you are working on"
+  // looks like in this game, and the doors are not a hazard.
+  //
+  // Drawn FIRST, under the leaves, so a disc cannot sit on top of the doors as they swing.
+  if (doorWaiting()) {
+    const pulse = 0.5 + 0.5 * Math.sin(S.t * 7);      // drawKeyBoxes' rate, as the SPACE cap uses
+    const by = y - h - 26, rad = 15;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const gl = ctx.createRadialGradient(cx, by, 0, cx, by, rad * 3.2);
+    gl.addColorStop(0, `rgba(92,225,255,${0.16 + pulse * 0.12})`);
+    gl.addColorStop(1, 'rgba(92,225,255,0)');
+    ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(cx, by, rad * 3.2, 0, 6.28); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = '#5ce1ff'; ctx.beginPath(); ctx.arc(cx, by, rad, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = `rgba(255,255,255,${0.35 + pulse * 0.5})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, by, rad + 4, 0, 6.28); ctx.stroke();
+    ctx.fillStyle = '#111'; ctx.font = 'bold 18px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(DOOR_HOTKEY, cx, by + 6);
+    ctx.textAlign = 'left';
+  }
   // Heavy: slow to start, then it runs. Two numbers here were wrong in opposite directions.
   // The leaf was `half - 3` wide and started `3` off the centreline, so two leaves of 41
   // could never close an opening of 88 and left a permanent 6-unit black slot down the
@@ -15320,6 +15386,13 @@ function drawHud() {
       const s = VERBS[o.verb].hint; return s.length > a.length ? s : a;
     }, '');
     hintBar(VERBS[S.drill.room.verb].hint, note, longest + '    ' + note);
+  }
+  // ...and the doors, which are the last thing the tutorial asks for. Sized off its own line
+  // rather than off the drill's set: this is the only thing on screen at this point, so there
+  // is nothing for the band to keep a common height with.
+  if (doorWaiting()) {
+    const line = 'press ' + DOOR_HOTKEY + ' to open the doors';
+    hintBar(line, 'every room on the road opens the same way', line + '    every room on the road opens the same way');
   }
   // No hint bar for the proprietor. The band already prints the same words, in gold, beside
   // him, pulsing when the line is ready, and two copies of one instruction 373px apart in two
@@ -18627,6 +18700,26 @@ if (qs.has('drill')) {
   for (let g = 0; S.drill.idx < n - 1 && g < 4000; g++) { S.drill.phase = 'out'; S.drill.pos = -1; update(1 / 60); }
   S.drill.phase = 'play'; S.drill.pos = 0;
   for (let i = 0; i < 30; i++) update(1 / 60);     // let the verb's own animation settle
+}
+// ?doorcue stops on the LAST beat of the tutorial: the drill finished, the doors shut, the
+// numbered disc up, waiting for the digit. It is otherwise unphotographable -- the beat lives
+// past the boss and all five drill panels, and ?drill=N stops on a panel rather than after
+// the set. Waves the proprietor off and ESCs each panel, which is the skip a replayer uses.
+if (qs.has('doorcue')) {
+  S.mode = 'intro';
+  const c = I(); S.introT = c.deliver + c.settle;
+  // DRIVEN UNTIL THE DRILL HAS BEEN THROUGH, not until doorWaiting() is true. That
+  // predicate is already true on frame zero -- introT has just been set to gather, and no
+  // boss or drill exists yet -- so a loop keyed on it exited immediately, and the settle
+  // frames afterwards then STARTED the proprietor. The flag produced a perfectly plausible
+  // frame of the wrong beat: doors shut, crowd assembled, and the man still talking.
+  for (let i = 0; i < 60 * 180 && !(S.drill && S.drill.done); i++) {
+    update(1 / 60);
+    if (S.boss && !S.boss.gone) bossAdvance();
+    else if (S.drill && !S.drill.done) drillKey('ESCAPE');   // keydown upper-cases; 'Escape' matches nothing
+  }
+  for (let i = 0; i < 180 && !doorWaiting(); i++) update(1 / 60);   // let him finish leaving
+  for (let i = 0; i < 6; i++) update(1 / 60);                       // and the leaves settle
 }
 // ?boss stops on the proprietor, before the drill exists, which is what he looks like in
 // play now that he speaks first. ?boss&bosst=9 puts him a given number of seconds in.

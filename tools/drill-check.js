@@ -47,6 +47,7 @@ const SKIP = process.argv.includes('skip');
 eval(src + `
 ;(function(){
   const rate = ${RATE}, dt = 1/60, SKIP = ${SKIP};
+  let doorHeld = null, doorOpenedOnIts = null;
   const press = k => KD({ key: k, repeat: false, preventDefault(){} });
   const lift  = k => KU({ key: k, repeat: false, preventDefault(){} });
   let held = null;
@@ -116,6 +117,19 @@ eval(src + `
         }
       } else if (d && d.done && !log.closed) {
         log.closed = true;
+      }
+      // THE DOORS NOW WANT THEIR OWN DIGIT. The drill used to hand straight over to the run,
+      // so this driver pressed nothing after the last panel and the tool simply asserted
+      // "mode after the drill: play". They wait for DOOR_HOTKEY now -- the last beat of the
+      // tutorial, and the one that teaches the road's core input.
+      //
+      // The half second of NO INPUT before pressing is the actual assertion. Without it a
+      // pass would mean only "the run started", which was true before this change and would
+      // go on being true if the wait were accidentally removed. doorOpenedOnIts records
+      // whether the leaves had begun to move while nobody was touching the keyboard.
+      if (d && d.done && doorWaiting()) {
+        if (doorHeld === null) doorHeld = t;
+        else if (t - doorHeld > 0.5) { doorOpenedOnIts = (S.doorOpen > 0.02); press(DOOR_HOTKEY); }
       }
       if (S.drill && S.drill.room && S.drill.phase === 'out' && S.drill.room.verb === seen && seen !== null) {
         if (!log.find(e => e.verb === seen)) log.push({ verb: seen, secs: t - startedAt });
@@ -198,6 +212,11 @@ eval(src + `
   // see tools/blast-check.js, which resolves 1.15s against 0.02s where this could not.
   console.log('  total ' + total.toFixed(1) + 's of puzzle, ' + t.toFixed(1) + 's of drill including the slides  (SPREADS ~23%, see note in source)');
   console.log('  mode after the drill: ' + S.mode + (S.mode === 'play' ? '  (the doors opened)' : '  (the run never started)'));
+  const heldShut = doorOpenedOnIts === false;
+  console.log('  the doors waited for ' + DOOR_HOTKEY + ': ' +
+    (doorOpenedOnIts === null ? 'NEVER OBSERVED -- either the drill did not finish, or there is no wait'
+     : heldShut ? 'yes, still shut after half a second with no key pressed'
+     : 'NO -- they opened on their own, which is the lesson gone'));
   // ---- every drill panel on the same midline, and clear of the HUD ----
   // DRILL_MID exists so panels of four different heights read as one object being exchanged
   // rather than a box that keeps resizing. atPanelScale(py0, body) holds py0 still and grows
@@ -228,7 +247,7 @@ eval(src + `
   console.log(offMid ? '  ' + offMid + ' panel(s) off the midline or behind the HUD'
                      : '  all ' + seenPanels.length + ' panels centred on DRILL_MID ' + DRILL_MID + ', tops clear of the HUD');
   console.log('');
-  const ok = !err && log.length === types.size && untaught.length === 0 && S.mode === 'play' && offMid === 0;
+  const ok = !err && log.length === types.size && untaught.length === 0 && S.mode === 'play' && offMid === 0 && heldShut;
   console.log(ok ? 'PASS' : 'FAIL');
   if (!ok) process.exitCode = 1;
   console.log('');
