@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '157 nobody on the belt ever walks forward';
+const BUILD = '158 the line never stops sliding back';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3980,8 +3980,17 @@ const CARRY = 44;
 // wrong mark drew the next body instantly dropped 17 units and pitched 47 degrees while it
 // was still standing on flat belt.
 function finaleSlipSpan(gap, cap, total) {
+  // THE WHOLE GAP. It used to be a fixed 1.9s -- a distinct event inside a longer wait -- and
+  // that is what made the room stop and go: the line closed up across the gap while the one
+  // going only started losing ground in the last stretch of it, so the follower caught up to
+  // somebody who had not set off yet. Morgan's picture is one continuous motion, everybody
+  // always sliding back, one going over the end on the beat, so the slip is the gap.
+  //
+  // It is slow, and that is the point: 55 units over 3.1s at twenty-four aboard, and over
+  // 37.5s at two, which is the "barely moving" he described. The squared ease then puts a
+  // third of the distance in the last fifth of the time, which is where you see him go.
   const g = Math.max(0.2, gap || SLIP_T);
-  const want = Math.min(g, SLIP_MAX, Math.max(SLIP_T, g * 0.22));
+  const want = g;
   if (cap == null) return want;
   // The shortest span this path can be walked in without exceeding SLIP_VMAX. PEAK, not mean:
   // the speed is the derivative of a squared ease, so it runs 0 to 2*total/span and averages
@@ -5389,15 +5398,12 @@ function updateFinale(dt) {
     f.slipWho = slipper;
     if (slipper) {
       slipper.slipFrom = slipper.x;
-      // RESERVE THE WALK IN. A body becomes the next to go the instant the one ahead of it
-      // does, standing a whole slot back -- and once the line has spread that slot is 140
-      // units, not 20. Stamping the cap at the full rollT started its slip from where it was
-      // standing, so at a hundred aboard, where the span IS the gap, it never walked in at
-      // all: it sat at slot 1's position while the body behind walked to slot 1 as well, and
-      // the two closed to three units apart. The cap is the time left AFTER walking to the
-      // drop at the fastest a body can go backwards, which is the belt's own speed.
-      const walk = Math.max(0, slipper.x - (L.deck.x + L.deck.slot0)) / BELT_SPD;
-      slipper.slipCap = Math.max(0, f.rollT - walk);
+      // FROM WHERE IT STANDS, with all the time it has. There was a reservation here for
+      // walking into slot 0 first, which made sense while the slip was a short event at the
+      // end of a longer wait; now that the slip IS the gap there is nothing to wait for, and
+      // reserving time would only put the pause back. It starts a slot further out than it
+      // used to, so it simply has further to slide.
+      slipper.slipCap = Math.max(0, f.rollT);
     }
   }
   // How far the line behind has closed up into the space the one at the front is vacating.
@@ -5413,7 +5419,23 @@ function updateFinale(dt) {
   // is supposed to be losing ground is drawn CLOSER to the line than when everyone was
   // standing still. On the eased curve it is 20 + 35e, opening from the first frame.
   const slipPose = slipper ? finaleSlipPose(L, Math.max(0, f.rollT), f.rollGap, slipper.slipFrom, slipper.slipCap) : null;
-  const closed = slipPose && slipPose.q > 0 ? slipPose.e : 0;
+  // ACROSS THE WHOLE GAP, not across the slip. Morgan, 2026-09-23: "right now we have a kind
+  // of stop and go motion. people are sliding back until the last one falls in the water but
+  // then everyone stops, and the the sliding resumes like one or two seconds later... maybe
+  // you can slow down the sliding back animation enough that there is no stopping and the
+  // players are always slidding back, falling one at the time on time as usual."
+  //
+  // This was the slip's own eased progress, and a slip is SHORTER than the gap it sits in --
+  // 1.9s of a 3.125s gap at twenty-four aboard, 2.6s of a 9.4s gap at eight. So the line
+  // hurried through its move in the last third and then stood still waiting. Measured: the
+  // whole line completely motionless on 32% of frames at crew 24 and 74% at crew 8, with
+  // unbroken pauses of 1.27s and 7.33s.
+  //
+  // Linear in the clock, over the whole gap, so the line is always drifting and arrives at
+  // its new places on the frame the next body goes. Slower, and never stopped, which is the
+  // trade Morgan asked for. LINEAR and not eased on purpose: an ease is exactly the thing
+  // that makes it hurry somewhere and wait.
+  const closed = (f.phase === 'search' && f.rollGap) ? clamp01(1 - Math.max(0, f.rollT || 0) / f.rollGap) : 0;
   // THE LAYOUT THIS LINE WILL HAVE ONCE THE ONE GOING HAS GONE. Only line.length changes at a
   // death, so this is the same sum with one fewer body in it.
   const shownNext = Math.min(shown, Math.max(1, f.line.length - 1));
@@ -5500,12 +5522,13 @@ function updateFinale(dt) {
       // backwards at exactly BELT_SPD has simply stopped running and is being carried. They
       // cannot go backwards faster than that without running in reverse, and Morgan's rule is
       // that the only two things a body may do are hold station and lose ground.
-      // Paced to the REAL deadline, which is the time until the next body goes, not the whole
-      // gap: a body that is still behind halfway through a gap has half the time left, and
-      // pacing it against the full gap is how the line fell 346 units behind at two survivors.
-      const need = Math.abs(d.x - targetX);
-      const due = Math.max(0.25, Math.min(f.rollGap || 1, f.rollT == null ? 1 : f.rollT));
-      const spd = Math.min(BELT_SPD, Math.max(CARRY, need / due));
+      // Paced to where this body has to BE when the next one goes, over the time it has left.
+      // Measured against `after` -- the place it is heading -- rather than against targetX,
+      // which is itself moving: chasing a moving target at a speed derived from how far it
+      // currently is would settle into a permanent lag. This is the constant speed that
+      // arrives exactly on the beat, so the body simply rides its own target down.
+      const due = Math.max(0.1, Math.min(f.rollGap || 1, f.rollT == null ? 1 : f.rollT));
+      const spd = Math.min(BELT_SPD, Math.max(CARRY, Math.abs(d.x - after) / due));
       const step = spd * dt;
       d.x += Math.max(-step, Math.min(step, targetX - d.x));
     } else {

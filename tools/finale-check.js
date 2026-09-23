@@ -337,6 +337,47 @@ eval(src + `
     }
   }
 
+  // ------------------------------------------------------------ the line never stops
+  {
+    // Morgan, 2026-09-23: "right now we have a kind of stop and go motion. people are sliding
+    // back until the last one falls in the water but then everyone stops, and the the sliding
+    // resumes like one or two seconds later... maybe you can slow down the sliding back
+    // animation enough that there is no stopping and the players are always slidding back,
+    // falling one at the time on time as usual."
+    //
+    // The fault was that the close-up ran on the SLIP's clock and a slip was shorter than the
+    // gap it sat in, so the line hurried its move and then waited. Measured then: the whole
+    // line completely motionless on 32% of frames at crew 24 and 74% at crew 8, in unbroken
+    // pauses of 1.27s and 7.33s.
+    //
+    // What is asserted is the PAUSE, not the percentage. A single frame in which nothing
+    // rounds to a moving pixel is not a stop; a second of it is, and that is what he saw.
+    for (const crew of [100, 24, 8]) {
+      const g = searching(crew);
+      const seen = new Map();
+      let pause = 0, longest = 0;
+      run(CFG.finale.searchTime + 2, () => {
+        if (S.mode !== 'finale') return 'stop';
+        let moved = false, any = false;
+        for (const d of g.deck) {
+          if (!d.arrived) { seen.set(d.r, d.x); continue; }
+          any = true;
+          const was = seen.get(d.r);
+          if (was != null && Math.abs(d.x - was) > 0.004) moved = true;
+          seen.set(d.r, d.x);
+        }
+        if (!any) return;
+        // The last survivor alone on the belt is exempt: there is no line to close, and one
+        // body easing into a slide of its own is not the room stopping.
+        if (moved || g.line.length <= 1) { longest = Math.max(longest, pause); pause = 0; } else pause++;
+      });
+      longest = Math.max(longest, pause);
+      ok('a crew of ' + String(crew).padStart(3) + ' keeps sliding back -- it never stops and restarts',
+         longest / 60 < 0.35,
+         'longest unbroken pause ' + (longest / 60).toFixed(2) + 's');
+    }
+  }
+
   // ------------------------------------------------------------ the belt itself
   {
     // "i dont want the conveyor to change, it should maintain the same direction and pace",
