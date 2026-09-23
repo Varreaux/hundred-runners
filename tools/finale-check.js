@@ -234,6 +234,104 @@ eval(src + `
        Math.max(0, ...moved).toFixed(1) + '), the one who is going moved ' + slipped.toFixed(1));
   }
 
+  // ------------------------------------------------------------ the line as it thins
+  {
+    // Morgan, 2026-09-23: below about thirty the crew should SPREAD along the belt instead of
+    // staying packed at the drop end. That is a behaviour the assertion above cannot see -- it
+    // watches three seconds at crew 24, in which nobody dies and so nothing respaces -- so the
+    // claim is made here over whole runs, at three crew sizes.
+    //
+    // Four things, and the first is the one the spreading could break: the front of the line
+    // is ANCHORED at the drop, because that is the body the drum runs out from under. The
+    // others are that nobody but the one going ever gets left of it, that spreading never
+    // crowds anyone, and that it never walks the far end off the machine.
+    // DRIVEN DOWN FROM A HUNDRED, not started small. This is the whole point: a run that
+    // ARRIVES with eight spreads whatever the code does, because packNeed is stamped at eight.
+    // The case Morgan described is a hundred THINNING to eight, and the first version of this
+    // assertion started fresh finales at 8 and 24 and went green on a build where the spacing
+    // never opened at all -- 8 survivors still standing 20.9 apart with 520 units of empty
+    // belt behind them. A check that samples the easy case is a check about the easy case.
+    {
+      const g = searching(100);
+      const L = finaleLayout(), drop = L.deck.x + L.deck.slot0;
+      const seen = {};
+      run(CFG.finale.searchTime + 2, () => {
+        if (S.mode !== 'finale') return 'stop';
+        const n = g.line.length;
+        const xs = g.deck.filter(d => d.arrived && !d.slip).map(d => d.x).sort((a, b) => a - b);
+        if (xs.length > 1 && seen[n] == null) seen[n] = xs[1] - xs[0];
+      });
+      // It must OPEN as the line thins, and reach most of the belt by the end. Written as the
+      // property rather than as a table of numbers, so retuning SPREAD_MAX moves the check
+      // with it instead of failing at it.
+      const at = k => seen[k] == null ? 0 : seen[k];
+      ok('a hundred THINNING down spreads along the belt instead of staying packed at the drop',
+         at(20) > at(60) + 5 && at(8) > at(20) + 10 && at(4) > at(8) + 10,
+         'spacing at 60 alive ' + at(60).toFixed(0) + ', at 20 ' + at(20).toFixed(0) +
+         ', at 8 ' + at(8).toFixed(0) + ', at 4 ' + at(4).toFixed(0) + ' units');
+    }
+    for (const crew of [100, 24, 8]) {
+      const g = searching(crew);
+      const L = finaleLayout(), drop = L.deck.x + L.deck.slot0;
+      // TWO readings of the front, not one. It is NOT pinned to the drop at every instant --
+      // when the body on it goes over, the next one glides up from a slot back at CARRY, which
+      // at a thin belt is 95 units to cover. Asserting |front - drop| < 1 therefore fails on
+      // the room working correctly. What is actually true, and what the drop end needs, is
+      // that the line never runs PAST it and always comes back to it.
+      let frontPast = 0, frontBest = Infinity, strayLeft = 0, tightest = Infinity, offBelt = 0, widest = 0;
+      run(CFG.finale.searchTime + 2, () => {
+        if (S.mode !== 'finale') return 'stop';
+        const arrived = g.deck.filter(d => d.arrived);
+        const standing = arrived.filter(d => !d.slip).map(d => d.x).sort((a, b) => a - b);
+        if (standing.length) {
+          if (standing[0] < drop - 0.6) frontPast++;
+          frontBest = Math.min(frontBest, Math.abs(standing[0] - drop));
+        }
+        for (const d of arrived) {
+          if (!d.slip && d.x < drop - 0.6) strayLeft++;
+          if (d.x > L.deck.x + L.deck.w + 1 || d.x < L.deck.x - L.deck.drumR - 8) offBelt++;
+          widest = Math.max(widest, d.x);
+        }
+        const xs = arrived.map(d => d.x).sort((a, b) => a - b);
+        for (let k = 1; k < xs.length; k++) tightest = Math.min(tightest, xs[k] - xs[k - 1]);
+      });
+      ok('a crew of ' + String(crew).padStart(3) + ' spreads along the belt and still fronts ON the drop',
+         frontPast === 0 && frontBest < 1 && strayLeft === 0 && offBelt === 0 && tightest >= 18,
+         'the front reached the drop to ' + frontBest.toFixed(2) + ' and never ran past it (' +
+         frontPast + ' frames), tightest gap ' + (tightest === Infinity ? 'n/a' : tightest.toFixed(0)) +
+         ', furthest right ' + widest.toFixed(0) + ' of ' + (L.deck.x + L.deck.w));
+    }
+  }
+
+  // ------------------------------------------------------------ the belt itself
+  {
+    // "i dont want the conveyor to change, it should maintain the same direction and pace",
+    // and "when there is only 2 or 3 people left the conveyor belt just stops automatically".
+    // Both were one expression: the belt's speed was the crew fraction, so it fell on every
+    // death -- and because the slats were drawn at speed x clock, a fall in speed jumped the
+    // pattern BACKWARDS. The phase is integrated now and the speed is a constant, so the only
+    // thing worth asserting is that the distance travelled goes up by the same amount every
+    // frame, whatever is happening to the crew.
+    for (const crew of [100, 8, 2]) {
+      const g = searching(crew);
+      // run() calls its callback BEFORE each update, so the first sample is a zero step that
+      // says nothing about the belt. Skipping it is not a weakened claim; counting it was an
+      // instrument reporting its own first frame as the belt standing still.
+      let back = 0, still = 0, lo = Infinity, hi = 0, prev = g.beltT || 0, first = true;
+      run(CFG.finale.searchTime + 2, () => {
+        if (S.mode !== 'finale') return 'stop';
+        const step = (g.beltT || 0) - prev; prev = g.beltT || 0;
+        if (first) { first = false; return; }
+        if (step < -1e-9) back++;
+        if (step < 1e-9) still++;
+        lo = Math.min(lo, step); hi = Math.max(hi, step);
+      });
+      ok('a crew of ' + String(crew).padStart(3) + ' never reverses the belt and never stops it',
+         back === 0 && still === 0 && hi - lo < 1e-6,
+         back + ' frames backwards, ' + still + ' stopped, step ' + lo.toFixed(3) + '..' + hi.toFixed(3));
+    }
+  }
+
   // ------------------------------------------------------------ marking, by key and by click
   {
     const g = searching(30);

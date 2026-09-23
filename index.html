@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '155 they lose the belt before it drops them';
+const BUILD = '156 one belt, one pace, and a line that spreads';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3511,6 +3511,7 @@ function startFinale() {
     flashWrong: 0,
     genPulse: 0,
     beltPow: 0,   // 0..1 smoothed power from crew on the belt
+    beltT: 0,     // distance the belt has travelled; every scrolling thing on it reads this
     dreadBeat: 0, // intro audio scheduler
   };
   S.mode = 'finale';
@@ -3924,6 +3925,28 @@ function finaleNextOff(f) {
 // end of the same argument, and SLIP_FLOOR the reason a thin line gets more than the nominal:
 // with 37 seconds between bodies, 1.9 of slip is a twentieth of the room and the other
 // nineteen twentieths are three people running on the spot.
+// THE BELT RUNS AT ONE PACE, ALWAYS. Morgan, 2026-09-23: "i dont want the conveyor to change,
+// it should maintain the same direction and pace" and "when there is only 2 or 3 people left
+// the conveyor belt just stops automatically...which is obviously wrong."
+//
+// It used to be 35 + 200 * beltPow, and beltPow is the crew fraction, which produced both of
+// those faults from one expression. The stop: at three survivors of a hundred, beltPow works
+// out at 0.009 against a `beltLive` gate of 0.01, so the belt, the drums and the wash simply
+// switched off under three people still running on them. The reversal: the slats were drawn
+// at `t * beltSpd`, so when beltSpd FELL -- which it did on every death -- the whole product
+// fell with it, and at t = 200s a drop of two units of speed jumped the pattern back 400
+// units, fifteen planks, which the eye reads as the belt running backwards for a moment.
+//
+// The speed is a constant now and the phase is INTEGRATED in updateFinale, so a speed change
+// could only ever change the rate and never the position. 200 sits in the middle of the old
+// range. The DYNAMO still reads beltPow -- how much power a thinning crew makes is the
+// room's whole premise -- it is only the belt that no longer wavers.
+const BELT_SPD = 200;
+// Whether the belt is turning at all: it idles until the first body steps on, and stops with
+// the room, but never because the crew got small.
+function finaleBeltRunning(f) {
+  return (f.phase === 'charge' || f.phase === 'search') && f.deck.length > 0;
+}
 const SLIP_T = 1.9, SLIP_MAX = 4.5;
 // The fastest a slip may run before it stops being a slip and becomes a streak. A LENGTH was
 // written here first (0.3s) and that is the shape this file keeps warning about: a constant
@@ -4109,7 +4132,19 @@ function finaleTakeBody(f, L, shoved) {
   const flat = Math.max(0, pose.x - L.deck.x);
   const drain = L.deck.x + L.deck.drain;
   if (shoved || !(near && near.slip)) {
-    const lift = clear * (260 * flat / 70 + rand(30, 60));
+    // CLAMPED. The 70 in here stands in for a horizontal speed that is computed three lines
+    // below and grows with flat, so the two are coupled and only one of them was pinned. That
+    // was harmless while flat could not exceed 56 -- a pitch behind slot 0 -- and is not once
+    // the line spreads: at flat 176 it gives a lift of 699, which throws the body 469 units
+    // up, off the top of a 540-tall canvas and across both paintings, and it never lands,
+    // because the 2.76s flight outlives the 2.2s the falling list keeps it for. No splash, no
+    // ripple, no sound: the body is deleted in mid-air over the pictures.
+    //
+    // 300 is the derived minimum plus a little. Solving the clearance condition with the REAL
+    // horizontal speed, (flat + 24) / tFall, gives a required lift of sqrt(13000k^2/(1-k))
+    // with k = flat/(flat+24); at the worst reachable flat of 176 that is 289.6. It is a
+    // no-op below flat 65, which is everything the belt could produce before it spread.
+    const lift = clear * Math.min(300, 260 * flat / 70 + rand(30, 60));
     const drop = Math.max(1, (L.water.y + 8) - y0);
     const tFall = (lift + Math.sqrt(lift * lift + 2 * 520 * drop)) / 520;
     f.falling.push({ r, t: 0, x: x0, y: y0,
@@ -4117,7 +4152,13 @@ function finaleTakeBody(f, L, shoved) {
                      // lift: a body the drum already has keeps the speed it had and is not
                      // given a second one on top, which was landing it 13 units from a pool
                      // wall it is 20 wide.
-                     vx: (pose.vx || 0) - clear * Math.max(0, (pose.x - drain) / tFall),
+                     // ...and never into the pool wall. The drain-seeking term aims at the
+                     // whirl, but a body the slip has already got moving carries its own
+                     // speed on top and can overshoot: measured, one landed at x 7 against a
+                     // pool that starts at 8. Clamped by where it would come down, which is
+                     // the quantity that actually matters, rather than by capping a speed.
+                     vx: Math.max((pose.vx || 0) - clear * Math.max(0, (pose.x - drain) / tFall),
+                                  (L.water.x + 26 - pose.x) / tFall),
                      vy: (pose.vy || 0) - lift,
                      rot: (pose.rot || 0) + rand(-0.15, 0.15),
                      // CLOCKWISE ONLY FOR A SHOVE. The throw is taken for two reasons -- the
@@ -5261,8 +5302,20 @@ function updateFinale(dt) {
   // unreadable mash at exactly the moment the crowd you saved is supposed to be the reward.
   // The line fills to capacity; the remainder is counted rather than drawn.
   const PITCH = 20;
+  // The widest the line ever stands. Without it the last two are 668 apart -- one at each end
+  // of the machine -- which reads as two unrelated people rather than as what is left of a
+  // crew.
+  const SPREAD_MAX = 140;
   const cap = Math.max(1, Math.floor(span / PITCH));
-  const shown = Math.min(nNeed, cap);
+  // THE LIVING CREW, not the one that arrived. packNeed is stamped once in beginFinaleCharge
+  // and never decremented, so `shown` sat at 33 for the whole room -- which meant the spacing
+  // below never opened on a run that THINS, only on one that starts small. Measured on a real
+  // 100-crew run: 8 survivors still standing 20.9 apart between x 118 and 266, with 520 units
+  // of empty belt behind them, which is exactly the picture Morgan asked to be rid of.
+  //
+  // It read as fixed because the measurement started fresh finales at crew 8 instead of
+  // letting a hundred thin down to it -- a green about a case the feature was not for.
+  const shown = Math.min(nNeed, Math.max(1, f.line.length), cap);
   // The QUEUE has to be capped too, not just the spacing. Capping the pitch alone gave slot
   // 99 a target of x -1234, which every runner past the 36th reached on its first frame and
   // counted as "arrived" -- so the belt filled instantly with sixty-four people standing far
@@ -5275,7 +5328,21 @@ function updateFinale(dt) {
   // five. (Packed at the DROP end, not the drive end as this said until 2026-09-23: slot 0 is
   // beltDrop and the line fills away from it, so the last few huddle at the edge they are
   // going over with the whole belt empty behind them.)
-  const slotStep = Math.min(PITCH, shown <= 1 ? PITCH : span / (shown - 1));
+  // Morgan, 2026-09-23: "as there starts to be less than 30 people on the conveyor belt, you
+  // can start spacing out the remaining runners on the belt, they don't need to left align (as
+  // long as the left most person still falls off the left side smoothly when its his turn)."
+  //
+  // So they stand evenly along the belt rather than packed at the drop end -- and no threshold
+  // is needed to start doing it, because the even spacing IS the pitch at a full belt: 33 in
+  // 668 units is 20.9 against a PITCH of 20. It simply grows as the line thins. SPREAD_MAX
+  // stops the last two standing a belt's length apart. Slot 0 is still beltDrop, so the
+  // leftmost is still the one the drum runs out from under.
+  //
+  // It was capped AT the pitch, on an argument that five survivors spread over the whole belt
+  // read as five men choosing to stand far apart. That is now overruled: they read as five
+  // survivors on a machine built for a hundred, which is the truer picture.
+  const even = shown <= 1 ? PITCH : span / (shown - 1);
+  const slotStep = Math.max(PITCH, Math.min(SPREAD_MAX, even));
   // Cadence is DERIVED from the generator's charge time, not a fixed gap. At a fixed gap a
   // hundred survivors took thirty seconds to walk on -- more people made the climax slower,
   // which is backwards: the crew is supposed to be the thing that powers the room. Now the
@@ -5340,8 +5407,20 @@ function updateFinale(dt) {
   // pitch. One call, used here and again in the loop, so the two cannot disagree.
   const slipPose = slipper ? finaleSlipPose(L, Math.max(0, f.rollT), f.rollGap, slipper.slipFrom, slipper.slipCap) : null;
   const closed = slipPose && slipPose.q > 0 ? slipPose.e : 0;
+  // How far the one who is going actually travels: down the slats from slot 0 to the crown,
+  // then round the drum until it topples. Read off the same two fields finaleSlipPose builds
+  // its path from, so the line's close-up and the slip cannot disagree about the distance.
+  const slipPath = L.deck.slot0 + L.deck.drumR * SLIP_THETA;
   for (const d of f.deck) {
-    const shift = (slipper && d !== slipper && d.i > slipper.i) ? closed : 0;
+    // CLOSE BY LESS THAN THE SLIP OPENS, or the gesture inverts. The head-of-queue gap over a
+    // slip is slotStep - shift + slipPath, and shift was a whole slotStep -- fine while that
+    // was the 20-unit pitch, and backwards the moment the line spreads past the slip's own 55
+    // units of travel. Below about thirteen survivors the follower marched up into the dying
+    // man instead of being left behind by him, at exactly the crew sizes this was built for.
+    // Capped at slipPath - PITCH, so the gap always opens by a pitch whatever the spacing is;
+    // the rest of the close-up happens afterwards, at CARRY, as a walk rather than a lurch.
+    const shift = (slipper && d !== slipper && d.i > slipper.i)
+      ? closed * Math.min(1, Math.max(0, slipPath - PITCH) / slotStep) : 0;
     const targetX = beltDrop + (d.i - shift) * slotStep;
     d.targetX = targetX;
     d.slip = null; d.dy = 0; d.rot = 0;
@@ -5454,6 +5533,8 @@ function updateFinale(dt) {
   const boardedFrac = clamp01((f.packDone || 0) / Math.max(1, f.packNeed || 1));
   const targetPow = boardedFrac * Math.max(0.1, finaleCrewFrac(f));
   f.beltPow = (f.beltPow || 0) + (targetPow - (f.beltPow || 0)) * Math.min(1, dt * 2.8);
+  // The belt's own phase, accumulated rather than multiplied out of S.t. See BELT_SPD.
+  f.beltT = (f.beltT || 0) + (finaleBeltRunning(f) ? BELT_SPD : 0) * dt;
   if (live && (f.phase === 'charge' || f.phase === 'search') && f.beltPow > 0.02) {
     if (Math.random() < dt * (8 + 14 * f.beltPow)) {
       finaleFx(f, 'spark', L.gen.x + 26, L.gen.y + 22, {
@@ -16904,8 +16985,11 @@ function drawFinaleIntro(f) {
 // `still` forces the machine cold: no scroll, no sparks, grey dynamo, empty meter.
 function drawChamberBase(f, L, t, still) {
   const beltPow = still ? 0 : clamp01(f.beltPow || 0);
-  const beltLive = beltPow > 0.01 && f.phase !== 'blackout';
-  const beltSpd = beltLive ? (35 + 200 * beltPow) : 0;
+  // beltLive is about the BELT and no longer about the power. It used to be beltPow > 0.01,
+  // which is a gate a thinning crew walks under: three survivors stopped the machine dead.
+  const beltLive = !still && finaleBeltRunning(f) && f.phase !== 'blackout';
+  // The travelled distance, not speed times clock. Everything that scrolls reads this.
+  const beltT = f.beltT || 0;
   // -- generator pit --
   // water
   const wg = ctx.createLinearGradient(0, L.water.y, 0, L.water.y + L.water.h);
@@ -16981,7 +17065,7 @@ function drawChamberBase(f, L, t, still) {
   // drawFigure leans them -- so the floor carried the people it was supposed to be driven BY.
   // A treadmill turned by people standing on it must scroll against them. Both reviewers
   // caught this independently, one from the picture and one from the source.
-  const beltOff = beltLive ? (plank - ((t * beltSpd) % plank)) : 0;
+  const beltOff = beltLive ? (plank - (beltT % plank)) : 0;
   for (let x = L.deck.x - plank + beltOff; x < L.deck.x + L.deck.w; x += plank) {
     if (x + 4 >= L.deck.x + L.deck.w) continue;
     // CLIPPED at the drop end, not clamped. The leading plank's left edge was pinned to the
@@ -16997,7 +17081,10 @@ function drawChamberBase(f, L, t, still) {
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(sx + pw - 2, L.deck.y + 3, 2, L.deck.h - 12);
   }
   ctx.fillStyle = '#6a1818';
-  const edge = beltLive ? (18 - ((t * beltSpd * 1.15) % 18)) : 0;
+  // 1.0, not 1.15. This band is painted on the belt's own bottom lip and travelled 30 px/s
+  // faster than the slats above it -- a plank a second of one rigid object sliding against
+  // itself. It survived unexamined while the belt had no single true speed to check against.
+  const edge = beltLive ? (18 - (beltT % 18)) : 0;
   for (let x = L.deck.x + edge; x < L.deck.x + L.deck.w - 4; x += 18) ctx.fillRect(x, L.deck.y + L.deck.h - 7, 11, 4);
   ctx.fillStyle = '#c0392b';
   for (let x = L.deck.x + edge + 11; x < L.deck.x + L.deck.w - 4; x += 18) ctx.fillRect(x, L.deck.y + L.deck.h - 7, 4, 4);
@@ -17009,8 +17096,11 @@ function drawChamberBase(f, L, t, still) {
     ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < 10; i++) {
       const wy = L.deck.y + 6 + (i * 3.2 + t * 40) % (L.deck.h - 10);
-      const wx = L.deck.x + L.deck.w - ((t * beltSpd * 0.7 + i * 70) % (L.deck.w + 40)) + 20;
-      ctx.strokeStyle = `rgba(200,220,255,${0.06 + beltPow * 0.1})`;
+      const wx = L.deck.x + L.deck.w - ((beltT * 0.7 + i * 70) % (L.deck.w + 40)) + 20;
+      // Not keyed to the crew. This is the one mark on the belt that says how fast it is
+      // moving, and it ran 0.16 at a hundred aboard and 0.06 at two -- the belt LOOKING like
+      // it slowed even now that it does not.
+      ctx.strokeStyle = 'rgba(200,220,255,0.12)';
       ctx.lineWidth = 1; ctx.beginPath();
       ctx.moveTo(wx, wy); ctx.lineTo(wx - 28 - (i % 4) * 8, wy + (i % 2 ? 1 : -1)); ctx.stroke();
     }
@@ -17060,7 +17150,7 @@ function drawChamberBase(f, L, t, still) {
     ctx.beginPath(); ctx.arc(tx, drumY, drumR, 0, 6.28); ctx.fill();
     ctx.strokeStyle = 'rgba(30,22,18,0.55)'; ctx.lineWidth = 1.6;
     for (let i = 0; i < 4; i++) {
-      const a2 = -t * (beltSpd / Math.max(1, drumR)) + i * Math.PI / 2;
+      const a2 = -beltT / Math.max(1, drumR) + i * Math.PI / 2;
       ctx.beginPath(); ctx.moveTo(tx, drumY);
       ctx.lineTo(tx + Math.cos(a2) * drumR * 0.82, drumY + Math.sin(a2) * drumR * 0.82); ctx.stroke();
     }
@@ -17074,7 +17164,7 @@ function drawChamberBase(f, L, t, still) {
   // spokes turning with the belt, so the drum and the slats agree about direction
   ctx.strokeStyle = 'rgba(30,22,18,0.55)'; ctx.lineWidth = 1.6;
   for (let i = 0; i < 4; i++) {
-    const a2 = -t * (beltSpd / Math.max(1, drumR)) + i * Math.PI / 2;
+    const a2 = -beltT / Math.max(1, drumR) + i * Math.PI / 2;
     ctx.beginPath(); ctx.moveTo(drumX, drumY);
     ctx.lineTo(drumX + Math.cos(a2) * drumR * 0.82, drumY + Math.sin(a2) * drumR * 0.82); ctx.stroke();
   }
@@ -17090,7 +17180,18 @@ function drawChamberBase(f, L, t, still) {
   ctx.fillStyle = INK;
 
   inkFill('#1b1519', L.gen.x + 8, L.gen.y + 6, 40, 40, 20);
-  const spin = beltLive ? t * (2 + 7 * beltPow) : 0;
+  // THE SAME FAULT MORGAN REPORTED, one object along. This was t * (2 + 7 * beltPow) -- speed
+  // times clock -- so when beltPow fell on a death the whole product fell with it and the
+  // wheel kicked BACKWARDS. Measured on a real run: 1376 frames of it, worst -19 rad/s, and it
+  // gets worse the later the finale happens because the error is proportional to S.t. The belt
+  // was fixed and the thing belted to the end of it was left doing it.
+  //
+  // -beltT / 14 is not a new number: 14 is this wheel's own drawn radius, so this is the angle
+  // a pulley of that size driven by this belt would actually be at. Integrated, so it cannot
+  // reverse; NEGATIVE, so it turns the way the drums do, which a parallel belt requires and
+  // which it never did; in the right ratio to the drum; and zero at the intro handoff, where
+  // t * 2 used to snap it to an arbitrary angle.
+  const spin = beltLive ? -beltT / 14 : 0;
   ctx.strokeStyle = beltLive ? '#d9b169' : '#556070';   // iron and amber, like every other machine in the run
   ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(gx, gy, 14, 0, 6.28); ctx.stroke();
   ctx.strokeStyle = 'rgba(217,177,105,0.5)'; ctx.lineWidth = 1.6;
