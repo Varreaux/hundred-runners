@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '159 belt to edge to water, without a hesitation';
+const BUILD = '160 mr capitalism has the last word';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3387,12 +3387,11 @@ window.addEventListener('blur', clearHeld);
 if (typeof document.addEventListener === 'function') document.addEventListener('visibilitychange', () => { if (document.hidden) clearHeld(); });
 const FINALE_BLACKOUT = 1.55; // 3 flicker beats before generator restarts
 const FINALE_INTRO_WALL = 2.6;   // red flicker + FINAL WALL (longer scare beat)
-const FINALE_INTRO_SPEECH = 8.5; // boss monologue — hold long enough to read
-const FINALE_BOSS_LINES = [
-  'Ten discrepancies. Find them. Fail, and forfeit a body.',
-  'Correct the ledgers — or feed the wheel.',
-  'The canvas lies in ten places. Prove you can still see.',
-];
+// The beat is as long as the proprietor takes now; this is only the backstop's share of it,
+// for the case where he never arrives at all. FINALE_BOSS_LINES went with him: they were
+// three interchangeable instructions read out by a stick figure in a top hat, and he says
+// something of his own in his own band instead.
+const FINALE_INTRO_SPEECH = 8.5;
 // Six dark capitalism tableaux - inked, muted gold / rust / mill soot, same art language as the run.
 const FINALE_SCENES = [
   {
@@ -3489,7 +3488,6 @@ function startFinale() {
   S.finale = {
     phase: 'intro',
     introT: 0,
-    bossLine: pick(FINALE_BOSS_LINES),
     chargeT: 0,
     chargeNeed: CFG.finale.genTime(n),
     light: 0,
@@ -5274,7 +5272,32 @@ function updateFinale(dt) {
       f.dreadBeat = f.introT < FINALE_INTRO_WALL ? 0.55 : 1.15;
       AU.finaleDread(f.introT < FINALE_INTRO_WALL ? 1 : 0.55);
     }
-    if (f.introT >= FINALE_INTRO_WALL + FINALE_INTRO_SPEECH) beginFinaleCharge(f);
+    // The scare wall first, then he drops in and says his piece, and the generator starts
+    // when he has gone. It was a fixed FINALE_INTRO_SPEECH of dead time with a stick figure
+    // standing in it; the beat is as long as he takes now, which is what the band was built
+    // to do everywhere else in the game.
+    //
+    // AUTO, like the cave. The opening waits for SPACE because nothing else is happening and
+    // he must not be walked past unread; here SPACE is already the player's marking key and
+    // handing it two jobs a second apart is how you get somebody marking a painting they have
+    // not looked at. He says it on his own clock and never takes a key.
+    // `!S.boss` is NOT the test, and this is the whole of it: S.boss is not cleared when he
+    // finishes, it is left standing with gone = true, and by the time the last room opens it
+    // still holds whoever spoke on the hillside. Written as `!S.boss` he never arrived in a
+    // real run at all -- only in a fresh finale that had never had a proprietor in it, which
+    // is exactly the shape of run a test reaches for first.
+    if (f.introT >= FINALE_INTRO_WALL && !f.bossDone && (!S.boss || S.boss.gone)) {
+      startBoss(BOSS_FINALE, true, () => { f.bossDone = true; });
+    }
+    if (S.boss && !S.boss.gone) {
+      updateBoss(dt);
+      // A BACKSTOP, because a speech that cannot finish would hold the last room for ever,
+      // and a hang is a worse failure than a missing line. Derived from his own script at his
+      // own pace, with a wide margin, so adding a line cannot turn the guard into the fault.
+      if (f.introT > FINALE_INTRO_WALL + bossSpeechLength(BOSS_FINALE) * 1.6 + 4) S.boss.leaving = true;
+      return;
+    }
+    if (f.bossDone || f.introT >= FINALE_INTRO_WALL + FINALE_INTRO_SPEECH) beginFinaleCharge(f);
     return;
   }
 
@@ -5742,7 +5765,7 @@ function update(dt) {
   if (S.mode === 'win' || S.mode === 'lose') { S.endT += dt; endEmbers(dt); }
   // he does not blink out of existence when the run ends under him: 128 units of band
   // disappearing between two frames reads as a crash, so he is sent away properly
-  if (S.mode !== 'play' && S.mode !== 'intro' && S.boss && !S.boss.gone) { S.boss.leaving = true; updateBoss(dt); }
+  if (!bossWelcome() && S.boss && !S.boss.gone) { S.boss.leaving = true; updateBoss(dt); }
   if (S.mode === 'intro') { updateIntro(dt); updateView(dt); return; }
   if (S.mode !== 'play') { updateView(dt); return; }
 
@@ -6727,9 +6750,13 @@ function draw() {
   }
   if (S.mode !== 'win' && S.mode !== 'lose') drawHud();
   if (S.mode === 'play' && S.active) drawPanel(S.active);
-  if (S.boss && S.mode !== 'title') drawBoss();
   if (S.drill && !S.drill.done) drawDrill();
   if (S.mode === 'finale') drawFinalePanel();
+  // AFTER the last room's panel, which fills the whole canvas: drawn before it, his band was
+  // painted straight over and his last appearance in the game was invisible. He is still
+  // drawn after the HUD and after a room panel, which is what the rest of his ordering is
+  // about, because the panel is only drawn in play and the finale panel only in the finale.
+  if (S.boss && S.mode !== 'title') drawBoss();
   if (S.mode === 'title') drawTitle();
   if (S.mode === 'win' || S.mode === 'lose') drawEnd();
   if (S.paused) {
@@ -16392,6 +16419,19 @@ const BOSS_OPEN = [
   { t: 'FINE! Run! Run into the hills, go on, run!', mood: 'rage' },
   { t: '...I own the hills.' },
 ];
+// And once more, in the chamber under the wall, which is the last thing anybody sees of him.
+// Morgan, 2026-09-23: bring him back "in his dialogue band at the top and have him say
+// something angry one more [time] about them not escaping and they are just cogs in the
+// engine". The arc ends where it started -- he called them units of work in the yard and he
+// calls them cogs here -- except that in the yard he was smiling.
+//
+// It replaces a stick figure in a top hat who stood on the belt saying the same sort of thing
+// in a box of his own, which was a second character doing his job. There is one proprietor.
+const BOSS_FINALE = [
+  { t: 'Did you think there was an OUT?', mood: 'rage', shake: 'OUT' },
+  { t: 'There is no out. There is only further in.', mood: 'rage' },
+  { t: 'You are cogs. Turn my engine, or be spent turning it.', mood: 'rage', shake: 'cogs' },
+];
 
 // Longitude in radians, latitude as a fraction of the radius, and a blob outline in the
 // same fractional units. Land is placed by longitude so it can be spun; nothing here is
@@ -16408,6 +16448,19 @@ const BOSS_LAND = [
 // is happening and he waits for SPACE, so he cannot be walked past unread. At the seam the
 // run is live: a hundred people are on the road behind him and a puzzle may be a second
 // away, so he says his piece on a clock and leaves, and never takes a key from the player.
+// The three places he is allowed to be, in ONE expression, because it is read by updateBoss
+// and again by update() and those two disagreeing is how a boss ends up half-dismissed --
+// leaving on one clock and still drawn on another.
+function bossWelcome() {
+  return S.mode === 'intro' || S.mode === 'play'
+      || (S.mode === 'finale' && S.finale && S.finale.phase === 'intro');
+}
+// How long a script takes to say at his own reading pace, for anything that needs to wait
+// for him. Derived from the script and from BOSS's own constants rather than written down,
+// so a line added to a speech lengthens the wait that covers it.
+function bossSpeechLength(script) {
+  return (script || []).reduce((n, l) => n + l.t.length / BOSS.cps * 1.45 + BOSS.read, BOSS.slide * 2);
+}
 function startBoss(script, auto, onGone) {
   S.boss = {
     script: script || BOSS_SCRIPT, auto: !!auto, onGone: onGone || null,
@@ -16444,10 +16497,16 @@ function updateBoss(dt) {
   // accident. So while a panel is open the band slides away behind the HUD and HIS CLOCK
   // STOPS; when it closes he slides back and carries on from the same character. Nothing is
   // lost, the panel is never covered, and no key dismisses him at all.
-  // He is only ever drawn during the opening or the run, so a ducked one must not survive
-  // into the finale or an ending and wait there for a panel that will never close.
-  if (S.mode !== 'intro' && S.mode !== 'play') b.leaving = true;
-  const ducking = b.auto && !b.leaving && !!S.active;
+  // He is only ever drawn during the opening, the run, or the beat at the top of the last
+  // room, so a ducked one must not survive into an ending and wait there for a panel that
+  // will never close.
+  if (!bossWelcome()) b.leaving = true;
+  // ...IN PLAY. Ducking exists so the band never covers the panel that says which room is
+  // open, and rooms only exist on the road. In the last room S.active can still hold whatever
+  // was selected when the run ended, and without the mode test he would tuck himself behind
+  // the HUD and hold his clock for ever -- with the chamber waiting on him to finish, which
+  // is a hang rather than a missing line.
+  const ducking = b.auto && !b.leaving && S.mode === 'play' && !!S.active;
   b.duck = Math.max(0, Math.min(1, b.duck + (ducking ? dt : -dt) / BOSS.slide));
   if (ducking || b.duck >= 1) return;                   // clock held while he is out of the way
   const line = b.script[b.line];
@@ -16994,7 +17053,6 @@ function drawFinaleIntro(f) {
   } else {
     // Boss address over dark chamber with twin pin lamps
     const L = finaleLayout();
-    const u = clamp01((t - FINALE_INTRO_WALL) / FINALE_INTRO_SPEECH);
     ctx.fillStyle = '#0a080c'; ctx.fillRect(L.px, L.py, L.pw, L.ph);
     ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.4; ctx.strokeRect(L.px + 4, L.py + 4, L.pw - 8, L.ph - 8);
     drawFinaleScene(f.scene, L.left.x, L.left.y, L.left.w, L.left.h, false, f.diffs, f.found, S.t);
@@ -17013,52 +17071,18 @@ function drawFinaleIntro(f) {
     ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 10);
     ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 10);
 
-    // oppressive red wash + spotlight on proprietor
+    // Oppressive red wash, and a cold light on the machine he is about to talk about. It
+    // used to be a spotlight on a stick figure in a top hat standing on the belt, with a
+    // titled box of his own above him. He is drawn in the band at the top now, by drawBoss,
+    // the way he is in the yard and at the seam and on the hillside -- so the chamber below
+    // is left to be the chamber, and there is one proprietor in this game rather than two.
     ctx.fillStyle = 'rgba(70,8,14,0.32)'; ctx.fillRect(0, 0, W, H);
-    const spot = ctx.createRadialGradient(W / 2, H * 0.64, 16, W / 2, H * 0.72, 210);
-    spot.addColorStop(0, 'rgba(255,190,110,0.2)'); spot.addColorStop(1, 'rgba(0,0,0,0)');
+    const spot = ctx.createRadialGradient(W / 2, H * 0.62, 24, W / 2, H * 0.72, 250);
+    spot.addColorStop(0, 'rgba(255,190,110,0.16)'); spot.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = spot; ctx.fillRect(0, 0, W, H);
-    // He stood at 408, which is 32 above the belt housing and 78 above the water -- a third
-    // floor height in a room that already had two. He stands on the belt the crowd will
-    // stand on, so the chamber he speaks in is the chamber you then play in.
-    // The same chamber, drawn cold: still belt, grey dynamo, empty meter, full pit. He stands
-    // on the belt the crowd will stand on, and now there is a belt under him and a generator
-    // for his line about the wheel to be about.
+    // The same chamber, drawn cold: still belt, grey dynamo, empty meter, full pit. The room
+    // he is speaking about is under him while he speaks about it.
     drawChamberBase(f, L, t, true);
-    const bx = W / 2, by = L.deck.y - 2;
-    paintActor(bx, by, {
-      skin: '#e8c8a2', shirt: '#2b2b33', pants: '#17171d', hair: '#2a1a10',   // separates from the wall; he had no torso at all before
-      phase: 0, scale: 2.05, jit: 99,
-    });
-    inkFill('#0a0a0a', bx - 22, by - 63, 44, 8, 1);
-    inkFill('#0a0a0a', bx - 14, by - 83, 28, 22, 2);
-    ctx.strokeStyle = '#d4a84b'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(bx, by - 28, 10, 0.2, Math.PI - 0.2); ctx.stroke();
-
-    const line = f.bossLine || FINALE_BOSS_LINES[0];
-    // Type in first ~35% of speech window, then hold so it can be read
-    const typeU = Math.min(1, u / 0.35);
-    const shown = Math.floor(line.length * typeU);
-    const text = line.slice(0, shown);
-    // The box spanned y 14..102 over paintings that start at 84, so the thing he is telling
-    // you to look at was the thing his words covered. Moved down into the empty lower half.
-    // Ends ABOVE the paintings. At y 14 with height 84 it ran to 98 and the frames start at
-    // 84, so the thing he is telling you to look at was the thing his words covered.
-    const boxY = 6, boxH = 72;
-    ctx.fillStyle = 'rgba(6,2,8,0.9)';
-    roundRect(W / 2 - 300, boxY, 600, boxH, 8); ctx.fill();
-    ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.5;
-    roundRect(W / 2 - 300, boxY, 600, boxH, 8); ctx.stroke();
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 13px monospace';
-    ctx.fillText('THE PROPRIETOR', W / 2, boxY + 20);
-    ctx.fillStyle = '#f0e6d0'; ctx.font = '17px monospace';
-    ctx.fillText(text, W / 2, boxY + 44);
-    if (u > 0.45) {
-      ctx.fillStyle = `rgba(200,170,130,${0.35 + 0.35 * Math.sin(S.t * 3)})`;
-      ctx.font = '12px monospace';
-      ctx.fillText('run the generator — twin lamps grow with every body on the wheel', W / 2, boxY + 64);
-    }
   }
   ctx.textAlign = 'left';
 }

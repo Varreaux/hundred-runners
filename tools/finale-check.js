@@ -93,12 +93,19 @@ eval(src + `
   // ------------------------------------------------------------ phases
   let f = chamber(12);
   ok('the room opens on the intro, not the search', f.phase === 'intro', 'phase ' + f.phase);
-  const introNeed = FINALE_INTRO_WALL + FINALE_INTRO_SPEECH;
-  run(introNeed - 0.2);
-  ok('the intro holds for its whole scare wall and speech', F().phase === 'intro',
-     introNeed.toFixed(2) + 's of wall and boss line');
-  run(0.4);
-  ok('the intro hands over to the generator', F().phase === 'charge', 'phase ' + F().phase);
+  // DERIVED FROM THE SPEECH, not from FINALE_INTRO_SPEECH. The beat used to be a fixed
+  // length with a stick figure standing in it; it is now as long as the proprietor takes,
+  // and FINALE_INTRO_SPEECH survives only as the backstop for a run where he never arrives.
+  // Scored against that constant this failed on a room that was working -- the intro really
+  // does hold at 11.1s, because he is still talking -- which is a stale ruler accusing the
+  // game, the fault this file's own notes warn about.
+  const introNeed = FINALE_INTRO_WALL + bossSpeechLength(BOSS_FINALE);
+  run(FINALE_INTRO_WALL + 0.5);
+  ok('the intro holds while the proprietor is still speaking', F().phase === 'intro' && !!S.boss && !S.boss.gone,
+     'phase ' + F().phase + ', on line ' + ((S.boss && S.boss.line + 1) || 0) + ' of ' + BOSS_FINALE.length);
+  run(introNeed);
+  ok('the intro hands over to the generator once he has gone', F().phase === 'charge' && !!S.boss && S.boss.gone,
+     'phase ' + F().phase + ' after ' + introNeed.toFixed(1) + 's, he is ' + (S.boss && S.boss.gone ? 'gone' : 'STILL THERE'));
 
   // ------------------------------------------------------------ the charge, at three crew sizes
   // genTime is the design: one worker 10.9s, a hundred 1.0s. The belt used to ignore it.
