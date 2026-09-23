@@ -303,6 +303,40 @@ eval(src + `
     }
   }
 
+  // ------------------------------------------------------------ nobody ever walks forward
+  {
+    // Morgan, 2026-09-23: "no player should ever walk forward if you know what i mean. As
+    // people are falling and there is more space on the conveyor belt, the players will be
+    // spacing out more and thus moving backward but they should not bounce forward."
+    //
+    // This is the whole rule, and it is one inequality: a standing body's x may go down and
+    // may stay, and may never go up. It caught what looking could not -- the bounce was 0.73
+    // units on the worst single frame, too small to see in any one of them, and 3169 units of
+    // travel across a run, which is what the eye actually reads.
+    //
+    // The one drawn at 100 is the case that matters: the spacing only opens once the queue
+    // behind is exhausted, so a run that starts small never exercises the re-spacing at all.
+    for (const crew of [100, 40, 12]) {
+      const g = searching(crew);
+      const seen = new Map();
+      let frames = 0, travel = 0, worst = 0;
+      run(CFG.finale.searchTime + 2, () => {
+        if (S.mode !== 'finale') return 'stop';
+        for (const d of g.deck) {
+          // The one going over is exempt: it is SUPPOSED to move, and only ever toward the
+          // drop, which the assertions above already cover.
+          if (!d.arrived || d.slip) { seen.set(d.r, d.x); continue; }
+          const was = seen.get(d.r);
+          if (was != null && d.x > was + 0.01) { frames++; travel += d.x - was; worst = Math.max(worst, d.x - was); }
+          seen.set(d.r, d.x);
+        }
+      });
+      ok('a crew of ' + String(crew).padStart(3) + ' never walks anybody forward, up the belt',
+         frames === 0 && travel < 0.5,
+         frames + ' body-frames forward, ' + travel.toFixed(1) + ' units of travel, worst frame ' + worst.toFixed(2));
+    }
+  }
+
   // ------------------------------------------------------------ the belt itself
   {
     // "i dont want the conveyor to change, it should maintain the same direction and pace",

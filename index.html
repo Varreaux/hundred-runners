@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '156 one belt, one pace, and a line that spreads';
+const BUILD = '157 nobody on the belt ever walks forward';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -5387,7 +5387,18 @@ function updateFinale(dt) {
     // nothing to chase, and how much of the gap it actually has, so a wrong mark cannot hand
     // its successor a slip that is already half over.
     f.slipWho = slipper;
-    if (slipper) { slipper.slipFrom = slipper.x; slipper.slipCap = Math.max(0, f.rollT); }
+    if (slipper) {
+      slipper.slipFrom = slipper.x;
+      // RESERVE THE WALK IN. A body becomes the next to go the instant the one ahead of it
+      // does, standing a whole slot back -- and once the line has spread that slot is 140
+      // units, not 20. Stamping the cap at the full rollT started its slip from where it was
+      // standing, so at a hundred aboard, where the span IS the gap, it never walked in at
+      // all: it sat at slot 1's position while the body behind walked to slot 1 as well, and
+      // the two closed to three units apart. The cap is the time left AFTER walking to the
+      // drop at the fastest a body can go backwards, which is the belt's own speed.
+      const walk = Math.max(0, slipper.x - (L.deck.x + L.deck.slot0)) / BELT_SPD;
+      slipper.slipCap = Math.max(0, f.rollT - walk);
+    }
   }
   // How far the line behind has closed up into the space the one at the front is vacating.
   // It used to close AFTERWARDS, at CARRY, so the gap at the head of the line grew to nearly
@@ -5401,27 +5412,40 @@ function updateFinale(dt) {
   // q 0.18 and does not recover until q 0.36: for the first third of every slip the one who
   // is supposed to be losing ground is drawn CLOSER to the line than when everyone was
   // standing still. On the eased curve it is 20 + 35e, opening from the first frame.
-  // THIS FRAME's progress, not last frame's. Reading slipper.slip -- which the loop below
-  // nulls and rewrites -- left the line one frame behind the body it was following, which at a
-  // hundred aboard is 2.4 units of the 20 and put the head-of-queue gap back under its resting
-  // pitch. One call, used here and again in the loop, so the two cannot disagree.
   const slipPose = slipper ? finaleSlipPose(L, Math.max(0, f.rollT), f.rollGap, slipper.slipFrom, slipper.slipCap) : null;
   const closed = slipPose && slipPose.q > 0 ? slipPose.e : 0;
-  // How far the one who is going actually travels: down the slats from slot 0 to the crown,
-  // then round the drum until it topples. Read off the same two fields finaleSlipPose builds
-  // its path from, so the line's close-up and the slip cannot disagree about the distance.
-  const slipPath = L.deck.slot0 + L.deck.drumR * SLIP_THETA;
+  // THE LAYOUT THIS LINE WILL HAVE ONCE THE ONE GOING HAS GONE. Only line.length changes at a
+  // death, so this is the same sum with one fewer body in it.
+  const shownNext = Math.min(shown, Math.max(1, f.line.length - 1));
+  const evenNext = shownNext <= 1 ? PITCH : span / (shownNext - 1);
+  const stepNext = Math.max(PITCH, Math.min(SPREAD_MAX, evenNext));
   for (const d of f.deck) {
-    // CLOSE BY LESS THAN THE SLIP OPENS, or the gesture inverts. The head-of-queue gap over a
-    // slip is slotStep - shift + slipPath, and shift was a whole slotStep -- fine while that
-    // was the 20-unit pitch, and backwards the moment the line spreads past the slip's own 55
-    // units of travel. Below about thirteen survivors the follower marched up into the dying
-    // man instead of being left behind by him, at exactly the crew sizes this was built for.
-    // Capped at slipPath - PITCH, so the gap always opens by a pitch whatever the spacing is;
-    // the rest of the close-up happens afterwards, at CARRY, as a walk rather than a lurch.
-    const shift = (slipper && d !== slipper && d.i > slipper.i)
-      ? closed * Math.min(1, Math.max(0, slipPath - PITCH) / slotStep) : 0;
-    const targetX = beltDrop + (d.i - shift) * slotStep;
+    // NOBODY EVER WALKS FORWARD. Morgan, 2026-09-23: "all the players seem to go backwards a
+    // bit and then bounce forward again everytime someone falls in the water. no player should
+    // ever walk forward... As people are falling and there is more space on the conveyor belt,
+    // the players will be spacing out more and thus moving backward but they should not bounce
+    // forward."
+    //
+    // The line closes up while somebody is going over, and the bounce was that it then had to
+    // give some of it back: it walked toward the slot it was ABOUT to hold, computed at the
+    // CURRENT spacing, and the death then changed the spacing under it. Measured, that was
+    // 4444 body-frames of forward motion in one run and 3169 units of travel the wrong way.
+    //
+    // So it closes toward the layout the line will actually have -- one fewer body, at the
+    // spacing that implies -- and at the death it is already standing in it. The target is
+    // continuous across the death by construction rather than by luck, and it is monotone
+    // toward the drop, because the end of the walk is never to the right of its start:
+    // (k-1)s' <= k*s holds for every k in the line, reducing to k <= N-1 at the even spacing,
+    // to (k-1)c < k*c while the spacing is capped, and to 6.4k <= 140 against a k of at most
+    // five across the boundary between the two.
+    //
+    // Taking the close-up out altogether was tried and is worse in a way that is worth writing
+    // down: a boarder walks on at runSpd, an order of magnitude faster than the line settles,
+    // so without the line vacating the top slot in advance the new arrival lands on top of the
+    // body still walking out of it -- 2.9 units apart, for 31% of the room.
+    const here = beltDrop + d.i * slotStep;
+    const after = beltDrop + Math.max(0, d.i - 1) * stepNext;
+    const targetX = (d === slipper || d.i === 0) ? here : here + (after - here) * closed;
     d.targetX = targetX;
     d.slip = null; d.dy = 0; d.rot = 0;
     if (d !== slipper) { d.slipFrom = null; d.slipCap = null; }
@@ -5462,9 +5486,27 @@ function updateFinale(dt) {
       d.slip = sp; d.dy = sp.dy; d.rot = sp.rot; d.x = sp.x;
     } else if (Math.abs(d.x - targetX) > 0.25) {
       // The belt carries them on when the one in front goes over the end. NOT a snap: a body
-      // that teleports forward a slot reads as a drawing error rather than as a belt. NOT at
-      // runSpd either -- that is a sprint, and these people are standing still being carried.
-      const step = CARRY * dt;
+      // that teleports a slot reads as a drawing error rather than as a belt. NOT at runSpd
+      // either -- that is a sprint, and these people are holding station on a treadmill.
+      //
+      // BUT IT HAS TO ARRIVE. With the close-up gone, the whole of a death's movement happens
+      // at the death, and once the line has spread that is 150 units, not 20. At a flat 44
+      // px/s the line fell behind by 346 units at two survivors -- the body due to go over the
+      // edge was sitting at x 553 with the drop at 118, which is not a slow demise, it is a
+      // queue that never arrives. So the rate is what this body needs to be in place before
+      // the next one goes, floored at CARRY so a short walk is still a walk.
+      //
+      // CAPPED AT THE BELT'S OWN SPEED, which is the honest ceiling: a runner drifting
+      // backwards at exactly BELT_SPD has simply stopped running and is being carried. They
+      // cannot go backwards faster than that without running in reverse, and Morgan's rule is
+      // that the only two things a body may do are hold station and lose ground.
+      // Paced to the REAL deadline, which is the time until the next body goes, not the whole
+      // gap: a body that is still behind halfway through a gap has half the time left, and
+      // pacing it against the full gap is how the line fell 346 units behind at two survivors.
+      const need = Math.abs(d.x - targetX);
+      const due = Math.max(0.25, Math.min(f.rollGap || 1, f.rollT == null ? 1 : f.rollT));
+      const spd = Math.min(BELT_SPD, Math.max(CARRY, need / due));
+      const step = spd * dt;
       d.x += Math.max(-step, Math.min(step, targetX - d.x));
     } else {
       d.x = targetX;
