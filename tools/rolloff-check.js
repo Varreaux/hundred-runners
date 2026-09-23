@@ -262,6 +262,49 @@ eval(src + `
        seen + ' bodies, the worst jump ' + worst.toFixed(1) + ' units (' + whoWorst + ')');
   }
 
+  // ---------------------------------------------------------------- belt, edge, water, no pause
+  {
+    // Morgan, 2026-09-23: "the last one (next one to die) still pauses briefly... I'm looking
+    // for a seemless progression from the conveyor, to edge to the water."
+    //
+    // It was the geometry, not the schedule. Pacing a body evenly along its PATH spends path
+    // length on dropping once it reaches the drum, so its sideways speed fell to cos(1.15) =
+    // 41% at exactly the moment it should have looked fastest: traced on one body, 6.1 px/s
+    // falling away to 3.1 over its last two seconds. The slip is paced by sideways travel now
+    // and the drum's angle is read off x, so this asserts the property that fix produces --
+    // the leftward speed never falls, from the slot to the water.
+    //
+    // TRACKED AT THE BODY'S CENTRE, and the hand-over frame is skipped. The first version of
+    // this followed the SOLE, on the reasoning that the two drawings pivot about different
+    // points -- true, but a body that has let go is TUMBLING, so its sole swings about the
+    // centre at up to 8.7 px/s and the reading is mostly rotation. There is no fixed point on
+    // a turning body. The centre is the thing that travels, and the one frame where the two
+    // drawings swap pivots is asserted separately, at the sole, by the check above.
+    let worstDrop = 0, where = '', checked = 0;
+    for (const crew of [5, 12, 40]) {
+      const g = searching(crew);
+      let who = null, prev = null, prevV = null, handover = false;
+      play(g, CFG.finale.searchTime + 2, () => {
+        const s = g.deck.filter(d => d.arrived).sort((a, b) => a.x - b.x)[0];
+        if (!who && s && s.slip) { who = s.r; prev = s.x; prevV = null; handover = false; return; }
+        if (!who) return;
+        const d = g.deck.find(o => o.r === who), fl = g.falling.find(o => o.r === who);
+        const at = d ? d.x : (fl ? fl.x : null);
+        if (at == null) { who = null; return; }
+        if (!d && !handover) { handover = true; prev = at; return; }   // the frame it lets go
+        const v = (prev - at) * 60;
+        // Only once it is genuinely under way: the first moments are a standing start.
+        if (prevV != null && prevV > 1.2 && v < prevV - 0.6) {
+          if (prevV - v > worstDrop) { worstDrop = prevV - v; where = 'crew ' + crew + ', ' + prevV.toFixed(1) + ' -> ' + v.toFixed(1) + ' px/s'; }
+        }
+        prev = at; if (v > 0.02) { prevV = v; checked++; }
+      });
+    }
+    ok('a body never slows down between the belt, the edge and the water',
+       checked > 500 && worstDrop < 0.8,
+       checked + ' frames under way, worst loss of speed ' + worstDrop.toFixed(2) + ' px/s' + (where ? ' (' + where + ')' : ''));
+  }
+
   // ---------------------------------------------------------------- a wrong mark costs a turn
   {
     // A wrong mark takes a body OUT OF TURN, so the run has to end one whole gap early --

@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '158 the line never stops sliding back';
+const BUILD = '159 belt to edge to water, without a hesitation';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -4033,10 +4033,32 @@ function finaleSlipSpan(gap, cap, total) {
 function finaleSlipPose(L, left, gap, from, cap) {
   const crown = L.deck.x, R = L.deck.drumR;
   const at = from == null ? crown + L.deck.slot0 : from;
-  const flat = Math.max(0, at - crown);         // slats still under them
-  const wrap = R * SLIP_THETA;                  // then the drum's own circumference
-  const total = flat + wrap;
-  const span = finaleSlipSpan(gap, cap, total);
+  // PACED BY THE SIDEWAYS TRAVEL, not by the length of the path. That distinction is the
+  // whole of Morgan's last note: "the last one (next one to die) still pauses briefly... I'm
+  // looking for a seemless progression from the conveyor, to edge to the water."
+  //
+  // Along the path was the obvious choice and it hides a deceleration. Going round the drum
+  // spends path length on DROPPING rather than on travelling: the horizontal part of it is
+  // cos(th), which falls from 1 to cos(1.15) = 0.41 across the wrap. So a body moving at a
+  // perfectly even rate along its path slows to 41% sideways at exactly the moment it should
+  // look fastest. Traced on one body at five aboard, its leftward speed climbed to 6.1 px/s
+  // and then fell away -- 5.9, 5.2, 3.9, 3.1 -- over the last two seconds before it went.
+  // That is the pause he could see, and no amount of retiming the clock would have removed
+  // it, because it was in the geometry rather than in the schedule.
+  //
+  // So the SIDEWAYS distance is what gets eased, from where they were standing to the point
+  // they let go, and the drum is then read off x rather than x being read off the drum. The
+  // horizontal speed is 2*travel*q/span throughout -- one monotone accelerating curve from
+  // the slot to the water, with nothing in it that knows the drum is there.
+  //
+  // The drop comes out right for free, which is the tell that this is the correct
+  // parameterisation: dy/dx on a circle is tan(th), so the descent goes from nothing on the
+  // flat to 2.2 times the sideways speed at the lip, and hands over to a fall that is already
+  // moving. The foot still follows the circumference exactly, by sin and cos of one angle.
+  const off = crown - R * Math.sin(SLIP_THETA);   // the point on the drum where it lets go
+  const flat = Math.max(0, at - crown);           // slats still under them
+  const travel = Math.max(0.001, at - off);       // ...and the whole sideways distance
+  const span = finaleSlipSpan(gap, cap, travel);
   if (span <= 0) return null;          // not enough clock left to lose ground in; see the note there
   const q = clamp01((span - left) / span);
   // Squared. Cubed put 0.6 units of 36 into the first QUARTER and 4.5 into the first half,
@@ -4044,26 +4066,25 @@ function finaleSlipPose(L, left, gap, from, cap) {
   // the same picture. Linear reads as being shoved. Squared is the one that reads as holding
   // on and then not being able to.
   const e = q * q;
-  const u = total * e;                          // how far along that path they have gone
-  const speed = 2 * total * q / span;           // and how fast, which is its own derivative
-  if (u <= flat) {
+  const x = at - travel * e;
+  const vx = -2 * travel * q / span;              // its own derivative, and never falls
+  const past = crown - x;                         // how far beyond the crown they are
+  if (past <= 0) {
     // The lean reaches SLIP_LEAN AT THE CROWN, which is where the drum branch picks it up.
-    // Scaled by e it arrived at 0.105 while the next frame started from 0.160 -- a 3.1 degree
-    // snap in the one expression this was rebuilt to make continuous.
-    return { x: at - u, dy: 0, rot: SLIP_LEAN * (flat > 0 ? u / flat : 1),
-             vx: -speed, vy: 0, q, e, tip: 0 };
+    return { x, dy: 0, rot: SLIP_LEAN * (flat > 0 ? (at - x) / flat : 1),
+             vx, vy: 0, q, e, tip: 0 };
   }
-  // On the drum. The foot follows the circumference BY CONSTRUCTION -- sin and cos of the
-  // same angle -- which is the only arrangement in which the two coordinates cannot disagree
-  // about where the surface is.
-  const th = Math.min(SLIP_THETA, (u - flat) / R);
+  // On the drum, whose angle is now a consequence of where the body is rather than the other
+  // way about. sin(SLIP_THETA) is 0.913, so `past` can never reach R and the arcsine is safe.
+  const th = Math.asin(Math.min(1, past / R));
   const tip = clamp01(th / SLIP_THETA);
-  return { x: crown - R * Math.sin(th), dy: R * (1 - Math.cos(th)),
+  return { x, dy: R * (1 - Math.cos(th)),
            // They pitch BACKWARD, because they are facing the way they were running -- up the
            // belt, to the right -- and the belt is taking them off the other end.
            rot: SLIP_LEAN - (SLIP_LEAN + 0.95) * tip,
-           // Tangent to the drum, so the fall continues the arc instead of starting again.
-           vx: -speed * Math.cos(th), vy: speed * Math.sin(th), q, e, tip };
+           // Tangent to the drum: the descent is the slope of the circle times the sideways
+           // speed, so the fall continues the arc instead of starting again.
+           vx, vy: -vx * Math.tan(th), q, e, tip };
 }
 // ONE place decides how a body leaves the belt, because two things push people over the end
 // now: a wrong mark, and the clock itself. Always the slot NEAREST THE DROP, which is the
