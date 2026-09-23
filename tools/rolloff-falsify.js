@@ -36,6 +36,33 @@ const CASES = [
     want: /opens on the same maximum and ends on the same minimum/,
     from: '  return Math.max(minR, crewR);',
     to:   '  return Math.max(8, crewR - 20);' },
+  // TWO faults, because the change has two halves and killing one of them no longer implies
+  // the other. Killing the slip leaves the body standing at slot 0 and the launch FALLS BACK
+  // to where it stands -- so the death is still continuous and the no-teleport assertion is
+  // quite right to pass. What goes wrong instead is that the body drops out of the middle of
+  // the belt, which is the assertion about leaving the LEFT end. Aiming this case at the
+  // no-teleport line would have reported a hole in a check that was working.
+  { name: 'nobody slips, so bodies drop out of the middle of the belt',
+    want: /leaves the LEFT end/,
+    from: "  const slipper = (f.phase === 'search' && f.rollGap != null) ? finaleNextOff(f) : null;",
+    to:   '  const slipper = null;' },
+  // And the teleport itself: the fixed launch point the room used before 2026-09-23, while the
+  // body goes on slipping to the edge in front of the player.
+  //
+  // THE FIRST VERSION OF THIS FAULT INJECTED NOTHING and came back "nothing failed at all",
+  // which reads as a hole in the check. It passed a different starting x to finaleSlipPose --
+  // but the slip's endpoint is the point on the drum where a body topples off it, and that is
+  // fixed by the drum, not by where the walk began. Both spellings launched from the same
+  // place. Suspect the fault before the assertion, which is what this file exists to say.
+  { name: 'the body teleports to the end again instead of leaving from where it stood',
+    want: /from where it was standing/,
+    // THIRD TIME THIS ANCHOR HAS GONE STALE, each time because the line it names was edited in
+    // the same session. That is the design working: it reported "anchor missing" and failed,
+    // rather than quietly passing and telling us the check was connected when it was not.
+    from: '    f.falling.push({ r, t: 0, x: x0, y: y0,\n' +
+          '                     vx: (pose.vx || 0) - rand(0, 12), vy: (pose.vy || 0) + rand(0, 12),',
+    to:   '    f.falling.push({ r, t: 0, x: L.deck.x - L.deck.drumR - 7, y: y0,\n' +
+          '                     vx: (pose.vx || 0) - rand(0, 12), vy: (pose.vy || 0) + rand(0, 12),' },
   { name: 'the timer chip is put back on the panel',
     want: /never tells the player how long is left/,
     from: "  const crewCol = finaleLampFrac(f) < 0.18 ? '#ff6b6b' : '#d4a84b';",

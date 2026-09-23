@@ -213,6 +213,55 @@ eval(src + `
        (S.stats.dead - dead0) + ' newly dead, ' + (arrived0 - S.stats.arrived) + ' struck off arrived');
   }
 
+  // ---------------------------------------------------------------- nobody teleports to the end
+  {
+    // Morgan, 2026-09-23: they should not "just fall off when it's time to fall off". The body
+    // the clock is about to spend now slips down the belt over its last couple of seconds and
+    // the fall begins where the standing body was, so the drop itself has no jump in it.
+    //
+    // Measured as the DISTANCE between the last place a body was drawn standing and the first
+    // place it is drawn falling, which is the only form of the claim a still could never
+    // settle: both frames look right on their own and it is the gap between them that was
+    // wrong. It was 59.6 units, three body-widths, on the one body the player is watching.
+    //
+    // FOUR units. A frame of slip is 1.4 at the very most (a hundred aboard, where the slip is
+    // compressed into 0.75s), and the fixed launch this replaced sits 8.5 from the point a
+    // body actually topples off the drum -- so four has better than twice the margin on each
+    // side. Six was picked before either number was measured and left the falsifier's own
+    // injected fault clearing the bar by 41%.
+    const g = searching(24);
+    const L = L0();
+    // MEASURED AT THE SOLE, not at the origin, and that distinction is the whole of it. The two
+    // drawings pivot about different points -- a standing body rotates about its sole, a
+    // falling one about its origin -- so finaleTakeBody deliberately offsets the launch origin
+    // by up to 4.4 units to make the INK line up. Measured at the origin this check reported
+    // that offset as a 5.3-unit jump and failed a build in which nothing visible had moved,
+    // which is the same fault as measuring a shadow without honouring the transform that drew
+    // it. The sole is the one point both transforms agree on when they are right.
+    const SOLE = 4.3 * 1.15;
+    const soleOf = (x, y, rot, pivoted) => pivoted
+      ? { x, y: y + SOLE }                                                  // standing: the pivot IS the sole
+      : { x: x - SOLE * Math.sin(rot || 0), y: y + SOLE * Math.cos(rot || 0) };
+    const stood = new Map();
+    let worst = 0, seen = 0, whoWorst = '';
+    play(g, 32, () => {
+      for (const d of g.deck) stood.set(d.r, soleOf(d.x, L.deck.y - 2 + (d.bob || 0) + (d.dy || 0), d.rot, true));
+      for (const fl of g.falling) {
+        if (fl._jump) continue;
+        fl._jump = true;
+        const was = stood.get(fl.r);
+        if (!was) continue;
+        seen++;
+        const at = soleOf(fl.x, fl.y, fl.rot, false);
+        const j = Math.hypot(at.x - was.x, at.y - was.y);
+        if (j > worst) { worst = j; whoWorst = fl.r.name || 'one of them'; }
+      }
+    });
+    ok('a body the clock spends goes over from where it was standing, not from across the machine',
+       seen > 2 && worst < 4,
+       seen + ' bodies, the worst jump ' + worst.toFixed(1) + ' units (' + whoWorst + ')');
+  }
+
   // ---------------------------------------------------------------- a wrong mark costs a turn
   {
     // A wrong mark takes a body OUT OF TURN, so the run has to end one whole gap early --

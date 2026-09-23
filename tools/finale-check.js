@@ -178,7 +178,14 @@ eval(src + `
       charging(crew);
       run(30, () => { if (F().phase === 'search') return 'stop'; });
       const L = finaleLayout();
-      const off = F().deck.filter(d => d.x < L.deck.x - 1 || d.x > L.deck.x + L.deck.w + 1);
+      // The one the clock is spending is allowed past the left end, because that is what
+      // going over the end IS -- the slip carries them off the crown of the tail drum and the
+      // fall starts from there. Everybody else has to be ON the belt. Written as an exemption
+      // for that ONE body rather than as a looser bound for all of them: a loose bound would
+      // let a second body drift out over the water and still pass.
+      const going = finaleNextOff(F());
+      const lip = L.deck.x - L.deck.drumR - 8;
+      const off = F().deck.filter(d => d.x > L.deck.x + L.deck.w + 1 || d.x < (d === going ? lip : L.deck.x - 1));
       const pitch = F().deck.length > 1
         ? Math.min(...F().deck.slice(1).map((d, i) => Math.abs(d.x - F().deck[i].x)).filter(v => v > 0))
         : 99;
@@ -191,11 +198,40 @@ eval(src + `
 
     charging(24);
     run(30, () => { if (F().phase === 'search') return 'stop'; });
-    const before = F().deck.map(d => d.x);
+    // The belt's own slot pitch, read off the game rather than written down: the two nearest
+    // bodies in a full line are exactly one pitch apart, and the assertion below is entirely
+    // about that distance.
+    const PITCH_HERE = Math.min(...F().deck.slice(1).map((d, i) => Math.abs(d.x - F().deck[i].x)).filter(v => v > 0));
+    // WHO MAY MOVE, AND HOW FAR. This was "nobody": every x had to be within half a unit of
+    // where it had been three seconds earlier, which is what catches a pack being dragged
+    // toward the wheel. Two things happen now that contradict that, and neither is a fault, so
+    // the assertion states them rather than being relaxed around them:
+    //
+    //   the one the clock is about to spend loses ground down the belt and goes over the end
+    //   (Morgan, 2026-09-23: "it should coincide with their slow demise towards the end of the
+    //   conveyor belt"), and
+    //   the line behind closes into the slot being vacated WHILE that is happening, instead of
+    //   shuffling up all at once afterwards -- which is at most one pitch, ever.
+    //
+    // So: nobody moves toward the generator at all; nobody in the line moves further than one
+    // pitch; the one who is going has moved a good deal further than that, and no further than
+    // the point it is launched from. A pack dragged at the wheel still fails. So does a second
+    // body leaving the line, a queue that closes by more than the gap it is filling, and a slip
+    // that overshoots its own edge.
+    const held = new Map(F().deck.map(d => [d.r, d.x]));
+    const going2 = finaleNextOff(F());
     run(3);
-    const moved = F().deck.some((d, i) => Math.abs(d.x - before[i]) > 0.5);
-    ok('they STAY standing -- nobody is drawn into the wheel', !moved && F().deck.length === 24,
-       F().deck.length + ' still on the belt after 3s');
+    const L3 = finaleLayout();
+    const moved = F().deck.filter(d => d !== going2 && held.has(d.r)).map(d => held.get(d.r) - d.x);
+    const backwards = moved.filter(m => m < -0.5);
+    const tooFar = moved.filter(m => m > PITCH_HERE + 0.5);
+    const slipped = going2 ? held.get(going2.r) - going2.x : 0;
+    ok('only the one the clock is spending leaves the line, and the line closes by at most one pitch',
+       backwards.length === 0 && tooFar.length === 0 && F().deck.length === 24 && !!going2 &&
+       slipped > PITCH_HERE * 1.5 && going2.x >= L3.deck.x - L3.deck.drumR - 8,
+       F().deck.length + ' on the belt after 3s: ' + backwards.length + ' moved toward the wheel, ' +
+       tooFar.length + ' closed by more than the ' + PITCH_HERE.toFixed(0) + '-unit pitch (worst ' +
+       Math.max(0, ...moved).toFixed(1) + '), the one who is going moved ' + slipped.toFixed(1));
   }
 
   // ------------------------------------------------------------ marking, by key and by click

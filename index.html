@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '154 the doors are red until you pick them';
+const BUILD = '155 they lose the belt before it drops them';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3896,14 +3896,151 @@ function finaleConfirm(atU, atV) {
   finaleWrong();
   return false;
 }
+// ---------------------------------------------------------------- going over the end
+// THE ONE WHO IS LOSING. finaleTakeBody and the slip below have to agree about which body is
+// next over the edge, or the room draws one person tiring and then drops a different one.
+// Leftmost arrived, which is the front of the queue: the belt carries everyone toward the
+// drop, so the front of the line is who it runs out of belt for first.
+function finaleNextOff(f) {
+  return f.deck.filter(d => d.arrived).sort((a, b) => a.x - b.x)[0] || null;
+}
+// Morgan, 2026-09-23: "right now they kinda just fall off when its time to fall off. They
+// should still fall off when it's their time, but it should coincide with their slow demise
+// towards the end of the conveyor belt. That way it looks like a smooth run when people
+// slowly run out of energy."
+//
+// So the CLOCK is untouched -- rollGap still decides when, and rollT is still the only thing
+// consulted -- and what changes is that the body the clock is about to spend spends the
+// seconds before it LOSING GROUND. These people are running against a belt; running out of
+// energy is the belt starting to win, which on screen is a drift toward the drop end, and
+// then there is no belt left to drift along. The body that goes over is the body you were
+// already watching go, and it leaves from where it was standing rather than from a point
+// sixty units away.
+//
+// SLIP_T is a length in SECONDS, not a fraction of rollGap, and that is the load-bearing
+// choice. rollGap runs from 0.75s at a hundred aboard to 37.5s at two: as a fraction, two
+// survivors would creep the whole way over thirty-seven seconds -- under two units a second,
+// which is not a performance, it is a drawing error nobody can see. SLIP_MAX is the other
+// end of the same argument, and SLIP_FLOOR the reason a thin line gets more than the nominal:
+// with 37 seconds between bodies, 1.9 of slip is a twentieth of the room and the other
+// nineteen twentieths are three people running on the spot.
+const SLIP_T = 1.9, SLIP_MAX = 4.5;
+// The fastest a slip may run before it stops being a slip and becomes a streak. A LENGTH was
+// written here first (0.3s) and that is the shape this file keeps warning about: a constant
+// encoding a fact about the thing it measures. The speed along the path is 2 * total / span
+// and total is built from slot0 and drumR, so moving either silently made the floor mean
+// something else. Against the fastest legitimate slip -- 147 px/s at a hundred aboard -- this
+// is 1.6 times, and the floor falls out of it in finaleSlipSpan.
+const SLIP_VMAX = 240;
+// The crew in this room are all drawn at one size, named or not, and the sole of a figure at
+// that size sits this far below the origin it is drawn from. Both numbers were literals --
+// 1.15 in two draw calls, and the sole offset nowhere at all, which is why the pitch was
+// rotating a body about a point five units above the foot it was standing on. 4.3 is the
+// lowest ink drawFigure emits (the leg stroke's round cap at figure y 2, half of lineWidth
+// 4.6); it is measured from the primitives rather than read out of a comment, because this
+// file's own note about body height says to.
+const FINALE_SCALE = 1.15, FINALE_SOLE = 4.3 * FINALE_SCALE;
+// How far round the tail drum a body rides before it topples off it. The fall takes over
+// there, so this is where the scripted arc ends and physics begins.
+const SLIP_THETA = 1.15;
+// How far forward they strain before they lose it. It reverses on the drum.
+const SLIP_LEAN = 0.16;
+// How fast the line closes up behind somebody who has gone over. It was 150, which shut a
+// 20-unit gap in 0.13s -- a lurch every rollGap on a line that is otherwise still, and the
+// other half of what Morgan was seeing. At 44 it takes 0.45s, and since the line now closes
+// DURING the slip rather than after it, that rate is a ceiling it never actually reaches.
+const CARRY = 44;
+// How long this body's slip lasts. `cap` is the time it actually HAS -- the clock's reading
+// on the frame it became the one who is going -- because a wrong mark spends a body out of
+// turn and hands its successor whatever is left of the gap. Without the cap that successor
+// was handed a slip already part-run: at a hundred aboard, where the span IS the gap, every
+// wrong mark drew the next body instantly dropped 17 units and pitched 47 degrees while it
+// was still standing on flat belt.
+function finaleSlipSpan(gap, cap, total) {
+  const g = Math.max(0.2, gap || SLIP_T);
+  const want = Math.min(g, SLIP_MAX, Math.max(SLIP_T, g * 0.22));
+  if (cap == null) return want;
+  // The shortest span this path can be walked in without exceeding SLIP_VMAX. PEAK, not mean:
+  // the speed is the derivative of a squared ease, so it runs 0 to 2*total/span and averages
+  // half of that. A run that measured "180 px/s" was reporting the mean of a curve peaking at
+  // 367 -- the ratio was exactly 2.000, which by this file's own rule is a sign that two
+  // things are being counted, not that one is noisy.
+  const floor = total ? 2 * total / SLIP_VMAX : SLIP_T;
+  // NO SLIP rather than a compressed one. A wrong mark spends a body out of turn and leaves
+  // its successor whatever is left of the gap, which is uniform over that gap -- so it can be
+  // two hundredths of a second. The path is a fixed 55 units, and the speed along it is
+  // 2 * 55 / span, so a span of one frame came out at 6253 px/s: the body crossed the whole
+  // machine in a frame, left the canvas entirely, and splashed 2600 units outside a pool that
+  // clips its own ripples, i.e. a death with nothing visible in it at all. Anything under
+  // SLIP_MIN gets no slip; finaleTakeBody throws that body off the end instead, the same way
+  // it throws a shoved one, which is legible where a 12-frame streak is not.
+  //
+  // The cause is upstream and is Morgan's to settle: a wrong mark could hand its successor a
+  // fresh gap (f.rollT = max(f.rollT, span) in finaleWrong) and then everyone would get a
+  // slip -- but that DELAYS the next death by up to a span, which is a change to the room's
+  // clock, and the clock is the one thing this work was told not to touch.
+  return cap < floor ? 0 : Math.min(want, cap);
+}
+// THE PATH, not a position. Everything below is one distance travelled along one route --
+// straight down the slats from wherever they were standing to the drum's crown, then round
+// the drum's own circumference until they topple off it -- and x, the drop, the pitch and
+// the speed are all read off that single number.
+//
+// It was two timed pieces before, a walk and a tip, each easing its own coordinates, and
+// every fault the art and logic passes found on 2026-09-23 came out of that: the walk left
+// at 221 px/s and the tip ran at 90, so the body BRAKED by 59% on the frame it went over the
+// edge; the tip's x was linear in its own clock while its drop was quadratic, so the two did
+// not trace a circle and at the drum's left edge the sole floated 5 units clear of the wheel
+// it was supposed to be riding; and the position was something the body was snapped to
+// rather than a speed it was losing, so a rate limiter could hold the body 44 units behind
+// its own pose at a full belt and the death was still a 46-unit jump.
+//
+// `from` is where this body was standing when it began to lose, not slot 0. That is what
+// removes the chase: there is nothing to catch up to, so no clamp is needed and the drawn
+// body and the launched body are the same body at 60Hz and at 120.
+function finaleSlipPose(L, left, gap, from, cap) {
+  const crown = L.deck.x, R = L.deck.drumR;
+  const at = from == null ? crown + L.deck.slot0 : from;
+  const flat = Math.max(0, at - crown);         // slats still under them
+  const wrap = R * SLIP_THETA;                  // then the drum's own circumference
+  const total = flat + wrap;
+  const span = finaleSlipSpan(gap, cap, total);
+  if (span <= 0) return null;          // not enough clock left to lose ground in; see the note there
+  const q = clamp01((span - left) / span);
+  // Squared. Cubed put 0.6 units of 36 into the first QUARTER and 4.5 into the first half,
+  // which is not a slow demise, it is nothing and then a lurch -- two frames 1.3s apart were
+  // the same picture. Linear reads as being shoved. Squared is the one that reads as holding
+  // on and then not being able to.
+  const e = q * q;
+  const u = total * e;                          // how far along that path they have gone
+  const speed = 2 * total * q / span;           // and how fast, which is its own derivative
+  if (u <= flat) {
+    // The lean reaches SLIP_LEAN AT THE CROWN, which is where the drum branch picks it up.
+    // Scaled by e it arrived at 0.105 while the next frame started from 0.160 -- a 3.1 degree
+    // snap in the one expression this was rebuilt to make continuous.
+    return { x: at - u, dy: 0, rot: SLIP_LEAN * (flat > 0 ? u / flat : 1),
+             vx: -speed, vy: 0, q, e, tip: 0 };
+  }
+  // On the drum. The foot follows the circumference BY CONSTRUCTION -- sin and cos of the
+  // same angle -- which is the only arrangement in which the two coordinates cannot disagree
+  // about where the surface is.
+  const th = Math.min(SLIP_THETA, (u - flat) / R);
+  const tip = clamp01(th / SLIP_THETA);
+  return { x: crown - R * Math.sin(th), dy: R * (1 - Math.cos(th)),
+           // They pitch BACKWARD, because they are facing the way they were running -- up the
+           // belt, to the right -- and the belt is taking them off the other end.
+           rot: SLIP_LEAN - (SLIP_LEAN + 0.95) * tip,
+           // Tangent to the drum, so the fall continues the arc instead of starting again.
+           vx: -speed * Math.cos(th), vy: speed * Math.sin(th), q, e, tip };
+}
 // ONE place decides how a body leaves the belt, because two things push people over the end
 // now: a wrong mark, and the clock itself. Always the slot NEAREST THE DROP, which is the
 // LEFTmost -- the front of the queue, the next one the belt will put over the edge. It took
 // the rightmost while the drop was wrongly at the drive end; before that it popped the end
 // of the line, which dropped every body from the far side of the room, hundreds of units
 // from the drawn undertow, so nothing ever went into the water.
-function finaleTakeBody(f, L) {
-  const near = f.deck.filter(d => d.arrived).sort((a, b) => a.x - b.x)[0];
+function finaleTakeBody(f, L, shoved) {
+  const near = finaleNextOff(f);
   const r = near ? (f.line.splice(f.line.indexOf(near.r), 1)[0] || f.line.pop()) : f.line.pop();
   if (!r) return null;
   // The scoreboard has to move with the body: this one was banked as arrived when they
@@ -3915,8 +4052,90 @@ function finaleTakeBody(f, L) {
   // only the last fifth was over water. The drift is NEGATIVE now, out over the gap: the
   // belt's top surface runs that way, and a body it has beaten keeps going the way it was
   // being carried.
-  f.falling.push({ r, t: 0, x: L.deck.x - L.deck.drumR - 7, y: L.deck.y - 2,
-                   vx: -rand(4, 40), vy: -18, rot: rand(-0.4, 0.4) });
+  // CONTINUOUS with where the body already is, in ALL FOUR coordinates. The slip has spent
+  // the last seconds carrying this one over the drum, so the fall starts at its feet, at the
+  // height it was actually drawn at, at its pitch and at its speed.
+  //
+  // `bob` is in that list because of what happens when it is not: the crew are drawn at
+  // `deck.y - 2 + bob` with bob between -2.2 and 0, and the launch used `deck.y - 2` flat, so
+  // every fall began up to 2.2 units BELOW the last frame the body was standing in, always
+  // downward, which is nearly three frames of the drop in one. It is computed in
+  // updateFinale now and read here and in the drawing, one variable feeding both.
+  //
+  // The random kick on the pitch is a tenth of what it was for the same reason: 0.12 rad
+  // against an arc turning 0.0344 rad a frame is three and a half frames of spin applied in
+  // one, on the frame that has to read as a continuation.
+  // The body's OWN pose, whichever kind of death this is. A shove used to discard the dy and
+  // the pitch the slip had already given it, which snapped a body toppling over the drum back
+  // up to belt height and un-pitched it by up to 54 degrees in one frame -- the very fault
+  // this work removed from the clock's path, still shipping on the path with a red flash
+  // pointing at it.
+  const pose = (near && near.slip) ? near.slip
+             : { x: near ? near.x : L.deck.x + L.deck.slot0, dy: 0, rot: 0, vx: 0, vy: 0, tip: 0 };
+  // THE TWO DRAWINGS PIVOT ABOUT DIFFERENT POINTS, so the launch has to bridge them. A
+  // standing body rotates about its sole; a falling one rotates about its origin, which is
+  // FINALE_SOLE above that. At the pitch a body leaves the drum with, that difference moves
+  // the ink 3.9 to 4.4 units -- a tenth of a body, in one frame, against a body travelling
+  // half a unit a frame. Solving R(p-S)+S+T = R(p)+T' gives the offset below, which is zero
+  // when the pitch is zero, so a thrown body is untouched by it.
+  const pv = pose.rot || 0;
+  const x0 = pose.x + FINALE_SOLE * Math.sin(pv);
+  const y0 = L.deck.y - 2 + pose.dy + (near ? (near.bob || 0) : 0) + FINALE_SOLE * (1 - Math.cos(pv));
+  // THROWN, for either of two reasons: the player shoved this one, or the clock reached it
+  // before it had enough time left to lose ground properly (see finaleSlipSpan). Both leave a
+  // body standing ON the belt with the whole tail drum still between it and the water, and a
+  // flat shove simply drew it through both: measured, the body crossed into the deck housing
+  // and was painted up to 35 units INSIDE the drum for about a quarter of its fall.
+  //
+  // So it is thrown OVER the wheel, and both halves of the throw are derived rather than
+  // picked by eye. To pass above a drum whose crown is FLAT units away, the body has to still
+  // be rising when it gets there: y stays at or above its launch height while t <= |vy| / (g/2),
+  // and it reaches the crown at t = flat / |vx|, so |vy| >= (g/2) * flat / |vx|. That is 104
+  // at flat 36 and |vx| 90, and it has to SCALE, because a shove landing early in a gap takes
+  // a body from a whole pitch further back: written as a constant it cleared the drum from
+  // slot 0 and drew straight through it from 20 units behind, which is where the 35 came from.
+  // It scales away to nothing as the slip carries the body round the drum, since a body
+  // already over the edge needs no lift at all.
+  //
+  // And then the horizontal speed falls out of WHERE IT HAS TO LAND rather than being a second
+  // free number: the drain. Picking both independently put bodies in the pool wall, and at one
+  // point two units outside the pool entirely.
+  // A NOTE ON THE DRAIN, because the throw above is only stable because of where it is. The
+  // clearance condition works out to lift^2 * (1 - 2k) >= 1040 * k^2 * drop with
+  // k = flat / (2 * (flat + offset)), and that is soluble only while the offset is positive:
+  // move the drain to the drum's own axis and k becomes 0.5, the left side becomes zero, and
+  // NO lift clears the wheel at any pose. It is one field on the deck for that reason.
+  const clear = 1 - clamp01(pose.tip || 0);
+  const flat = Math.max(0, pose.x - L.deck.x);
+  const drain = L.deck.x + L.deck.drain;
+  if (shoved || !(near && near.slip)) {
+    const lift = clear * (260 * flat / 70 + rand(30, 60));
+    const drop = Math.max(1, (L.water.y + 8) - y0);
+    const tFall = (lift + Math.sqrt(lift * lift + 2 * 520 * drop)) / 520;
+    f.falling.push({ r, t: 0, x: x0, y: y0,
+                     // The drain-seeking term is the THROW's, so it scales away with the
+                     // lift: a body the drum already has keeps the speed it had and is not
+                     // given a second one on top, which was landing it 13 units from a pool
+                     // wall it is 20 wide.
+                     vx: (pose.vx || 0) - clear * Math.max(0, (pose.x - drain) / tFall),
+                     vy: (pose.vy || 0) - lift,
+                     rot: (pose.rot || 0) + rand(-0.15, 0.15),
+                     // CLOCKWISE ONLY FOR A SHOVE. The throw is taken for two reasons -- the
+                     // player shoved this one, or the clock reached it with no time to lose
+                     // ground in -- and the tumble is the room's way of saying which death is
+                     // which, so the second reason must not borrow the first one's signature.
+                     // At a hundred aboard that was 40% of the bodies after a wrong mark being
+                     // spun as though they were the player's fault, under a gold floater
+                     // saying they were not.
+                     spin: shoved ? 3.4 + Math.random() * 1.8 : -3 - Math.random() * 1.5 });
+  } else {
+    f.falling.push({ r, t: 0, x: x0, y: y0,
+                     vx: (pose.vx || 0) - rand(0, 12), vy: (pose.vy || 0) + rand(0, 12),
+                     rot: (pose.rot || 0) + rand(-0.03, 0.03),
+                     // Counter-clockwise, the way the arc was already turning: a body that
+                     // pitches backward off a drum goes on turning that way.
+                     spin: -3 - Math.random() * 1.5 });
+  }
   f.deck = f.deck.filter(d => d.r !== r);
   // Close the gap. The slot INDEX is the one statement of where somebody stands, so
   // re-packing it here is what carries the rest of the line forward when the person in front
@@ -3942,7 +4161,16 @@ function finaleRollOff(f) {
     // standing. Exactly the fault the status line above it carries a comment about, repeated
     // one function away. Floaters rise 18 over their life, so this stays inside the water
     // band for all of it, and it sits over the gap rather than over the belt.
-    S.floaters.push({ sx: L.deck.x + 40, sy: L.water.y + 26,
+    // ON THE WATER THEY GO INTO, which is not where this was. sx was deck.x + 40 -- 40 units
+    // to the RIGHT of the drum's crown, i.e. horizontally over the BELT, while the body it
+    // names enters the water at about deck.x - 24. The undertow is drawn at deck.x - 24 too,
+    // so the name, the whirl and the splash are one place now instead of three.
+    // ...but NOT on top of the body. Bodies enter the water at 56..60 and settle there, and a
+    // floater rises 18 units over its life, so a name pinned to the undertow at 58 was drawn
+    // across the face of the person it was naming -- guaranteed at four survivors or fewer,
+    // where the room calls every one of them out. Offset along the water instead of lifted off
+    // it: still at the drop end, still over the pool, clear of the splash.
+    S.floaters.push({ sx: L.deck.x + L.deck.drain + 58, sy: L.water.y + 26,
                       txt: r.name || 'ONE MORE', life: 1.05, color: '#c9a86a' });
   }
 }
@@ -3966,11 +4194,16 @@ function finaleWrong() {
   S.shake = 10;
   AU.fail();
   const L = finaleLayout();
-  const r = finaleTakeBody(f, L);
+  const r = finaleTakeBody(f, L, true);
   // Louder and redder than the clock's own floater, and centred rather than over the drum:
   // this body is your fault and the ones the belt takes are not, and the room has to say
   // which is which now that both are happening.
-  if (r) S.floaters.push({ sx: W / 2, sy: L.py + 56, txt: r.name ? (r.name + ' FALLS') : 'ONE IS LOST', life: 1.35, color: '#ff6b6b', big: true });
+  // OFF THE CHIPS. At L.py + 56 this 26px name was drawn straight across both of them -- the
+  // 0/10 chip half covered and CREW unreadable -- at the exact instant the crew number
+  // changes, which is the one number the room is asking you to watch. Over the water, in the
+  // middle, where nothing else is drawn: still centred rather than at the drop end, so it
+  // stays distinct from the clock's own quieter floater. Predates the slip.
+  if (r) S.floaters.push({ sx: W / 2, sy: L.water.y + 26, txt: r.name ? (r.name + ' FALLS') : 'ONE IS LOST', life: 1.35, color: '#ff6b6b', big: true });
   if (f.line.length <= 0) S.mode = 'lose';
 }
 function finaleLayout() {
@@ -4006,8 +4239,11 @@ function finaleLayout() {
   // written twice: drumR: 36 * 0.46 beside h: 36 is the very fault this field exists to
   // remove, one line further in.
   const deckH = 36;
+  // slot0 rides along for the same reason drumR does: it is written in finaleSlipPose and in
+  // updateFinale, 1200 lines apart, and a logic pass on 2026-09-23 found a fault that WAS a
+  // disagreement about where slot 0 is. One statement, two readers.
   const deck = { x: px + 4 + DROP, y: deckTop, w: (px + pw - 130) - (px + 4 + DROP), h: deckH,
-                 drumR: deckH * 0.46 };
+                 drumR: deckH * 0.46, slot0: 36, drain: -24 };
   // Runs wall to wall and down to the floor. It used to be a floating blue rectangle 20 units
   // short of each side with bare panel visible under it, and 38 deep against a body 45 tall --
   // so a body could not fit in it and was drawn sinking through the pool floor and across the
@@ -4979,8 +5215,12 @@ function updateFinale(dt) {
 
   // falling bodies into the whirlpool
   for (const fall of f.falling) {
-    fall.t += dt; fall.vy += 520 * dt; fall.x += fall.vx * dt; fall.y += fall.vy * dt; fall.rot += dt * 4;
-    if (!fall.splashed && fall.y >= L.water.y + 8) {
+    fall.t += dt; fall.vy += 520 * dt; fall.x += fall.vx * dt; fall.y += fall.vy * dt;
+    fall.rot += (fall.spin == null ? 4 : fall.spin) * dt;
+    // +2, not +8. Keyed on the ORIGIN, and these bodies enter the water anywhere from 35 to
+    // 115 degrees over, so a horizontal one was eight to twelve units under before the spray
+    // appeared -- a splash above an already-submerged body.
+    if (!fall.splashed && fall.y >= L.water.y + 2) {
       fall.splashed = true;
       finaleFx(f, 'drop', fall.x, L.water.y + 10, { n: 14, sx: 8, vx: [-140, 140], vy: [-280, -90], life: [0.4, 0.95], c: '#bfe6ff' });
       finaleFx(f, 'smoke', fall.x, L.water.y + 6, { n: 4, sx: 10, vx: [-30, 30], vy: [-40, -10], life: [0.5, 1], c: 'rgba(180,220,255,0.35)' });
@@ -5002,7 +5242,7 @@ function updateFinale(dt) {
   // once L.deck.x - 70 = -34, off the left of a 960-wide canvas, so a body walked 70 units
   // through the chamber wall with its shadow drawn on nothing before the deck began.
   const startX = L.deck.x + L.deck.w - 13;
-  const beltDrop = L.deck.x + 36;          // slot 0, clear of the tail drum's own radius
+  const beltDrop = L.deck.x + L.deck.slot0;  // slot 0, clear of the tail drum's own radius
   const beltFar = L.gen.x - 40;            // the last slot, clear of the head drum
   // Fast enough that the longest walk lands inside the boarding beat. The first one aboard
   // has the furthest to go, so that walk is what sets this, not the last.
@@ -5031,8 +5271,10 @@ function updateFinale(dt) {
   f.packWaiting = Math.max(0, f.line.length - shown);
   // PITCH is the CAP on the gap, not just the input to the capacity sum. Spread evenly, five
   // survivors stood 178 apart across the whole belt and read as five men choosing to stand
-  // far apart; packed at the drive end with the belt running away empty behind them, five
-  // reads as five.
+  // far apart; packed together with the belt running away empty behind them, five reads as
+  // five. (Packed at the DROP end, not the drive end as this said until 2026-09-23: slot 0 is
+  // beltDrop and the line fills away from it, so the last few huddle at the edge they are
+  // going over with the whole belt empty behind them.)
   const slotStep = Math.min(PITCH, shown <= 1 ? PITCH : span / (shown - 1));
   // Cadence is DERIVED from the generator's charge time, not a fixed gap. At a fixed gap a
   // hundred survivors took thirty seconds to walk on -- more people made the climax slower,
@@ -5066,9 +5308,52 @@ function updateFinale(dt) {
       f.spawnI++;
     }
   }
+  // The one the clock is about to spend, and how long they have got. Every part of the slip
+  // hangs off rollT, so it cannot drift from the schedule: the body arrives at the end of the
+  // belt on the frame the clock spends it by construction, not by tuning. It keeps running
+  // while winT holds the room, because rollT stops there too -- so a won room freezes the
+  // body mid-slip instead of walking it backwards up its own belt.
+  const slipper = (f.phase === 'search' && f.rollGap != null) ? finaleNextOff(f) : null;
+  if (slipper !== f.slipWho) {
+    // A NEW ONE IS LOSING. Stamp both facts on the body here, on the single frame it becomes
+    // the next to go, and never again: where it was standing when it started, so the slip has
+    // nothing to chase, and how much of the gap it actually has, so a wrong mark cannot hand
+    // its successor a slip that is already half over.
+    f.slipWho = slipper;
+    if (slipper) { slipper.slipFrom = slipper.x; slipper.slipCap = Math.max(0, f.rollT); }
+  }
+  // How far the line behind has closed up into the space the one at the front is vacating.
+  // It used to close AFTERWARDS, at CARRY, so the gap at the head of the line grew to nearly
+  // three times the pitch while 23 bodies stood dead still on a visibly running belt, and
+  // then the whole queue shuffled at once.
+  //
+  // THE SAME EASED CURVE the slip itself uses, not the clock. Linear looks like the obvious
+  // choice -- the belt carries the line evenly however hard one person is losing -- and it
+  // reads backwards, because the space they are closing INTO does not open evenly. The gap at
+  // the head of the queue is 20 - 20*closed + 55*e, which with a linear close dips to 18.2 at
+  // q 0.18 and does not recover until q 0.36: for the first third of every slip the one who
+  // is supposed to be losing ground is drawn CLOSER to the line than when everyone was
+  // standing still. On the eased curve it is 20 + 35e, opening from the first frame.
+  // THIS FRAME's progress, not last frame's. Reading slipper.slip -- which the loop below
+  // nulls and rewrites -- left the line one frame behind the body it was following, which at a
+  // hundred aboard is 2.4 units of the 20 and put the head-of-queue gap back under its resting
+  // pitch. One call, used here and again in the loop, so the two cannot disagree.
+  const slipPose = slipper ? finaleSlipPose(L, Math.max(0, f.rollT), f.rollGap, slipper.slipFrom, slipper.slipCap) : null;
+  const closed = slipPose && slipPose.q > 0 ? slipPose.e : 0;
   for (const d of f.deck) {
-    const targetX = beltDrop + d.i * slotStep;
+    const shift = (slipper && d !== slipper && d.i > slipper.i) ? closed : 0;
+    const targetX = beltDrop + (d.i - shift) * slotStep;
     d.targetX = targetX;
+    d.slip = null; d.dy = 0; d.rot = 0;
+    if (d !== slipper) { d.slipFrom = null; d.slipCap = null; }
+    // The pose for the one who is going -- and whether it has actually started going, which is
+    // not the same question. A body becomes the next to go the instant the one in front of it
+    // does, which at crew 3 is twenty-five seconds before it loses anything, and holding it at
+    // slipFrom for all of that parked it exactly where the body behind was being told to
+    // stand: two figures merged in one slot for 21.7 seconds under a chip reading CREW 2.
+    // Until the slip begins it is an ordinary body walking up into slot 0.
+    const sp = d === slipper ? slipPose : null;
+    const losing = !!(sp && sp.q > 0);
     if (!d.arrived) {
       d.enter += dt;
       if (d.x > startX - 1) d.x = startX;
@@ -5086,15 +5371,68 @@ function updateFinale(dt) {
           n: 3, sx: 6, vx: [-40, 40], vy: [-100, -20], life: [0.12, 0.3], c: '#ffe0a0',
         });
       }
+    } else if (losing) {
+      // NO RATE LIMIT once the slip has begun. It starts from where this body is standing, so
+      // there is nothing to catch up to and a clamp can only hold it back -- and it held it
+      // back badly: the pose accelerates to 221 px/s at a hundred aboard against a 44 px/s
+      // limiter, so the body ran up to 44 units behind its own pose, the fall launched from
+      // the POSE, and the death was still a 46-unit jump, while d.dy and d.rot were NOT
+      // clamped and drew it pitched 47 degrees and sunk 17 units into the slats out in the
+      // middle of the belt. It was frame-rate dependent too, so it vanished at 120Hz and
+      // every screenshot came back clean.
+      d.slip = sp; d.dy = sp.dy; d.rot = sp.rot; d.x = sp.x;
     } else if (Math.abs(d.x - targetX) > 0.25) {
       // The belt carries them on when the one in front goes over the end. NOT a snap: a body
       // that teleports forward a slot reads as a drawing error rather than as a belt. NOT at
       // runSpd either -- that is a sprint, and these people are standing still being carried.
-      const step = 150 * dt;
+      const step = CARRY * dt;
       d.x += Math.max(-step, Math.min(step, targetX - d.x));
     } else {
       d.x = targetX;
     }
+    // Whatever route the body above took, if it is the one who is next to go and has not
+    // started losing yet, the slip begins from where it has actually walked to.
+    if (d === slipper && !d.slip) d.slipFrom = d.x;
+    // THE GAIT, moved out of drawFinalePanel so that finaleTakeBody can read the same bob the
+    // last standing frame was drawn with -- it read none, so every fall began up to 2.2 units
+    // below where the body was last seen, always downward, which is nearly three frames of
+    // the drop in one. One variable feeding both, the rule this file already applies to a
+    // gradient and its fill.
+    //
+    // ACCUMULATED, not S.t * 20 + d.i * 1.8. That expression cannot be slowed: scaling its
+    // rate scales S.t with it, and S.t is in the hundreds, so the legs would run backwards.
+    // It also jumped 1.8 radians for every body every time the line re-indexed, which is once
+    // per death; accumulating removes that too.
+    if (d.gait == null) d.gait = S.t * 20 + d.i * 1.8;
+    // Morgan asked for people who "slowly run out of energy", and nothing about the BODY said
+    // so: the one being carried off ran at exactly the same brisk cadence as the twenty-three
+    // holding their place, right up to the instant it toppled. The stride shortens and the
+    // head stops bouncing as the slip takes them, and on the drum they have stopped running
+    // altogether -- they are being turned over by a machine.
+    // q, NOT e. The position is eased (see finaleSlipPose) and that easing is right for where
+    // a body IS -- but driving the PERFORMANCE off the same curve back-loads everything that
+    // says "tired" into the last 40%: at a third of the way through, e is 0.111, which is one
+    // degree of lean, a gait slowed 7% and a bob damped 8%. All of that is under the noise
+    // floor, so the first third of a slip -- the part Morgan asked to be slow -- said nothing
+    // at all. On q it is 3.1 degrees, 21% and 23% at the same instant, growing from the first
+    // frame. Two curves, because they are answering two different questions.
+    const tired = d.slip ? d.slip.q : 0, tip = d.slip ? d.slip.tip : 0;
+    // 0.22 of 20 rad/s is still 4.4, which walked a body through a full stride and a tenth
+    // while a machine turned it over the end. They are not running any more.
+    d.gait += dt * 20 * (1 - 0.62 * tired) * (tip > 0 ? 0.05 : 1);
+    const moving = d.arrived ? f.phase !== 'blackout' : d.enter >= 0;
+    // RAMPED, not gated. Keyed on tip > 0 the bob snapped to zero on the frame the body
+    // reached the crown -- up to 1.19 units in one frame, the same family as the 2.2-unit
+    // launch jump already fixed, at half the size. It is gone a third of the way round.
+    const onBelt = 1 - clamp01(tip * 3);
+    // COSINE. drawFigure lifts a foot by max(0, +-cos(phase)), so at cos 0 BOTH feet are
+    // planted and the legs are at full split -- the lowest point of a stride -- and this was
+    // -|sin|, i.e. 2.2 units of lift at exactly that instant: every body on the belt rose when
+    // both its soles were down and sank when one was swinging, with both shoes leaving the
+    // slats at the top of it. A quarter-cycle out, and it is why damping it as the body tired
+    // was damping the wrong thing. drawRunners carries the same expression for the whole
+    // course; that is act one's art and wants its own pass, so it is reported, not changed.
+    d.bob = moving ? -Math.abs(Math.cos(d.gait)) * 2.2 * (1 - 0.7 * tired) * onBelt : 0;
   }
   // packDone was never decremented when a body went in the water, so the belt speed and the
   // dynamo meter read 100% for ever while the lamp -- which reads f.line.length -- shrank.
@@ -16586,7 +16924,7 @@ function drawChamberBase(f, L, t, still) {
     // the end the belt carries people toward. It sat under the drive drum at the far right,
     // where nobody has fallen since the drop moved. Three stroked ellipses at three angles
     // also read as an atom, so this is concentric and flattened: an undertow, not an icon.
-    ctx.ellipse(L.deck.x - 24, L.water.y + 20, 16 + i * 13, 4 + i * 2.4, 0, 0, 6.28);
+    ctx.ellipse(L.deck.x + L.deck.drain, L.water.y + 20, 16 + i * 13, 4 + i * 2.4, 0, 0, 6.28);
     ctx.stroke();
   }
   // Clipped to the pool. A ripple is rx = r.r * 1.5 and reached 28 units left of the water's
@@ -16625,7 +16963,11 @@ function drawChamberBase(f, L, t, still) {
   // longer resting against the chamber wall, and a belt end over open water needs a bearing
   // under it. Without this the new gap put the tail drum, the whole return side and every
   // body standing in slot 0 on nothing.
-  piers.push(L.deck.x + 14);
+  // UNDER THE AXLE, which is at L.deck.x. At +14 the 9-wide stem ran 92..101 and the drum's
+  // centre at 82 was ten units clear of its nearest face, so the wheel the crowd's weight now
+  // goes over was carried on nothing. The cap sits behind the deck rect and the drum is drawn
+  // over the stem, which is what a bearing should look like.
+  piers.push(L.deck.x + 2);
   for (const pxx of piers) {
     ctx.fillRect(pxx - 4, pierTop, 9, pierFoot - pierTop);
     ctx.fillRect(pxx - 11, pierTop - 2, 23, 5);
@@ -16642,8 +16984,13 @@ function drawChamberBase(f, L, t, still) {
   const beltOff = beltLive ? (plank - ((t * beltSpd) % plank)) : 0;
   for (let x = L.deck.x - plank + beltOff; x < L.deck.x + L.deck.w; x += plank) {
     if (x + 4 >= L.deck.x + L.deck.w) continue;
+    // CLIPPED at the drop end, not clamped. The leading plank's left edge was pinned to the
+    // deck and its WIDTH was recomputed at full size anyway, so one plank stood still at
+    // 84..106 on every frame of every game while the rest of the belt scrolled past it --
+    // seven visible units of stationary slat at the exact end the player is now watching a
+    // body go over. Taking both edges and subtracting lets it emerge from behind the drum.
     const sx = Math.max(L.deck.x + 2, x + 2);
-    const pw = Math.min(plank - 4, L.deck.x + L.deck.w - sx - 2);
+    const pw = Math.min(x + 2 + (plank - 4), L.deck.x + L.deck.w - 2) - sx;
     if (pw <= 2) continue;
     inkFill('#4a4036', sx, L.deck.y + 3, pw, L.deck.h - 12, 2);
     ctx.fillStyle = 'rgba(255,230,180,0.06)'; ctx.fillRect(sx, L.deck.y + 3, 3, L.deck.h - 12);
@@ -16685,7 +17032,13 @@ function drawChamberBase(f, L, t, still) {
   ctx.fillRect(L.gen.x + 8, L.gen.y + L.gen.h - 2, 7, legH);
   ctx.fillRect(L.gen.x + L.gen.w - 17, L.gen.y + L.gen.h - 2, 7, legH);
   inkFill('#2c333c', L.gen.x, L.gen.y, L.gen.w, L.gen.h, 4);
-  const drumX = L.deck.x + L.deck.w, drumY = L.deck.y + L.deck.h / 2;   // ON the end, so the slats wrap it
+  const drumX = L.deck.x + L.deck.w;
+  // THE CROWN IS THE WALKING SURFACE, derived rather than centred in the housing. At
+  // deck.h / 2 the crown sat 1.56 ABOVE the slats -- a conveyor drum standing proud of the
+  // belt it drives -- and a rider's sole was the same 1.56 inside the wheel for the whole
+  // wrap. Both reviewers found it twice over three passes; this fixes them together and does
+  // not shrink the drum, which would have been an art change at both ends of the machine.
+  const drumY = L.deck.y - 2 + FINALE_SOLE + L.deck.drumR;   // ON the end, so the slats wrap it
   const drumR = L.deck.drumR;
   // THE TAIL DRUM, at the drop end. An idler: no bands, no dynamo, it is simply what the
   // belt turns around before it goes back underneath -- and it is what makes the left end
@@ -16696,8 +17049,13 @@ function drawChamberBase(f, L, t, still) {
     const tx = L.deck.x;
     ctx.fillStyle = INK;
     ctx.beginPath(); ctx.arc(tx, drumY, drumR + 1.6, 0, 6.28); ctx.fill();
+    // THE SAME STOPS AS THE HEAD DRUM. The slat highlights are on every plank's LEFT edge and
+    // the head drum's gradient is lit from the left; this one alone was mirrored, so the two
+    // ends of one machine were lit from opposite sides. It was reported as "the room's key
+    // light disagrees", which would have been a judgement for Morgan -- it is one gradient out
+    // of three, and making it agree costs nothing.
     const tail = ctx.createLinearGradient(tx - drumR, 0, tx + drumR, 0);
-    tail.addColorStop(0, '#4a3d2e'); tail.addColorStop(0.58, '#9a8259'); tail.addColorStop(1, '#6b5a44');
+    tail.addColorStop(0, '#6b5a44'); tail.addColorStop(0.42, '#9a8259'); tail.addColorStop(1, '#4a3d2e');
     ctx.fillStyle = tail;
     ctx.beginPath(); ctx.arc(tx, drumY, drumR, 0, 6.28); ctx.fill();
     ctx.strokeStyle = 'rgba(30,22,18,0.55)'; ctx.lineWidth = 1.6;
@@ -16929,25 +17287,50 @@ function drawFinalePanel() {
       : 'ARROWS / click move lamps  ·  SPACE or click to mark', W / 2, L.left.y - 8);
 
   // crew: FIXED world positions; run-in-place gait sells treadmill relative motion
-  const pack = f.deck.slice().sort((a, b) => a.x - b.x);
+  // Leftmost first, so leftmost is painted furthest back -- except for the one who is going,
+  // who is drawn last. Sorted on x alone, the single body the room is asking you to watch was
+  // the only one systematically under its neighbour's arms and hair.
+  const pack = f.deck.slice().sort((a, b) => (a.slip ? 1 : 0) - (b.slip ? 1 : 0) || a.x - b.x);
   for (const d of pack) {
     if (d.enter < 0 && d.x >= L.deck.x + L.deck.w + 40) continue;
     const working = d.arrived && f.phase !== 'blackout';
     const entering = !d.arrived && d.enter >= 0;
-    // legs pump in place; body X does not travel
-    const phase = (working || entering) ? (t * 20 + d.i * 1.8) : (0.4 + d.i * 0.2);
-    const bob = (working || entering) ? -Math.abs(Math.sin(phase)) * 2.2 : 0;
+    // legs pump in place; body X does not travel. Both of these are computed in updateFinale
+    // now -- see the note there -- because the launch has to read the same bob this frame is
+    // drawn with, and because a gait that can be slowed has to accumulate rather than be
+    // evaluated from S.t.
+    const phase = (working || entering) ? (d.gait == null ? t * 20 + d.i * 1.8 : d.gait)
+                                        : (0.4 + d.i * 0.2);
+    const bob = (working || entering) ? (d.bob || 0) : 0;
     const alpha = d.enter < 0 ? 0.35 : 1;
-    ctx.fillStyle = `rgba(0,0,0,${0.4 * alpha})`;
-    // On the slat top, where the foot is: at deck.y+1 it was painted on the housing lip.
-    ctx.beginPath(); ctx.ellipse(d.x + 4, L.deck.y + 3, 9, 2.5, 0, 0, 6.28); ctx.fill();
-    // hair / cloth tugged by wind toward the left (belt direction)
-    if (working) {
+    // A CONTACT shadow needs something to be in contact with, and it has to be UNDER the
+    // feet. It was pinned at the slat line while the body's own dy was not, so a body the
+    // drum had taken 17 units down was drawn below its own shadow. It follows the feet now
+    // and shrinks in both axes as the drum turns away from under them -- scaling only the
+    // width left it dying as a 5-unit vertical sliver.
+    // 1.1, not 1.7: at 1.7 the shadow was gone by 59% of the ride, so for the last 40% of the
+    // arc -- the part worth watching -- nothing anchored the figure to the wheel and it read
+    // as hovering beside it. It now fades out as the fall takes over.
+    const foot = 1 - clamp01((d.slip ? d.slip.tip : 0) * 1.1);
+    if (foot > 0.02) {
+      ctx.fillStyle = `rgba(0,0,0,${0.4 * alpha * foot})`;
+      ctx.beginPath(); ctx.ellipse(d.x + 4, L.deck.y + 3 + (d.dy || 0), 9 * foot, 2.5 * foot, 0, 0, 6.28); ctx.fill();
+    }
+    // hair / cloth tugged by wind toward the left (belt direction). Not once they are going
+    // over: it is drawn in world coordinates at the head height of an UPRIGHT body, so on a
+    // body pitched 40 degrees back it would stream out of the air beside an ear.
+    // ...and not once the drum has them: the streak is drawn in world coordinates at the head
+    // height of an UPRIGHT body, so on a body pitched back it starts in clear air beside an
+    // ear. Gated on the ride itself rather than on the drop, which lags it by a few frames.
+    if (working && !(d.slip && d.slip.tip > 0)) {
       ctx.strokeStyle = 'rgba(200,210,230,0.18)'; ctx.lineWidth = 1;
       // Head height, not chest height: the head centre is 29 above the sole line, and at -18
       // this was drawn 4 below the shoulders.
       ctx.beginPath(); ctx.moveTo(d.x + 2, L.deck.y - 29 + bob);
-      ctx.lineTo(d.x - 10 - Math.sin(t * 14 + d.i) * 3, L.deck.y - 25 + bob); ctx.stroke();
+      // SHORTER. At 13 units against a 20-unit pitch it reached within 7 of the next head and
+      // the eye closed the gap, so the line read as threaded on a wire -- which is the worst
+      // possible reading for a feature whose whole point is one person coming away from it.
+      ctx.lineTo(d.x - 5 - Math.sin(t * 14 + d.i) * 3, L.deck.y - 25 + bob); ctx.stroke();
     }
     ctx.save();
     // The belt's carrying surface is the top of the slats, L.deck.y + 3, and finaleWrong
@@ -16956,11 +17339,21 @@ function drawFinalePanel() {
     // standing on, with the slats crossing everyone from chest to shin, and a body
     // teleporting 32 units upward the instant it was pushed off. One number now, the one
     // the falling body already used.
-    ctx.translate(d.x, L.deck.y - 2 + bob);
+    ctx.translate(d.x, L.deck.y - 2 + bob + (d.dy || 0));
     // drawFigure already leans a body 0.18 rad forward; an extra 0.08 on top made 15 degrees
     // pivoted about the ankles, which is a fall, not a stance.
     if (entering) ctx.rotate(0.05);
-    drawFigure(d.r, 0, 0, phase, 1.15, alpha);
+    // ...and the one who is losing the belt leans INTO it first, straining, and then pitches
+    // backward over the drum as it takes them. Both come off finaleSlipPose, so the lean and
+    // the position cannot disagree about how far gone somebody is.
+    //
+    // ABOUT THE SOLE, not about the origin. The origin is FINALE_SOLE above the foot, so
+    // rotating there swung the sole 4.0 units off the contact point at the end of the ride and
+    // put it 3.3 units inside the wheel it was riding -- the same fault the pose itself was
+    // rebuilt to remove, one layer up in the drawing. Both reviewers found it on the same
+    // frame and measured the two feet at radii 16.58 and 14.73 against a drum of 16.56.
+    else if (d.rot) { ctx.translate(0, FINALE_SOLE); ctx.rotate(d.rot); ctx.translate(0, -FINALE_SOLE); }
+    drawFigure(d.r, 0, 0, phase, FINALE_SCALE, alpha);
     ctx.restore();
   }
 
@@ -16981,7 +17374,7 @@ function drawFinalePanel() {
     // fully opaque lying on the pit floor with its head across the gold frame.
     const sunk = clamp01((fall.y - L.water.y) / 26);
     const alpha = fall.splashed ? Math.max(0, 1 - sunk) : 1;
-    drawFigure(fall.r, 0, 0, fall.t * 10, 1.15, alpha);   // the same size they were standing
+    drawFigure(fall.r, 0, 0, fall.t * 10, FINALE_SCALE, alpha);   // the same size they were standing
     ctx.restore();
   }
 

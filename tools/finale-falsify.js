@@ -61,9 +61,26 @@ const FAULTS = [
    // covers, not merely below the value it tests.
    s => s.replace('    if (finaleChargeProgress(f) >= 1) {', '    if (finaleChargeProgress(f) >= 0.1) {')],
 
-  ['they STAY standing',
+  ['the line closes by at most one pitch',
    'let arrived runners drift, as if the wheel were still drawing them in',
    s => s.replace('    } else {\n      d.x = targetX;\n    }', '    } else {\n      d.x = targetX + Math.sin(S.t * 3) * 30;\n    }')],
+
+  // The other half of the same assertion. The fault above makes everybody move; this one makes
+  // NOBODY move, including the one the belt is about to run out from under -- which is the
+  // state the room was in before the slip, and which the old "nobody may move" wording scored
+  // as a pass.
+  ['the line closes by at most one pitch',
+   'stop the one the clock is about to spend from slipping, so nobody moves at all',
+   s => s.replace("  const slipper = (f.phase === 'search' && f.rollGap != null) ? finaleNextOff(f) : null;",
+                  '  const slipper = null;')],
+
+  // The third clause, and the one that is easiest to get wrong in the direction nobody
+  // notices: a queue that closes up FURTHER than the gap it is filling still looks like a
+  // queue closing up, and it walks the whole line off the end of the belt over a long run.
+  ['the line closes by at most one pitch',
+   'close the line by three pitches for every one body that goes over',
+   s => s.replace('  const closed = slipPose && slipPose.q > 0 ? slipPose.e : 0;',
+                  '  const closed = slipPose && slipPose.q > 0 ? slipPose.e * 3 : 0;')],
 
   ['SPACE marks the difference under the lamp',
    'drop SPACE from the finale keydown branch',
@@ -117,8 +134,13 @@ const FAULTS = [
    s => s.replace('  if (f.line.length <= 0) S.mode = \'lose\';', '  if (f.line.length <= -1) S.mode = \'lose\';')],
 
   ['the search clock runs out on its own',
-   'stop the search clock ending the room',
-   s => s.replace('    if (f.searchT <= 0) S.mode = \'lose\';', '    if (f.searchT <= -1e9) S.mode = \'lose\';')],
+   'stop the search clock ending the room, leaving only the last body to end it',
+   // STALE ANCHOR, found 2026-09-23 and predating that day's work: the two ways the room can
+   // end were folded into one line when the belt became the clock, and this went on looking
+   // for the old single-condition one. It reported "??" rather than a pass, which is the
+   // right behaviour and is also easy to read past -- it sat in the middle of twenty-four oks.
+   s => s.replace("      if (f.line.length <= 0 || f.searchT <= 0) S.mode = 'lose';",
+                  "      if (f.line.length <= 0) S.mode = 'lose';")],
 
   ['the search clock is ticking down',
    'freeze the search clock',
