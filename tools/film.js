@@ -25,7 +25,11 @@ const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
-const OUT = process.argv[2] || path.join(ROOT, 'hundred-runners-gameplay.mp4');
+// The first NON-FLAG argument. Taking argv[2] raw meant `film.js --only=mill out.mp4` set the
+// output filename to "--only=mill" and the run died forty seconds later inside ffmpeg with
+// "Unrecognized option", which reads as a broken encoder rather than as an argument in the
+// wrong place. Order no longer matters.
+const OUT = process.argv.slice(2).find(a => !a.startsWith('--')) || path.join(ROOT, 'hundred-runners-gameplay.mp4');
 // --only=name,name films a subset. Tuning one segment's key timings otherwise costs a full
 // re-film of all six, which is a minute of wall clock per attempt.
 const ONLY = (process.argv.find(a => a.startsWith('--only=')) || '').slice(7).split(',').filter(Boolean);
@@ -34,12 +38,32 @@ const ONLY = (process.argv.find(a => a.startsWith('--only=')) || '').slice(7).sp
 // SPACE at times that read plausibly and in fact skipped the whole drill, and the still that
 // should have shown a panel showed the mill.
 const TRACE = process.argv.includes('--trace');
+// --segments=FILE reads the shot list from JSON instead of the one below, --split=DIR writes
+// one mp4 PER SEGMENT instead of concatenating, and --size / --dsf set the capture. All three
+// exist for the trailer, which wants the same footage cut several ways: filming once and
+// cutting four edits beats filming four times, and a concatenated reel cannot be recut.
+// Defaults are exactly what they were, so every existing call is unchanged.
+const argOf = name => {
+  const a = process.argv.find(x => x.startsWith(`--${name}=`));
+  return a ? a.slice(name.length + 3) : null;
+};
+const SPLIT = argOf('split');
+// 960x540 is the canvas's own size, and body is flex-centred, so at that window the canvas
+// fills the viewport exactly -- no letterbox to crop off. The scale factor is what keeps a
+// punch-in sharp: at 2 the screencast is 1920x1080 of a 960x540 canvas, so cropping to half
+// width still lands above 1:1.
+// 1280x920, NOT 1280x720. Headless Chrome reserves 200px of the window height, so a 720
+// window gives a 520 viewport -- and the canvas is 540 tall, so every recording this tool has
+// ever made was clipped by 10px top and bottom, including hundred-runners-gameplay.mp4. The
+// number was measured: a 720 window came back 2560x1040 at scale factor 2, not 2560x1440.
+const SIZE = argOf('size') || '1280,920';
+const DSF = argOf('dsf') || '1';
 
 // ---------------------------------------------------------------- what to film
 // `for` is seconds of real gameplay. `keys` is [atSecond, key] pairs, dispatched into the
 // real keydown/keyup handlers -- the drill and the last room need a hand, and a recording
 // of them idling would be a recording of nothing happening.
-const SEGMENTS = [
+const SEGMENTS = argOf('segments') ? JSON.parse(fs.readFileSync(argOf('segments'), 'utf8')) : [
   // `warm` is seconds run BEFORE the camera starts, so a segment can begin somewhere the
   // game takes time to reach. `for` is seconds recorded. `keys` times are measured from
   // navigation and span both.
@@ -220,7 +244,7 @@ function keyEvent(client, key) {
 
   proc = spawn(chrome, [
     '--headless=new', '--disable-gpu', '--no-sandbox', '--hide-scrollbars',
-    '--window-size=1280,720', '--force-device-scale-factor=1',
+    `--window-size=${SIZE}`, `--force-device-scale-factor=${DSF}`,
     '--autoplay-policy=no-user-gesture-required',
     `--remote-debugging-port=${dbg}`, `--user-data-dir=${path.join(tmp, 'profile')}`,
     'about:blank',
@@ -244,6 +268,7 @@ function keyEvent(client, key) {
 
   let n = 0;
   let frames = [];
+  const cuts = [];                       // [name, firstShotIndex] per segment, for --split
   client.on('Page.screencastFrame', async p => {
     frames.push({ t: p.metadata.timestamp, data: p.data });
     try { await client.send('Page.screencastFrameAck', { sessionId: p.sessionId }); } catch (e) {}
@@ -306,6 +331,7 @@ function keyEvent(client, key) {
       shots.push({ file, dur });
       n++;
     }
+    cuts.push({ name: seg.name, from: shots.length - kept.length, to: shots.length });
     console.log(`  ${seg.name.padEnd(10)} ${kept.length} frames over ${seg.for}s` + (warm ? ` (after ${warm}s warm-up)` : ''));
     if (TRACE) for (const line of trace) console.log('      ' + line);
   }
@@ -315,17 +341,38 @@ function keyEvent(client, key) {
 
   if (!shots.length) { console.error('film: captured nothing.'); cleanup(); process.exit(1); }
 
-  const list = shots.map(s => `file '${s.file}'\nduration ${s.dur.toFixed(4)}`).join('\n')
-    + `\nfile '${shots[shots.length - 1].file}'\n`;
-  const listFile = path.join(tmp, 'list.txt');
-  fs.writeFileSync(listFile, list);
+  // The frames carry the gaps Chrome gave them, so the concat list is what makes the cut run
+  // at the speed it was played; that is true per segment as well as for the whole reel.
+  const encode = (slice, out) => {
+    const list = slice.map(s => `file '${s.file}'\nduration ${s.dur.toFixed(4)}`).join('\n')
+      + `\nfile '${slice[slice.length - 1].file}'\n`;
+    const listFile = path.join(tmp, 'list-' + path.basename(out) + '.txt');
+    fs.writeFileSync(listFile, list);
+    execFileSync('ffmpeg', [
+      '-y', '-f', 'concat', '-safe', '0', '-i', listFile,
+      // clips are NOT rescaled at all: they are an intermediate, and the edit crops the canvas
+      // out of the letterbox at 1:1. Resampling here and again in the edit softens a punch-in
+      // twice over. Lower crf for the same reason -- this file gets encoded a second time.
+      '-vf', SPLIT ? 'fps=30' : 'fps=30,scale=1280:-2:flags=lanczos',
+      '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', SPLIT ? '16' : '20', '-preset', 'medium',
+      '-movflags', '+faststart', out,
+    ], { stdio: ['ignore', 'ignore', 'pipe'] });
+  };
 
-  execFileSync('ffmpeg', [
-    '-y', '-f', 'concat', '-safe', '0', '-i', listFile,
-    '-vf', 'fps=30,scale=1280:-2:flags=lanczos',
-    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', '-preset', 'medium',
-    '-movflags', '+faststart', OUT,
-  ], { stdio: ['ignore', 'ignore', 'pipe'] });
+  if (SPLIT) {
+    fs.mkdirSync(SPLIT, { recursive: true });
+    for (const c of cuts) {
+      const slice = shots.slice(c.from, c.to);
+      if (!slice.length) { console.log(`  ${c.name}: no frames, skipped`); continue; }
+      const out = path.join(SPLIT, c.name + '.mp4');
+      encode(slice, out);
+      console.log(`  ${out}  ${slice.reduce((a, s) => a + s.dur, 0).toFixed(1)}s`);
+    }
+    console.log(`\n${cuts.length} clips in ${SPLIT}, BUILD ${build}`);
+    cleanup();
+    return;
+  }
+  encode(shots, OUT);
 
   const total = shots.reduce((a, s) => a + s.dur, 0);
   const mb = (fs.statSync(OUT).size / 1e6).toFixed(1);
