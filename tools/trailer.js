@@ -237,7 +237,62 @@ const ESCAPE = [
     sub: ['ARE YOU ANOTHER COG IN THE SYSTEM,', 'OR ARE YOU YOUR OWN PERSON?'] },
 ];
 
-const EDITS = { escape: ESCAPE, ...ALTS };
+// ---------------------------------------------------------------- the fourth pass
+// Morgan, on trailer-escape: the gameplay kills were right in principle but "not centered on
+// people dying ... looks like an unfocused gameplay recording"; too many vignettes, show four;
+// the vignettes are laggy; halve the "Welcome, workers." shot and halve the podium. Kept as
+// escape2 so trailer-escape.mp4 survives untouched as the backup he asked for.
+const ESCAPE2 = [
+  { card: 'title', text: 'ONE HUNDRED PEOPLE', sub: 'GO TO WORK', for: 3.0 },
+  { clip: 'doors', at: 1.5, for: 1.9 },        // halved
+  { clip: 'mill', at: 1.0, for: 3.8 },
+  { clip: 'cave', at: 1.5, for: 3.8 },
+  { card: 'beat', kicker: 'BUT THE WORK CAN BE', text: 'GRINDING', for: 2.6 },
+  { clip: 'losing', at: 0.3, for: 3.5 },
+
+  // FOUR KILLS, EACH AIMED AT THE BODY. cx/cy were measured, not chosen: a detector walks the
+  // clip looking for the dust puff killRunner emits (#c0392b) and returns its centroid, and
+  // each cut starts 0.35s before that peak so the death lands in the middle of the shot. Every
+  // one of these has a "-Name" floating up out of it, which is the thing that was missing.
+  //
+  // Scoring on generic red first put three of six on the "N coming" badge instead of a person,
+  // which is exactly the unfocused recording he was looking at.
+  // Each of these four has a "-Name" floating up out of it. That took a second shoot: a single
+  // death is a dust puff and a name that are gone inside a second, and at play zoom that reads
+  // as nothing. What reads is SEVERAL AT ONCE -- the floaters stack and the spike plate comes
+  // up -- which happens at a room the whole crowd has to queue for. So the rope, the winch
+  // plank and the rickety were filmed specifically for it, and the crusher was re-aimed onto
+  // its "13 LOST HERE" plate rather than onto the ram.
+  { clip: 'k_gears', at: 7.40, for: 0.95, punch: 2.6, cx: 0.375, cy: 0.731 },
+  { clip: 'k_crusher', at: 7.95, for: 0.95, punch: 2.6, cx: 0.300, cy: 0.700 },
+  { clip: 'k_winch', at: 7.60, for: 0.95, punch: 2.6, cx: 0.605, cy: 0.360 },
+  { clip: 'k_mantrap', at: 7.15, for: 0.95, punch: 2.6, cx: 0.627, cy: 0.580 },
+
+  { card: 'count', text: 'YOU CANNOT', sub: 'SAVE THEM ALL', for: 3.0 },
+  // FOUR, not ten -- and played at their own speed with the last frame held, rather than
+  // slowed. Slowing a 30fps source 2.1x updates the picture at 14Hz, which is the lag he saw.
+  // The game animates a vignette over 0.72s and then holds it; doing the same gives real
+  // motion and still leaves a full second to read the name.
+  { clip: 'v_wiring', at: 0.06, for: 0.46, hold: 0.95 },
+  { clip: 'v_mantrap', at: 0.06, for: 0.46, hold: 0.95 },
+  { clip: 'v_gears', at: 0.06, for: 0.46, hold: 0.95 },
+  { clip: 'v_thorn', at: 0.06, for: 0.46, hold: 0.95 },
+
+  { card: 'turn', text: 'BUT IF YOU KNOW HOW TO PLAY THEIR GAME...', cps: 26, for: 3.2 },
+  { clip: 'c_gears', at: 2.6, for: 1.6 },
+  { clip: 'c_bar', at: 3.0, for: 1.6 },
+  { clip: 'c_wires', at: 2.8, for: 1.6 },
+  { clip: 'c_dig', at: 1.5, for: 1.6 },
+  { clip: 'c_lift', at: 3.4, for: 1.9 },
+  { clip: 'blast2', at: 4.3, for: 2.2 },
+
+  { card: 'hope', text: '...YOU MIGHT JUST ESCAPE.', for: 3.0 },
+  { clip: 'podium', at: 1.4, for: 2.5 },       // halved
+  { card: 'end', text: 'HUNDRED RUNNERS', cps: 24, for: 6.0,
+    sub: ['ARE YOU ANOTHER COG IN THE SYSTEM,', 'OR ARE YOU YOUR OWN PERSON?'] },
+];
+
+const EDITS = { escape2: ESCAPE2, escape: ESCAPE, ...ALTS };
 
 // ---------------------------------------------------------------- build
 const run = (bin, args) => execFileSync(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -330,16 +385,29 @@ function clipPiece(item, out) {
   const src = path.join(IN, item.clip + '.mp4');
   if (!fs.existsSync(src)) throw new Error(`missing clip: ${src}`);
   const p = item.punch || 1;
-  // `slow` stretches the source: a death vignette is on screen for REEL.anim 0.72s and then
-  // its roll ends, which is too short to read a name off. Taking for/slow seconds and slowing
-  // them to `for` gives the beat its length back, and slow motion is what that shot wants.
+  // `slow` stretches the source. Kept for anything that wants it, but NOT used on the death
+  // vignettes any more: at 2.1x a 30fps source updates at 14Hz and reads as lag.
   const slow = item.slow && item.slow > 1 ? item.slow : 1;
   const take = item.for / slow;
   const parts = [];
-  if (p > 1) parts.push(`crop=iw/${p}:ih/${p}`);
+  if (p > 1) {
+    // AIMED, not centred on the frame. A centred punch gives an unfocused gameplay recording;
+    // cx/cy are fractions of the frame, measured off the clip by finding the death dust
+    // killRunner emits (#c0392b) and taking its centroid. Computed in pixels rather than as an
+    // ffmpeg expression because clip()'s commas would split the filtergraph.
+    const cw = Math.floor(W / p / 2) * 2, chh = Math.floor(H / p / 2) * 2;
+    const cx = item.cx == null ? 0.5 : item.cx, cy = item.cy == null ? 0.5 : item.cy;
+    const x = Math.max(0, Math.min(W - cw, Math.round(cx * W - cw / 2)));
+    const y = Math.max(0, Math.min(H - chh, Math.round(cy * H - chh / 2)));
+    parts.push(`crop=${cw}:${chh}:${x}:${y}`);
+  }
   parts.push(`scale=${W}:${H}:flags=lanczos`);
   if (slow > 1) parts.push(`setpts=${slow}*PTS`);
   parts.push(`fps=${FPS}`);
+  // ...AND THEN HOLD, which is what the game itself does. A vignette animates over REEL.anim
+  // 0.72s and then holds on the last pose; slowing it to buy reading time only made it judder.
+  // Playing the motion at its own speed and freezing the final frame gives both.
+  if (item.hold) parts.push(`tpad=stop_mode=clone:stop_duration=${item.hold}`);
   run('ffmpeg', ['-y', '-ss', String(item.at || 0), '-t', String(take), '-i', src,
     '-vf', parts.join(','), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18',
     '-preset', 'fast', '-an', out]);
@@ -373,7 +441,7 @@ async function build(name, items, sess, cardCache) {
     const silent = path.join(tmp, 'silent.mp4');
     run('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', listFile, '-c', 'copy', silent]);
 
-    const dur = items.reduce((a, it) => a + it.for, 0);
+    const dur = items.reduce((a, it) => a + it.for + (it.hold || 0), 0);
     const out = path.join(OUT, `trailer-${name}.mp4`);
     const intro = path.join(ROOT, 'Hundred Intro New.wav');
     const loop = path.join(ROOT, 'Hundred Loop New.wav');
