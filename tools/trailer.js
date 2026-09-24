@@ -63,6 +63,8 @@ const CARD_CSS = `
   .title .sub{font-size:34px;color:#8a93a6;margin-top:34px;letter-spacing:.3em;}
   .end .line{font-size:104px;color:#fff;letter-spacing:.10em;}
   .end .sub{font-size:32px;color:#8a93a6;margin-top:40px;letter-spacing:.34em;}
+  .beat .kicker{color:#8a93a6;font-size:36px;letter-spacing:.30em;margin-bottom:30px;}
+  .beat .line{font-size:98px;color:#fff;letter-spacing:.06em;}
   .count .line{font-size:150px;color:#fff;}
   .count .sub{font-size:38px;color:#ff6b6b;margin-top:30px;letter-spacing:.24em;}
 `;
@@ -81,87 +83,87 @@ function cardHTML(kind, text, sub, kicker) {
 // `clip` names a file in the footage dir; `at` is seconds into it; `for` is seconds taken.
 // `punch` crops to 1/n of the frame about the centre and scales back up -- used sparingly,
 // because the footage is 2x of a 960x540 canvas and a punch past about 1.4 starts to soften.
-const EDITS = {
-  // Every in-point below was READ OFF A FRAME, not guessed: the footage was contact-sheeted
-  // first and two clips were re-filmed because they showed the wrong thing. `losing` at
-  // skip=95 had already reached the end screen, because without &solve the crowd is wiped out
-  // at the first crossing inside twelve seconds; `wall` at its midpoint had not reached the
-  // wall. A clip that shows the wrong thing poisons every cut that uses it, silently.
+// ---------------------------------------------------------------- the cuts
+// ONE SPINE, FOUR MIDDLES. Morgan kept two of the first four and named the beats he wanted
+// out of each: the opening from `rollcall` (the card, "Welcome, workers.", one clip in the
+// mill, one in the mine) and two from `triage` (a line of text, then the crowd drowning at
+// the first crossing; and "you cannot save them all" into the deaths). Those are reproduced
+// here at the same in-points. What he asked to see alternatives for is the stretch BETWEEN
+// them, so that is the only thing that differs between these four -- same open, same close,
+// same music, same length either side. A difference you can see is a difference in the middle.
+const OPEN = [
+  { card: 'title', text: 'ONE HUNDRED PEOPLE', sub: 'GO TO WORK', for: 3.0 },
+  { clip: 'doors', at: 1.5, for: 4.0 },
+  { clip: 'mill', at: 1.0, for: 4.0 },
+  { clip: 'cave', at: 1.5, for: 4.0 },
+  // His line, near enough: "maybe more like 'but work can be .... grinding'". Split across the
+  // kicker and the line so the pause he wrote as an ellipsis is carried by the typography.
+  { card: 'beat', kicker: 'BUT THE WORK CAN BE', text: 'GRINDING', for: 2.6 },
+  { clip: 'losing', at: 0.3, for: 4.5 },
+];
 
-  // 1. THE ROLL CALL -- built on the number. The HUD counter is the kinetic text and the
-  // closing reel is already a sequence of title cards with a name on each, so it is left to
-  // play at length rather than cut against.
-  rollcall: [
-    { card: 'title', text: 'ONE HUNDRED PEOPLE', sub: 'GO TO WORK', for: 3.0 },
-    { clip: 'doors', at: 1.5, for: 4.0 },
-    { clip: 'mill', at: 1.0, for: 4.0 },
-    { clip: 'cave', at: 1.5, for: 4.0 },
-    { clip: 'enclosure', at: 1.0, for: 4.0 },
-    { card: 'count', text: 'EVERY ONE OF THEM', sub: 'HAS A NAME', for: 2.6 },
-    { clip: 'losing', at: 0.3, for: 4.0 },
-    { clip: 'lastroom', at: 5.0, for: 5.5 },
-    { clip: 'reel', at: 0.5, for: 12.0 },
-    { clip: 'podium', at: 0.8, for: 4.5 },
-    { card: 'end', text: 'HUNDRED RUNNERS', sub: 'HOW MANY GET OUT IS UP TO YOU', for: 4.0 },
+const CLOSE = [
+  { card: 'count', text: 'YOU CANNOT', sub: 'SAVE THEM ALL', for: 3.0 },
+  { clip: 'reel', at: 1.0, for: 7.0 },
+  { clip: 'podium', at: 1.0, for: 4.0 },
+  { card: 'end', text: 'HUNDRED RUNNERS', sub: 'EVERY LEVER COSTS SOMEBODY', for: 4.0 },
+];
+
+const MIDDLES = {
+  // A. THE WORK ITSELF -- what the player actually does, six rooms in eighteen seconds so it
+  // reads as a shift rather than as one puzzle. The only middle that shows the game being
+  // played, and the only one you could cut a store page out of.
+  rooms: [
+    { clip: 'panel_gears', at: 1.2, for: 2.8 },
+    { clip: 'panel_conveyor', at: 1.2, for: 2.8 },
+    { clip: 'millpanel', at: 1.0, for: 2.8 },
+    { clip: 'panel_wiring', at: 0.8, for: 2.8 },
+    { clip: 'panel_sweeper', at: 0.8, for: 2.8 },
+    { clip: 'cavepanel', at: 0.8, for: 3.0 },
   ],
 
-  // 2. THE COMPANY NOTICE -- the proprietor's voice. Instructional cards in the panel's own
-  // type, using the rooms' REAL titles, describing horrible things flatly; then the device is
-  // dropped for the last stretch and the reel plays with no commentary at all.
-  notice: [
-    { card: 'title', text: 'NOTICE TO ALL HANDS', sub: 'THE WORK WILL CONTINUE', for: 3.2 },
-    { clip: 'doors', at: 1.5, for: 4.0 },
-    { card: 'room', kicker: 'ROOM 1', text: 'lower the drawbridge', for: 2.3 },
-    { clip: 'millpanel', at: 0.5, for: 4.2 },
-    { card: 'room', kicker: 'ROOM 2', text: 'force the jaws open', for: 2.3 },
-    { clip: 'cavepanel', at: 0.8, for: 4.2 },
-    { clip: 'boss', at: 1.5, for: 5.0 },
-    { card: 'room', kicker: 'ROOM 3', text: 'blow the wall open', for: 2.3 },
-    { clip: 'blast2', at: 4.2, for: 5.0 },
-    { card: 'title', text: 'THE LAND IS BEING FENCED', sub: 'KEEP THEM MOVING', for: 2.6 },
+  // B. THE DESCENT -- the world closing in. Out of the mill, through a door shut behind them,
+  // into country being fenced, up against a wall they have to blow open. No text at all; the
+  // places carry it.
+  descent: [
+    // NO DIALOGUE AT ALL, which is the whole point of this one -- so the cave-door boss is out
+    // (he belongs to `proprietor`) and the enclosure starts at 4.2, because he is still on
+    // screen at 1s shouting "FINE! Run! Run into the hills" and gone by 4. Cutting him in here
+    // made this middle and the proprietor's look like the same trailer for their first nine
+    // seconds. Contact sheet caught it; the source could not have.
+    { clip: 'enclosure', at: 4.2, for: 4.0 },
     { clip: 'fence', at: 1.0, for: 4.0 },
-    { clip: 'reel', at: 0.5, for: 10.0 },
-    { card: 'end', text: 'HUNDRED RUNNERS', sub: 'A GAME ABOUT TRIAGE', for: 4.0 },
-  ],
-
-  // 3. THREE DESCENTS -- the three acts as three movements, each with its own palette. The
-  // slowest of the four and the one that shows the art best. Ends on the word the wall spells.
-  descents: [
-    { card: 'end', text: 'HUNDRED RUNNERS', for: 3.0 },
-    { card: 'title', text: 'I.  THE MILL', for: 2.3 },
-    { clip: 'mill', at: 0.8, for: 5.5 },
-    { clip: 'millpanel', at: 1.0, for: 3.5 },
-    { card: 'title', text: 'II.  THE WORKINGS', for: 2.3 },
-    { clip: 'cave', at: 1.0, for: 5.5 },
-    { clip: 'cavepanel', at: 1.0, for: 3.5 },
-    { card: 'title', text: 'III.  THE ENCLOSURE', for: 2.3 },
-    { clip: 'enclosure', at: 0.8, for: 5.0 },
-    { clip: 'fence', at: 1.0, for: 3.5 },
-    { clip: 'blast2', at: 4.2, for: 5.5 },
-    { clip: 'reel', at: 1.0, for: 5.5 },
-    { card: 'end', text: 'UNBOUND', sub: 'HUNDRED RUNNERS', for: 4.0 },
-  ],
-
-  // 4. YOU CANNOT SAVE THEM ALL -- sells the mechanic rather than the art. Fast, two lines of
-  // text in the whole thing, and the only cut that puts a room being solved straight against
-  // the people dying somewhere else, which is what the game actually is. `wall` here is the
-  // UNSOLVED wall taking twenty-four of them, which is the other half of the same argument.
-  triage: [
-    { clip: 'millpanel', at: 1.0, for: 2.0 },
-    { clip: 'cavepanel', at: 1.2, for: 2.0 },
-    { clip: 'drill', at: 2.0, for: 2.0 },
-    { card: 'title', text: 'SAVE THEM.', for: 1.8 },
-    { clip: 'losing', at: 0.3, for: 4.5 },
-    { clip: 'mill', at: 2.0, for: 2.4 },
-    { clip: 'cave', at: 2.0, for: 2.4 },
     { clip: 'wall', at: 9.0, for: 4.0 },
-    { clip: 'lastroom', at: 6.0, for: 5.0 },
-    { card: 'count', text: 'YOU CANNOT', sub: 'SAVE THEM ALL', for: 3.0 },
-    { clip: 'reel', at: 1.0, for: 7.0 },
-    { clip: 'podium', at: 1.0, for: 4.0 },
-    { card: 'end', text: 'HUNDRED RUNNERS', sub: 'EVERY LEVER COSTS SOMEBODY', for: 4.0 },
+    { clip: 'blast2', at: 4.2, for: 5.0 },
+  ],
+
+  // C. THE PROPRIETOR -- his three appearances, escalating, which is the only middle with a
+  // story in it. He stops them at the cave door ("you guys can't leave the factory"), turns up
+  // red-faced on the hillside ("FINE! Run! Run into the hills"), and is waiting in the last
+  // room typing "There is no out." That last one is the imprisonment image.
+  proprietor: [
+    { clip: 'boss', at: 1.5, for: 4.5 },
+    { clip: 'boss_land', at: 6.8, for: 4.5 },
+    { clip: 'chamber', at: 3.5, for: 5.5 },
+    { clip: 'lastroom', at: 6.0, for: 3.5 },
+  ],
+
+  // D. THE CROWD -- who they are, which is what makes the closing reel land. Punched in 1.5x
+  // so the name tags and the chatter are legible; every other shot in these trailers is wide,
+  // so this is the only one that looks at a person. The footage is 1920 native off a 960
+  // canvas, so a 1.5 punch is still above 1:1 on the way back out.
+  crowd: [
+    { clip: 'boss_land', at: 0.8, punch: 1.5, for: 4.0 },
+    { clip: 'mill', at: 5.5, punch: 1.6, for: 3.5 },
+    { clip: 'cave', at: 6.0, punch: 1.6, for: 3.5 },
+    { clip: 'enclosure', at: 5.0, punch: 1.5, for: 4.0 },
   ],
 };
+
+// Named alt-* so they cannot collide with trailer-rollcall.mp4 or trailer-triage.mp4, which
+// Morgan asked to keep and which this tool must not overwrite.
+const EDITS = Object.fromEntries(
+  Object.entries(MIDDLES).map(([k, mid]) => [`alt-${k}`, [...OPEN, ...mid, ...CLOSE]]));
 
 // ---------------------------------------------------------------- build
 const run = (bin, args) => execFileSync(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
