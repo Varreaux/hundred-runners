@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '173 one room at a time after the conveyor';
+const BUILD = '174 fewer hands, faster hands';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2887,6 +2887,8 @@ function reset() {
     introT: 0, doorOpen: 0, doorKeyed: false, drill: null, boss: null, bossCave: false, bossOpen: false,
     // the cave door in the seam: the act two checkpoint. See updateSeamGate.
     seam: { phase: 'off', t: 0, hits: 0, swing: 0, open: 0, jolt: 0, camLock: null },
+    // the speed-up: the pace multiplier now, and whether he has announced it this run
+    pace: 1, paceSaid: false,
     recent: [], spike: null, spikeCool: 0, streak: 0, bestStreak: 0, lastScream: 0,
   };
   for (let i = 0; i < CFG.runnerCount; i++) {
@@ -5945,6 +5947,51 @@ function finaleFail() { finaleWrong(); }
 
 
 // ================================================================ update
+// THE SPEED-UP. Morgan, 2026-09-24: once the survivors are all in ONE lane of several there
+// is only one lane to watch and the stress goes out of it, so the line runs faster. Not at
+// the act transitions, where everyone is in one lane because the course only HAS one there.
+//
+// So the test is not "one lane is occupied" but "one lane is occupied where the course is more
+// than one lane wide", asked of every survivor, every frame. That leaves out the seam, the
+// mouth and every other single-lane stretch without naming any of them, and it fires the frame
+// the last person in the other lane dies -- which he was clear is the commoner way in, not a
+// fork's coin coming up the same way for everybody.
+//
+// 1.5x, not 2x: at 2x tools/room-check.js has two rooms impossible and five hard, at 1.5x only
+// the conveyor. Rooms still arm at their usual distance, which was his call, so a room met
+// while sped up gets two-thirds of its usual time.
+//
+// EASED both ways, so a split or a merge does not lurch the crowd; and off while a gate is held
+// or the cave door is running.
+const SPEEDUP = { pace: 1.5, ease: 0.6 };   // the multiplier, and how fast it may change per second
+function lanesOpenAt(x) {
+  let n = 0;
+  for (let k = 0; k < CFG.laneCount; k++) if (laneAt(k, x)) n++;
+  return n;
+}
+function speedUpWanted() {
+  if (S.mode !== 'play') return false;
+  if (S.seam.phase !== 'off' && S.seam.phase !== 'done') return false;
+  if (S.gates.some(g => g.state === 'holding')) return false;
+  let lane = -1;
+  for (const r of S.runners) {
+    if (r.state !== 'run') continue;
+    if (lane < 0) lane = r.lane;
+    else if (r.lane !== lane) return false;
+    if (lanesOpenAt(r.x) < 2) return false;
+  }
+  return lane >= 0;
+}
+function updatePace(dt) {
+  const fast = speedUpWanted(), to = fast ? SPEEDUP.pace : 1, step = SPEEDUP.ease * dt;
+  S.pace = S.pace < to ? Math.min(to, S.pace + step) : Math.max(to, S.pace - step);
+  // Once a run, the first time. Never across an open panel or over another speech: if either
+  // is in the way he waits for the first frame that is clear.
+  if (fast && !S.paceSaid && !S.active && (!S.boss || S.boss.gone)) {
+    S.paceSaid = true;
+    startBoss(BOSS_SPEED, true, null);
+  }
+}
 function update(dt) {
   // AU.ambient is the only writer of the rumble, the footstep bed and the stone tail, and it
   // sits below every early return in here -- so a pause or an ending froze all three at their
@@ -5971,7 +6018,9 @@ function update(dt) {
   updateFx(dt);
   // A held body is standing still, and an arc driven off x would hang it in the air for as
   // long as the gate holds it.
-  for (const r of S.runners) { r.phase += dt * 14; if (r.held) r.hopTo = 0; r.squash = Math.max(0, r.squash - dt * 7); }
+  // the stride keeps time with the pace, or a sped-up crowd skates
+  updatePace(dt);
+  for (const r of S.runners) { r.phase += dt * 14 * S.pace; if (r.held) r.hopTo = 0; r.squash = Math.max(0, r.squash - dt * 7); }
   if (S.mode === 'finale') { updateFinale(dt); updateView(dt); return; }
   if (S.mode === 'win' || S.mode === 'lose') { S.endT += dt; endEmbers(dt); }
   // he does not blink out of existence when the run ends under him: 128 units of band
@@ -5982,7 +6031,7 @@ function update(dt) {
 
   let rear = Infinity;
   for (const r of S.runners) if (r.state === 'run') rear = Math.min(rear, r.x);
-  const want = Math.min(S.camMax, S.cam + CFG.scroll * dt);
+  const want = Math.min(S.camMax, S.cam + CFG.scroll * S.pace * dt);
   if (rear < Infinity) {
     const limit = rear - CFG.keepOnScreen / V.zoom - CFG.packFront + 0.56 * V.vw;
     S.cam = Math.max(S.cam, Math.min(want, limit));
@@ -6034,7 +6083,7 @@ function update(dt) {
 
   for (const r of S.runners) {
     if (r.state === 'run') {
-      if (camStopped) r.x += CFG.scroll * dt;
+      if (camStopped) r.x += CFG.scroll * S.pace * dt;
       else {
         const target = S.cam + CFG.packFront - (CFG.packFront - r.slot) * spread + Math.sin(S.t * 0.7 + r.jit) * r.jitAmp;
         // anyone left behind closes the gap under their own steam, faster the further back they are
@@ -6053,7 +6102,7 @@ function update(dt) {
         // exactly the frame this was written to remove.
         if (r.held) r.rel = 0;
         r.rel += (want - r.rel) * Math.min(1, dt * CFG.catchEase);
-        r.x += (CFG.scroll + r.rel) * dt;
+        r.x += (CFG.scroll * S.pace + r.rel) * dt;
       }
       if (holdGate && holdGate.drop > 0.5 && r.x >= holdGate.x - 34 && r.x < holdGate.x + 6) { r.x = Math.min(r.x, holdGate.x - 8 - Math.abs(r.dy) * 1.2); r.held = true; }
       else r.held = false;
@@ -6776,7 +6825,7 @@ function approaching(room) {
   // Floored at zero, and killTo rather than killFrom: counting the people already standing in
   // a press bay means maxX can be past the first kill point, and the raw subtraction then goes
   // negative -- which prints as "-1.1s" and hands panelGauges a bar of negative width.
-  return { n, eta: n ? Math.max(0, room.x + killTo(room) - maxX) / CFG.scroll : 99 };
+  return { n, eta: n ? Math.max(0, room.x + killTo(room) - maxX) / (CFG.scroll * S.pace) : 99 };
 }
 
 // ---------------------------------------------------------------- end sequence
@@ -16168,6 +16217,8 @@ function drawHud() {
     x = pill(x, 'LOST', S.stats.dead, '#ff6b6b');
     x = pill(x, 'FINISHED', S.stats.arrived, '#f1c40f');
     if (S.streak > 1) x = pill(x, 'CLEAN', `x${S.streak}`, '#5cff9a');
+    // the speed-up while it is on, with its number while it eases so the change is seen
+    if (S.pace >= 1.05) x = pill(x, 'LINE SPEED', `x${S.pace.toFixed(1)}`, '#ff9a3c');
   }
   if (AU.muted) x = pill(x, 'MUTED', '', '#999');
   // The course track is a report on a run. During the drill there is no run: nobody is
@@ -16643,6 +16694,12 @@ const BOSS_CAVE = [
 const BOSS_OPEN = [
   { t: 'FINE! Run! Run into the hills, go on, run!', mood: 'rage' },
   { t: '...I own the hills.' },
+];
+// And when the line speeds up, the first time in a run (see updatePace). A speed-up is a real
+// thing on a real shop floor: fewer hands, same quota. Smug, and on his own clock like the
+// cave and the hills -- the run is live behind him, so he never takes a key.
+const BOSS_SPEED = [
+  { t: 'Fewer hands? Then faster hands.', shake: 'faster', laugh: 1 },
 ];
 // And once more, in the chamber under the wall, which is the last thing anybody sees of him.
 // Morgan, 2026-09-23: bring him back "in his dialogue band at the top and have him say
@@ -19619,6 +19676,14 @@ if (qs.has('start')) {
   // the handover. startRun is the one place that state is defined; the comment on it
   // already claimed the skip went through here, and now it does.
   startRun();
+  // &alone=N starts the run with only N people left, for feeling the speed-up (speedUpWanted)
+  // without first having to lose ninety-nine of them. Named runners are kept first, so the few
+  // left are people. The rest are simply gone -- no screams, no floaters, nothing on the road.
+  if (qs.has('alone')) {
+    const keep = Math.max(1, Math.min(CFG.runnerCount, +(qs.get('alone') || 1)));
+    const order = S.runners.slice().sort((a, b) => (b.name ? 1 : 0) - (a.name ? 1 : 0));
+    for (const r of order.slice(keep)) { r.state = 'dead'; r.endX = r.x; r.deathT = 0; r.how = 'dark'; S.stats.dead++; }
+  }
   const n = +(qs.get('skip') || 0) * 60, solve = qs.has('solve');
   if (qs.has('open')) DEV_HOLD = qs.get('open');
   // ?blast wants to fire the wall ITSELF, at a chosen instant, so the bot must not have done
