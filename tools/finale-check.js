@@ -118,9 +118,18 @@ eval(src + `
   for (const crew of [1, 12, 100]) {
     charging(crew);
     const want = CFG.finale.genTime(crew);
+    // STOPPED ON THE FLYWHEEL, not on the phase. genTime describes how long the wheel takes
+    // to wind, and since 2026-09-24 the phase also waits for the lesson to have been read --
+    // so at a hundred aboard, where the wheel is done in a second and the lesson holds for
+    // five, this measured the lesson and reported the generator as four times slow. The
+    // ruler has to stop at the thing it is a ruler for.
     let t = 0;
-    run(60, () => { if (F().phase === 'search') return 'stop'; t += 1/60; });
+    run(60, () => { if (finaleChargeProgress(F()) >= 1) return 'stop'; t += 1/60; });
     const board = F().boardT || 0;
+    // ...and then let the lesson run out, so the phase half of the assertion below is still
+    // about the room OPENING. Stopping at the wheel leaves it in 'charge' at a hundred aboard,
+    // where the wheel finishes four seconds before the window does.
+    run(FINALE_LEARN + 2, () => { if (F().phase === 'search') return 'stop'; });
     ok('a crew of ' + String(crew).padStart(3) + ' winds the flywheel in the ' + want.toFixed(1) + 's genTime says',
        F().phase === 'search' && Math.abs((t - board) - want) <= Math.max(0.35, want * 0.12),
        'boarded in ' + board.toFixed(2) + 's, then wound for ' + (t - board).toFixed(2) + 's');
@@ -168,6 +177,35 @@ eval(src + `
        worst < 1.0001 && litLate < searchLit * 0.85,
        'peak progress ' + worst.toFixed(3) + ', peak light ' + litLate.toFixed(3) +
        ' against ' + searchLit.toFixed(2) + ' once it is searching');
+  }
+
+  // ------------------------------------------------------------ the lesson
+  {
+    // Morgan, 2026-09-23: the loading bar goes, and a small window explaining the room takes
+    // its place. The thing that can go wrong is not how it looks -- it is that the window is
+    // tied to a wait whose length the crew decides. genTime is 10.9s at one survivor and 1.0s
+    // at a hundred, so a lesson that rode the generator would be gone in a second on exactly
+    // the run this room is the reward for. It has a floor of its own, and this is that floor.
+    for (const crew of [1, 12, 100]) {
+      charging(crew);
+      let up = 0;
+      run(60, () => { if (F().phase !== 'charge') return 'stop'; up += 1/60; });
+      ok('a crew of ' + String(crew).padStart(3) + ' gets long enough to read the lesson',
+         up >= FINALE_LEARN - 0.1 && F().phase === 'search',
+         'the window was up for ' + up.toFixed(1) + 's against a floor of ' + FINALE_LEARN +
+         's (the generator alone wanted ' + CFG.finale.genTime(crew).toFixed(1) + 's)');
+    }
+    // ...and SPACE settles the reading, not the generator. It is the same key the lesson is
+    // teaching, and it is the only key this room has.
+    charging(100);
+    run(60, () => { if (finaleChargeProgress(F()) >= 1) return 'stop'; });
+    const before = F().phase;
+    KD({ key: ' ', preventDefault() {}, repeat: false });
+    let after = 0;
+    run(10, () => { if (F().phase === 'search') return 'stop'; after += 1/60; });
+    ok('SPACE dismisses the lesson once the wheel is wound',
+       before === 'charge' && F().phase === 'search' && after < 0.2,
+       'was ' + before + ', opened ' + after.toFixed(2) + 's after the key');
   }
 
   // ------------------------------------------------------------ the standing pack
