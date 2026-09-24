@@ -5,21 +5,35 @@ Play it at https://varreaux.github.io/hundred-runners/
 
 ## Sound effects
 
+Both are from Pixabay and both are covered by the
+[Pixabay Content License](https://pixabay.com/service/terms/) — free for commercial and
+non-commercial use, modification permitted, **attribution not required**. It is given here
+anyway, because knowing where an asset came from is worth more than the licence strictly
+demands.
+
+### Alarm
+
 Sound Effect by <a href="https://pixabay.com/users/jeremayjimenez-28887262/?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=451404">Jeremay Jimenez</a> from <a href="https://pixabay.com//?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=451404">Pixabay</a>
 
 - **File:** `jeremayjimenez-greece-eas-alarm-451404.mp3`
 - **Used for:** the alarm in the last room (`MUSIC.SRC.alarm` in `index.html`)
 - **Source:** Pixabay, content id 451404
-- **Licence:** [Pixabay Content License](https://pixabay.com/service/terms/) — free for
-  commercial and non-commercial use, modification permitted, **attribution not required**.
-  It is given here anyway, because knowing where an asset came from is worth more than the
-  licence strictly demands.
 
-The same attribution as raw HTML, for pasting into an itch.io page, a video description or
+### Tomáš Herudek
+
+Sound Effect by <a href="https://pixabay.com/users/tomas_herudek-45372583/?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=257470">Tomáš Herudek</a> from <a href="https://pixabay.com//?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=257470">Pixabay</a>
+
+- **File:** not in the repo yet — Morgan to fill in
+- **Used for:** to fill in
+- **Source:** Pixabay, content id 257470
+
+Both attributions as raw HTML, for pasting into an itch.io page, a video description or
 anywhere else that wants markup rather than Markdown:
 
 ```html
 Sound Effect by <a href="https://pixabay.com/users/jeremayjimenez-28887262/?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=451404">Jeremay Jimenez</a> from <a href="https://pixabay.com//?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=451404">Pixabay</a>
+
+Sound Effect by <a href="https://pixabay.com/users/tomas_herudek-45372583/?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=257470">Tomáš Herudek</a> from <a href="https://pixabay.com//?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=257470">Pixabay</a>
 ```
 
 ## Music
