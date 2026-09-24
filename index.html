@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '167 the jaws run twice as fast';
+const BUILD = '168 the boss room has its own music';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2450,10 +2450,11 @@ const ARROWS = ['ARROWLEFT', 'ARROWUP', 'ARROWRIGHT', 'ARROWDOWN'];
 // The handover is inside start() rather than at its call site, so no caller can cue the run's
 // music and forget to end the tutorial's. There is exactly one way in for each.
 const MUSIC = {
-  tut: null, intro: null, bed: null, armed: false,
+  tut: null, intro: null, bed: null, boss: null, bossOn: false, armed: false,
   // Morgan's own filenames, kept as he saved them so that dropping a replacement in with
   // the same name just works. Encoded because they contain spaces.
-  SRC: { tut: 'Hundred%20Tutorial%20Loop.wav', intro: 'Hundred%20Intro%20New.wav', bed: 'Hundred%20Loop%20New.wav' },
+  SRC: { tut: 'Hundred%20Tutorial%20Loop.wav', intro: 'Hundred%20Intro%20New.wav', bed: 'Hundred%20Loop%20New.wav',
+         boss: 'Hundred%20Boss%20Mastered.wav' },
   make(src) {
     try { const a = new Audio(src); a.preload = 'auto'; a.volume = 0.62; return a; } catch (e) { return null; }
   },
@@ -2465,10 +2466,38 @@ const MUSIC = {
     this.intro = this.make(this.SRC.intro);
     this.bed = this.make(this.SRC.bed);
     if (this.bed) this.bed.loop = true;
-    // the one place the bed is allowed to begin
+    this.boss = this.make(this.SRC.boss);
+    if (this.boss) this.boss.loop = true;
+    // the one place the bed is allowed to begin -- and not under the last room's own loop
     if (this.intro) this.intro.addEventListener('ended', () => {
-      if (this.bed && !AU.muted) this.bed.play().catch(() => {});
+      if (this.bed && !AU.muted && !this.bossOn) this.bed.play().catch(() => {});
     });
+  },
+  // THE LAST ROOM'S OWN LOOP. Morgan, 2026-09-24: "put it in the boss room so that it becomes
+  // the boss room music ... start as soon as the tutorial starts and the people appear on the
+  // ramp." Those are one frame: the one beginFinaleCharge moves the room out of 'intro', when
+  // the lesson window opens and the first of the crew steps onto the belt. So the proprietor
+  // still speaks over the run's music, and this comes in as he finishes.
+  //
+  // FOLLOWED, NOT CUED, because the room has one way in and three out -- the tenth mark, the
+  // clock, the crew running out -- and a cue at every exit is three things to keep in step.
+  // update() hands this ONE predicate every frame and it acts only when the answer changes.
+  // On the way out the end screens get the bed back, from the top, which is what they have
+  // always had under them.
+  follow(on) {
+    if (on === this.bossOn) return;
+    this.init();
+    if (!this.boss) return;
+    this.bossOn = on;
+    const halt = (a, rewind) => { if (a) { try { a.pause(); if (rewind) a.currentTime = 0; } catch (e) { /* not loaded */ } } };
+    halt(this.boss, true);
+    if (on) {
+      halt(this.tut, true); halt(this.intro, false); halt(this.bed, false);
+      if (!AU.muted) this.boss.play().catch(() => {});   // a blocked autoplay must not throw
+    } else if (this.bed && !AU.muted) {
+      halt(this.bed, true);
+      this.bed.play().catch(() => {});
+    }
   },
   // The opening's own loop. Cued from beginIntro(), which is the one place the opening
   // starts, and ENDED by start() below rather than by whoever calls it.
@@ -2495,15 +2524,21 @@ const MUSIC = {
   },
   // R restarts the run, so the music restarts with it and the intro plays again.
   stop() {
-    for (const a of [this.tut, this.intro, this.bed]) {
+    // cleared HERE, not left to follow(): R from the last room's end screen would otherwise
+    // read as "the room just ended" on the next frame and start the bed under the title
+    this.bossOn = false;
+    for (const a of [this.tut, this.intro, this.bed, this.boss]) {
       if (!a) continue;
       try { a.pause(); a.currentTime = 0; } catch (e) { /* not loaded yet */ }
     }
   },
   // follows the same M key as the rest of the sound
   setMuted(m) {
-    for (const a of [this.tut, this.intro, this.bed]) if (a) a.muted = m;
+    for (const a of [this.tut, this.intro, this.bed, this.boss]) if (a) a.muted = m;
     if (m) return;
+    // The last room first, and ALONE: the branch below it starts the bed whenever the intro
+    // has ended and the bed is paused, which is exactly the state the boss loop leaves them in.
+    if (this.bossOn) { if (this.boss && this.boss.paused) this.boss.play().catch(() => {}); return; }
     // Unmuting has to be able to START something, not merely unmute it: every track is gated
     // on AU.muted at its own cue, so a player who muted before the cue has nothing playing to
     // unmute. Whichever track owns the moment is the one to begin.
@@ -5913,6 +5948,8 @@ function update(dt) {
   }
   if (S.paused) return;
   S.t += dt;
+  // the last room's music is on exactly while the room is past its speech; see MUSIC.follow
+  MUSIC.follow(S.mode === 'finale' && !!S.finale && S.finale.phase !== 'intro');
   // THE SPIKE CLOCKS TICK HERE, not in frame(). Only a browser ever calls frame(), and every
   // tool and every ?dev flag drives update()/draw() direct -- so the first spike of a scripted
   // run stayed lit for the rest of it: a red wash over every later frame, and chatter() and
