@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '178 the first key asks the music again';
+const BUILD = '179 the alarm falls away under the boss';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2480,12 +2480,19 @@ const MUSIC = {
   tut: null, intro: null, bed: null, boss: null, alarm: null, armed: false,
   // What the last room is playing: null outside it, 'alarm', or 'boss'. See follow().
   room: null,
+  // Every track's volume, and the alarm's fade under the boss loop: { a, t } while it runs.
+  VOL: 0.62,
+  // THE ALARM FADES, IT DOES NOT CUT. Morgan, 2026-09-24: "instead of having the alarm cut out
+  // bruskly could you have it fade out when the boss music errupts at the completion of the
+  // tutorial". The boss loop comes in at full on the frame the lesson hands over and the alarm
+  // falls away under it over FADE seconds, fast at first and trailing off. One number.
+  FADE: 1.5, fade: null,
   // Morgan's own filenames, kept as he saved them so that dropping a replacement in with
   // the same name just works. Encoded because they contain spaces.
   SRC: { tut: 'Hundred%20Tutorial%20Loop.wav', intro: 'Hundred%20Intro%20New.wav', bed: 'Hundred%20Loop%20New.wav',
          boss: 'Hundred%20Boss%20Mastered.wav', alarm: 'jeremayjimenez-greece-eas-alarm-451404.mp3' },
   make(src) {
-    try { const a = new Audio(src); a.preload = 'auto'; a.volume = 0.62; return a; } catch (e) { return null; }
+    try { const a = new Audio(src); a.preload = 'auto'; a.volume = this.VOL; return a; } catch (e) { return null; }
   },
   init() {
     if (this.armed || typeof Audio === 'undefined') return;
@@ -2523,9 +2530,13 @@ const MUSIC = {
     if (want === this.room) return;
     this.init();
     if (!this.boss || !this.alarm) return;
+    const was = this.room;
     this.room = want;
     const halt = (a, rewind) => { if (a) { try { a.pause(); if (rewind) a.currentTime = 0; } catch (e) { /* not loaded */ } } };
-    halt(this.boss, true); halt(this.alarm, true);
+    halt(this.boss, true);
+    // the alarm FADES into the boss loop (see FADE); every other way out of it cuts it
+    if (was === 'alarm' && want === 'boss') this.fade = { a: this.alarm, t: 0 };
+    else { this.endFade(); halt(this.alarm, true); }
     if (want) {
       halt(this.tut, true); halt(this.intro, false); halt(this.bed, false);
       if (!AU.muted) this[want].play().catch(() => {});   // a blocked autoplay must not throw
@@ -2533,6 +2544,25 @@ const MUSIC = {
       halt(this.bed, true);
       this.bed.play().catch(() => {});
     }
+  },
+  // The fade's clock, ticked by update() every frame. Squared, so the alarm drops away fast
+  // under the boss loop's first beat and trails off rather than stepping down evenly.
+  tick(dt) {
+    const f = this.fade;
+    if (!f) return;
+    f.t += dt;
+    const k = Math.min(1, f.t / this.FADE);
+    try { f.a.volume = Math.max(0, this.VOL * (1 - k) * (1 - k)); } catch (e) { /* not loaded */ }
+    if (k >= 1) this.endFade();
+  },
+  // AND THE VOLUME GOES BACK, on every way out of a fade -- finished, cut short by the room
+  // ending, or by R. A fade stopped anywhere else leaves the alarm at whatever volume it had
+  // reached, and the next run's alarm plays silent with nothing to say why.
+  endFade() {
+    const f = this.fade;
+    if (!f) return;
+    this.fade = null;
+    try { f.a.pause(); f.a.currentTime = 0; f.a.volume = this.VOL; } catch (e) { /* not loaded */ }
   },
   // The opening's own loop. Cued from beginIntro(), which is the one place the opening
   // starts, and ENDED by start() below rather than by whoever calls it.
@@ -2562,6 +2592,7 @@ const MUSIC = {
     // cleared HERE, not left to follow(): R from the last room's end screen would otherwise
     // read as "the room just ended" on the next frame and start the bed under the title
     this.room = null;
+    this.endFade();
     for (const a of [this.tut, this.intro, this.bed, this.boss, this.alarm]) {
       if (!a) continue;
       try { a.pause(); a.currentTime = 0; } catch (e) { /* not loaded yet */ }
@@ -6047,6 +6078,7 @@ function update(dt) {
   // the real room, then the boss loop -- see MUSIC.follow
   MUSIC.follow(S.mode !== 'finale' || !S.finale ? null
              : S.finale.phase === 'intro' || S.finale.phase === 'charge' ? 'alarm' : 'boss');
+  MUSIC.tick(dt);
   // THE SPIKE CLOCKS TICK HERE, not in frame(). Only a browser ever calls frame(), and every
   // tool and every ?dev flag drives update()/draw() direct -- so the first spike of a scripted
   // run stayed lit for the rest of it: a red wash over every later frame, and chatter() and

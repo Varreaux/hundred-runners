@@ -146,7 +146,16 @@ eval(src + `
   ok('the room reached its search', f.phase === 'search', 'phase ' + f.phase);
   update(1/60);
   ok('the boss loop starts as the lesson hands over, once', played('boss') === 1 && !bossEl.paused, played('boss') + ' play calls');
-  ok('...and the alarm stops and rewinds', alarmEl.paused && alarmEl.currentTime === 0);
+  // THE ALARM FADES UNDER IT, it does not cut (Morgan, 2026-09-24): still sounding, quieter
+  // each moment, and after MUSIC.FADE paused, rewound and BACK AT FULL VOLUME for next time
+  const v0 = alarmEl.volume;
+  ok('...and the alarm fades under it rather than cutting', !alarmEl.paused && v0 < MUSIC.VOL,
+     'volume ' + v0.toFixed(3) + ' of ' + MUSIC.VOL);
+  for (let i = 0; i < 30; i++) update(1/60);
+  ok('...quieter each moment', !alarmEl.paused && alarmEl.volume < v0, v0.toFixed(3) + ' -> ' + alarmEl.volume.toFixed(3));
+  for (let i = 0; i < 60 * MUSIC.FADE; i++) update(1/60);
+  ok('...then stops, rewinds, and its volume is put back', alarmEl.paused && alarmEl.currentTime === 0 && alarmEl.volume === MUSIC.VOL && !MUSIC.fade,
+     'volume ' + alarmEl.volume + ', ' + (alarmEl.paused ? 'paused' : 'playing'));
   ok('the boss loop is set to loop', bossEl.loop === true);
   for (let i = 0; i < 120; i++) update(1/60);
   ok('the boss loop is started once, not once per frame', played('boss') === 1, played('boss') + ' play calls');
@@ -206,6 +215,22 @@ eval(src + `
   BLOCKED = false;
   press('ARROWLEFT');
   ok('the first key asks again, and the alarm plays', !alarmEl.paused && bedEl.paused && bossEl.paused);
+
+  // ---------------------------------------------------------------- R in the middle of the fade
+  // The one way out of a fade that is not its own end. If it left the alarm at the volume it
+  // had reached, the next run's alarm would play silent.
+  // taught IN the lesson, as a player does -- finaleTeach during the speech sets a lesson the
+  // charge never reads, and the room sat in 'charge' for the whole budget
+  for (let i = 0; i < 60 * 60 && S.finale.phase === 'intro'; i++) update(1/60);
+  update(1/60);
+  finaleTeach(S.finale);
+  for (let i = 0; i < 60 * 40 && S.finale.phase !== 'search'; i++) update(1/60);
+  for (let i = 0; i < 20; i++) update(1/60);
+  ok('mid-fade: the alarm is part way down', !!MUSIC.fade && alarmEl.volume < MUSIC.VOL && alarmEl.volume > 0,
+     'volume ' + alarmEl.volume.toFixed(3) + ', phase ' + S.finale.phase + ', room ' + MUSIC.room + ', mode ' + S.mode + ', alarm ' + (alarmEl.paused ? 'paused' : 'playing'));
+  press('P'); press('R');
+  ok('R mid-fade puts the alarm back at full volume, stopped', !MUSIC.fade && alarmEl.paused && alarmEl.volume === MUSIC.VOL,
+     'volume ' + alarmEl.volume + ', ' + (alarmEl.paused ? 'paused' : 'playing'));
 })();
 `);
 console.log('');
