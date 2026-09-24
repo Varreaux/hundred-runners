@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '170 the lost stand up straight';
+const BUILD = '171 the podium comments tell the truth';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -19279,8 +19279,11 @@ function drawPodiumCard(sy, at) {
     const r = R.podium[k]; if (!r) continue;
     const p = clamp01((at - 0.34 - (2 - k) * 0.22) / 0.34);
     if (p <= 0) continue;
-    // SOLE, not shoe-bottom. drawFigure anchors at the sole line and its shoe ellipse hangs
-    // about 2.6 units under that, which at this scale is nine pixels of foot inside the block.
+    // LIFTED BY REEL_SOLE, because drawFigure's anchor is the ANKLE and not the sole: its shoe
+    // ellipse is centred 2.6 units under the anchor and bottoms out at 4.1 (the leg's ink cap
+    // at 4.3). This said "the sole line" and "about 2.6", i.e. the ellipse's centre -- and a
+    // lift sized from that number sinks the feet again. Lifted 3.2, the shoe lands 0.9 units,
+    // about 3px, into the block's lit top edge, which reads as standing on it.
     //
     // TWO LINES, `surf` and `top`, and the SLAB STANDS ON `surf`. It used to be drawn from
     // `top` as well, so the lift that was meant to raise the body off the block raised the
@@ -19290,14 +19293,14 @@ function drawPodiumCard(sy, at) {
     // independently on 2026-09-24, the first frames in which the bodies stood still enough
     // for the eye to run down to the contact. The ordinal was always centred on `surf`, which
     // is why it sat low in the block.
-    const sc = 3.0 * 1.1 * (r.height || 1);
+    const sc = 3 * reelScale(r);                  // reelScale's, not a second copy of it
     const kick = easeBack(p), surf = base - ph[k], top = surf - REEL_SOLE * sc, arrived = r.state === 'arrived';
     // The SAME expression that scales the body decides where the name goes, so a short
     // runner cannot end up with their name floating a body's width above their head. 36.5
     // units is the figure's own height at scale 1, measured off the 45px a named runner
     // draws at 1.1 * 1.12 in play.
-    // A DANCER reaches higher than a standing body. drawDancer's raised hand tops out 45.3
-    // units above the soles at the top of its bounce, against the 36.5 a standing figure
+    // A DANCER reaches higher than a standing body. drawDancer's raised hand tops out 45.4
+    // units above its ANCHOR (the ankle, like drawFigure's) at the top of its bounce, against the 36.5 a standing figure
     // reaches -- so the winner's hands swept straight through their own name, on the last and
     // longest-held thing on the screen.
     const bh = (r.state === 'arrived' ? 48 : 36.5) * sc;
