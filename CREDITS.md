@@ -23,8 +23,9 @@ Sound Effect by <a href="https://pixabay.com/users/jeremayjimenez-28887262/?utm_
 
 Sound Effect by <a href="https://pixabay.com/users/tomas_herudek-45372583/?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=257470">Tomáš Herudek</a> from <a href="https://pixabay.com//?utm_source=link-attribution&utm_medium=referral&utm_campaign=music&utm_content=257470">Pixabay</a>
 
-- **File:** not in the repo yet — Morgan to fill in
-- **Used for:** to fill in
+- **File:** `tomas_herudek-corporate-brand-ident-technological-innovation-257470.mp3`
+- **Used for:** nothing yet — downloaded, but not referenced by `index.html`. Add it to
+  `MUSIC.SRC` (or wherever it belongs) and update this line.
 - **Source:** Pixabay, content id 257470
 
 Both attributions as raw HTML, for pasting into an itch.io page, a video description or
