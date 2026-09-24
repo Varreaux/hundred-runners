@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '177 the alarm, then the boss';
+const BUILD = '178 the first key asks the music again';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2570,7 +2570,17 @@ const MUSIC = {
   // follows the same M key as the rest of the sound
   setMuted(m) {
     for (const a of [this.tut, this.intro, this.bed, this.boss, this.alarm]) if (a) a.muted = m;
-    if (m) return;
+    if (!m) this.resume();
+  },
+  // WHICHEVER TRACK OWNS THE MOMENT, started if it is not already playing. Read by unmuting,
+  // and by EVERY KEY AND CLICK: a browser refuses audio until the page has been interacted
+  // with, and a cue refused that way is swallowed by its own .catch and never asked again. In
+  // a real run the title's SPACE unlocks it long before any cue; a link straight into the game
+  // -- ?finale, ?start, ?end -- started silent. Morgan, 2026-09-24: "?finale&crew=30 ... when i
+  // try using this to here the alarm it does not work". So the first press asks again. A track
+  // already playing is left alone, so asking on every key costs nothing.
+  resume() {
+    if (AU.muted) return;
     // The last room first, and ALONE: the branch below it starts the bed whenever the intro
     // has ended and the bed is paused, which is exactly the state the room's sound leaves them in.
     if (this.room) { const a = this[this.room]; if (a && a.paused) a.play().catch(() => {}); return; }
@@ -3047,8 +3057,11 @@ function killRunner(r, how) {
 }
 
 // ================================================================ input
+// the first click asks the music again, for the browser's sake -- see MUSIC.resume
+window.addEventListener('pointerdown', () => MUSIC.resume());
 window.addEventListener('keydown', e => {
   if (e.repeat) return;
+  MUSIC.resume();                  // and so does every key; see MUSIC.resume
   const k = e.key.toUpperCase();
   // BACKSPACE joins these for the wages terminal, which is the first verb to read it. In
   // older browsers an unswallowed BACKSPACE navigates the page back and takes the run with

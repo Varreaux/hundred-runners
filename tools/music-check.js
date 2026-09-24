@@ -45,6 +45,9 @@ global.location = { search: '' };
 global.URLSearchParams = class { has() { return false; } get() { return null; } };
 
 const log = [];
+// A real browser REFUSES play() until the page has been interacted with. BLOCKED makes the mock
+// do the same -- rejects, and stays paused -- for the one scenario about it at the end.
+let BLOCKED = false;
 global.Audio = class {
   constructor(src) {
     this.src = src; this.paused = true; this.currentTime = 0; this.ended = false;
@@ -52,7 +55,10 @@ global.Audio = class {
     log.push(['new', src]);
   }
   addEventListener(ev, fn) { (this._on[ev] = this._on[ev] || []).push(fn); }
-  play() { this.paused = false; log.push(['play', this.src]); return Promise.resolve(); }
+  play() {
+    if (BLOCKED) { log.push(['refused', this.src]); return Promise.reject(new Error('NotAllowedError')); }
+    this.paused = false; log.push(['play', this.src]); return Promise.resolve();
+  }
   pause() { this.paused = true; log.push(['pause', this.src]); }
   fire(ev) { this.ended = ev === 'ended'; for (const f of this._on[ev] || []) f(); }
 };
@@ -183,6 +189,23 @@ eval(src + `
   ok('R from pause in the room leaves no music behind',
      played('bed') === bedR && played('boss') === bossR && played('alarm') === alarmR && alarmEl.paused && bossEl.paused && bedEl.paused,
      'bed ' + bedR + ' -> ' + played('bed') + ', alarm ' + (alarmEl.paused ? 'paused' : 'playing') + ', mode ' + S.mode);
+
+  // ---------------------------------------------------------------- a link straight in
+  // Morgan, 2026-09-24: "?finale&crew=30 ... when i try using this to here the alarm it does
+  // not work". The browser refused the cue because nothing had been pressed yet, the cue's
+  // .catch swallowed the refusal, and nothing ever asked again. Here every play() is refused
+  // until a key is pressed, which is what the browser does; the first key must bring it in.
+  MUSIC.stop();
+  BLOCKED = true;
+  S.runners.slice(0, 20).forEach(r => { r.state = 'arrived'; });
+  S.stats.arrived = 20; S.cam = S.camMax; updateView(1);
+  startFinale();
+  for (let i = 0; i < 30; i++) update(1/60);
+  ok('a room entered before any key: the browser refuses the alarm', MUSIC.room === 'alarm' && alarmEl.paused,
+     log.filter(e => e[0] === 'refused').length + ' refusals');
+  BLOCKED = false;
+  press('ARROWLEFT');
+  ok('the first key asks again, and the alarm plays', !alarmEl.paused && bedEl.paused && bossEl.paused);
 })();
 `);
 console.log('');
