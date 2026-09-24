@@ -181,46 +181,55 @@ const ALTS = Object.fromEntries(
 // have made the second run feel like a repeat of the first.
 const ESCAPE = [
   { card: 'title', text: 'ONE HUNDRED PEOPLE', sub: 'GO TO WORK', for: 3.0 },
-  { clip: 'doors', at: 1.5, for: 4.0 },
-  { clip: 'mill', at: 1.0, for: 4.0 },
-  { clip: 'cave', at: 1.5, for: 4.0 },
+  { clip: 'doors', at: 1.5, for: 3.8 },
+  { clip: 'mill', at: 1.0, for: 3.8 },
+  { clip: 'cave', at: 1.5, for: 3.8 },
   { card: 'beat', kicker: 'BUT THE WORK CAN BE', text: 'GRINDING', for: 2.6 },
-  // shortened by a second, as asked -- it was 4.5
   { clip: 'losing', at: 0.3, for: 3.5 },
 
-  // ...and the ways it kills you. Under half a second each, unslowed: too short to read a
-  // name, which is the point -- this run is the inventory, not the elegy.
+  // THE WAYS IT KILLS YOU, IN THE GAME. Not the closing reel's vignettes -- those are the next
+  // section. Filmed by running the bot up to a point and then stopping: devSolve() is only
+  // called inside the skip loop, never live, so `&solve` to a skip and then recording gives a
+  // crowd that walks into the next unsolved room with nobody playing for them.
   //
-  // 0.06..0.52 IS THE WHOLE USABLE WINDOW OF ANY OF THESE CLIPS, and it was measured rather
-  // than assumed: sampling the upper band of all ten at 0.1s steps, every one holds its card
-  // to 0.55 and has flipped to the podium by 0.70, two of them by 0.60. The first cut of this
-  // ran to 0.67 and two of the five slow deaths ended on "WHO GOT FURTHEST" -- which looks
-  // like a working shot of the wrong thing, so nothing about it reads as broken.
-  { clip: 'v_crusher', at: 0.08, for: 0.46 },
-  { clip: 'v_mantrap', at: 0.08, for: 0.46 },
-  { clip: 'v_gears', at: 0.08, for: 0.46 },
-  { clip: 'v_presses', at: 0.08, for: 0.46 },
-  { clip: 'v_thorn', at: 0.08, for: 0.46 },
+  // Punched 1.7x because at play zoom this reads as a crowd, a red-striped room and a counter
+  // rather than as a body: that IS what dying looks like here, and the punch is what makes it
+  // legible. Under a second each, five different rooms across all three acts.
+  { clip: 'k_gears', at: 4.0, for: 0.85, punch: 1.7 },
+  { clip: 'c_wires', at: 5.0, for: 0.85, punch: 1.7 },
+  { clip: 'k_crusher', at: 4.8, for: 0.85, punch: 1.7 },
+  { clip: 'k_mantrap', at: 8.5, for: 0.85, punch: 1.7 },
+  { clip: 'c_bar', at: 6.4, for: 0.85, punch: 1.7 },
 
   { card: 'count', text: 'YOU CANNOT', sub: 'SAVE THEM ALL', for: 3.0 },
-  // Five DIFFERENT deaths, slowed 2.4x so each name lands: 0.46s of source, which is what the
-  // window above allows, stretched into a 1.1s beat.
-  { clip: 'v_wiring', at: 0.06, for: 1.1, slow: 2.4 },
-  { clip: 'v_conveyor', at: 0.06, for: 1.1, slow: 2.4 },
-  { clip: 'v_sweeper', at: 0.06, for: 1.1, slow: 2.4 },
-  { clip: 'v_bridge', at: 0.06, for: 1.1, slow: 2.4 },
-  { clip: 'v_winch', at: 0.06, for: 1.1, slow: 2.4 },
+  // ALL TEN cinematic deaths now live here, slowed so each name reads. The electric one leads
+  // because he named it. 0.06..0.52 is the whole usable window of any of these clips -- every
+  // one holds its card to 0.55 and has flipped to the podium by 0.70, two of them by 0.60 --
+  // so 0.43s of source becomes a 0.9s beat.
+  { clip: 'v_wiring', at: 0.06, for: 0.9, slow: 2.1 },
+  { clip: 'v_crusher', at: 0.06, for: 0.9, slow: 2.1 },
+  { clip: 'v_mantrap', at: 0.06, for: 0.9, slow: 2.1 },
+  { clip: 'v_gears', at: 0.06, for: 0.9, slow: 2.1 },
+  { clip: 'v_conveyor', at: 0.06, for: 0.9, slow: 2.1 },
+  { clip: 'v_presses', at: 0.06, for: 0.9, slow: 2.1 },
+  { clip: 'v_sweeper', at: 0.06, for: 0.9, slow: 2.1 },
+  { clip: 'v_thorn', at: 0.06, for: 0.9, slow: 2.1 },
+  { clip: 'v_bridge', at: 0.06, for: 0.9, slow: 2.1 },
+  { clip: 'v_winch', at: 0.06, for: 0.9, slow: 2.1 },
 
   { card: 'turn', text: 'BUT IF YOU KNOW HOW TO PLAY THEIR GAME...', cps: 26, for: 3.2 },
-  { clip: 's_gears', at: 2.0, for: 1.1 },
-  { clip: 's_conveyor', at: 2.0, for: 1.1 },
-  { clip: 'panel_wiring', at: 1.5, for: 1.1 },
-  { clip: 's_sweeper', at: 2.0, for: 1.1 },
-  { clip: 's_winch', at: 2.0, for: 1.1 },
-  // the one room in the game that is finished by real keypresses on camera: UNBOUND packed a
-  // letter at a time and then the fuse. It is the only "completed" this footage can honestly
-  // show, because a held room is never taken by the bot and an unheld one is gone in a frame.
-  { clip: 'blast2', at: 4.3, for: 2.4 },
+  // ROOMS BEING PLAYED AND CLEARED, driven by hand. The bot cannot do this on camera -- it
+  // only runs inside the skip loop -- and a held room is never taken by it, so these are real
+  // keypresses through the real handlers: arrows spun into the drive train, SPACE tapped for
+  // the winch marker, right-and-down through the cable splice, left-right-left through the
+  // bank, and four real 0.82s HOLDS on the mantrap (a tap does not move that needle). Each cut
+  // ends on the room clearing, which is the green CLEAN counter stepping up.
+  { clip: 'c_gears', at: 2.6, for: 1.6 },
+  { clip: 'c_bar', at: 3.0, for: 1.6 },
+  { clip: 'c_wires', at: 2.8, for: 1.6 },
+  { clip: 'c_dig', at: 1.5, for: 1.6 },
+  { clip: 'c_lift', at: 3.4, for: 1.9 },
+  { clip: 'blast2', at: 4.3, for: 2.2 },
 
   { card: 'hope', text: '...YOU MIGHT JUST ESCAPE.', for: 3.0 },
   { clip: 'podium', at: 0.8, for: 5.0 },
