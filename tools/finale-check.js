@@ -129,7 +129,7 @@ eval(src + `
     // ...and then let the lesson run out, so the phase half of the assertion below is still
     // about the room OPENING. Stopping at the wheel leaves it in 'charge' at a hundred aboard,
     // where the wheel finishes four seconds before the window does.
-    run(FINALE_LEARN + 2, () => { if (F().phase === 'search') return 'stop'; });
+    run(FINALE_LEARN + 2, () => { if (F().phase === 'search') return 'stop'; finaleTeach(F()); });
     ok('a crew of ' + String(crew).padStart(3) + ' winds the flywheel in the ' + want.toFixed(1) + 's genTime says',
        F().phase === 'search' && Math.abs((t - board) - want) <= Math.max(0.35, want * 0.12),
        'boarded in ' + board.toFixed(2) + 's, then wound for ' + (t - board).toFixed(2) + 's');
@@ -144,7 +144,13 @@ eval(src + `
 
   function searching(crew) {
     charging(crew);
-    run(40, () => { if (F().phase === 'search') return 'stop'; });
+    // THE LESSON IS A GATE NOW. The last room opens when somebody has found the handbag, not
+    // when a clock says so, and no driver can steer a lamp with four keys -- so without the
+    // game's own finaleTeach hook this spends its whole budget in the charge and every
+    // assertion past it becomes a report on a room that was never entered. The assertions
+    // ABOUT the lesson drive it the long way round, with keys, which is what proves the hook
+    // is not hiding anything.
+    run(40, () => { if (F().phase === 'search') return 'stop'; finaleTeach(F()); });
     return F();
   }
 
@@ -181,37 +187,77 @@ eval(src + `
 
   // ------------------------------------------------------------ the lesson
   {
-    // Morgan, 2026-09-23: the loading bar goes, and a small window explaining the room takes
-    // its place. The thing that can go wrong is not how it looks -- it is that the window is
-    // tied to a wait whose length the crew decides. genTime is 10.9s at one survivor and 1.0s
-    // at a hundred, so a lesson that rode the generator would be gone in a second on exactly
-    // the run this room is the reward for. It has a floor of its own, and this is that floor.
-    for (const crew of [1, 12, 100]) {
-      charging(crew);
-      let up = 0;
-      run(60, () => { if (F().phase !== 'charge') return 'stop'; up += 1/60; });
-      ok('a crew of ' + String(crew).padStart(3) + ' gets long enough to read the lesson',
-         up >= FINALE_LEARN - 0.1 && F().phase === 'search',
-         'the window was up for ' + up.toFixed(1) + 's against a floor of ' + FINALE_LEARN +
-         's (the generator alone wanted ' + CFG.finale.genTime(crew).toFixed(1) + 's)');
+    // Morgan, 2026-09-24: "can we actually make it playable? So that ... as soon as they
+    // successfully spot the difference, then the actual game starts."
+    //
+    // DRIVEN WITH THE KEYS, not with finaleTeach. Everything else in this file uses that hook
+    // to get past the window, so if the window were also ASSERTED through the hook nothing
+    // would ever test the thing a player actually touches -- the four arrows, the press, and
+    // the gate. This is the one place that steers the lamp.
+    const steerTo = (g, u, v, secs) => {
+      const n = Math.round(secs * 60);
+      for (let i = 0; i < n; i++) {
+        const le = g.lesson;
+        if (!le) { update(1/60); continue; }
+        HELD.ARROWRIGHT = le.u < u - 0.004; HELD.ARROWLEFT = le.u > u + 0.004;
+        HELD.ARROWDOWN  = le.v < v - 0.004; HELD.ARROWUP   = le.v > v + 0.004;
+        update(1/60);
+        if (Math.abs(le.u - u) < 0.02 && Math.abs(le.v - v) < 0.02) break;
+      }
+      HELD.ARROWRIGHT = HELD.ARROWLEFT = HELD.ARROWUP = HELD.ARROWDOWN = false;
+    };
+
+    // It is a GATE, not a timer. This is the assertion the whole change is about: left alone,
+    // the room never opens, however long the generator has been finished.
+    {
+      const g = charging(100);
+      run(30);
+      ok('the room does not open until the difference has been found',
+         g.phase === 'charge' && !g.lesson.done,
+         'after 30s untouched: phase ' + g.phase + ', solved ' + (g.lesson && g.lesson.done));
     }
-    // ...and SPACE settles the reading, not the generator. It is the same key the lesson is
-    // teaching, and it is the only key this room has.
-    charging(100);
-    run(60, () => { if (finaleChargeProgress(F()) >= 1) return 'stop'; });
-    const before = F().phase;
-    KD({ key: ' ', preventDefault() {}, repeat: false });
-    let after = 0;
-    run(10, () => { if (F().phase === 'search') return 'stop'; after += 1/60; });
-    ok('SPACE dismisses the lesson once the wheel is wound',
-       before === 'charge' && F().phase === 'search' && after < 0.2,
-       'was ' + before + ', opened ' + after.toFixed(2) + 's after the key');
+    // A wrong mark is free. The room on the other side of this window charges a body for the
+    // same press, and a tutorial that did would be a test.
+    {
+      const g = charging(100);
+      run(2);
+      const crew = g.line.length;
+      KD({ key: ' ', preventDefault() {}, repeat: false });
+      run(1);
+      ok('a wrong mark in the lesson costs nothing and opens nothing',
+         g.phase === 'charge' && !g.lesson.done && g.line.length === crew,
+         'phase ' + g.phase + ', crew ' + crew + ' -> ' + g.line.length + ', solved ' + g.lesson.done);
+    }
+    // ...and steering onto the bag and pressing SPACE starts the game.
+    {
+      const g = charging(100);
+      run(1);
+      steerTo(g, LESSON_BAG.u, LESSON_BAG.v, 12);
+      KD({ key: ' ', preventDefault() {}, repeat: false });
+      const solved = g.lesson.done;
+      let after = 0;
+      run(8, () => { if (F().phase === 'search') return 'stop'; after += 1/60; });
+      ok('finding the difference with the arrows and SPACE starts the room',
+         solved && g.phase === 'search' && after >= LESSON.hold - 0.1 && after <= LESSON.hold + 0.4,
+         'solved ' + solved + ', opened ' + after.toFixed(2) + 's later (the held beat is ' + LESSON.hold + 's)');
+    }
+    // The generator is still the generator: a thin crew waits for it even once taught.
+    {
+      const g = charging(1);
+      run(1);
+      finaleTeach(g);
+      let held = 0;
+      run(40, () => { if (F().phase === 'search') return 'stop'; held += 1/60; });
+      ok('a crew of 1 still waits for its flywheel after the lesson is solved',
+         g.phase === 'search' && held > CFG.finale.genTime(1) * 0.7,
+         'held ' + held.toFixed(1) + 's against a genTime of ' + CFG.finale.genTime(1).toFixed(1) + 's');
+    }
   }
 
   // ------------------------------------------------------------ the standing pack
   {
     charging(24);
-    run(30, () => { if (F().phase === 'search') return 'stop'; });
+    run(30, () => { if (F().phase === 'search') return 'stop'; finaleTeach(F()); });
     const arrived = F().deck.filter(d => d.arrived).length;
     ok('every survivor is standing on the belt when the search begins',
        arrived === 24 && F().line.length === 24, arrived + ' standing of ' + F().line.length);
@@ -221,7 +267,7 @@ eval(src + `
     // the canvas, and every timing assertion stayed green because the phase still flipped.
     for (const crew of [1, 2, 60, 100]) {
       charging(crew);
-      run(30, () => { if (F().phase === 'search') return 'stop'; });
+      run(30, () => { if (F().phase === 'search') return 'stop'; finaleTeach(F()); });
       const L = finaleLayout();
       // The one the clock is spending is allowed past the left end, because that is what
       // going over the end IS -- the slip carries them off the crown of the tail drum and the
@@ -242,7 +288,7 @@ eval(src + `
     }
 
     charging(24);
-    run(30, () => { if (F().phase === 'search') return 'stop'; });
+    run(30, () => { if (F().phase === 'search') return 'stop'; finaleTeach(F()); });
     // The belt's own slot pitch, read off the game rather than written down: the two nearest
     // bodies in a full line are exactly one pitch apart, and the assertion below is entirely
     // about that distance.
@@ -548,7 +594,7 @@ eval(src + `
     const pows = {};
     for (const crew of [1, 100]) {
       charging(crew);
-      run(40, () => { if (F().phase === 'search') return 'stop'; });
+      run(40, () => { if (F().phase === 'search') return 'stop'; finaleTeach(F()); });
       pows[crew] = F().beltPow;
     }
     ok('one survivor does not drive the wheel as hard as a hundred',

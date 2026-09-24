@@ -48,7 +48,11 @@ eval(src + `
     beginFinaleCharge(F());
     // Straight to the lamps coming on. The charge is finale-check's business, not this
     // one's, and at crew 1 it is eleven seconds of flywheel before the clock even starts.
-    for (let i = 0; i < 60 * 40 && F().phase !== 'search'; i++) update(1/60);
+    // THE LESSON IS NOW A GATE. The last room opens when somebody has found the handbag,
+    // not when a clock says so, and no driver can steer a lamp -- so without the game's own
+    // finaleTeach hook this loop spends its whole budget in the charge and every assertion
+    // past it becomes a report on a room that was never entered.
+    for (let i = 0; i < 60 * 40 && F().phase !== 'search'; i++) { update(1/60); finaleTeach(F()); }
     return F();
   }
   // Every frame, not every sixth: this is a check about WHEN things happen, and a sampled
@@ -337,8 +341,26 @@ eval(src + `
     const clocky = seen.filter(t => /^\\d?\\d:\\d\\d$/.test(t.trim()));
     ok('the room never tells the player how long is left', clocky.length === 0,
        seen.length + ' strings drawn' + (clocky.length ? ', CLOCK: ' + clocky.join(' ') : ''));
-    ok('and the crew is on screen instead', seen.some(t => /^CREW /.test(t.trim())),
-       seen.filter(t => /CREW/.test(t)).join(' ') || 'no crew chip');
+    // The crew moved out of a chip and into the line at the top of the room on 2026-09-24 --
+    // Morgan: "I think you're being very abstract here. Maybe we can say, 'You've entered the
+    // room with X amount of survivors.'" -- so this looks for the COUNT in whatever words the
+    // room is using rather than for a label it happens to have had. The claim is unchanged
+    // and is the one that matters: the thing on screen is people, and it is the right number.
+    // NO BACKSLASH ESCAPES IN HERE, AND NO BACKTICKS EITHER. This whole check is the body of
+    // a template literal. A template literal eats a backslash-b as the backspace character
+    // before the regex ever sees it, so a word-boundary pattern compiled to one beginning
+    // with U+0008 and could not match the string that was demonstrably being drawn: it
+    // reported "the crew is not on screen at all" about a room drawing 29 SURVIVORS LEFT.
+    // Same family as this project's note about a Python-style escape in an object key -- the
+    // escape is consumed one layer above the one you are reading. And a backtick in the
+    // comment EXPLAINING that closed the literal and took the whole file out with a syntax
+    // error, which is the same trap one turn later. Plain string tests have no layer to lose.
+    const crewLine = seen.map(t => t.trim())
+                         .find(t => t.endsWith(' SURVIVORS LEFT') || t.endsWith(' SURVIVOR LEFT'));
+    const shown = crewLine ? parseInt(crewLine, 10) : null;
+    ok('and the crew is on screen instead, counted in people',
+       !!crewLine && shown === g.line.length,
+       crewLine ? '"' + crewLine + '" against ' + g.line.length + ' alive' : 'the crew is not on screen at all');
   }
 })();
 `);

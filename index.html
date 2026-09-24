@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '161 the last room teaches itself';
+const BUILD = '162 the lesson is played, and the room says people';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3032,11 +3032,11 @@ window.addEventListener('keydown', e => {
   // smoothly rather than a key-press at a time.
   if (S.mode === 'finale') {
     HELD[k] = true;
-    // SPACE has two jobs in this room and they never overlap: while the lesson is up it
-    // dismisses the lesson, and from the search on it marks. Teaching the key by using it is
-    // the point -- the lesson's own last line is what it does next.
+    // SPACE has ONE job in this room and the lesson is where it is learnt: it marks where
+    // the lamp is resting. In the window that is the handbag; in the room it is a difference.
+    // It used to dismiss the window, which taught the key by making it mean something else.
     const f = S.finale;
-    if (k === ' ' && f && f.phase === 'charge') { f.learnT = Math.max(f.learnT || 0, FINALE_LEARN); return; }
+    if (k === ' ' && f && f.phase === 'charge') { lessonMark(f); return; }
     if (k === ' ') finaleConfirm();
     return;
   }
@@ -3410,6 +3410,32 @@ const FINALE_INTRO_SPEECH = 8.5;
 // reward for, a lesson tied to the generator would be gone before it could be read. SPACE
 // dismisses it early, which is also the first thing it teaches.
 const FINALE_LEARN = 5.2;
+// The lesson is PLAYED, not read. Morgan, 2026-09-24: "can we make that pop-up for the
+// tutorial bigger, and can we actually make it playable? So that ... as soon as they
+// successfully spot the difference, then the actual game starts."
+//
+// Which means it is the real room in miniature and nothing else: the same veil, the same
+// lamp on the same arrow keys, the same SPACE, the same tolerance in proportion. The only
+// thing made easy is the picture -- one difference, the size of a fist, on an empty floor.
+// FINALE_LEARN survives as the floor on how long the window stays up AFTER it is solved, so
+// a player who finds the bag in half a second still sees what the mark looks like.
+const LESSON = {
+  w: 620, h: 330,       // the window
+  cw: 258, ch: 168,     // each card
+  gap: 26,
+  lampR: 46,            // generous: the lesson is the mechanic, not the difficulty
+  hit: 30,              // the mark's tolerance, against a 24 in the real room
+  hold: 1.1,            // how long the solved card is held before the room opens
+};
+// Where the bag is on the altered card, in the card's own 0..1, and where the lamp starts --
+// deliberately the far corner, so the player has to steer to find it and learns that the
+// lamp is the thing they are moving.
+const LESSON_BAG = { u: 0.66, v: 0.62 };
+// Lit on the FIGURE, not on empty wall. Starting in the far corner meant the first thing the
+// player saw was a pool of light on nothing, which teaches that the lamp is useless. Starting
+// on the person means the card reads as a picture immediately and the only question left is
+// the one being asked: what has the other one got that this has not.
+const LESSON_START = { u: 0.34, v: 0.60 };
 // Six dark capitalism tableaux - inked, muted gold / rust / mill soot, same art language as the run.
 const FINALE_SCENES = [
   {
@@ -3845,15 +3871,52 @@ function drawFoundChecks(f, L, spotR) {
     }
   }
 }
+// A mark inside the window. The same shape as finaleConfirm and deliberately not a call into
+// it: that one is about f.diffs on the real cards, and the two sharing a path is how a lesson
+// ends up able to score the room it is teaching.
+// WHERE THE WINDOW'S TWO CARDS ARE. Read by the drawing and by the pointer, because a lesson
+// whose cards are in one place for the eye and another for the mouse is a lesson in nothing.
+function lessonCards(L) {
+  const bw = LESSON.w, bh = LESSON.h;
+  const bx = W / 2 - bw / 2, by = L.left.y + L.left.h * 0.5 - bh / 2 + 6;
+  return { bx, by, bw, bh, cw: LESSON.cw, ch: LESSON.ch, cy: by + 44,
+           lx: W / 2 - LESSON.gap / 2 - LESSON.cw, rx: W / 2 + LESSON.gap / 2 };
+}
+// THE HOOK EVERY DRIVER NEEDS, and it is deliberate rather than a shortcut -- the same
+// bargain this file already makes with a verb's solveKey. The last room no longer opens on a
+// clock: it opens when somebody has found the handbag, which is a lamp steered with four keys
+// and a press. Nothing that is not a player can do that, so without this the dev flags, the
+// bot and every check that drives to the search would sit in the charge until their frame
+// budget ran out and report a hang.
+//
+// It is the ONE way in. A driver that pokes f.lesson.done itself would go stale the first
+// time the lesson gains a second step.
+function finaleTeach(f) {
+  if (!f || f.phase !== 'charge') return false;
+  if (!f.lesson) f.lesson = { u: LESSON_START.u, v: LESSON_START.v, vu: 0, vv: 0, done: false, doneT: 0, miss: 0 };
+  f.lesson.u = LESSON_BAG.u; f.lesson.v = LESSON_BAG.v;
+  f.lesson.done = true; f.lesson.doneT = LESSON.hold;
+  return true;
+}
+function lessonMark(f) {
+  const le = f.lesson;
+  if (!le || le.done) return;
+  const d = Math.hypot((le.u - LESSON_BAG.u) * LESSON.cw, (le.v - LESSON_BAG.v) * LESSON.ch);
+  if (d <= LESSON.hit) {
+    le.done = true; le.doneT = 0;
+    AU.tick(1);
+  } else {
+    // No cost, no lock, no red. Getting it wrong in a tutorial has to be free or the tutorial
+    // is a test; the room the other side of this window charges a body for the same mistake.
+    le.miss = 0.5;
+    AU.wrong();
+  }
+}
 function finaleConfirm(atU, atV) {
   const f = S.finale;
   if (!f) return false;
   if (f.wrongT > 0) return false;
   if (f.winT > 0) return false;      // the puzzle is already won; the room is just finishing
-  if (f.phase === 'charge') {
-    S.floaters.push({ sx: W / 2, sy: H * 0.42, txt: 'WAIT - wheel still packing', life: 0.9, color: '#d4a84b' });
-    return false;
-  }
   if (f.phase !== 'search') return false;
   const L = finaleLayout();
   const u = (atU != null) ? clamp01(atU) : clamp01(f.spot?.u ?? 0.5);
@@ -5714,9 +5777,36 @@ function updateFinale(dt) {
     }
     if (f.boardT == null && finaleFillFrac(f) >= 1) f.boardT = f.chargeT;
     f.learnT = (f.learnT || 0) + dt;
-    // BOTH, not either: the flywheel has to be wound AND the lesson has to have been on
-    // screen long enough to read. At a hundred aboard the first is done in a second.
-    if (finaleChargeProgress(f) >= 1 && f.learnT >= FINALE_LEARN) {
+    // The lesson's own lamp, on the same keys and the same feel as the room's. It is a
+    // separate spot from f.spot on purpose: that one is in painting UV and is already being
+    // steered by the block below, and two consumers of one cursor is how the window and the
+    // room would end up fighting over it.
+    if (!f.lesson) f.lesson = { u: LESSON_START.u, v: LESSON_START.v, vu: 0, vv: 0, done: false, doneT: 0, miss: 0 };
+    const le = f.lesson;
+    le.miss = Math.max(0, le.miss - dt);
+    if (le.done) le.doneT += dt;
+    else {
+      let lx = 0, ly = 0;
+      if (HELD.ARROWLEFT || HELD.A) lx -= 1;
+      if (HELD.ARROWRIGHT || HELD.D) lx += 1;
+      if (HELD.ARROWUP || HELD.W) ly -= 1;
+      if (HELD.ARROWDOWN || HELD.S) ly += 1;
+      const acc = CFG.finale.cursorAccel || 4.5, top = CFG.finale.cursorSpeed || 1.15;
+      const fr = CFG.finale.cursorFriction || 10;
+      if (lx || ly) {
+        const n = Math.hypot(lx, ly) || 1;
+        le.vu += (lx / n) * acc * dt; le.vv += (ly / n) * acc * dt;
+      } else { const damp = Math.exp(-fr * dt); le.vu *= damp; le.vv *= damp; }
+      const sp = Math.hypot(le.vu, le.vv);
+      if (sp > top) { le.vu *= top / sp; le.vv *= top / sp; }
+      le.u = clamp01(le.u + le.vu * dt); le.v = clamp01(le.v + le.vv * dt);
+    }
+    // THREE THINGS, and the lesson is the one that matters: the flywheel has to be wound,
+    // the bag has to have been found, and the found state has to have been held long enough
+    // to see. Before it was playable this was a timer, and a timer is what it must not be --
+    // "as soon as they successfully spot the difference, then the actual game starts".
+    const taught = f.lesson && f.lesson.done && f.lesson.doneT >= LESSON.hold;
+    if (finaleChargeProgress(f) >= 1 && f.learnT >= Math.min(FINALE_LEARN, 1.2) && taught) {
       // beltPow is NOT slammed to 1 here. Doing that overrode everything targetPow says about
       // how big the crew is, so a lone survivor's wheel jumped to full power the instant the
       // search began and stayed there -- which is the whole claim of the room, inverted.
@@ -17090,8 +17180,6 @@ function drawFinaleIntro(f) {
     // just inside the bottom of their own frames now, where nothing else is drawn.
       // Same place as the panel's copy. This one kept the old inside-the-frame position, so the
     // two words jumped 18 units and from inside the frames to below them at the handover.
-    ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 10);
-    ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 10);
 
     // Oppressive red wash, and a cold light on the machine he is about to talk about. It
     // used to be a spotlight on a stick figure in a top hat standing on the belt, with a
@@ -17118,66 +17206,100 @@ function drawFinaleIntro(f) {
 // task, with the answer already on it. Two figures, one of them carrying a bag, and the bag
 // circled the way a found difference is circled on the real cards.
 function drawFinaleLesson(f, L, t) {
-  const bw = 452, bh = 214, bx = W / 2 - bw / 2, by = L.left.y + L.left.h * 0.5 - bh / 2;
-  ctx.fillStyle = 'rgba(8,5,10,0.93)';
-  roundRect(bx, by, bw, bh, 9); ctx.fill();
-  ctx.strokeStyle = '#b8963e'; ctx.lineWidth = 1.5;
-  roundRect(bx, by, bw, bh, 9); ctx.stroke();
+  const le = f.lesson || { u: LESSON_START.u, v: LESSON_START.v, done: false, doneT: 0, miss: 0 };
+  const C = lessonCards(L);
+  const bw = C.bw, bh = C.bh, bx = C.bx, by = C.by;
+  ctx.fillStyle = 'rgba(8,5,10,0.95)';
+  roundRect(bx, by, bw, bh, 10); ctx.fill();
+  ctx.strokeStyle = le.done ? '#2ecc71' : '#b8963e'; ctx.lineWidth = 1.8;
+  roundRect(bx, by, bw, bh, 10); ctx.stroke();
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#d4a84b'; ctx.font = 'bold 13px monospace';
-  ctx.fillText('SPOT THE DIFFERENCE', W / 2, by + 24);
+  ctx.fillStyle = le.done ? '#2ecc71' : '#d4a84b'; ctx.font = 'bold 14px monospace';
+  ctx.fillText(le.done ? 'THAT IS THE JOB.' : 'ONE OF THESE TWO HAS BEEN ALTERED', W / 2, by + 26);
 
-  // the two cards, in the same proportions and the same frame as the real ones
-  const cw = 186, ch = 104, cy = by + 38, gap = 24;
-  const lx = W / 2 - gap / 2 - cw, rx = W / 2 + gap / 2;
+  const cw = C.cw, ch = C.ch, cy = C.cy, lx = C.lx, rx = C.rx;
+  // The lamp, in each card's own coordinates. One cursor, mirrored on both cards, which is
+  // exactly what the room does -- and it is the thing the lesson is really teaching.
+  const shine = (cx) => ({ x: cx + le.u * cw, y: cy + le.v * ch });
+
   for (const [cx, alt] of [[lx, false], [rx, true]]) {
-    ctx.fillStyle = '#17131a';
-    roundRect(cx, cy, cw, ch, 4); ctx.fill();
-    ctx.strokeStyle = 'rgba(184,150,62,0.7)'; ctx.lineWidth = 1.2;
-    roundRect(cx, cy, cw, ch, 4); ctx.stroke();
-    // a floor to stand on, so the figure is in a room rather than floating in a box
-    ctx.fillStyle = '#231c26'; ctx.fillRect(cx + 1, cy + ch - 22, cw - 2, 21);
-    ctx.fillStyle = 'rgba(206,228,248,0.10)'; ctx.fillRect(cx + 1, cy + ch - 22, cw - 2, 1.2);
-    const fy = cy + ch - 16;
-    paintActor(cx + cw * 0.42, fy, {
+    ctx.save();
+    roundRect(cx, cy, cw, ch, 4); ctx.clip();
+    // A LIT ROOM UNDER THE VEIL. These were near-black, so even the middle of the lamp had
+    // nothing in it to see and the mechanic read as a torch pointed at a wall. The veil is
+    // what makes the card dark; the card itself has to be worth uncovering.
+    ctx.fillStyle = '#2f2636'; ctx.fillRect(cx, cy, cw, ch);
+    ctx.fillStyle = '#453a52'; ctx.fillRect(cx, cy + ch - 34, cw, 34);
+    ctx.fillStyle = 'rgba(206,228,248,0.16)'; ctx.fillRect(cx, cy + ch - 34, cw, 1.4);
+    const fy = cy + ch - 26;
+    paintActor(cx + cw * 0.36, fy, {
       skin: '#e8c8a2', shirt: '#7c8aa0', pants: '#2b3140', hair: '#2a1a10',
-      phase: 0, scale: 1.55, jit: 4,
+      phase: 0, scale: 2.0, jit: 4,
     });
     if (alt) {
-      // THE DIFFERENCE. A handbag beside her, deliberately the most obvious thing that could
-      // be added to a picture: a solid shape, on empty floor, at a size nothing else in the
-      // card shares. The lesson is the mechanic, not the difficulty.
-      const hx = cx + cw * 0.66, hy = fy - 9;
-      ctx.fillStyle = '#6d3f18';
-      roundRect(hx - 9, hy - 11, 18, 13, 2); ctx.fill();
-      ctx.fillStyle = '#8c5a2b';
-      roundRect(hx - 8, hy - 10, 16, 11, 2); ctx.fill();
-      ctx.fillStyle = 'rgba(232,200,150,0.30)'; ctx.fillRect(hx - 8, hy - 10, 16, 1.4);
-      ctx.strokeStyle = '#c9a86a'; ctx.lineWidth = 1.6;
-      ctx.beginPath(); ctx.arc(hx, hy - 11, 5.5, Math.PI + 0.25, -0.25); ctx.stroke();
-      // ...and the ring a marked difference wears on the real cards, so the thing the player
-      // is about to be asked to do has already been done once in front of them.
-      const pulse = 0.55 + 0.45 * Math.sin(t * 4);
-      ctx.strokeStyle = `rgba(46,204,113,${pulse})`; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(hx, hy - 4, 15, 0, 6.28); ctx.stroke();
+      // THE DIFFERENCE: a handbag on empty floor, the most obvious thing that could be added
+      // to a picture -- a solid shape at a size nothing else in the card shares.
+      const hx = cx + LESSON_BAG.u * cw, hy = cy + LESSON_BAG.v * ch;
+      ctx.fillStyle = '#6d3f18'; roundRect(hx - 13, hy - 10, 26, 19, 3); ctx.fill();
+      ctx.fillStyle = '#8c5a2b'; roundRect(hx - 11.5, hy - 8.5, 23, 16, 3); ctx.fill();
+      ctx.fillStyle = 'rgba(232,200,150,0.30)'; ctx.fillRect(cx + LESSON_BAG.u * cw - 11.5, hy - 8.5, 23, 1.8);
+      ctx.strokeStyle = '#c9a86a'; ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.arc(hx, hy - 10, 8, Math.PI + 0.3, -0.3); ctx.stroke();
+    }
+    // THE VEIL, and it is the whole reason this is worth playing: the cards are dark and the
+    // lamp is the only way to see them. Read as a lesson it says "you are holding a light".
+    const sp = shine(cx);
+    const veil = ctx.createRadialGradient(sp.x, sp.y, LESSON.lampR * 0.35, sp.x, sp.y, LESSON.lampR * 1.5);
+    veil.addColorStop(0, 'rgba(6,4,8,0)');
+    veil.addColorStop(0.62, 'rgba(6,4,8,0.42)');
+    veil.addColorStop(1, 'rgba(6,4,8,0.96)');
+    ctx.fillStyle = veil; ctx.fillRect(cx, cy, cw, ch);
+    // ...and a warm pool where it lands, over the veil, so the light reads as light rather
+    // than as a hole cut in a black sheet.
+    ctx.globalCompositeOperation = 'lighter';
+    const warm = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, LESSON.lampR);
+    warm.addColorStop(0, 'rgba(255,214,150,0.26)'); warm.addColorStop(1, 'rgba(255,214,150,0)');
+    ctx.fillStyle = warm; ctx.fillRect(cx, cy, cw, ch);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.restore();
+
+    ctx.strokeStyle = le.done && alt ? 'rgba(46,204,113,0.9)' : 'rgba(184,150,62,0.7)';
+    ctx.lineWidth = 1.4; roundRect(cx, cy, cw, ch, 4); ctx.stroke();
+
+    // the ring a marked difference wears, once it has been marked
+    if (alt && le.done) {
+      const hx = cx + LESSON_BAG.u * cw, hy = cy + LESSON_BAG.v * ch;
+      const pop = Math.min(1, le.doneT * 6);
+      ctx.strokeStyle = `rgba(46,204,113,${0.55 + 0.45 * Math.sin(t * 5)})`; ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.arc(hx, hy, 16 + (1 - pop) * 22, 0, 6.28); ctx.stroke();
     }
   }
-  ctx.fillStyle = '#9a9088'; ctx.font = '10px monospace';
-  ctx.fillText('ORIGINAL', lx + cw / 2, cy + ch + 12);
-  ctx.fillText('ALTERED', rx + cw / 2, cy + ch + 12);
+
+  // the lamp's own edge, drawn on both cards so the mirroring is unmissable
+  if (!le.done) {
+    for (const cx of [lx, rx]) {
+      const sp = shine(cx);
+      ctx.save();
+      roundRect(cx, cy, cw, ch, 4); ctx.clip();
+      ctx.strokeStyle = le.miss > 0 ? `rgba(255,107,107,${0.5 + le.miss})` : 'rgba(255,224,170,0.30)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(sp.x, sp.y, LESSON.lampR, 0, 6.28); ctx.stroke();
+      ctx.restore();
+    }
+  }
 
   ctx.fillStyle = '#f0e6d0'; ctx.font = '12px monospace';
-  ctx.fillText('Use the ARROW KEYS and SPACEBAR to highlight the differences.', W / 2, by + bh - 30);
-  // OFFER THE KEY ONLY WHEN IT DOES SOMETHING. The room opens when the flywheel is wound AND
-  // the lesson has been up long enough to read, and SPACE settles the second of those, not
-  // the first -- the crew powering the lamps is the whole premise and is not skippable. So at
-  // a hundred aboard, where the generator is done in a second, this offers SPACE for four;
-  // and at one survivor, where the generator wants eleven, it never offers it at all and says
-  // what is actually being waited for. A prompt that does nothing is worse than no prompt.
+  ctx.fillText(le.done ? 'Ten of them, hidden in the dark, and a line of people for a clock.'
+                       : 'Use the ARROW KEYS to move the lamp. SPACEBAR marks a difference.',
+               W / 2, by + bh - 34);
   const wound = finaleChargeProgress(f) >= 1;
-  ctx.fillStyle = wound ? `rgba(212,168,75,${0.45 + 0.4 * Math.sin(t * 5)})` : 'rgba(150,135,110,0.4)';
+  const msg = le.done ? (wound ? 'the doors are opening…' : 'running the generator…')
+            : le.miss > 0 ? 'nothing there. Keep looking.'
+            : 'find the one thing this room has that the other does not';
+  ctx.fillStyle = le.done ? `rgba(46,204,113,${0.5 + 0.4 * Math.sin(t * 5)})`
+            : le.miss > 0 ? 'rgba(255,107,107,0.85)' : 'rgba(180,162,130,0.7)';
   ctx.font = 'bold 11px monospace';
-  ctx.fillText(wound ? 'SPACE to begin' : 'running the generator…', W / 2, by + bh - 12);
+  ctx.fillText(msg, W / 2, by + bh - 14);
   ctx.textAlign = 'left';
 }
 // The chamber below the paintings: the pit, the water, the piers, the belt, the drive and
@@ -17466,8 +17588,19 @@ function drawFinalePanel() {
 
   // -- HUD: title + time + crew + found (one meter only — no duplicate bar)
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#e8c96a'; ctx.font = 'bold 18px monospace';
-  ctx.fillText(f.scene.title, W / 2, L.py + 26);
+  // THE CREW, NOT THE PAINTING'S NAME. Morgan, 2026-09-24: "you don't need to write 'progress
+  // has a smell' or 'wheel turning 30% power' ... I think you're being very abstract here.
+  // Maybe we can say, 'You've entered the room with X amount of survivors.'"
+  //
+  // The scene titles were the joke each tableau is telling, and they were the loudest thing
+  // on a screen whose subject is a line of people being spent. This says the one number the
+  // room is actually about, and it goes DOWN while you watch, which the title never did.
+  // Red at the same threshold the crew chip used to take it, and for the same reason: it
+  // means the last of them rather than merely fewer of them.
+  const alive = f.line.length;
+  ctx.fillStyle = finaleLampFrac(f) < 0.18 ? '#ff6b6b' : '#e8c96a';
+  ctx.font = 'bold 18px monospace';
+  ctx.fillText(alive === 1 ? '1 SURVIVOR LEFT' : `${alive} SURVIVORS LEFT`, W / 2, L.py + 26);
   const chipY = L.py + 38;
   const drawChip = (cx, label, val, col, fixedW) => {
     const text = label ? `${label} ${val}` : String(val);
@@ -17485,9 +17618,10 @@ function drawFinalePanel() {
   // The count went in as `label` with an empty `val`, so the chip built "6/10 " with a
   // trailing space and the glyphs sat about 4 units left of centre. Both are one width so
   // the row does not shuffle as people die.
-  const crewCol = finaleLampFrac(f) < 0.18 ? '#ff6b6b' : '#d4a84b';
-  drawChip(W / 2 - 65, '', `${f.found.size}/${CFG.finale.findCount}`, '#2ecc71', 86);
-  drawChip(W / 2 + 65, 'CREW', f.line.length, crewCol, 86);
+  // ONE CHIP. The crew moved into the line above, where it is a sentence rather than a
+  // label, so this is left saying the only other thing worth a number -- and it says what it
+  // is counting now, because "0/10" alone was a score with no units.
+  drawChip(W / 2, 'FOUND', `${f.found.size}/${CFG.finale.findCount}`, '#2ecc71', 132);
 
   // paintings — then pitch-black veil with mirrored flashlight spots (the player control)
   drawFinaleScene(f.scene, L.left.x, L.left.y, L.left.w, L.left.h, false, f.diffs, f.found, t);
@@ -17529,14 +17663,10 @@ function drawFinalePanel() {
     }
     ctx.restore();
   }
-  // Drawn AFTER the veil. Underneath it these survived at 7% at a small crew and 86% at a
-  // hundred -- a twelve-fold swing in the legibility of a fixed caption, decided by how many
-  // people lived. Baseline is clear of the tallest crown (397.3) by 3.3 units.
-  ctx.save();
-  ctx.fillStyle = 'rgba(214,198,160,0.92)'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
-  ctx.fillText('ORIGINAL', L.left.x + L.left.w / 2, L.left.y + L.left.h + 7);
-  ctx.fillText('ALTERED', L.right.x + L.right.w / 2, L.right.y + L.right.h + 7);
-  ctx.restore();
+  // ORIGINAL and ALTERED are gone. Morgan, 2026-09-24: they "did not really make sense" --
+  // and they did not: the player is not being asked which card is which, they are being asked
+  // where the two differ, and the answer is on both. The lesson now teaches the pairing, so
+  // nothing has to be captioned in the room itself.
   drawFoundChecks(f, L, spotR);
 
   if (f.phase === 'blackout') {
@@ -17556,21 +17686,15 @@ function drawFinalePanel() {
   // still among the bodies -- the crowns sit 35 above the sole line, so there is no room over
   // a full belt at all. It goes in the empty band under the chips, centred, where nothing
   // else is drawn.
-  ctx.fillStyle = '#9a9088'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
-  // It used to read "waiting for the first body" off beltPow, which counts people who have
-  // ARRIVED at their slot. With the boarding wave that is zero for the first half second
-  // while twenty of them are visibly walking along the belt, so the line contradicted the
-  // picture directly underneath it. It reads the deck now: on the belt, then aboard.
-  ctx.fillText(f.phase === 'charge'
-    ? (f.deck.length === 0 ? 'waiting for the first body…'
-       : beltPow < 0.02 ? `${f.deck.length} coming aboard…`
-       // The lamp opens at full for every crew now, so "lamps 87%" was a promise the search
-       // does not keep. What the crew still decides here is the WHEEL, so that is what it
-       // says, and beltPow is the number the drum and the dynamo are already drawn from.
-       : `wheel turning — ${Math.round(clamp01(beltPow) * 100)}% power`)
-    : f.phase === 'blackout'
-      ? 'lights failing - hold on'
-      : 'ARROWS / click move lamps  ·  SPACE or click to mark', W / 2, L.left.y - 8);
+  // ONLY THE CONTROLS, and only while they are the thing to do. The charge used to report
+  // the wheel's power here in percent, which is Morgan's "wheel turning 30% power": a reading
+  // of a machine the player cannot touch, printed over a room they cannot play yet. The
+  // lesson has that beat now and it is about the controls, so this says nothing until the
+  // room is live and then says the same thing the lesson just taught.
+  if (f.phase === 'search') {
+    ctx.fillStyle = '#9a9088'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('ARROWS / click move lamps  ·  SPACE or click to mark', W / 2, L.left.y - 8);
+  }
 
   // crew: FIXED world positions; run-in-place gait sells treadmill relative motion
   // Leftmost first, so leftmost is painted furthest back -- except for the one who is going,
@@ -17617,6 +17741,34 @@ function drawFinalePanel() {
       // the eye closed the gap, so the line read as threaded on a wire -- which is the worst
       // possible reading for a feature whose whole point is one person coming away from it.
       ctx.lineTo(d.x - 5 - Math.sin(t * 14 + d.i) * 3, L.deck.y - 25 + bob); ctx.stroke();
+    }
+    // THEIR NAMES, while there is room for them. Morgan, 2026-09-24: "if some of the named
+    // characters survived, their names can hover slightly over their head while they're
+    // running on the conveyor belt."
+    //
+    // Gated on the room each body actually has rather than on a crew size: 26 of the hundred
+    // are named and a full belt stands them 21 apart, which is a third of the width of
+    // "Atthiyya" -- so at the start nothing is legible and everything overlaps. As the line
+    // thins the spacing opens and the names arrive, which is the right way round: the game
+    // starts telling you who these people are exactly as it starts running out of them. The
+    // one being carried off always has the room, because the gap ahead of them is the slip.
+    if (working && d.r.name && d.r.name.length) {
+      let near = Infinity;
+      for (const o of pack) if (o !== d) near = Math.min(near, Math.abs(o.x - d.x));
+      if (near >= 44) {
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 9px monospace';
+        // Above the crown, which sits 35 above the sole line, and above the wind streak at
+        // -29 as well. Dimmer than a floater: this is who somebody is, not a death notice.
+        const ny = L.deck.y - 44 + bob;
+        ctx.fillStyle = 'rgba(8,6,10,0.72)';
+        const nw = ctx.measureText(d.r.name).width + 8;
+        roundRect(d.x + 2 - nw / 2, ny - 9, nw, 12, 3); ctx.fill();
+        ctx.fillStyle = 'rgba(214,198,160,0.88)';
+        ctx.fillText(d.r.name, d.x + 2, ny);
+        ctx.restore();
+      }
     }
     ctx.save();
     // The belt's carrying surface is the top of the slats, L.deck.y + 3, and finaleWrong
@@ -19200,6 +19352,11 @@ const SOLVE_KEYS = ['ARROWUP', 'ARROWDOWN', 'ARROWLEFT', 'ARROWRIGHT', ' ',
   '1', '2', '3', '4', '5', '6', '7', '8', '9', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
 function devSolve() {
   const fire = k => window.dispatchEvent(new KeyboardEvent('keydown', { key: k }));
+  // The last room's own tutorial, which the bot cannot play: it is a lamp on four keys and a
+  // press, and both bots press solveKey at whatever the current puzzle is. Without this a
+  // solved run stops dead in the charge and probe reports "no exception" about a room it
+  // never entered -- the exact shape of green this project has been caught by before.
+  if (S.mode === 'finale' && S.finale && S.finale.phase === 'charge') { finaleTeach(S.finale); return; }
   // ---- the cave door, first, because it stops everything else.
   // Without this every scripted run ends at the seam: the crowd halts at the door, the
   // proprietor waits for a SPACE nobody presses, and the bot sits there to the end of its
@@ -19597,7 +19754,14 @@ if (qs.has('finale')) {
   const ph = qs.get('phase');
   if (ph === 'charge' || ph === 'search') {
     beginFinaleCharge(S.finale);
-    if (ph === 'search') for (let i = 0; i < 60 * 40 && S.finale.phase !== 'search'; i++) updateFinale(1 / 60);
+    // The lesson has to be taught before the loop, not waited out inside it: the room does
+    // not open on time any more and this used to run its whole budget and hand back a frame
+    // still sitting in the charge -- a flag that silently photographs the wrong phase.
+    if (ph === 'search') {
+      updateFinale(1 / 60);
+      finaleTeach(S.finale);
+      for (let i = 0; i < 60 * 40 && S.finale.phase !== 'search'; i++) updateFinale(1 / 60);
+    }
   }
   const pre = Math.min(CFG.finale.findCount - 1, +(qs.get('found') || 0));
   for (let i = 0; i < pre; i++) if (S.finale.diffs[i]) S.finale.found.add(S.finale.diffs[i].id);
@@ -19618,6 +19782,14 @@ if (qs.has('finale')) {
     for (let i = 0; i < n; i++) { updateFinale(1 / 60); S.wrongFlash = Math.max(0, S.wrongFlash - 1 / 60); }
   }
   if (qs.has('wrong')) { S.finale.flashWrong = 0.75; S.finale.wrongT = 0.9; }
+  //   &taught=1  the lesson already solved, for photographing the state it holds before the
+  //              room opens. There is no other way to reach it in a still: it needs the lamp
+  //              steered onto the bag and SPACE pressed, which a screenshot cannot do.
+  if (qs.has('taught') && S.finale.phase === 'charge') {
+    if (!S.finale.lesson) updateFinale(1 / 60);
+    const le = S.finale.lesson;
+    if (le) { le.u = LESSON_BAG.u; le.v = LESSON_BAG.v; le.vu = 0; le.vv = 0; le.done = true; le.doneT = 0.4; }
+  }
   if (qs.has('st')) S.t = +qs.get('st');
 }
 // ?shot draws a single frame and never schedules another. Headless Chrome hangs on
@@ -19645,9 +19817,26 @@ function canvasToGame(e) {
 }
 function finalePointerAt(sx, sy, click) {
   const f = S.finale;
-  // paused is checked here too: update() and key() each enforce it separately, and the
-  // pointer is the third input path -- without this, clicks score while the clock is stopped.
-  if (!f || S.paused || S.mode !== 'finale' || f.phase !== 'search' || f.wrongT > 0 || f.winT > 0) return;
+  if (!f || S.paused || S.mode !== 'finale' || f.wrongT > 0 || f.winT > 0) return;
+  // THE LESSON TAKES THE POINTER TOO. The room's own hint says "ARROWS / click", and a window
+  // that teaches that sentence with the mouse switched off teaches it wrong. Same two cards,
+  // same mirroring, same mark -- from lessonCards, so the mouse and the eye cannot disagree
+  // about where the pictures are.
+  if (f.phase === 'charge') {
+    const le = f.lesson;
+    if (!le || le.done) return;
+    const C = lessonCards(finaleLayout());
+    let card = null;
+    for (const cx of [C.lx, C.rx]) {
+      if (sx >= cx && sx <= cx + C.cw && sy >= C.cy && sy <= C.cy + C.ch) card = cx;
+    }
+    if (card == null) return;
+    le.u = clamp01((sx - card) / C.cw); le.v = clamp01((sy - C.cy) / C.ch);
+    le.vu = 0; le.vv = 0;
+    if (click) lessonMark(f);
+    return;
+  }
+  if (f.phase !== 'search') return;
   const L = finaleLayout();
   let side = null;
   if (sx >= L.left.x && sx <= L.left.x + L.left.w && sy >= L.left.y && sy <= L.left.y + L.left.h) side = L.left;
