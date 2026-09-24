@@ -12,10 +12,12 @@
 //   3. the bed starts on the intro's `ended` event, and only then
 //   4. the bed loops
 //   5. M mutes every track
-//   6. the last room: its own loop comes in on the frame the lesson window opens and the
-//      crew steps onto the belt -- not under the proprietor's speech -- plays once, loops,
-//      survives an M without the bed starting under it, and hands back to the bed when the
-//      room ends
+//   6. the last room: the run's music stops the moment it begins and the ALARM loops under
+//      the proprietor's speech and the whole of the lesson; the boss loop takes over on the
+//      frame the lesson hands over to the real room, once, loops, survives an M without the
+//      bed starting under it, and hands back to the bed when the room ends (Morgan,
+//      2026-09-24: "kill the music when we enter the final boss room and play this alarm
+//      sound until the boss music starts playing at the end of the final tutorial")
 //   7. R puts everything back to the start, and nothing from the last room follows it home
 //
 // IT HAD BEEN FAILING FOR A WEEK, and failing in a way that read as a broken game: "the run
@@ -79,10 +81,10 @@ eval(src + `
   ok('nothing but the tutorial loop plays before the run', true, 'checked every frame of the opening');
   ok('the run started', S.mode === 'play', 'mode ' + S.mode);
 
-  const tutEl = MUSIC.tut, introEl = MUSIC.intro, bedEl = MUSIC.bed, bossEl = MUSIC.boss;
-  ok('all four files were created', !!tutEl && !!introEl && !!bedEl && !!bossEl,
+  const tutEl = MUSIC.tut, introEl = MUSIC.intro, bedEl = MUSIC.bed, bossEl = MUSIC.boss, alarmEl = MUSIC.alarm;
+  ok('all five files were created', !!tutEl && !!introEl && !!bedEl && !!bossEl && !!alarmEl,
      Object.keys(MUSIC.SRC).map(k => k + (MUSIC[k] ? '' : ' MISSING')).join(', '));
-  if (!tutEl || !introEl || !bedEl || !bossEl) return;
+  if (!tutEl || !introEl || !bedEl || !bossEl || !alarmEl) return;
   ok('the intro plays when the run starts, once', played('intro') === 1, played('intro') + ' play calls');
   ok('the tutorial loop stopped when the run started', tutEl.paused);
   ok('the bed has NOT started yet', played('bed') === 0, 'the bed must wait for the intro to end');
@@ -93,54 +95,64 @@ eval(src + `
   ok('the bed starts the moment the intro ends', played('bed') === 1 && !bedEl.paused);
 
   press('M');
-  ok('M mutes the music with the rest of the sound', [tutEl, introEl, bedEl, bossEl].every(a => a.muted));
+  ok('M mutes the music with the rest of the sound', [tutEl, introEl, bedEl, bossEl, alarmEl].every(a => a.muted));
   press('M');
-  ok('M unmutes it again', [tutEl, introEl, bedEl, bossEl].every(a => !a.muted));
+  ok('M unmutes it again', [tutEl, introEl, bedEl, bossEl, alarmEl].every(a => !a.muted));
 
   // ---------------------------------------------------------------- the last room
   // Reached the way ?finale reaches it: the crew arrives and the room starts.
   S.runners.slice(0, 20).forEach(r => { r.state = 'arrived'; });
   S.stats.arrived = 20; S.cam = S.camMax; updateView(1);
+  const bedBefore = played('bed');
   startFinale();
   const f = S.finale;
+  // follow() reads the room at the top of update(), so it sees each change on the next frame
+  update(1/60);
+  ok('entering the room kills the run\\'s music', bedEl.paused && introEl.paused && tutEl.paused);
+  ok('...and starts the alarm, once', played('alarm') === 1 && !alarmEl.paused, played('alarm') + ' play calls');
+  ok('the alarm is set to loop', alarmEl.loop === true);
   let spokeT = 0;
   for (let i = 0; i < 60 * 60 && f.phase === 'intro'; i++) {
     update(1/60);
     if (S.boss && !S.boss.gone) spokeT += 1/60;
-    if (f.phase === 'intro' && played('boss') > 0) { ok('the boss loop waits for the speech to end', false, 'played at introT ' + f.introT.toFixed(2)); return; }
   }
-  ok('the proprietor spoke over the run\\'s music, not the boss loop', spokeT > 1 && played('boss') === 0 && !bedEl.paused,
-     'spoke ' + spokeT.toFixed(1) + 's, bed ' + (bedEl.paused ? 'paused' : 'playing'));
-  ok('the room left its intro', f.phase === 'charge', 'phase ' + f.phase);
-  // follow() reads the phase at the top of update(), so it sees the change on the next frame
+  ok('the proprietor spoke over the alarm, not the bed or the boss loop',
+     spokeT > 1 && !alarmEl.paused && bedEl.paused && played('boss') === 0 && played('bed') === bedBefore,
+     'spoke ' + spokeT.toFixed(1) + 's, alarm ' + (alarmEl.paused ? 'paused' : 'playing') + ', boss plays ' + played('boss'));
+  update(1/60);                                   // the lesson is built on the charge's first frame
+  ok('the room reached its lesson', f.phase === 'charge' && !!f.lesson, 'phase ' + f.phase + ', lesson ' + (f.lesson ? 'up' : 'not up'));
+  for (let i = 0; i < 60 * 4; i++) update(1/60);
+  ok('the alarm carries on through the lesson, and the boss loop waits', !alarmEl.paused && played('boss') === 0 && played('alarm') === 1,
+     'alarm ' + (alarmEl.paused ? 'paused' : 'playing') + ', ' + played('alarm') + ' alarm plays, boss plays ' + played('boss'));
+
+  // M during the alarm: unmuting brings the alarm back and NOT the bed -- the intro has ended
+  // and the bed is paused, which is exactly what the old unmute branch reads as "start the bed"
+  const bedPlays = played('bed');
+  press('M'); alarmEl.pause();                    // as if it had been muted before its cue
+  press('M');
+  ok('unmuting under the alarm brings the alarm back, not the bed', !alarmEl.paused && played('bed') === bedPlays);
+
+  // solve the lesson: the boss loop comes in on the frame the real room opens, and not before
+  finaleTeach(f);
+  let early = 0;
+  for (let i = 0; i < 60 * 40 && f.phase !== 'search'; i++) { update(1/60); if (f.phase === 'charge' && played('boss') > 0) early++; }
+  ok('the boss loop waits for the lesson to END, not merely be solved', early === 0, early + ' frames early');
+  ok('the room reached its search', f.phase === 'search', 'phase ' + f.phase);
   update(1/60);
-  ok('the boss loop starts as the lesson opens and the crew boards',
-     played('boss') === 1 && !bossEl.paused && !!f.lesson && f.deck.length > 0,
-     'boss plays ' + played('boss') + ', lesson ' + (f.lesson ? 'up' : 'NOT up') + ', ' + f.deck.length + ' on the belt');
-  ok('the bed stopped under it', bedEl.paused);
+  ok('the boss loop starts as the lesson hands over, once', played('boss') === 1 && !bossEl.paused, played('boss') + ' play calls');
+  ok('...and the alarm stops and rewinds', alarmEl.paused && alarmEl.currentTime === 0);
   ok('the boss loop is set to loop', bossEl.loop === true);
   for (let i = 0; i < 120; i++) update(1/60);
   ok('the boss loop is started once, not once per frame', played('boss') === 1, played('boss') + ' play calls');
+  press('M'); bossEl.pause(); press('M');
+  ok('unmuting in the search brings the boss loop back, and not the bed', !bossEl.paused && played('bed') === bedPlays);
 
-  // M in the room: unmuting must bring back the boss loop, and must NOT start the bed -- the
-  // intro has ended and the bed is paused, which is exactly what the old unmute branch reads
-  // as "start the bed"
-  const bedPlays = played('bed');
-  press('M'); bossEl.pause();                     // as if it had been muted before its cue
-  press('M');
-  ok('unmuting in the room brings the boss loop back, and not the bed', !bossEl.paused && played('bed') === bedPlays,
-     'boss ' + (bossEl.paused ? 'paused' : 'playing') + ', bed plays ' + bedPlays + ' -> ' + played('bed'));
-
-  // the room ends: teach the lesson, reach the search, and run the clock out
-  finaleTeach(f);
-  for (let i = 0; i < 60 * 40 && f.phase !== 'search'; i++) update(1/60);
-  ok('the room reached its search', f.phase === 'search', 'phase ' + f.phase);
-  ok('the boss loop is still the one playing in the search', !bossEl.paused && bedEl.paused);
+  // the room ends: run the clock out
   f.searchT = 0.01;
   for (let i = 0; i < 60 * 5 && S.mode === 'finale'; i++) update(1/60);
   update(1/60);
   ok('the room ended', S.mode === 'lose' || S.mode === 'win', 'mode ' + S.mode);
-  ok('the boss loop stops and rewinds when the room ends', bossEl.paused && bossEl.currentTime === 0);
+  ok('the boss loop stops and rewinds when the room ends', bossEl.paused && bossEl.currentTime === 0 && alarmEl.paused);
   ok('the end screen gets the bed back, from the top', played('bed') === bedPlays + 1 && !bedEl.paused && bedEl.currentTime === 0,
      'bed plays ' + played('bed') + ', ' + (bedEl.paused ? 'paused' : 'playing'));
 
@@ -148,29 +160,29 @@ eval(src + `
   press('R');
   ok('R rewinds the music so the intro plays again', introEl.currentTime === 0 && introEl.paused,
      'currentTime ' + introEl.currentTime + ', paused ' + introEl.paused);
-  ok('R stops the bed and the boss loop', bedEl.paused && bossEl.paused && !MUSIC.bossOn);
+  ok('R stops the bed, the alarm and the boss loop', bedEl.paused && bossEl.paused && alarmEl.paused && MUSIC.room === null);
   const bedAfter = played('bed'), bossAfter = played('boss');
   for (let i = 0; i < 60; i++) update(1/60);
   ok('nothing from the last room follows R home', played('bed') === bedAfter && played('boss') === bossAfter,
      'bed ' + bedAfter + ' -> ' + played('bed') + ', boss ' + bossAfter + ' -> ' + played('boss'));
 
-  // AND R FROM PAUSE, INSIDE THE ROOM, which is the case that needs stop() to clear bossOn.
+  // AND R FROM PAUSE, INSIDE THE ROOM, which is the case that needs stop() to clear the room.
   // From the end screen the room has already let go of the music, so the assertion above
   // passes with or without it -- a falsifier that removed the line came back green, which is
-  // how this second route was found to be missing.
+  // how this second route was found to be missing. Taken under the alarm, the longer state.
   S.runners.slice(0, 20).forEach(r => { r.state = 'arrived'; });
   S.stats.arrived = 20; S.cam = S.camMax; updateView(1);
   startFinale();
-  for (let i = 0; i < 60 * 60 && S.finale.phase === 'intro'; i++) update(1/60);
-  update(1/60);
-  ok('back in the room, the boss loop is playing', MUSIC.bossOn && !bossEl.paused, 'phase ' + S.finale.phase);
+  for (let i = 0; i < 60 * 3; i++) update(1/60);
+  ok('back in the room, the alarm is playing', MUSIC.room === 'alarm' && !alarmEl.paused, 'phase ' + S.finale.phase);
   press('P');
   ok('P pauses in the room', !!S.paused);
   press('R');
-  const bedR = played('bed'), bossR = played('boss');
+  const bedR = played('bed'), bossR = played('boss'), alarmR = played('alarm');
   for (let i = 0; i < 60; i++) update(1/60);
-  ok('R from pause in the room leaves no music behind', played('bed') === bedR && played('boss') === bossR && bossEl.paused && bedEl.paused,
-     'bed ' + bedR + ' -> ' + played('bed') + ', boss ' + (bossEl.paused ? 'paused' : 'playing') + ', mode ' + S.mode);
+  ok('R from pause in the room leaves no music behind',
+     played('bed') === bedR && played('boss') === bossR && played('alarm') === alarmR && alarmEl.paused && bossEl.paused && bedEl.paused,
+     'bed ' + bedR + ' -> ' + played('bed') + ', alarm ' + (alarmEl.paused ? 'paused' : 'playing') + ', mode ' + S.mode);
 })();
 `);
 console.log('');
