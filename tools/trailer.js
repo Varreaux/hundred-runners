@@ -367,12 +367,39 @@ const ESCAPE4 = ESCAPE3.map(it =>
 // the mouth and the lids, so both can be true at once.
 const ESCAPE5 = [...ESCAPE4, { clip: 'outro', at: 0, for: 4.6 }];
 
-const EDITS = { escape5: ESCAPE5, escape4: ESCAPE4, escape3: ESCAPE3, escape2: ESCAPE2, escape: ESCAPE, ...ALTS };
+// ---------------------------------------------------------------- the eighth pass
+// Morgan: the loop's opening boom should hit "just when the viewer first sees the characters
+// falling in the water", and it was landing a second and a half late.
+//
+// It was not a mix problem, it was two small numbers nobody had written down. Both wav files
+// open with exactly 0.3600s of silence -- measured off the PCM at 2ms resolution -- so the
+// boom sounds 0.36s after the loop starts, not on it. And the intro is 16.000s, so the loop
+// started at 16.00 and the boom at 16.36, against a drowning cut at 14.65.
+//
+// So the intro is trimmed at the tail to (cut - 0.36) and the boom falls on the frame. The
+// cut is MEASURED, not added up: `for` is what a piece was asked for, and what comes back is
+// rounded to a whole number of frames, which drifts about 40ms over a minute. Inaudible in a
+// picture, and the whole question here.
+const ESCAPE6 = ESCAPE5.map(it =>
+  it.clip === 'losing' ? { ...it, sync: true } : it);
+
+const EDITS = { escape6: ESCAPE6, escape5: ESCAPE5, escape4: ESCAPE4, escape3: ESCAPE3, escape2: ESCAPE2, escape: ESCAPE, ...ALTS };
 
 // ---------------------------------------------------------------- build
 const run = (bin, args) => execFileSync(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const keyOf = o => require('crypto').createHash('sha1').update(JSON.stringify(o)).digest('hex').slice(0, 12);
+const probeDur = f => +execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration',
+  '-of', 'csv=p=0', f], { encoding: 'utf8' }).trim();
+// Both music files open with exactly 0.3600s of silence before their first hit -- measured off
+// the PCM at 2ms resolution, not guessed. So the loop's boom lands 0.36s after the loop starts,
+// and to put that boom ON a cut the intro has to be trimmed to (cut - 0.36).
+const MUSIC_LEAD = 0.36;
+// The intro does not stop, it DUCKS. Cutting it dead at 14.34 leaves the waveform at +0.29
+// with a peak of 0.56 just before -- an audible click -- so its tail is faded instead. The
+// fade plus the loop's own 0.36s of lead-in gives a short hole in front of the boom, which is
+// what makes a hit land rather than a fault to hide.
+const MUSIC_DUCK = 0.22;
 
 // A CDP session against one headless Chrome, held open for the whole run. The cards are drawn
 // to canvas as a function of t and screenshotted frame by frame, rather than recorded: a
@@ -492,6 +519,11 @@ async function build(name, items, sess, cardCache) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'trailer-'));
   try {
     const pieces = [];
+    // The real encoded durations, not the nominal `for` values: each piece is cut to a whole
+    // number of frames, so the sum of what was ASKED for drifts from what was MADE -- about
+    // 40ms over a minute here. That is nothing for a picture and everything for a music hit,
+    // which is why the sync point below is measured rather than added up.
+    let acc = 0, boomAt = null;
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       if (it.card) {
@@ -504,10 +536,14 @@ async function build(name, items, sess, cardCache) {
           if (!fs.existsSync(cf)) await cardPiece(sess, it, cf);
           cardCache.set(k, cf);
         }
+        if (it.sync && boomAt == null) boomAt = acc;
+        acc += probeDur(cardCache.get(k));
         pieces.push(cardCache.get(k));
       } else {
         const out = path.join(tmp, `p${String(i).padStart(3, '0')}.mp4`);
         clipPiece(it, out);
+        if (it.sync && boomAt == null) boomAt = acc;
+        acc += probeDur(out);
         pieces.push(out);
       }
     }
@@ -516,16 +552,25 @@ async function build(name, items, sess, cardCache) {
     const silent = path.join(tmp, 'silent.mp4');
     run('ffmpeg', ['-y', '-f', 'concat', '-safe', '0', '-i', listFile, '-c', 'copy', silent]);
 
-    const dur = items.reduce((a, it) => a + it.for + (it.hold || 0), 0);
+    const dur = probeDur(silent);
     const out = path.join(OUT, `trailer-${name}.mp4`);
     const intro = path.join(ROOT, 'Hundred Intro New.wav');
     const loop = path.join(ROOT, 'Hundred Loop New.wav');
     if (fs.existsSync(intro) && fs.existsSync(loop)) {
       // CONCAT, not amix: mixing the two halves the level wherever they overlap, and these are
       // meant to follow each other the way the game plays them, not to sound together.
+      // THE BOOM LANDS ON THE CUT. The intro is trimmed so that the loop -- and therefore its
+      // hit, 0.36s in -- starts exactly where the marked shot does. Trimmed at the TAIL rather
+      // than the head so the intro still opens on its own downbeat; the boom covers the join.
+      const keep = boomAt == null ? null : Math.max(0.5, boomAt - MUSIC_LEAD);
+      const introChain = keep == null
+        ? '[1:a]anull[i]'
+        : `[1:a]atrim=0:${keep.toFixed(3)},asetpts=N/SR/TB,` +
+          `afade=t=out:st=${Math.max(0, keep - MUSIC_DUCK).toFixed(3)}:d=${MUSIC_DUCK}[i]`;
+      if (keep != null) console.log(`    boom on the cut at ${boomAt.toFixed(2)}s (intro trimmed to ${keep.toFixed(2)}s)`);
       run('ffmpeg', ['-y', '-i', silent, '-i', intro, '-stream_loop', '-1', '-i', loop,
         '-filter_complex',
-        `[1:a][2:a]concat=n=2:v=0:a=1,atrim=0:${dur.toFixed(2)},asetpts=N/SR/TB,` +
+        `${introChain};[i][2:a]concat=n=2:v=0:a=1,atrim=0:${dur.toFixed(2)},asetpts=N/SR/TB,` +
         `afade=t=in:st=0:d=1.2,afade=t=out:st=${Math.max(0, dur - 3).toFixed(2)}:d=3,volume=0.9[a]`,
         '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
         '-movflags', '+faststart', '-shortest', out]);
