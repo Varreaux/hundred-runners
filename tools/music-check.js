@@ -57,10 +57,12 @@ global.Audio = class {
   addEventListener(ev, fn) { (this._on[ev] = this._on[ev] || []).push(fn); }
   play() {
     if (BLOCKED) { log.push(['refused', this.src]); return Promise.reject(new Error('NotAllowedError')); }
-    this.paused = false; log.push(['play', this.src]); return Promise.resolve();
+    this.paused = false; this.ended = false; log.push(['play', this.src]); return Promise.resolve();
   }
   pause() { this.paused = true; log.push(['pause', this.src]); }
-  fire(ev) { this.ended = ev === 'ended'; for (const f of this._on[ev] || []) f(); }
+  // An element that ENDS stops and sits at its end, as a real one does; the mock used to leave
+  // it "playing" at 0, which no browser does and which the victory's hand-back reads.
+  fire(ev) { this.ended = ev === 'ended'; if (this.ended) { this.paused = true; this.currentTime = 9.9; } for (const f of this._on[ev] || []) f(); }
 };
 
 let bad = 0;
@@ -88,7 +90,7 @@ eval(src + `
   ok('the run started', S.mode === 'play', 'mode ' + S.mode);
 
   const tutEl = MUSIC.tut, introEl = MUSIC.intro, bedEl = MUSIC.bed, bossEl = MUSIC.boss, alarmEl = MUSIC.alarm;
-  ok('all five files were created', !!tutEl && !!introEl && !!bedEl && !!bossEl && !!alarmEl,
+  ok('all the files were created', !!tutEl && !!introEl && !!bedEl && !!bossEl && !!alarmEl && !!MUSIC.victory,
      Object.keys(MUSIC.SRC).map(k => k + (MUSIC[k] ? '' : ' MISSING')).join(', '));
   if (!tutEl || !introEl || !bedEl || !bossEl || !alarmEl) return;
   ok('the intro plays when the run starts, once', played('intro') === 1, played('intro') + ' play calls');
@@ -231,6 +233,41 @@ eval(src + `
   press('P'); press('R');
   ok('R mid-fade puts the alarm back at full volume, stopped', !MUSIC.fade && alarmEl.paused && alarmEl.volume === MUSIC.VOL,
      'volume ' + alarmEl.volume + ', ' + (alarmEl.paused ? 'paused' : 'playing'));
+
+  // ---------------------------------------------------------------- the tenth mark
+  // Morgan, 2026-09-24: "a victory sound that you should play as soon as the player finds the
+  // 10th difference and make the boss music fade out at the same time". Marked through
+  // finaleConfirm, the function the lamp calls, at each difference's own position.
+  const vicEl = MUSIC.victory;
+  ok('the victory file was created, and plays once rather than looping', !!vicEl && !vicEl.loop);
+  S.runners.slice(0, 20).forEach(r => { r.state = 'arrived'; });
+  S.stats.arrived = 20; S.cam = S.camMax; updateView(1);
+  startFinale();
+  const g = S.finale;
+  for (let i = 0; i < 60 * 60 && g.phase === 'intro'; i++) update(1/60);
+  update(1/60); finaleTeach(g);
+  for (let i = 0; i < 60 * 40 && g.phase !== 'search'; i++) update(1/60);
+  for (let i = 0; i < 60 * 2; i++) update(1/60);   // past the alarm's own fade
+  const bedV = played('bed'), vicV = played('victory');
+  g.diffs.slice(0, CFG.finale.findCount - 1).forEach(d => finaleConfirm(d.x / FINALE_ART.w, d.y / FINALE_ART.h));
+  update(1/60);
+  ok('nine marks: still the boss loop, no victory', !bossEl.paused && played('victory') === vicV);
+  const last = g.diffs[CFG.finale.findCount - 1];
+  finaleConfirm(last.x / FINALE_ART.w, last.y / FINALE_ART.h);
+  update(1/60);
+  ok('the tenth mark: the victory plays, once', played('victory') === vicV + 1 && !vicEl.paused, played('victory') - vicV + ' play calls');
+  ok('...and the boss loop fades under it rather than cutting', !bossEl.paused && bossEl.volume < MUSIC.VOL && MUSIC.fade && MUSIC.fade.a === bossEl,
+     'boss volume ' + bossEl.volume.toFixed(3));
+  for (let i = 0; i < 60 * (MUSIC.FADE + 0.2); i++) update(1/60);
+  ok('...then stops, rewinds, and its volume is put back', bossEl.paused && bossEl.currentTime === 0 && bossEl.volume === MUSIC.VOL);
+  ok('the win screen came up under the victory, and the bed waits for it', S.mode === 'win' && !vicEl.paused && played('bed') === bedV,
+     'mode ' + S.mode + ', bed plays ' + bedV + ' -> ' + played('bed'));
+  vicEl.fire('ended');
+  ok('when the victory ends, the bed comes back from the top', played('bed') === bedV + 1 && !bedEl.paused && bedEl.currentTime === 0);
+  press('ARROWLEFT');
+  ok('a key after it does not play the victory again', played('victory') === vicV + 1 && !bedEl.paused);
+  press('R');
+  ok('R after a win stops it all', vicEl.paused && bedEl.paused && bossEl.paused && MUSIC.room === null);
 })();
 `);
 console.log('');

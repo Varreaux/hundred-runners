@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '180 SPACE moves him on everywhere';
+const BUILD = '181 the tenth mark plays the victory';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2477,8 +2477,8 @@ const ARROWS = ['ARROWLEFT', 'ARROWUP', 'ARROWRIGHT', 'ARROWDOWN'];
 // The handover is inside start() rather than at its call site, so no caller can cue the run's
 // music and forget to end the tutorial's. There is exactly one way in for each.
 const MUSIC = {
-  tut: null, intro: null, bed: null, boss: null, alarm: null, armed: false,
-  // What the last room is playing: null outside it, 'alarm', or 'boss'. See follow().
+  tut: null, intro: null, bed: null, boss: null, alarm: null, victory: null, armed: false,
+  // What the last room is playing: null outside it, 'alarm', 'boss', or 'victory'. See follow().
   room: null,
   // Every track's volume, and the alarm's fade under the boss loop: { a, t } while it runs.
   VOL: 0.62,
@@ -2490,7 +2490,8 @@ const MUSIC = {
   // Morgan's own filenames, kept as he saved them so that dropping a replacement in with
   // the same name just works. Encoded because they contain spaces.
   SRC: { tut: 'Hundred%20Tutorial%20Loop.wav', intro: 'Hundred%20Intro%20New.wav', bed: 'Hundred%20Loop%20New.wav',
-         boss: 'Hundred%20Boss%20Mastered.wav', alarm: 'jeremayjimenez-greece-eas-alarm-451404.mp3' },
+         boss: 'Hundred%20Boss%20Mastered.wav', alarm: 'jeremayjimenez-greece-eas-alarm-451404.mp3',
+         victory: 'tomas_herudek-corporate-brand-ident-technological-innovation-257470.mp3' },
   make(src) {
     try { const a = new Audio(src); a.preload = 'auto'; a.volume = this.VOL; return a; } catch (e) { return null; }
   },
@@ -2506,6 +2507,12 @@ const MUSIC = {
     if (this.boss) this.boss.loop = true;
     this.alarm = this.make(this.SRC.alarm);
     if (this.alarm) this.alarm.loop = true;
+    // The victory plays ONCE, and the end screen's bed waits for it to finish rather than
+    // starting on top of it the moment the win screen comes up, 0.85s into a 9.8s jingle.
+    this.victory = this.make(this.SRC.victory);
+    if (this.victory) this.victory.addEventListener('ended', () => {
+      if (this.room === 'victory' && this.bed && !AU.muted) { try { this.bed.currentTime = 0; } catch (e) {} this.bed.play().catch(() => {}); }
+    });
     // the one place the bed is allowed to begin -- and not under the last room's own sound
     if (this.intro) this.intro.addEventListener('ended', () => {
       if (this.bed && !AU.muted && !this.room) this.bed.play().catch(() => {});
@@ -2529,14 +2536,18 @@ const MUSIC = {
   follow(want) {
     if (want === this.room) return;
     this.init();
-    if (!this.boss || !this.alarm) return;
+    if (!this.boss || !this.alarm || !this.victory) return;
     const was = this.room;
     this.room = want;
     const halt = (a, rewind) => { if (a) { try { a.pause(); if (rewind) a.currentTime = 0; } catch (e) { /* not loaded */ } } };
-    halt(this.boss, true);
-    // the alarm FADES into the boss loop (see FADE); every other way out of it cuts it
-    if (was === 'alarm' && want === 'boss') this.fade = { a: this.alarm, t: 0 };
-    else { this.endFade(); halt(this.alarm, true); }
+    // TWO HANDOVERS FADE (see FADE): the alarm under the boss loop, and the boss loop under the
+    // victory -- Morgan, 2026-09-24: play the victory "as soon as the player finds the 10th
+    // difference and make the boss music fade out at the same time". Every other way out cuts.
+    const out = was === 'alarm' && want === 'boss' ? this.alarm
+              : was === 'boss' && want === 'victory' ? this.boss : null;
+    this.endFade();                                       // one fade at a time
+    if (out) this.fade = { a: out, t: 0 };
+    for (const a of [this.alarm, this.boss, this.victory]) if (a !== out) halt(a, true);
     if (want) {
       halt(this.tut, true); halt(this.intro, false); halt(this.bed, false);
       if (!AU.muted) this[want].play().catch(() => {});   // a blocked autoplay must not throw
@@ -2545,8 +2556,8 @@ const MUSIC = {
       this.bed.play().catch(() => {});
     }
   },
-  // The fade's clock, ticked by update() every frame. Squared, so the alarm drops away fast
-  // under the boss loop's first beat and trails off rather than stepping down evenly.
+  // The fade's clock, ticked by update() every frame. Squared, so the outgoing track -- the
+  // alarm, or the boss loop -- drops away fast under what replaces it and then trails off.
   tick(dt) {
     const f = this.fade;
     if (!f) return;
@@ -2593,14 +2604,14 @@ const MUSIC = {
     // read as "the room just ended" on the next frame and start the bed under the title
     this.room = null;
     this.endFade();
-    for (const a of [this.tut, this.intro, this.bed, this.boss, this.alarm]) {
+    for (const a of [this.tut, this.intro, this.bed, this.boss, this.alarm, this.victory]) {
       if (!a) continue;
       try { a.pause(); a.currentTime = 0; } catch (e) { /* not loaded yet */ }
     }
   },
   // follows the same M key as the rest of the sound
   setMuted(m) {
-    for (const a of [this.tut, this.intro, this.bed, this.boss, this.alarm]) if (a) a.muted = m;
+    for (const a of [this.tut, this.intro, this.bed, this.boss, this.alarm, this.victory]) if (a) a.muted = m;
     if (!m) this.resume();
   },
   // WHICHEVER TRACK OWNS THE MOMENT, started if it is not already playing. Read by unmuting,
@@ -2614,6 +2625,11 @@ const MUSIC = {
     if (AU.muted) return;
     // The last room first, and ALONE: the branch below it starts the bed whenever the intro
     // has ended and the bed is paused, which is exactly the state the room's sound leaves them in.
+    // A victory that has already played through hands the moment to the bed; it is not replayed.
+    if (this.room === 'victory' && this.victory && this.victory.ended) {
+      if (this.bed && this.bed.paused) this.bed.play().catch(() => {});
+      return;
+    }
     if (this.room) { const a = this[this.room]; if (a && a.paused) a.play().catch(() => {}); return; }
     // Unmuting has to be able to START something, not merely unmute it: every track is gated
     // on AU.muted at its own cue, so a player who muted before the cue has nothing playing to
@@ -6080,9 +6096,13 @@ function update(dt) {
   if (S.paused) return;
   S.t += dt;
   // the last room's sound: the alarm from the moment it begins until the lesson hands over to
-  // the real room, then the boss loop -- see MUSIC.follow
-  MUSIC.follow(S.mode !== 'finale' || !S.finale ? null
-             : S.finale.phase === 'intro' || S.finale.phase === 'charge' ? 'alarm' : 'boss');
+  // the real room, then the boss loop, then -- from the tenth mark, through the win's beat and
+  // onto the win screen -- the victory. See MUSIC.follow.
+  const fin = S.finale;
+  MUSIC.follow(S.mode === 'win' ? 'victory'
+             : S.mode !== 'finale' || !fin ? null
+             : fin.phase === 'intro' || fin.phase === 'charge' ? 'alarm'
+             : fin.winT > 0 || fin.found.size >= CFG.finale.findCount ? 'victory' : 'boss');
   MUSIC.tick(dt);
   // THE SPIKE CLOCKS TICK HERE, not in frame(). Only a browser ever calls frame(), and every
   // tool and every ?dev flag drives update()/draw() direct -- so the first spike of a scripted
