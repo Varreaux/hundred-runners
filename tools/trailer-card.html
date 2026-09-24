@@ -45,6 +45,13 @@ const LOOKS = {
   count:  { bg: ['#0c0c10', '#07070a'], motes: 'ash', n: 190, vig: 0.88, accent: '#ff6b6b' },
   // the title again, breathing
   end:    { bg: ['#101018', '#07080c'], motes: 'ember', n: 60, vig: 0.70, accent: '#f0b44a' },
+  // THE TURN. Cool and quiet -- the palette steps off the furnace and onto the game's own UI
+  // cyan, because this is the line where the trailer stops being about the mill and starts
+  // being about the player. Fewer motes: the room goes still before the good news.
+  turn:   { bg: ['#0b1016', '#07080c'], motes: 'ember', n: 34, vig: 0.78, accent: '#7fe3ff',
+            bloom: '90,170,220', mote: '150,210,240' },
+  // ...and the pay-off, which is the only card in the set that is allowed to be bright.
+  hope:   { bg: ['#181309', '#08080b'], motes: 'ember', n: 95, vig: 0.62, accent: '#ffd479' },
 };
 
 function background(L, t) {
@@ -54,8 +61,9 @@ function background(L, t) {
   // a slow warm bloom low down, like something burning off screen
   if (L.motes === 'ember') {
     const r = ctx.createRadialGradient(W * 0.5, H * 1.02, 40, W * 0.5, H * 1.02, H * 0.9);
-    r.addColorStop(0, `rgba(255,140,50,${0.16 + 0.03 * Math.sin(t * 1.1)})`);
-    r.addColorStop(1, 'rgba(255,140,50,0)');
+    const b = L.bloom || '255,140,50';
+    r.addColorStop(0, `rgba(${b},${0.16 + 0.03 * Math.sin(t * 1.1)})`);
+    r.addColorStop(1, `rgba(${b},0)`);
     ctx.fillStyle = r; ctx.fillRect(0, 0, W, H);
   }
 }
@@ -76,7 +84,8 @@ function motes(L, t) {
     const s = (up ? 1.1 : 0.9) + hash(i + 400) * (up ? 2.4 : 1.5);
     ctx.globalAlpha = a * (up ? 0.85 : 0.62);
     ctx.fillStyle = up
-      ? `rgb(255,${Math.round(120 + hash(i + 600) * 90)},${Math.round(40 + hash(i + 800) * 40)})`
+      ? (L.mote ? `rgb(${L.mote})`
+               : `rgb(255,${Math.round(120 + hash(i + 600) * 90)},${Math.round(40 + hash(i + 800) * 40)})`)
       : `rgb(${Math.round(150 + hash(i + 600) * 60)},${Math.round(150 + hash(i + 600) * 60)},${Math.round(160 + hash(i + 600) * 55)})`;
     if (up) { ctx.beginPath(); ctx.arc(x, y, s, 0, 6.28); ctx.fill(); }
     // ash falls, so it STREAKS. Drawn as points it read as a starfield -- stars being roughly
@@ -95,6 +104,18 @@ function vignette(strength) {
 
 // Typed one character at a time, with the block cursor the game's own dialogue uses. `hold`
 // is how long the cursor keeps blinking after the last character lands.
+// Shrink until it fits. A card is written as a sentence, not as a measured width, and
+// "BUT IF YOU KNOW HOW TO PLAY THEIR GAME..." at the title size is 2400px on a 1920 card --
+// it would have run off both ends, which is the one failure a still of the card at t=0 does
+// not show because at t=0 two characters have been typed.
+function fitFont(text, px, maxW, weight, spacing) {
+  for (;;) {
+    ctx.font = `${weight} ${px}px ui-monospace, Menlo, monospace`;
+    ctx.letterSpacing = `${spacing}px`;
+    if (px <= 22 || ctx.measureText(text).width <= maxW) return px;
+    px -= 2;
+  }
+}
 function typed(text, cps, t, delay) {
   const el = Math.max(0, t - delay);
   const n = Math.min(text.length, Math.floor(el * cps));
@@ -187,34 +208,51 @@ function renderCard(spec, t) {
     ctx.fillText(spec.text, W / 2, cy - 14);
     ctx.shadowBlur = 0;
     ctx.letterSpacing = '0px';
-    if (spec.sub) {
-      const s = typed(spec.sub, 21, t, 0.9);
-      ctx.font = '600 34px ui-monospace, Menlo, monospace';
-      ctx.letterSpacing = '9px';
+    const subs = spec.sub == null ? [] : (Array.isArray(spec.sub) ? spec.sub : [spec.sub]);
+    if (subs.length) {
+      // typed as ONE string across the lines, so a two-line question reads as a sentence
+      // being asked rather than as two captions arriving
+      const whole = subs.join(' ');
+      const s = typed(whole, spec.cps || 21, t, 0.9);
+      let n = s.s.length;
       ctx.fillStyle = '#9aa2b2';
-      ctx.fillText(s.s, W / 2, cy + 66);
-      const w = ctx.measureText(s.s).width;
-      drawCaret(W / 2 + w / 2, cy + 66, 34, t, s.caret && !s.done);
+      subs.forEach((line, i) => {
+        const take = Math.max(0, Math.min(line.length, n));
+        n -= line.length + 1;
+        if (take <= 0) return;
+        const shown = line.slice(0, take);
+        fitFont(line, 34, 1500, 600, 9);
+        ctx.fillText(shown, W / 2, cy + 66 + i * 50);
+        if (take < line.length) {
+          const w2 = ctx.measureText(shown).width;
+          drawCaret(W / 2 + w2 / 2, cy + 66 + i * 50, 34, t, true);
+        }
+      });
       ctx.letterSpacing = '0px';
     }
     ctx.globalAlpha = 1;
   } else {
     // `title`: the line types in, the sub follows, and the accent word is coloured
-    const s = typed(spec.text, 19, t, 0.3);
-    ctx.font = '700 84px ui-monospace, Menlo, monospace';
-    ctx.letterSpacing = '8px';
+    const cps = spec.cps || 19;
+    const s = typed(spec.text, cps, t, 0.3);
+    // A long line loses its tracking before it loses its size: "BUT IF YOU KNOW HOW TO PLAY
+    // THEIR GAME..." at 8px letter-spacing shrank to 43px, which is smaller than the sub on
+    // the card before it and read as a caption rather than as the turn of the trailer.
+    const px = fitFont(spec.text, 84, 1700, 700, spec.text.length > 26 ? 3 : 8);
     ctx.fillStyle = '#f2eee6';
     ctx.fillText(s.s, W / 2, cy - 14);
     const w = ctx.measureText(s.s).width;
-    drawCaret(W / 2 + w / 2, cy - 14, 84, t, s.caret && !s.done);
+    drawCaret(W / 2 + w / 2, cy - 14, px, t, s.caret && !s.done);
     ctx.letterSpacing = '0px';
-    if (spec.sub) {
-      const a = clamp01((t - (0.35 + spec.text.length / 19)) / 0.6);
+    const subs = spec.sub == null ? [] : (Array.isArray(spec.sub) ? spec.sub : [spec.sub]);
+    if (subs.length) {
+      const a = clamp01((t - (0.35 + spec.text.length / cps)) / 0.6);
       ctx.globalAlpha = a;
-      ctx.font = '600 36px ui-monospace, Menlo, monospace';
-      ctx.letterSpacing = '10px';
       ctx.fillStyle = L.accent;
-      ctx.fillText(spec.sub, W / 2, cy + 62);
+      subs.forEach((line, i) => {
+        fitFont(line, 36, 1500, 600, 10);
+        ctx.fillText(line, W / 2, cy + 62 + i * 52);
+      });
       ctx.letterSpacing = '0px';
       ctx.globalAlpha = 1;
     }

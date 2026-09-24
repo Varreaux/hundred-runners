@@ -277,7 +277,11 @@ function keyEvent(client, key) {
   for (const seg of SEGMENTS.filter(x => !ONLY.length || ONLY.includes(x.name))) {
     frames = [];
     await client.send('Page.navigate', { url: `http://127.0.0.1:${port}/index.html?${seg.url}` });
-    await sleep(1400);                                   // let the dev flags run their setup
+    // `settle` is how long the dev flags get before the camera rolls, and 1400 is only right
+    // for flags that set up a STANDING state. A ?trap vignette animates over REEL.anim 0.72s
+    // and then its one-card roll ENDS, so at 1400 every trap segment recorded the podium --
+    // which looks like a working shot of the wrong thing rather than like a failure.
+    await sleep(seg.settle != null ? seg.settle : 1400);
 
     const t0 = Date.now();
     const trace = [];

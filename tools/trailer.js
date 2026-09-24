@@ -165,8 +165,70 @@ const MIDDLES = {
 
 // Named alt-* so they cannot collide with trailer-rollcall.mp4 or trailer-triage.mp4, which
 // Morgan asked to keep and which this tool must not overwrite.
-const EDITS = Object.fromEntries(
+const ALTS = Object.fromEntries(
   Object.entries(MIDDLES).map(([k, mid]) => [`alt-${k}`, [...OPEN, ...mid, ...CLOSE]]));
+
+// ---------------------------------------------------------------- the cut he wrote
+// Morgan's own structure, third pass: keep the skeleton, shorten the drowning by a second,
+// then very quick cuts of the ways people die; "you cannot save them all" over FIVE DIFFERENT
+// cinematic deaths rather than five of the same gate; a turn -- "but if you know how to play
+// their game..." -- into the mini-games; "...you might just escape." into the podium; and a
+// last card asking the question the game is actually about.
+//
+// The two death runs are deliberately DIFFERENT vignettes and different speeds. Fast and
+// unnamed first, so it reads as "there are many ways"; then slowed, so the name on the card
+// can be read, which is the only reason those cards exist. Reusing the same five twice would
+// have made the second run feel like a repeat of the first.
+const ESCAPE = [
+  { card: 'title', text: 'ONE HUNDRED PEOPLE', sub: 'GO TO WORK', for: 3.0 },
+  { clip: 'doors', at: 1.5, for: 4.0 },
+  { clip: 'mill', at: 1.0, for: 4.0 },
+  { clip: 'cave', at: 1.5, for: 4.0 },
+  { card: 'beat', kicker: 'BUT THE WORK CAN BE', text: 'GRINDING', for: 2.6 },
+  // shortened by a second, as asked -- it was 4.5
+  { clip: 'losing', at: 0.3, for: 3.5 },
+
+  // ...and the ways it kills you. Under half a second each, unslowed: too short to read a
+  // name, which is the point -- this run is the inventory, not the elegy.
+  //
+  // 0.06..0.52 IS THE WHOLE USABLE WINDOW OF ANY OF THESE CLIPS, and it was measured rather
+  // than assumed: sampling the upper band of all ten at 0.1s steps, every one holds its card
+  // to 0.55 and has flipped to the podium by 0.70, two of them by 0.60. The first cut of this
+  // ran to 0.67 and two of the five slow deaths ended on "WHO GOT FURTHEST" -- which looks
+  // like a working shot of the wrong thing, so nothing about it reads as broken.
+  { clip: 'v_crusher', at: 0.08, for: 0.46 },
+  { clip: 'v_mantrap', at: 0.08, for: 0.46 },
+  { clip: 'v_gears', at: 0.08, for: 0.46 },
+  { clip: 'v_presses', at: 0.08, for: 0.46 },
+  { clip: 'v_thorn', at: 0.08, for: 0.46 },
+
+  { card: 'count', text: 'YOU CANNOT', sub: 'SAVE THEM ALL', for: 3.0 },
+  // Five DIFFERENT deaths, slowed 2.4x so each name lands: 0.46s of source, which is what the
+  // window above allows, stretched into a 1.1s beat.
+  { clip: 'v_wiring', at: 0.06, for: 1.1, slow: 2.4 },
+  { clip: 'v_conveyor', at: 0.06, for: 1.1, slow: 2.4 },
+  { clip: 'v_sweeper', at: 0.06, for: 1.1, slow: 2.4 },
+  { clip: 'v_bridge', at: 0.06, for: 1.1, slow: 2.4 },
+  { clip: 'v_winch', at: 0.06, for: 1.1, slow: 2.4 },
+
+  { card: 'turn', text: 'BUT IF YOU KNOW HOW TO PLAY THEIR GAME...', cps: 26, for: 3.2 },
+  { clip: 's_gears', at: 2.0, for: 1.1 },
+  { clip: 's_conveyor', at: 2.0, for: 1.1 },
+  { clip: 'panel_wiring', at: 1.5, for: 1.1 },
+  { clip: 's_sweeper', at: 2.0, for: 1.1 },
+  { clip: 's_winch', at: 2.0, for: 1.1 },
+  // the one room in the game that is finished by real keypresses on camera: UNBOUND packed a
+  // letter at a time and then the fuse. It is the only "completed" this footage can honestly
+  // show, because a held room is never taken by the bot and an unheld one is gone in a frame.
+  { clip: 'blast2', at: 4.3, for: 2.4 },
+
+  { card: 'hope', text: '...YOU MIGHT JUST ESCAPE.', for: 3.0 },
+  { clip: 'podium', at: 0.8, for: 5.0 },
+  { card: 'end', text: 'HUNDRED RUNNERS', cps: 24, for: 6.0,
+    sub: ['ARE YOU ANOTHER COG IN THE SYSTEM,', 'OR ARE YOU YOUR OWN PERSON?'] },
+];
+
+const EDITS = { escape: ESCAPE, ...ALTS };
 
 // ---------------------------------------------------------------- build
 const run = (bin, args) => execFileSync(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -259,12 +321,19 @@ function clipPiece(item, out) {
   const src = path.join(IN, item.clip + '.mp4');
   if (!fs.existsSync(src)) throw new Error(`missing clip: ${src}`);
   const p = item.punch || 1;
-  const vf = p > 1
-    ? `crop=iw/${p}:ih/${p},scale=${W}:${H}:flags=lanczos,fps=${FPS}`
-    : `scale=${W}:${H}:flags=lanczos,fps=${FPS}`;
-  run('ffmpeg', ['-y', '-ss', String(item.at || 0), '-t', String(item.for), '-i', src,
-    '-vf', vf, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-preset', 'fast',
-    '-an', out]);
+  // `slow` stretches the source: a death vignette is on screen for REEL.anim 0.72s and then
+  // its roll ends, which is too short to read a name off. Taking for/slow seconds and slowing
+  // them to `for` gives the beat its length back, and slow motion is what that shot wants.
+  const slow = item.slow && item.slow > 1 ? item.slow : 1;
+  const take = item.for / slow;
+  const parts = [];
+  if (p > 1) parts.push(`crop=iw/${p}:ih/${p}`);
+  parts.push(`scale=${W}:${H}:flags=lanczos`);
+  if (slow > 1) parts.push(`setpts=${slow}*PTS`);
+  parts.push(`fps=${FPS}`);
+  run('ffmpeg', ['-y', '-ss', String(item.at || 0), '-t', String(take), '-i', src,
+    '-vf', parts.join(','), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18',
+    '-preset', 'fast', '-an', out]);
 }
 
 async function build(name, items, sess, cardCache) {
