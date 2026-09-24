@@ -294,9 +294,35 @@ function keyEvent(client, key) {
     // requestAnimationFrame loop keeps running, update() advances S.endT on its own, and the
     // value set here is overwritten before the screenshot -- so the sequence drifts off the
     // end of the card and the last frames come back as the podium.
-    if (seg.frames || seg.speed) {
+    if (seg.frames || seg.speed || seg.render) {
       const ev = async expr => (await client.send('Runtime.evaluate',
         { expression: expr, returnByValue: true })).result.value;
+      // A segment can supply its own painter instead of using the reel clock: `setupFile` is
+      // evaluated once after load and `render` is evaluated per frame with ${u} running 0..1.
+      // That is how the trailer's closing beat is drawn -- inside the game page, so it can call
+      // the game's own drawBossGlobe/Face/Hat at a radius the dialogue band never uses.
+      if (seg.render) {
+        if (seg.setupFile) await ev(fs.readFileSync(path.join(ROOT, seg.setupFile), 'utf8'));
+        const nf2 = seg.frames || Math.round((seg.span || 4) * 30);
+        for (let i = 0; i < nf2; i++) {
+          const uu = nf2 === 1 ? 0 : i / (nf2 - 1);
+          await ev(seg.render.replace(/\$\{u\}/g, uu.toFixed(5)));
+          const shot = await client.send('Page.captureScreenshot', { format: 'jpeg', quality: 94 });
+          frames.push({ t: i * (seg.span || 4) / nf2, data: shot.data });
+        }
+        const keptR = frames.slice();
+        for (let i = 0; i < keptR.length; i++) {
+          const file = path.join(tmp, `f${String(n).padStart(6, '0')}.jpg`);
+          fs.writeFileSync(file, Buffer.from(keptR[i].data, 'base64'));
+          const next = keptR[i + 1];
+          const d = next ? Math.max(0.008, Math.min(0.2, next.t - keptR[i].t)) : (seg.span || 4) / nf2;
+          shots.push({ file, dur: d });
+          n++;
+        }
+        cuts.push({ name: seg.name, from: shots.length - keptR.length, to: shots.length });
+        console.log(`  ${seg.name.padEnd(10)} ${keptR.length} painted frames over ${(seg.span || 4)}s`);
+        continue;
+      }
       const at = await ev('REEL.at');
       // the card's own window, read from the roll rather than written down here
       const step = await ev('S.endRoll ? S.endRoll.step : 0.72');

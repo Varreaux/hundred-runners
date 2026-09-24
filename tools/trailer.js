@@ -353,7 +353,21 @@ const ESCAPE4 = ESCAPE3.map(it =>
   : it.clip === 'w_thorn' ? { clip: 'n_thorn', at: 0, for: 0.69 }
   : it);
 
-const EDITS = { escape4: ESCAPE4, escape3: ESCAPE3, escape2: ESCAPE2, escape: ESCAPE, ...ALTS };
+// ---------------------------------------------------------------- the seventh pass
+// "GO TO WORK" a little larger, and a new ending: full fade to black, then instantly the
+// broken-television effect with Mr Capitalism's head filling the screen, laughing, before he
+// zaps out. The card's fade-out already lands on black and the outro opens with 0.2s more of
+// it, so the cut between them is the pause he asked for.
+//
+// The outro is painted by tools/trailer-outro.js INSIDE the game page, which is what makes it
+// cheap: drawBossGlobe/Face/Hat take a radius, so the head that has only ever been two inches
+// tall in the dialogue band fills the frame with no new art. It laughs on the game's own
+// mouth formula, and turns red on the game's own `rage` mood -- "the head is the world, so
+// when he loses it the world goes red" -- because the face checks laughing before rage for
+// the mouth and the lids, so both can be true at once.
+const ESCAPE5 = [...ESCAPE4, { clip: 'outro', at: 0, for: 4.6 }];
+
+const EDITS = { escape5: ESCAPE5, escape4: ESCAPE4, escape3: ESCAPE3, escape2: ESCAPE2, escape: ESCAPE, ...ALTS };
 
 // ---------------------------------------------------------------- build
 const run = (bin, args) => execFileSync(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
