@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '181 the tenth mark plays the victory';
+const BUILD = '182 the crew dance off the belt';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3717,7 +3717,10 @@ function startFinale() {
   AU.finaleSting();
 }
 function finaleLightLevel(f) {
-  if (f.phase === 'search') return 1;
+  // The escape is lit like the search, and not by accident: without it the phase falls
+  // through to the charge's 0.07 + progress * 0.62, so the room DIMS from full to about 0.69
+  // on the frame the player wins it.
+  if (f.phase === 'search' || f.phase === 'escape') return 1;
   if (f.phase === 'blackout') {
     const t = f.blackoutT;
     // Three readable beats: cut -> ghost pulse -> dying stutter -> black
@@ -3813,6 +3816,11 @@ function finaleSpotFullR(L) {
 }
 function finaleSpotRadius(f, L) {
   const full = finaleSpotFullR(L);
+  // THE ROOM OPENS AS THEY LEAVE. Through the escape the lamp was still drawn as a steerable
+  // beam -- two lit circles under a 0.93 veil, with the ring -- frozen, with no cursor and no
+  // control, over a painting the puzzle has finished with. finaleLightLevel's escape branch
+  // only prevented a dim; this is what gives it something to be about.
+  if (f.phase === 'escape') return full * (1 + clamp01((f.escT || 0) / 0.9) * 2.4);
   // A SET MAX AND A SET MIN, travelled the whole way, every game. It was max(44, full * frac)
   // -- a floor clamped onto a fade, which is not the same shape: the lamp hit the floor at
   // 24% of the fade and the last quarter of every run was flat. Written as the two ends and
@@ -3870,7 +3878,14 @@ function veilPaintingSpot(side, cx, cy, r, fullR) {
   // be is a judgement and not a fact. At 0.647 -- what it computed at full radius -- the
   // unlit painting was 58% readable. Both the flat veil and the rim gradient read it, which
   // is the point: they are two halves of one edge and must not be dimmed separately.
-  const flood = clamp01(CFG.finale.lampFlood || 0);
+  // THE VEIL OPENS, NOT JUST THE HOLE. Growing the radius to 3.4x cannot reach a card's far
+  // corner from every park: the lamp stops where the tenth mark was, the diagonal is 533 and
+  // the pool reaches 306, so parked in a corner 44.7% of the card stays under the full veil
+  // for the whole celebration. Flooding scales the flat veil and all four rim stops from one
+  // variable, so it opens evenly wherever the lamp happens to be standing.
+  const flood = S.finale && S.finale.phase === 'escape'
+    ? clamp01((S.finale.escT || 0) / 0.9)
+    : clamp01(CFG.finale.lampFlood || 0);
   r = Math.max(5, r);
   ctx.save();
   ctx.beginPath();
@@ -4071,7 +4086,7 @@ function finaleConfirm(atU, atV) {
   const f = S.finale;
   if (!f) return false;
   if (f.wrongT > 0) return false;
-  if (f.winT > 0) return false;      // the puzzle is already won; the room is just finishing
+  if (f.winT > 0 || f.phase === 'escape') return false;  // already won; the room is just finishing
   if (f.phase !== 'search') return false;
   const L = finaleLayout();
   const u = (atU != null) ? clamp01(atU) : clamp01(f.spot?.u ?? 0.5);
@@ -4180,7 +4195,16 @@ const BELT_SPD = 200;
 // Whether the belt is turning at all: it idles until the first body steps on, and stops with
 // the room, but never because the crew got small.
 function finaleBeltRunning(f) {
-  return (f.phase === 'charge' || f.phase === 'search') && f.deck.length > 0;
+  // Still running through the escape. The machine does not know it has been beaten, and
+  // "run up the conveyor belt" is only a thing to do while the belt is going the other way.
+  // THE ESCAPE DOES NOT ASK WHETHER THE DECK IS EMPTY. At crew 1 there is no stagger to wait
+  // through, so the single survivor clears the frame 0.25-0.34s BEFORE the proprietor finishes
+  // -- and for that window f.deck.length is 0 while beltT keeps advancing, so the slats jump a
+  // whole plank, the dynamo wheel snaps to angle 0 and flips from amber to iron, while both
+  // drums keep turning because their spoke angle is not gated on this at all. Drums revolving
+  // under a stopped belt, in the loneliest ending the game has.
+  return f.phase === 'escape'
+      || ((f.phase === 'charge' || f.phase === 'search') && f.deck.length > 0);
 }
 const SLIP_T = 1.9, SLIP_MAX = 4.5;
 // The fastest a slip may run before it stops being a slip and becomes a streak. A LENGTH was
@@ -4476,15 +4500,414 @@ function finaleRollOff(f) {
     // across the face of the person it was naming -- guaranteed at four survivors or fewer,
     // where the room calls every one of them out. Offset along the water instead of lifted off
     // it: still at the drop end, still over the pool, clear of the splash.
-    S.floaters.push({ sx: L.deck.x + L.deck.drain + 58, sy: L.water.y + 26,
+    S.floaters.push({ fromFinale: true, sx: L.deck.x + L.deck.drain + 58, sy: L.water.y + 26,
                       txt: r.name || 'ONE MORE', life: 1.05, color: '#c9a86a' });
   }
+}
+// ================================================================ the escape
+// Morgan, 2026-09-24: "if you win i would like to see a final animation where the remaining
+// people on the conveyor belt do their dancing animation as they run up the conveyor belt
+// (to the right) and jump off screen. at the same time when this animation starts I also want
+// to see the boss dialoge band come down with his frustrated face saying NOOOOOOOOOOOOOOO!!!"
+//
+// RIGHT IS NOT A NEW DIRECTION, WHICH IS THE WHOLE POINT. The belt's top surface runs in -x
+// and the premise of the room is that the crew run +x to stand still on it -- finaleLayout
+// says so where it puts the gap at the left. They have been running this way for the whole
+// room. This is the first time it takes them anywhere.
+//
+// They keep the dance rather than the run cycle. drawDancer's own note is that the run cycle
+// is one shared stride set by a camera at a fixed speed, and that a body moving to its own
+// rhythm is the opposite of that; its comment says "nobody is going anywhere", and the one
+// thing that changes here is that now they are.
+const ESC = {
+  speed: 300,     // u/s of the dash once up to it
+  accel: 1000,    // u/s^2, so the push-off is visible rather than a teleport
+  // A TOTAL SPREAD, not a gap per body -- the difference matters because the crew is
+  // anything from 1 to the deck's cap of 33. At a fixed 0.06s between neighbours the last
+  // body waited 1.38s at crew 24 and would wait 1.92s at a full belt, so the left half of
+  // the line stood still through most of its own escape: at 1.9s into it the leftmost had
+  // been running for half a second and had covered 120 of its 618 units. Divided instead, so
+  // the line always unzips in the same beat whoever is standing on it.
+  spread: 0.45,   // s from the first body setting off to the last, right-hand end first
+  // THE LAUNCH IS 90 UNITS SHORT OF THE DECK'S END, not on it. The dynamo stands on that
+  // edge (L.gen.x is the deck's right edge exactly) and its casing TOP is L.gen.y 422 against
+  // a carrying surface at L.deck.y + 3 = 443, so it rises 21 above the belt, 22.2 counting
+  // inkFill's margin. (18 is deck.y - gen.y, measured to the housing lid rather than to the
+  // surface a body stands on. This comment said 18 and then did its own arithmetic from 21,
+  // contradicting itself by three units -- and those three units were the whole margin in the
+  // standing-start launch defect.) From 90 back, measured on ONE datum -- the drawn top at
+  // 22.2, ink included -- the feet pass 23.9 over the near corner, 30.4 over the middle and
+  // 26.6 over the far one. The first version of these three counted the ink margin in the
+  // first number and not in the other two, which is the same fault as the 18, one line up.
+  lift: 90,
+  vx: 620,        // the leap is faster than the dash, so it carries clear of the frame
+  vy: 470,        // upward, positive; apex 52.6 units at 0.224s
+  grav: 2100,
+  clear: 12,      // units of daylight demanded between the soles and the dynamo casing
+  // THE LEADING TOE, not the shoulder, and 15 rather than 12 because the stride grew. A
+  // travelling dancer's leading foot ellipse sits at figure x 9 + 1.2 + 2.8 = 13, which is
+  // 14.95 world at FINALE_SCALE -- so at stride 9 the toe reached the casing THREE UNITS
+  // before the probe did. At the old stride of 5 it was 10.35 and the 12 covered it.
+  half: 15,
+  gait: 20,       // rad/s of leg cycle at full dash: the working line's own d.gait += dt * 20
+  bossAt: 0.55,   // s before the band drops, so he answers bodies already in the air
+  gone: 40,       // units past the canvas edge before a body is finished with
+  // A BACKSTOP, the same kind updateFinale already keeps on the proprietor's speech: an
+  // ending may not wait on an animation that has stuck. The BODIES finish last, not the boss:
+  // he is gone at bossAt + dwell(1.5 + 19/30*0.45) + slide(0.55) = 2.885s, because `fast` skips
+  // the typing and the slide-IN runs under the dwell rather than before it -- not the 3.52 that
+  // bossSpeechLength reports, which counts a typing pass this line never makes and over-states
+  // any fast script by 1.18s. The last body clears at about 3.05s. Close enough either way that
+  // the test below has to be an && rather than a guess about which of them ends.
+  cap: 6.5,
+};
+// `Lin` because both callers have a layout already and one of them does NOT: updateFinale
+// passes its own, the dev flag has none. Written as a parameter with a fallback rather than
+// read off an enclosing scope -- the first version took no layout at all and resolved `L`
+// from whatever the caller happened to have, which meant it worked through ?phase=escape and
+// threw ReferenceError on every real win. An exception in update() stops the frame being
+// rescheduled, so that is a silent freeze on the winning keypress.
+function beginFinaleEscape(f, Lin) {
+  const L = Lin || finaleLayout();
+  f.phase = 'escape';
+  f.escT = 0;
+  // Rightmost first: they are nearest the way out, and a line that leaves as a block reads
+  // as one object moving rather than as people deciding to go.
+  const out = f.deck.filter(d => d.enter >= 0).sort((a, b) => b.x - a.x);
+  out.forEach((d, k) => {
+    // Whatever the belt was doing to them stops being true. A body part-way over the tail
+    // drum keeps neither its pitch nor its drop: the room was beaten before it took them.
+    d.slip = null; d.rot = 0; d.dy = 0;
+    // Back onto the belt first. A body the drum was taking keeps finaleSlipPose's x, which
+    // runs down to crown - R*sin(SLIP_THETA) = 66.9 -- past the end of the deck at 82. Zeroing
+    // its pitch and its drop without moving it left it standing in mid-air over the gap the
+    // whole room teaches you to read as death, with a full-strength contact shadow painted on
+    // nothing, for 0.6s. slot0 is the place the layout already calls clear of the tail drum.
+    d.x = Math.max(d.x, L.deck.x + L.deck.slot0);
+    // THE LAST SLOT STANDS PAST THE LAUNCH LINE, AND THERE IS NO RUN-UP TO GIVE IT. beltFar
+    // is L.gen.x - 40 = 786 and the line is L.gen.x - 90 = 736, so the two bodies nearest the
+    // dynamo (three at a full belt) begin ahead of it with 40 units of belt left.
+    //
+    // The first answer was to push their line out to d.x + ESC.lift so they got the same
+    // run-up as everyone else. That is worse, and instructively so: for a body at 786 it puts
+    // the take-off at 876, which is FIFTY UNITS INSIDE THE DYNAMO -- they walk through the
+    // casing to reach a line drawn past it. The room cannot give somebody standing 40 units
+    // from a machine both a run-up and the clearance to leap it.
+    //
+    // So they leave from where they stand, and the jump is solved for the take-off rather than
+    // being a constant -- see the launch below. Somebody with no run-up jumps harder, which is
+    // what a person does, and it makes the crew nearest the machine vault it from a standstill
+    // rather than stroll into it.
+    //
+    // The jitter is ONE-SIDED. Scattered symmetrically it let bodies launch later and leap
+    // lower, and the two compound: worst casing clearance fell from 20.7 units to 11.2.
+    // ESC.lift and ESC.vy are a floor computed against the dynamo, not a midpoint.
+    d.esc = { wait: out.length > 1 ? (k / (out.length - 1)) * ESC.spread : 0,
+              launch: L.gen.x - ESC.lift - hash(d.r.jit * 5.1) * 26,
+              vy: ESC.vy * (1 + hash(d.r.jit * 8.9) * 0.12),
+              // A UNIFORM STAGGER ON A UNIFORM SPEED IS A TRANSLATION. Every body was the same
+              // function of time offset by a constant, so the pitch between any two survivors
+              // was identical in every frame of the escape -- the line left as a rigid comb,
+              // which is the ordered rhythm drawDancer's own header says this scene exists to
+              // break. +/-14% is enough to stop it being one.
+              spd: ESC.speed * (0.86 + hash(d.r.jit * 4.3) * 0.28),
+              row: k % 2,
+              v: 0, air: false, vyNow: 0, y: 0, ph: d.r.jit * 6.3, since: 0 };
+  });
+  // The ones with enter < 0 are the counted remainder, drawn at 0.35 off the right of the
+  // deck and never on the belt at all. They are dropped rather than escaped, because a body
+  // that was never standing there cannot run off it.
+  f.deck = f.deck.filter(d => d.esc);
+  // Nothing that says somebody died outlives the moment they stopped dying. The roll-off
+  // plate has a 1.05s life and nothing expires it, so the last casualty's name went on
+  // climbing out of the water through the celebration -- the only text in the left half of
+  // the frame, with nobody under it.
+  S.floaters = S.floaters.filter(fl => !fl.fromFinale);
+  // NOT AU.thud(). In this room thud is what fires when a body hits the water -- the sound
+  // the player has spent the whole search learning to dread -- so the celebration opened on
+  // the death cue. AU.cheer already exists and is what this moment is.
+  //
+  // WITH ITS ARGUMENT. cheer(n) pitches itself off a streak and does Math.min(n, 8), so a
+  // bare call gave Math.min(undefined, 8) = NaN and threw "frequency is not finite" out of
+  // the audio mock -- inside update(), which is a silent freeze. 8 is the top of its own
+  // range, which is the right end of it for the largest win in the game.
+  AU.cheer(8);
+}
+function updateFinaleEscape(f, L, dt) {
+  f.escT += dt;
+  // THE BELT KEEPS RUNNING, and it did not. `f.beltT` is assigned once, 321 lines further
+  // down updateFinale, so the early return that brings us here froze it: the slats, both
+  // drums, the lip stripes and the dynamo wheel were pixel-identical across seven frames
+  // spanning 3.15s of a 200 u/s belt -- 630 units, 24 plank pitches, that never travelled.
+  // finaleBeltRunning was extended for this phase and its comment claims the machine does
+  // not know it has been beaten; this is the line that makes that true. "Run up the conveyor
+  // belt" is only a thing to do while the belt is going the other way.
+  f.beltT = (f.beltT || 0) + BELT_SPD * dt;
+  // HE REACTS, HE DOES NOT ANNOUNCE. Started on the same frame as the bodies he was screaming
+  // 0.35s before anybody had left the belt -- a reaction simultaneous with its own cause --
+  // and he won the first second of a celebration in which nothing had yet happened.
+  if (!f.escBoss && f.escT >= ESC.bossAt) { f.escBoss = true; startBoss(BOSS_BEATEN, true, null); }
+  // updateFinale is reached through update()'s `if (S.mode === 'finale') { ...; return; }`,
+  // so nothing else in the frame drives him: the road's two calls to updateBoss are both past
+  // that return. His band is the other half of what was asked for, and it has to be ticked
+  // from inside the room that asked for it.
+  if (S.boss && !S.boss.gone) updateBoss(dt);
+  const launch = L.gen.x - ESC.lift;
+  for (const d of f.deck) {
+    const e = d.esc;
+    if (!e) continue;
+    if (e.wait > 0) {
+      e.wait -= dt;
+      // A WAITING BODY IS STILL A BODY. e.ph was frozen until it set off, and passing a phase
+      // at all defeats drawDancer's own clock -- so before the override existed these danced,
+      // and after it they were STILL IMAGES for up to 0.45s at the moment of victory, half the
+      // crew at once. Idled at the body's own tempo, the travel gait then blends up out of it.
+      e.ph += dt * (1.6 + hash(d.r.jit * 3.7) * 1.5);
+      continue;
+    }
+    if (!e.air) {
+      e.v = Math.min(e.spd, e.v + ESC.accel * dt);
+      d.x += e.v * dt;
+      // THE LEGS KEEP PACE WITH THE GROUND. drawDancer runs at its own 1.6-3.1 rad/s, a 2-4
+      // second cycle: translated at 300 u/s that is one foot planted for 1.0-1.96s while the
+      // body crosses 15 to 29 body-widths, and against a belt running the other way the
+      // "planted" sole skates at 500 u/s. Driven off speed instead, at the same 20 rad/s the
+      // working line's own `d.gait += dt * 20` uses, so a body at full dash strides at the
+      // rate it walked at and a body still getting up to speed strides slower -- which is
+      // what a push-off looks like.
+      e.ph += dt * ESC.gait * (e.v / e.spd);
+      if (d.x >= e.launch) {
+        e.air = true;
+        // A STANDING JUMP IS SLOWER AND STEEPER. Held at the full ESC.vx, a body leaving from
+        // 786 has 45ms to clear the casing and needs vy 777 -- an apex of 144 units, most of
+        // the way up the panel. Scaled off the run-up it actually had, the same body crosses
+        // at 347 and needs about 497, an apex of 59. Someone who has been sprinting leaps far;
+        // someone going from a standstill leaps UP. Same trade a person makes.
+        // NO CONSTANT FLOOR CAN SERVE BOTH ENDS OF THE BELT, which took two of them to learn.
+        // The two corner constraints pull opposite ways in vx: a body near the machine wants to
+        // cross SLOWLY so it has time to climb, one further back wants to cross FAST so it is
+        // not still over the casing on the way down. At 0.56 the body on the last slot solved
+        // apex 61 and a mid-belt body solved 94 and came down at x 945 -- past the deck, past
+        // the dynamo, where e.y clamps at 0 and it SLID ALONG BELT HEIGHT ON NOTHING for four
+        // frames at the frame edge. At 0.87 those swapped: the mid-belt body came right and the
+        // last slot went to apex 117, 2.2x a sprinter's. Both floors left somebody standing on
+        // air; they only disagreed about who.
+        //
+        // So it is solved rather than picked. The least impulse for a take-off is at
+        // vx = sqrt(0.5*grav*d1*d2/over) -- where the two corner curves cross -- bounded below
+        // by the run-up the body actually has and above by ESC.vx. Every apex the layout can
+        // produce then lands between 52.6 and 59.1, the standing jump stays the steeper one,
+        // and nothing depends on the frame rate: the old form scaled vx by whatever e.v the
+        // first frame's dt happened to give, so a single 0.1s hitch on the winning frame solved
+        // an apex of 272 and put the crown above the paintings.
+        const over = (L.deck.y + 3) - (L.gen.y - 1.2) + ESC.clear;
+        const d1 = (L.gen.x - ESC.half) - d.x, d2 = (L.gen.x + L.gen.w + ESC.half) - d.x;
+        e.vx = Math.min(ESC.vx, Math.max(ESC.vx * clamp01(e.v / ESC.speed),
+                                         Math.sqrt(0.5 * ESC.grav * Math.max(1, d1) * Math.max(1, d2) / over)));
+        // SOLVED FROM THE TAKE-OFF, not written down, and at BOTH corners of the machine.
+        // The height to beat is (belt surface - casing top), read off the layout rather than
+        // restated -- a comment that said 18 where the room meant 21 is how the first version
+        // of this lost its whole margin. Pinning only the near corner let a slow arc come down
+        // ON the far half of the casing; pinning the near corner at the body's ORIGIN rather
+        // than its leading edge left 4.6 units where 12 were asked for, because the shoulder
+        // arrives 12 units before the origin does.
+        // THE CLAMP IS A FUSE, AND IT IS 17 UNITS FROM BLOWING. If t ever clamps to 0.02 this
+        // returns 33/0.02 + 21 = 1671, an apex of 665 on a 532-tall panel -- the body leaves
+        // the top of the screen. It clamps for a launch at x >= L.gen.x - 0.02 * e.vx, about
+        // 803 at the speeds the solve now picks, and the furthest anybody can stand is
+        // beltFar = L.gen.x - 40 = 786. (The 28 this comment first claimed was the distance to
+        // the PROBE at 814, not to the clamp.) Moving beltFar to gen.x - 10 would turn the
+        // celebration into a rocket launch with no error anywhere, so the two are named here.
+        const need = (x) => {
+          const t = Math.max(0.02, (x - d.x) / e.vx);
+          return over / t + 0.5 * ESC.grav * t;
+        };
+        e.vyNow = Math.max(e.vy, need(L.gen.x - ESC.half), need(L.gen.x + L.gen.w + ESC.half));
+      }
+    } else {
+      e.since += dt;
+      d.x += e.vx * dt;
+      // THE AVERAGE OF THE TWO VELOCITIES, which is exact under constant acceleration.
+      // Decrementing first and stepping by the NEW velocity is semi-implicit Euler and loses
+      // 0.5 * grav * dt * t -- 8.7 units by the far side of the machine at these numbers. The
+      // arc was therefore 8.7 below what the clearance solve above had computed for it, which
+      // is how a leap solved for 12 units of daylight measured 8.6. A solve in continuous time
+      // is only true of a simulation that integrates in continuous time.
+      const vy0 = e.vyNow;
+      e.vyNow -= ESC.grav * dt;
+      e.y = Math.max(0, e.y + (vy0 + e.vyNow) * 0.5 * dt);   // height above the belt, positive up
+      e.ph += dt * ESC.gait * 0.22;            // the legs all but stop: a leap is one pose
+    }
+  }
+  f.deck = f.deck.filter(d => d.x <= W + ESC.gone);
+  // BOTH, not either. The bodies are gone at about 2.6s and he is still shouting; ending on
+  // the bodies alone would cut his band off mid-word, and ending on him alone would hold an
+  // empty room if a body were ever still in frame.
+  // He has not even been started for the first bossAt seconds, and `!S.boss` is true of the
+  // proprietor who spoke on the hillside and finished -- so without escBoss the room could
+  // hand over before his band had dropped at all.
+  const bossDone = f.escBoss && (!S.boss || S.boss.gone);
+  if ((f.deck.length === 0 && bossDone) || f.escT > ESC.cap) S.mode = 'win';
+}
+// Their own draw. Everything in the working line's loop -- the run-in-place gait, the wind
+// streak pulled the belt's way, a contact shadow pinned to the slats -- is a statement about
+// somebody losing ground, and none of it is true any more.
+// THERE IS NO ROOM FOR A DOOR, which took building one to find out. The right painting is
+// x 495..936 and the panel ends at 956, so the only real wall on that side is a 16-unit strip
+// -- and a body is 20 wide, 40 with its arms out, and 45 tall with its crown ABOVE the
+// painting's lower rail at the height the arc crosses. A first attempt put a lit hatch at
+// 918..946 and so drew a doorway inside a picture.
+//
+// The second attempt was a shadow band, and the arithmetic kills it: the wall there is panelG
+// at about luminance 12, and the darkest the band could paint is rgba(6,4,8,0.92), so the most
+// it can remove is 5.7 of luminance against this project's own 20-25 threshold for reading a
+// body against its ground. YOU CANNOT DRAW A SHADOW ON A WALL THAT IS ALREADY BLACK. There is
+// nothing there to take away.
+//
+// Light has the headroom that shadow does not: 240 against 12. So the way out is a slot of
+// daylight -- the only daylight in an act that is entirely underground -- and the crew go INTO
+// it rather than into the dark. It sits entirely right of the painting, so unlike a band over
+// the canvas it cannot hide a difference, which is why it can be drawn always instead of
+// appearing on the winning frame like a stage flat. It opens as they leave.
+function drawExitLight(L, f) {
+  const x0 = L.right.x + L.right.w, x1 = L.px + L.pw - 4;
+  const k = f.phase === 'escape' ? 0.14 + 0.86 * clamp01((f.escT || 0) / 0.8) : 0.14;
+  const g = ctx.createLinearGradient(x0, 0, x1, 0);
+  // Both stops and the fill are fed from x0/x1, so the ramp cannot end short of its own fill
+  // and smear its last stop across the rest.
+  g.addColorStop(0, 'rgba(206,222,240,0)');
+  g.addColorStop(1, 'rgba(214,230,246,' + (0.82 * k).toFixed(3) + ')');
+  // FROM THE PAINTINGS' TOP RAIL TO THE WATERLINE, not the full height of the panel. At
+  // 16 x 524 it was a 1:33 streak running from the HUD band down through the belt and across
+  // the pool -- daylight underwater -- and its bright end lay along the panel's own gold rail.
+  // Stopped at the floor it is a tall window in a wall, which is what it is meant to be.
+  ctx.fillStyle = g; ctx.fillRect(x0, L.left.y, x1 - x0, L.water.y - L.left.y);
+}
+function drawEscaper(d, L, t) {
+  const e = d.esc;
+  const spd = e.air ? (e.vx || ESC.vx) : e.v;
+  // THE SAME ANCHOR THE WORKING LINE STANDS ON, and the two are EXACTLY equal rather than
+  // nearly so. drawFigure's sole is FINALE_SOLE = 4.3 * FINALE_SCALE below its origin.
+  // drawDancer's lowest ink is NOT the foot ellipse (fill bottom 4.1) but the leg limb()'s
+  // INK stroke: endpoint y 2, lineWidth 3 + 1.6, round cap, so 2 + 4.6/2 = 4.3 -- the
+  // identical derivation. The sole lands at 442.945 against a slat top of 443. Worth stating
+  // precisely, because the next person to change that stroke width moves the sole with it.
+  const sole = L.deck.y - 2;
+  // A SHADOW NEEDS A FLOOR, AT BOTH ENDS. The guard used to test only the right edge, so a
+  // body standing at 70.9 had 94% of a 9-unit ellipse painted off the end of the belt, on the
+  // tail drum's face and on open air over the water. And it was DELETED rather than faded:
+  // the last frame it drew was at 46 units up, still 25% opaque and 12.6 wide, gone entirely
+  // on the next. Two-sided, and taken to zero across the last stretch of deck.
+  const deckR = L.deck.x + L.deck.w;
+  if (d.x >= L.deck.x + 6 && d.x <= deckR) {
+    // e.y / 53, not / 70. The apex is vy^2/(2*grav) = 52.6, so a divisor of 70 meant the
+    // fade never passed 0.75 of its own range and the shadow stayed heavier than the height
+    // said it should be for the whole leap.
+    // INVERTED, and the multiply was the bug. `h` is the GONE factor: 1 means no shadow. The
+    // second term goes to 0 as d.x reaches the deck's end, so multiplying drove h to 0 there
+    // and the shadow came back to FULL strength -- 0.31 alpha and 16.1 wide on the last frame
+    // before it vanished, painted across the head drum, once per body. Worse than the pop it
+    // was written to cure. Blended instead: at the deck's end h is 1 whatever the height, and
+    // away from it this reduces to the height fade.
+    const h = 1 - (1 - clamp01(e.y / 53)) * clamp01((deckR - d.x) / 26);
+    ctx.fillStyle = `rgba(0,0,0,${(0.4 * (1 - h)).toFixed(3)})`;
+    ctx.beginPath();
+    ctx.ellipse(d.x + 4, L.deck.y + 3, 9 * (1 - h * 0.45), 2.5 * (1 - h * 0.45), 0, 0, 6.28);
+    ctx.fill();
+  }
+  // THEIR NAMES, and this is the moment they were asked for. The plate lives in the working
+  // line's branch, which the escape skips, so the survivors lost their names at the instant
+  // they were saved -- and the gate on it is spacing, which the escape is the only part of
+  // the room that reliably satisfies. Same 44-unit test, same plate.
+  // 30, NOT 44. 44 was copied from the working line, where the line thins to nothing and the
+  // gate is eventually satisfied by everybody. The escape holds its spacing: the steady gap is
+  // the slot pitch plus one wait-step of travel, which is 34.9 units at crew 24 and 25.1 at a
+  // full belt -- so the plates were dead above crew 19 and a good run wins with more than that.
+  // At crew 24 exactly one body was ever named, for the 0.116s before it launched.
+  // A GATE ON BODY SPACING CANNOT PROTECT A BOX SIZED BY TEXT. The plate is 5.4 units per
+  // character plus 8, so "Atthiyya" beside "Hoda" needs 40 units between origins and
+  // "Maria-Paz" needs 57 -- while the escape's steady gap is 803/(n-1), which is 34.9 at crew
+  // 24 and 25.1 at a full belt. At a gate of 44 nothing was named above crew 19; at 30 the
+  // long pairs collided and printed over each other. Staggered into two rows only bodies two
+  // apart can meet, so the gate can come down to a spacing every crew size reaches.
+  if (d.r.name && d.r.name.length && !e.air) {
+    let near = Infinity;
+    for (const o of (S.finale ? S.finale.deck : [])) if (o !== d) near = Math.min(near, Math.abs(o.x - d.x));
+    if (near >= 24) {
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 9px monospace';
+      // 62, NOT 44. The working line's plate sits at 44 because that branch draws with
+      // drawFigure, whose arms are at hip height. This one draws a DANCER, whose raised
+      // fingertips reach 57.2 above the sole -- so the plate box at 385..397 sat inside the
+      // hands, with an arm painted across the name. Two functions, two bodies, one number.
+      const ny = sole - e.y - 62 - (e.row ? 13 : 0);
+      ctx.fillStyle = 'rgba(8,6,10,0.72)';
+      const nw = ctx.measureText(d.r.name).width + 8;
+      roundRect(d.x + 2 - nw / 2, ny - 9, nw, 12, 3); ctx.fill();
+      ctx.fillStyle = 'rgba(214,198,160,0.88)';
+      ctx.fillText(d.r.name, d.x + 2, ny);
+      ctx.restore();
+    }
+  }
+  // ...AND THEY GO OUT OF IT, rather than being sliced by it. THE HANDS, not the origin, and
+  // over the 16 units that exist rather than the 34 I wrote down. A dancer's raised fingertips
+  // reach d.x + 20, so keyed on the origin over 34 a hand crossed the gold moulding at alpha
+  // 1.00, the torso began being cut at 0.65 and the body centre reached the canvas edge still
+  // at 0.29 -- survivors sliced vertically in half at up to 88% opacity, which was the last
+  // image of each of them. One expression fed from the two edges of the strip, so the fade and
+  // the light below cannot disagree about where the room ends.
+  // A FADE NEEDS A DISTANCE, AND THE STRIP IS 16 UNITS. Ramped across the strip itself the
+  // whole fade lasted 1.6 frames -- a pop, not a fade -- and it completed at x 932, four units
+  // BEFORE the light even begins, so nobody ever went into it and the argument for drawing the
+  // light in front of the bodies was vacuous. The END is what protects them from the moulding,
+  // so the end stays and the ramp is lengthened behind it: nine frames instead of one and a
+  // half, which is the last thing the player sees of every person they saved.
+  const EX1 = L.px + L.pw - 4, EX0 = EX1 - 90;
+  const outK = clamp01((d.x + 20 - EX0) / (EX1 - EX0));
+  ctx.save();
+  ctx.globalAlpha = 1 - outK;
+  ctx.translate(d.x, sole - e.y);
+  // A BODY GOING SOMEWHERE LEANS. drawDancer's only lean is `sway * 0.14..0.24` off a
+  // half-rate sine, so half the time it leans BACKWARD against its own direction of travel;
+  // its comment says why -- "the torso leans into the sway rather than forward: nobody is
+  // going anywhere". They are going somewhere now, and this is the line the escape has to
+  // override. About the SOLE, like the slip pose, or the lean swings the feet off the belt.
+  // ...AND IT UNWINDS IN THE AIR. spd saturates at ESC.vx for the whole flight, so the
+  // airborne attitude was identical to the running one -- 13.75 degrees of forward lean held
+  // from take-off to the frame edge, a pose rather than a body flying. A leap is upright at
+  // the top and rolls forward on the way down.
+  // KEYED TO HEIGHT, NOT TO VERTICAL VELOCITY -- and it may not cross zero. vyNow is at its
+  // MAXIMUM on the take-off frame, so the old form scored rise 1 there and leaned every body
+  // 3.4 degrees BACKWARD on exactly the frame the push-off makes the eye look, then reached
+  // full forward lean at the apex and held it all the way down: the precise opposite of what
+  // the sentence above it claims, and a body that leans back as it jumps reads as being thrown
+  // off rather than jumping.
+  const rise = e.air ? clamp01(e.y / 53) : 0;
+  const lean = 0.24 * clamp01(spd / (e.spd || ESC.speed)) * (1 - 0.85 * rise);
+  ctx.translate(0, FINALE_SOLE); ctx.rotate(lean);
+  // ...AND A JUMP IS A DECISION, which has to be legible in one frame. The arms are already
+  // up, so a leap with no pose change reads as being lifted rather than jumping: a crouch as
+  // the launch line comes up, and a hard extension through the first 0.12s of air.
+  const load = e.air ? 0 : clamp01(1 - (e.launch - d.x) / 46) * 0.14;
+  // 0.10, not 0.20. The scale is on the WHOLE figure, head included, so at 0.20 the skull went
+  // from a 6.8-unit circle to a 6.8 x 8.1 ellipse for seven frames -- in a game where every
+  // other body is rigid that reads as a sprite stretch, not as an extension.
+  // CONTINUOUS ACROSS THE TRANSITION. load ramps to 0.14 over nine frames and then, on the
+  // frame e.air flips, load went to 0 and push to 0.10 -- a 0.86 to 1.10 vertical scale step
+  // in one frame, the crown jumping 24% of body height in 16ms. It now starts where the crouch
+  // left off and extends out of it over three frames.
+  const push = e.air ? (0.10 - 0.24 * Math.max(0, 1 - e.since / 0.05)) : 0;
+  ctx.scale(1 - load * 0.35 + push * 0.10, 1 - load + push);
+  ctx.translate(0, -FINALE_SOLE);
+  drawDancer(d.r, 0, 0, t, FINALE_SCALE, 1, e.ph);
+  ctx.restore();
 }
 function finaleWrong() {
   const f = S.finale;
   if (!f || f.phase !== 'search') return;
   if (f.wrongT > 0) return;
-  if (f.winT > 0) return;           // nobody dies after the wall is beaten
+  if (f.winT > 0 || f.phase === 'escape') return;   // nobody dies after the wall is beaten
   // 1.7s of locked input and strobing lamp outlasted the 0.64s the body takes to reach the
   // water, so the fall happened entirely inside the blackout. Shortened to cover the fall and
   // stop. Linh's settled note is that a wrong mark must not RECHARGE the generator, which it
@@ -4509,7 +4932,7 @@ function finaleWrong() {
   // changes, which is the one number the room is asking you to watch. Over the water, in the
   // middle, where nothing else is drawn: still centred rather than at the drop end, so it
   // stays distinct from the clock's own quieter floater. Predates the slip.
-  if (r) S.floaters.push({ sx: W / 2, sy: L.water.y + 26, txt: r.name ? (r.name + ' FALLS') : 'ONE IS LOST', life: 1.35, color: '#ff6b6b', big: true });
+  if (r) S.floaters.push({ fromFinale: true, sx: W / 2, sy: L.water.y + 26, txt: r.name ? (r.name + ' FALLS') : 'ONE IS LOST', life: 1.35, color: '#ff6b6b', big: true });
   if (f.line.length <= 0) S.mode = 'lose';
 }
 function finaleLayout() {
@@ -5563,6 +5986,11 @@ function updateFinale(dt) {
   }
   f.falling = f.falling.filter(fall => fall.t < 2.2);
 
+  // BEFORE the queue maintenance, which spends two hundred lines holding bodies in belt slots
+  // at an even spacing -- the one thing they have stopped doing. Anything below would drag
+  // them straight back to a targetX and the escape would be a line of people twitching.
+  if (f.phase === 'escape') { updateFinaleEscape(f, L, dt); return; }
+
   // Run to a fixed belt slot, even spacing. Arrive -> +1, STAY standing.
   //
   // THE QUEUE RUNS THE WAY THE BELT DOES. Slot 0 is the LEFTmost, hard by the gap: the front
@@ -6013,7 +6441,9 @@ function updateFinale(dt) {
     // animation would be the worst frame in the game.
     if (f.winT > 0) {
       f.winT -= dt;
-      if (f.winT <= 0) S.mode = 'win';
+      // ...and then the room is theirs. The 0.85 above is still the beat that lets the tick
+      // land and the floater be read; what follows it is the leaving, not the ending.
+      if (f.winT <= 0) beginFinaleEscape(f, L);
     } else {
       // searchT still runs and is still the full searchTime; it is simply never drawn. It is
       // the BACKSTOP now rather than the clock -- the run really ends when the last body goes
@@ -6808,7 +7238,15 @@ function updateFx(dt) {
   S.particles = S.particles.filter(p => p.life > 0);
   for (const r of S.rings) r.life -= dt;
   S.rings = S.rings.filter(r => r.life > 0);
-  for (const f of S.floaters) { if (f.wy !== undefined) f.wy -= 30 * dt; else f.sy -= 30 * dt; f.life -= dt; }
+  // THE FINALE'S OWN PLATES DO NOT DRIFT. finaleRollOff places its plate at water.y + 26 and
+  // reasons in its comment that "floaters rise 18 over their life, so this stays inside the
+  // water band" -- but the 18 is drawFinalePanel's lift, and THIS line adds 30 a second on top
+  // of it. Total rise 49.5 against a water band 50 deep: the plate leaves the water 0.64s in
+  // and finishes 19.5 units INSIDE the conveyor housing, drawn across the machine for the last
+  // 40% of its life. finaleWrong's heavier plate ends at 447.5, across the standing crew at
+  // chest height. No start height fits a 49.5-unit drift into a 50-unit band, so the two that
+  // are placed against a fixed feature are pinned instead.
+  for (const f of S.floaters) { if (f.wy !== undefined) f.wy -= 30 * dt; else if (!f.fromFinale) f.sy -= 30 * dt; f.life -= dt; }
   S.floaters = S.floaters.filter(f => f.life > 0);
   for (const r of S.ripples) { r.r += 40 * dt; r.life -= dt; }
   S.ripples = S.ripples.filter(r => r.life > 0);
@@ -15577,10 +16015,21 @@ function drawFinish() {
 //
 // `beat` is per-person, not global: a crowd dancing in unison is another ordered rhythm,
 // which would say the opposite of what the scene is for.
-function drawDancer(r, sx, sy, t, scale, alpha) {
+// `phase` overrides the clock for a dancer who is TRAVELLING -- see drawEscaper. Optional,
+// so every existing caller passes six arguments and is unchanged. It exists rather than the
+// caller recomputing `own`, which would be the same tempo written down in two places.
+function drawDancer(r, sx, sy, t, scale, alpha, phase) {
   const own = 1.6 + hash(r.jit * 3.7) * 1.5;            // this body's own tempo
+  // TWO CLOCKS, AND ONLY THE LEGS TAKE THE OVERRIDE. `phase` used to replace `ph` outright,
+  // which drove every term in this function off it -- and the escape feeds 20 rad/s against a
+  // native 1.6-3.1, so sway, bounce, the arm swing and armUp were all multiplied by 6.4x to
+  // 12.5x as well. That is a 4.6-unit hip bob at 6.4Hz, a 0.31s arm strobe and an 8-14 degree
+  // torso rock at 1.6Hz: a vibration, not a dance. The body keeps its own tempo for everything
+  // that reads as character; only the stride follows the ground.
   const ph = t * own + r.jit * 6.3;
-  const step = Math.sin(ph), sway = Math.sin(ph * 0.5), bounce = Math.abs(Math.sin(ph));
+  const lp = phase == null ? ph : phase;
+  const travel = phase != null;
+  const step = Math.sin(lp), sway = Math.sin(ph * 0.5), bounce = Math.abs(Math.sin(ph));
   const style = Math.floor(hash(r.jit * 11.3) * 3);     // three ways of moving, not one
   ctx.save();
   // The bounce lifts the HIPS, not the whole body. Translating the figure lifted both feet
@@ -15591,7 +16040,10 @@ function drawDancer(r, sx, sy, t, scale, alpha) {
   ctx.globalAlpha *= alpha;
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   // the torso leans into the sway rather than forward: nobody is going anywhere
-  const lean = sway * (style === 0 ? 0.24 : 0.14);
+  // ...and a travelling body's lean belongs to whoever is moving it. drawEscaper rotates the
+  // whole figure forward by up to 0.24 rad and this ADDED to it rather than being overridden,
+  // so a style-0 body swung between 0 and 0.48 rad -- bolt upright half the time, at a sprint.
+  const lean = travel ? 0 : sway * (style === 0 ? 0.24 : 0.14);
   const hipY = -7 - bounce * 4;
   const ax = Math.sin(lean), ay = -Math.cos(lean);
   const shX = ax * 10.5, shY = hipY + ay * 10.5;
@@ -15606,12 +16058,20 @@ function drawDancer(r, sx, sy, t, scale, alpha) {
   // of the crowd were shrugging rather than dancing. Raised arms are the whole silhouette
   // at a zoom where a body is twenty pixels tall, so they have to clear the skull.
   const armUp = style === 2 ? 1 : 0.9 + 0.1 * bounce;
-  const swingA = step * (style === 1 ? 7 : 4);
+  // ARMS AND LEGS ARE ONE GAIT. Left on the body's own clock while the legs ran on the
+  // ground's, they were 6-12x apart -- arms pinned to a body whose legs are going eight times
+  // faster. Only armUp, sway and bounce stay on ph, because those are posture rather than gait.
+  const swingA = Math.sin(travel ? lp : ph) * (style === 1 ? 7 : 4);
+  // A LONGER STRIDE WHEN TRAVELLING. Cadence alone cannot carry it: at 20 rad/s a half-cycle
+  // is 0.157s and the ground moves 47 units under a 11.5-unit stride, a 4x slide per step.
+  // Matching it honestly needs 137 rad/s, which is not drawable. 9 gives 20.7 units a step and
+  // a sprint silhouette instead of a shuffle; the rest of the difference is the belt's job.
+  const stride = travel ? 9 : 5;
   const handA = { x: shX + swingA + 6, y: shY - 22 * armUp };
   const handB = { x: shX - swingA - 6, y: shY - 22 * (style === 2 ? 1 : 0.45 + 0.4 * bounce) };
   // back arm and back leg first
   limb(shX - 1, shY, shX - 5, shY - 6 * armUp, handB.x, handB.y, shade(r.skin), 2.4);
-  const legB = -step * 5, liftB = Math.max(0, -Math.cos(ph)) * 4;
+  const legB = -step * stride, liftB = Math.max(0, -Math.cos(lp)) * 4;
   limb(0, hipY, legB * 0.5 + 2, hipY + 5 - liftB, legB, 2 - liftB, shade(r.pants), 3);
   ctx.fillStyle = shade(r.pants, 0.45);
   ctx.beginPath(); ctx.ellipse(legB + 1.2, 2.6 - liftB, 2.8, 1.5, 0, 0, 6.28); ctx.fill();
@@ -15624,7 +16084,7 @@ function drawDancer(r, sx, sy, t, scale, alpha) {
   ctx.fillStyle = 'rgba(0,0,0,0.14)'; roundRect(-4, -4.5, 8, 5.5, 3); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.18)'; roundRect(-3.2, -10, 3, 4, 1.5); ctx.fill();
   ctx.restore();
-  const legA = step * 5, liftA = Math.max(0, Math.cos(ph)) * 4;
+  const legA = step * stride, liftA = Math.max(0, Math.cos(lp)) * 4;
   limb(0, hipY, legA * 0.5 + 2, hipY + 5 - liftA, legA, 2 - liftA, r.pants, 3);
   ctx.fillStyle = INK;
   ctx.beginPath(); ctx.ellipse(legA + 1.2, 2.6 - liftA, 2.8, 1.5, 0, 0, 6.28); ctx.fill();
@@ -16820,6 +17280,11 @@ const BOSS_SPEED = [
 //
 // It replaces a stick figure in a top hat who stood on the belt saying the same sort of thing
 // in a box of his own, which was a second character doing his job. There is one proprietor.
+// He has one line left and it is not an argument. Everything he has said until now has been
+// a claim about how the world is; this is the sound a claim makes when it stops being true.
+const BOSS_BEATEN = [
+  { t: 'NOOOOOOOOOOOOOOO!!!', mood: 'rage', shake: 'NOOOOOOOOOOOOOOO!!!', nokey: true, fast: true },
+];
 const BOSS_FINALE = [
   { t: 'Did you think there was an OUT?', mood: 'rage', shake: 'OUT' },
   { t: 'There is no out. There is only further in.', mood: 'rage' },
@@ -16847,7 +17312,8 @@ const BOSS_LAND = [
 // leaving on one clock and still drawn on another.
 function bossWelcome() {
   return S.mode === 'intro' || S.mode === 'play'
-      || (S.mode === 'finale' && S.finale && S.finale.phase === 'intro');
+      || (S.mode === 'finale' && S.finale
+          && (S.finale.phase === 'intro' || S.finale.phase === 'escape'));
 }
 // How long a script takes to say at his own reading pace, for anything that needs to wait
 // for him. Derived from the script and from BOSS's own constants rather than written down,
@@ -16907,7 +17373,10 @@ function updateBoss(dt) {
   if (line) {
     if (b.ch < line.t.length) {
       const was = b.ch;
-      b.ch = Math.min(line.t.length, b.ch + BOSS.cps * dt);
+      // A typewriter is a device for READING and a scream is a single event: spelling a
+      // nineteen-character howl out at 30 characters a second, with a cursor blinking after
+      // it, is the one thing that cannot be delivered letter by letter.
+      b.ch = line.fast ? line.t.length : Math.min(line.t.length, b.ch + BOSS.cps * dt);
       if (was < line.t.length && b.ch >= line.t.length && line.laugh) b.laugh = 1.05;
     } else {
       b.dwell += dt;
@@ -17078,8 +17547,12 @@ function drawBoss() {
   // because it asked for a press that did nothing; wherever he is visible it does something
   // now -- on the road he ducks out of sight while a panel is open, which is the one time
   // SPACE belongs to something else.
+  // ...and NOT on a line that is not addressed to anybody. His last one is a noise he makes
+  // while the room empties, with no drill behind it and nothing to continue to, so offering
+  // "SPACE to continue" under it asks for a press that does nothing and frames a scream as a
+  // conversation.
   const cur = b.script[b.line];
-  if (cur && !b.leaving) {
+  if (cur && !b.leaving && !cur.nokey) {
     const filled = b.ch >= cur.t.length;
     const ready = filled && b.dwell >= BOSS.dwell;
     const last = b.line === b.script.length - 1;
@@ -17834,7 +18307,9 @@ function drawChamberBase(f, L, t, still) {
   }
   // tiny dynamo meter (machine only — not a second found/progress HUD)
   ctx.fillStyle = '#1b1519'; ctx.fillRect(L.gen.x + 52, L.gen.y + 40, 32, 6);
-  ctx.fillStyle = f.phase === 'search' ? '#2ecc71' : '#e67e22';
+  // 'escape' as well, or the meter flips from the search's green to the CHARGE's orange on
+  // the frame the room is beaten and holds it for the whole celebration.
+  ctx.fillStyle = (f.phase === 'search' || f.phase === 'escape') ? '#2ecc71' : '#e67e22';
   ctx.fillRect(L.gen.x + 52, L.gen.y + 40, 32 * beltPow, 6);
   return beltPow;
 }
@@ -17847,7 +18322,14 @@ function drawFinalePanel() {
   // Closes with the CREW, not with a clock nobody can see. Read off searchT the vignette was
   // the one thing on screen still telling the player how long was left, which is exactly what
   // taking the timer away was meant to stop -- and it read it more finely than the belt does.
-  const danger = f.phase === 'search' ? clamp01(1 - finaleLampFrac(f)) : (f.phase === 'blackout' ? 1 : 0.25);
+  // THE ROOM HAS TO CHANGE WHEN THEY WIN. Through the escape the red corner vignette and the
+  // edge bleed were identical to the search's, so the only difference between "you are losing
+  // people" and "you have won" was that the bodies moved -- and the alarm wash sat over the
+  // right edge, under the one light that is supposed to be the brightest thing in the frame.
+  const escK = f.phase === 'escape' ? clamp01((f.escT || 0) / 0.45) : 0;
+  const danger = f.phase === 'escape' ? 0.25 * (1 - escK)
+               : f.phase === 'search' ? clamp01(1 - finaleLampFrac(f))
+               : (f.phase === 'blackout' ? 1 : 0.25);
 
   // sealed chamber - near full bleed
   ctx.fillStyle = `rgba(4,1,6,${0.88 + (1 - light) * 0.1})`; ctx.fillRect(0, 0, W, H);
@@ -17955,7 +18437,11 @@ function drawFinalePanel() {
       // edge with plainly lit painting outside it, which reads as a compass mark drawn on the
       // oil. Same fault as a fill wider than its gradient, one layer up -- two numbers for one
       // edge -- and the clip below is what the 0.46 was really protecting against.
-      ctx.beginPath(); ctx.arc(c.x, c.y, Math.max(4, spotR), 0, 6.28); ctx.stroke();
+      // ...AND NOT DURING THE ESCAPE. The ring marks a lamp the player is steering, and the
+      // escape opens spotR from 90 to 306 over 0.9s -- so a hard gold circle swept outward
+      // across both cards for the first three quarters of a second of the celebration, which
+      // reads as a shockwave rather than as a leftover control.
+      if (f.phase !== 'escape') { ctx.beginPath(); ctx.arc(c.x, c.y, Math.max(4, spotR), 0, 6.28); ctx.stroke(); }
       ctx.restore();
     }
     ctx.restore();
@@ -17965,6 +18451,17 @@ function drawFinalePanel() {
   // where the two differ, and the answer is on both. The lesson now teaches the pairing, so
   // nothing has to be captioned in the room itself.
   drawFoundChecks(f, L, spotR);
+  // ...AND THE CARDS GO DOWN WITH IT. Both are solved, the puzzle is over, and while they
+  // stayed lit the one image this whole animation exists to deliver -- a body in the air, free
+  // of the machine -- was read as one more figure inside a picture OF WORK: the right card's
+  // lower band is a painted line of workers at 40px on a red belt, and an escaper at apex is
+  // 45px crossing it, at the same scale, with no shadow and no value difference. Dimming them
+  // is one fill and it is the only way the leap is legible against anything.
+  if (escK > 0) {
+    ctx.fillStyle = 'rgba(9,6,11,' + (0.62 * escK).toFixed(3) + ')';
+    ctx.fillRect(L.left.x, L.left.y, L.left.w, L.left.h);
+    ctx.fillRect(L.right.x, L.right.y, L.right.w, L.right.h);
+  }
 
   if (f.phase === 'blackout') {
     const beat = f.blackoutT < 0.28 ? 1 : f.blackoutT < 0.55 ? 2 : 3;
@@ -17999,6 +18496,7 @@ function drawFinalePanel() {
   const pack = f.deck.slice().sort((a, b) => (a.slip ? 1 : 0) - (b.slip ? 1 : 0) || a.x - b.x);
   for (const d of pack) {
     if (d.enter < 0 && d.x >= L.deck.x + L.deck.w + 40) continue;
+    if (d.esc) { drawEscaper(d, L, t); continue; }
     const working = d.arrived && f.phase !== 'blackout';
     const entering = !d.arrived && d.enter >= 0;
     // legs pump in place; body X does not travel. Both of these are computed in updateFinale
@@ -18111,6 +18609,10 @@ function drawFinalePanel() {
     drawFigure(fall.r, 0, 0, fall.t * 10, FINALE_SCALE, alpha);   // the same size they were standing
     ctx.restore();
   }
+
+  // AFTER the crew, not before. Drawn behind them a body going transparent over a bright strip
+  // is a body you can see the strip THROUGH -- a ghost. Drawn in front, the light takes them.
+  drawExitLight(L, f);
 
   // FX sparks / spray
   for (const p of f.fx) {
@@ -20078,6 +20580,16 @@ if (qs.has('finale')) {
   //   with no way to re-shoot the one a reviewer asked about. The scene is swapped AFTER
   //   startFinale so its diff list is rebuilt through makeFinaleDiffs rather than aliased:
   //   sharing the table would let a marked id follow the scene into the next chamber.
+  // A SERIES OF STILLS OF ONE ANIMATION MUST BE ONE RUN. The chamber picks a tableau at
+  // random per load, so eight shots of a 3.5s escape came back with four different paintings
+  // behind them and a reviewer could not tell a conditional from a re-shoot -- which has cost
+  // this project a finding before. &phase=escape therefore pins the first scene unless one is
+  // named. Determinism is the whole purpose of a flag that exists to be photographed.
+  if (!qs.has('scene') && qs.get('phase') === 'escape') {
+    S.finale.scene = FINALE_SCENES[0];
+    S.finale.diffs = makeFinaleDiffs(S.finale.scene);
+    S.finale.found = new Set();
+  }
   if (qs.has('scene')) {
     const pick = FINALE_SCENES.find(sc => sc.id === qs.get('scene'));
     if (pick) { S.finale.scene = pick; S.finale.diffs = makeFinaleDiffs(pick); S.finale.found = new Set(); }
@@ -20088,16 +20600,43 @@ if (qs.has('finale')) {
   //   &found=N               N differences already marked, for photographing the checks
   //   &wrong=1               hold the wrong-answer flash
   //   &st=N                  freeze the ambient clock so a flicker cannot move between shots
+  //   &phase=escape&esc=T    the winning animation, held T seconds in. It is otherwise
+  //                          unphotographable: reaching it needs ten correct marks, which a
+  //                          screenshot cannot make, and &win jumps straight past the room to
+  //                          the closing reel. Driven through beginFinaleEscape rather than by
+  //                          setting phase, so the boss is really started and the bodies
+  //                          really carry the fields the draw reads -- the same reason
+  //                          ?start&open= calls armRoom instead of assigning a state.
   const ph = qs.get('phase');
-  if (ph === 'charge' || ph === 'search') {
+  if (ph === 'charge' || ph === 'search' || ph === 'escape') {
     beginFinaleCharge(S.finale);
     // The lesson has to be taught before the loop, not waited out inside it: the room does
     // not open on time any more and this used to run its whole budget and hand back a frame
     // still sitting in the charge -- a flag that silently photographs the wrong phase.
-    if (ph === 'search') {
+    if (ph === 'search' || ph === 'escape') {
       updateFinale(1 / 60);
       finaleTeach(S.finale);
       for (let i = 0; i < 60 * 40 && S.finale.phase !== 'search'; i++) updateFinale(1 / 60);
+    }
+    if (ph === 'escape') {
+      // Let the line spread into its slots first. Straight off the search the belt is still
+      // filling and half the crew is walking on from the right, so the escape would start
+      // with bodies stacked at the boarding end -- a frame the real win never produces.
+      for (let i = 0; i < 60 * 3; i++) updateFinale(1 / 60);
+      // TEN MARKS FOUND, because the real win has ten and every shot read FOUND 0/10 with a
+      // bare pair of canvases. &found is applied further down and caps at findCount - 1, so
+      // no frame taken through this flag could ever show the state being photographed --
+      // reviewers were asked to judge bodies crossing paintings that had none of the check
+      // marks the bodies actually fly through.
+      S.finale.diffs.forEach(dd => S.finale.found.add(dd.id));
+      beginFinaleEscape(S.finale);
+      // update(), NOT updateFinale(). S.t is advanced by update and the dance reads it for
+      // every pose -- tempo, bounce, sway, arm height -- so driving the room directly gave a
+      // set of stills with the bodies in DIFFERENT PLACES and identical postures, which is
+      // exactly the kind of plausible frame that sends a reviewer after a fault in the
+      // animation. The escape's own motion is on dt and was moving the whole time.
+      const n = Math.round(Math.max(0, +(qs.get('esc') || 0)) * 60);
+      for (let i = 0; i < n && S.mode === 'finale'; i++) update(1 / 60);
     }
   }
   const pre = Math.min(CFG.finale.findCount - 1, +(qs.get('found') || 0));
@@ -20154,7 +20693,7 @@ function canvasToGame(e) {
 }
 function finalePointerAt(sx, sy, click) {
   const f = S.finale;
-  if (!f || S.paused || S.mode !== 'finale' || f.wrongT > 0 || f.winT > 0) return;
+  if (!f || S.paused || S.mode !== 'finale' || f.wrongT > 0 || f.winT > 0 || f.phase === 'escape') return;
   // THE LESSON TAKES THE POINTER TOO. The room's own hint says "ARROWS / click", and a window
   // that teaches that sentence with the mouse switched off teaches it wrong. Same two cards,
   // same mirroring, same mark -- from lessonCards, so the mouse and the eye cannot disagree

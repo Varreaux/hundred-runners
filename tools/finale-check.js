@@ -782,10 +782,142 @@ eval(src + `
     run(0.5);
     ok('and the search clock stops during that beat', Math.abs(g.searchT - clockBefore) < 0.001,
        'clock held at ' + g.searchT.toFixed(2));
-    run(1.0);
-    ok('the tenth mark beats the wall', S.mode === 'win', 'mode ' + S.mode + ', ' + g.found.size + ' found');
+    // SAMPLING STARTS BEFORE THE ESCAPE DOES. It used to start in the long run below, by
+    // which point escT was already 0.65 -- so a build that started the proprietor on frame
+    // one still reported "his band starts at 0.65s", which was the first sample the loop
+    // ever took rather than anything about the build.
+    const EL = finaleLayout();
+    const genL = EL.gen.x, genR = EL.gen.x + EL.gen.w, casing = EL.gen.y;
+    const slats = EL.deck.y + 3;
+    // WHERE A BODY STOPS BEING DRAWN, derived: drawEscaper fades to alpha 0 when its raised
+    // hand (origin + 20) reaches the panel's inner rail, so the last drawn origin is that rail
+    // less 20. NAMED HOLE: this is a statement about the PHYSICS against the fade as it stands.
+    // An arc that touches down past this point is invisible and fine; one that touches down
+    // before it is a body standing on air. If somebody lengthens the fade, this number has to
+    // be re-derived with it -- the check cannot see the fade, only where bodies are.
+    const drawnTo = (EL.px + EL.pw - 4) - 20;
+    let worstGen = Infinity, sank = 0, aired = 0, offDeck = 0;
+    let bossAt = Infinity, beltMoved = 0, beltAt0 = null, worstWho = null, minX = Infinity;
+    let bossMoved = -Infinity, startX = null;
+    let landedInFrame = 0, apexMin = Infinity, apexMax = 0, landWho = null;
+    const peak = new Map();
+    const sample = () => {
+      const fin = S.finale;
+      if (!fin || fin.phase !== 'escape') return;
+      if (beltAt0 == null) beltAt0 = fin.beltT || 0;
+      beltMoved = (fin.beltT || 0) - beltAt0;
+      if (startX == null) startX = new Map(fin.deck.map(d => [d, d.x]));
+      if (fin.escBoss && bossAt === Infinity) {
+        bossAt = fin.escT;
+        for (const d of fin.deck) if (startX.has(d)) bossMoved = Math.max(bossMoved, d.x - startX.get(d));
+      }
+      for (const d of fin.deck) {
+        if (!d.esc) continue;
+        if (d.esc.y < -0.001) sank++;
+        if (d.esc.air) aired++;
+        if (!d.esc.air && d.x < EL.deck.x + 2) offDeck++;
+        if (!d.esc.air) minX = Math.min(minX, d.x);
+        // A BODY THAT COMES DOWN WHERE THE PLAYER CAN STILL SEE IT. e.y clamps at 0, so an arc
+        // that lands short does not fall through the floor -- it SLIDES ALONG BELT HEIGHT ON
+        // NOTHING, past the deck and past the dynamo, at the frame edge. Two different fixed
+        // take-off speeds each produced it for a different part of the belt and neither was
+        // caught by anything here, which is why it is an assertion now. 932 is where the exit
+        // fade reaches zero.
+        // The apex is the HIGHEST point of an arc, which means tracking a maximum per body --
+        // computed per frame it reads whatever that frame happens to be, and a body on its way
+        // down scores 2 units.
+        if (d.esc.air) peak.set(d, Math.max(peak.get(d) || 0, d.esc.y));
+        // ...and BEFORE the landing test, which needs to know the body has actually flown.
+        // Tested first, this counted the launch frame itself -- air true, y still 0 -- and
+        // reported one body-frame per body as though thirty people had come down on nothing.
+        if (d.esc.air && d.esc.y <= 0 && d.x < drawnTo && (peak.get(d) || 0) > 1) {
+          landedInFrame++;
+          if (!landWho) landWho = { x: +d.x.toFixed(0), vx: +d.esc.vx.toFixed(0),
+                                    vy: +d.esc.vy.toFixed(0), launch: +d.esc.launch.toFixed(0),
+                                    peak: +(peak.get(d) || 0).toFixed(0) };
+        }
+        // A body is about 20 wide about its origin, so the span is what meets the casing,
+        // not the origin. Feet, because that is the part that would strike it.
+        if (d.x + 12 >= genL && d.x - 8 <= genR) {
+          const cl = casing - (slats - d.esc.y);
+          if (cl < worstGen) { worstGen = cl; worstWho = { x: +d.x.toFixed(1), y: +d.esc.y.toFixed(1),
+            vx: +(d.esc.vx || 0).toFixed(0), vy: +(d.esc.vyNow || 0).toFixed(0),
+            launch: +(d.esc.launch || 0).toFixed(0), air: d.esc.air }; }
+        }
+      }
+    };
+    run(1.0, sample);
+    // THE TENTH MARK NO LONGER BEATS THE WALL IN ONE STEP. It used to assert S.mode === 'win'
+    // 1.5s after the mark; the win now runs an escape first, so that assertion failed on a
+    // build where nothing was wrong -- a tool going stale by failing rather than by lying,
+    // which is the way round this project wants. Split into the two claims it was making at
+    // once: the mark starts the leaving, and the leaving ends the room.
+    ok('the tenth mark starts the escape rather than the ending',
+       S.mode === 'finale' && g.phase === 'escape', 'phase ' + g.phase + ', mode ' + S.mode);
+    ok('and the proprietor comes down with it',
+       !!S.boss && !S.boss.gone && S.boss.script === BOSS_BEATEN,
+       S.boss ? 'says ' + JSON.stringify(S.boss.script[0].t) + ' in ' + S.boss.script[0].mood : 'no boss at all');
+    // Every frame of the leap, against two numbers the room already commits to elsewhere:
+    // the dynamo casing's top and the belt's carrying surface. Nothing is measured off a
+    // picture -- both come out of finaleLayout, so if the deck or the dynamo moves, this
+    // moves with them.
+    const started = g.deck.length;
+    run(ESC.cap + 1.5, () => { sample(); if (S.mode === 'win') return 'stop'; });
+    ok('the belt is still running while they run up it',
+       beltMoved > 400,
+       'beltT advanced ' + beltMoved.toFixed(0) + ' units over the escape (200 u/s x ~3s)');
+    ok('nobody is left standing off the end of the belt',
+       offDeck === 0, offDeck + ' body-frames left of the first slat at ' + (EL.deck.x + 2) +
+       '; leftmost body reached ' + (minX === Infinity ? 'n/a' : minX.toFixed(1)));
+    // MEASURED IN TRAVEL, NOT AGAINST ESC.bossAt. Written as bossAt >= ESC.bossAt - 0.02
+    // it read the very constant it was policing out of the build under test, so setting
+    // bossAt to 0 moved the assertion with it and the falsifier came back ok at 0.02s. The
+    // claim is that he is REACTING, so the thing to measure is how far anybody had got when
+    // his band started -- which no constant can move.
+    ok('the proprietor answers the escape instead of announcing it',
+       bossMoved > 20, 'the crew had travelled ' + (bossMoved === -Infinity ? 0 : bossMoved).toFixed(0) +
+       ' units when his band started, at escT ' + (bossAt === Infinity ? 'never' : bossAt.toFixed(2) + 's'));
+    ok('everybody gets off the belt', started > 0 && S.finale.deck.length === 0,
+       started + ' set off, ' + S.finale.deck.length + ' still aboard');
+    ok('and nobody sinks into it on the way', sank === 0, sank + ' body-frames below the slats');
+    // ESC.clear - 1, not a loose floor: the margin is solved for per body, so the check should
+    // hold the design to it rather than merely notice a collision. It read 8.6 against a
+    // solved 12 until the integrator was corrected, and a threshold of 4 was silent about that.
+    ok('the leap clears the dynamo casing', aired > 0 && worstGen >= ESC.clear - 1,
+       aired + ' airborne body-frames, worst clearance ' +
+       (worstGen === Infinity ? 'NEVER OVER IT' : worstGen.toFixed(1) + ' units ' + JSON.stringify(worstWho)));
+    ok('nobody comes down inside the frame', landedInFrame === 0,
+       landedInFrame + ' body-frames standing on air left of the fade-out at ' + drawnTo + ' ' + JSON.stringify(landWho));
+    // The standing jumper should be the STEEPER one, not a different animation. Both fixed
+    // take-off speeds broke this: one sent a mid-belt body to 2.2x a sprinter's apex, the
+    // other sent the body on the last slot there instead.
+    const peaks = [...peak.values()].filter(v => v > 4);
+    apexMin = Math.min(...peaks); apexMax = Math.max(...peaks);
+    ok('no leap is wildly out of scale with the others',
+       peaks.length > 0 && apexMax / Math.max(1, apexMin) < 1.8,
+       peaks.length + ' arcs, apex ' + apexMin.toFixed(0) + '..' + apexMax.toFixed(0) +
+       ' units, ratio ' + (apexMax / Math.max(1, apexMin)).toFixed(2) + ' (a body is 45 tall)');
+    ok('the escape hands the room to the ending', S.mode === 'win', 'mode ' + S.mode);
     ok('the win banks the crew that is still standing', loadBest() >= g.line.length,
        'best ' + loadBest() + ', standing ' + g.line.length);
+  }
+  // The reposition, as a unit test rather than as a hope. Trying to engineer a deep slip
+  // through the search did not work -- rollT forced to 0.02 still left the leftmost body in
+  // its slot, and deleting the clamp outright came back ALL CLEAR, which is a falsifier that
+  // never reached the line it was testing and so proved nothing about it. Placed directly
+  // instead, at the x finaleSlipPose really leaves a body at: crown - R*sin(SLIP_THETA), 15
+  // units past the end of the deck, over the tail drum and the water.
+  {
+    const g2 = searching(6);
+    const L2 = finaleLayout();
+    const victim = g2.deck.slice().sort((a, b) => a.x - b.x)[0];
+    const from = L2.deck.x - 15;
+    victim.x = from;
+    beginFinaleEscape(g2, L2);
+    ok('a body the drum had already taken is put back on the belt before it runs',
+       victim.x >= L2.deck.x + L2.deck.slot0,
+       'placed at ' + from + ', escapes from ' + victim.x.toFixed(0) +
+       ' (slot 0 is ' + (L2.deck.x + L2.deck.slot0) + ', first slat ' + (L2.deck.x + 2) + ')');
   }
   {
     const g = searching(3);
