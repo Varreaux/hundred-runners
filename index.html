@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '162 the lesson is played, and the room says people';
+const BUILD = '163 the tutorial keeps its own light';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -5740,7 +5740,17 @@ function updateFinale(dt) {
   if (!f.spot) f.spot = { u: 0.5, v: 0.45 };
   if (!f.spotVel) f.spotVel = { u: 0, v: 0 };
   let mx = 0, my = 0;
-  if (f.phase === 'search' || f.phase === 'charge') {
+  // SEARCH ONLY. Morgan, 2026-09-24: "moving the light in the tutorial is also moving the
+  // light in the real game that's right behind it in the UI. Can we lock that light ... until
+  // the tutorial is done?"
+  //
+  // He is right and it was one condition. The lesson keeps its own lamp -- f.lesson, in the
+  // window's coordinates -- precisely so the two cannot fight, and then this went on steering
+  // the room's f.spot from the same keys anyway. So every sweep made in the window was being
+  // made a second time on the cards behind it, and the player walked into the search with the
+  // light parked wherever the handbag happened to be. It sits where startFinale put it now,
+  // and moves on the first frame the room is actually theirs.
+  if (f.phase === 'search') {
     if (HELD.ARROWLEFT || HELD.A) mx -= 1;
     if (HELD.ARROWRIGHT || HELD.D) mx += 1;
     if (HELD.ARROWUP || HELD.W) my -= 1;
@@ -17618,10 +17628,19 @@ function drawFinalePanel() {
   // The count went in as `label` with an empty `val`, so the chip built "6/10 " with a
   // trailing space and the glyphs sat about 4 units left of centre. Both are one width so
   // the row does not shuffle as people die.
-  // ONE CHIP. The crew moved into the line above, where it is a sentence rather than a
-  // label, so this is left saying the only other thing worth a number -- and it says what it
-  // is counting now, because "0/10" alone was a score with no units.
-  drawChip(W / 2, 'FOUND', `${f.found.size}/${CFG.finale.findCount}`, '#2ecc71', 132);
+  // ONE CHIP, and it counts LIES. Morgan, 2026-09-24: "what are we saying that we found
+  // exactly? We could say 'found 0 out of 10 differences,' although it doesn't quite fit with
+  // the theme of capitalism ... if you have a good idea in mind, feel free to just put it in."
+  //
+  // "Differences" is the puzzle's word for it and nobody in this world would use it. The
+  // proprietor's own cut line was "the canvas lies in ten places", which is the room stated
+  // in five words: these are paintings of work, one of them has been corrected, and what you
+  // are hunting is where it was corrected. A difference is a fact about two pictures. A lie
+  // is a fact about somebody.
+  //
+  // Sized for "FOUND 10/10 LIES", the widest it ever gets, so the chip cannot shuffle when
+  // the count reaches double figures.
+  drawChip(W / 2, 'FOUND', `${f.found.size}/${CFG.finale.findCount} LIES`, '#2ecc71', 152);
 
   // paintings — then pitch-black veil with mirrored flashlight spots (the player control)
   drawFinaleScene(f.scene, L.left.x, L.left.y, L.left.w, L.left.h, false, f.diffs, f.found, t);
@@ -17686,15 +17705,14 @@ function drawFinalePanel() {
   // still among the bodies -- the crowns sit 35 above the sole line, so there is no room over
   // a full belt at all. It goes in the empty band under the chips, centred, where nothing
   // else is drawn.
-  // ONLY THE CONTROLS, and only while they are the thing to do. The charge used to report
-  // the wheel's power here in percent, which is Morgan's "wheel turning 30% power": a reading
-  // of a machine the player cannot touch, printed over a room they cannot play yet. The
-  // lesson has that beat now and it is about the controls, so this says nothing until the
-  // room is live and then says the same thing the lesson just taught.
-  if (f.phase === 'search') {
-    ctx.fillStyle = '#9a9088'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
-    ctx.fillText('ARROWS / click move lamps  ·  SPACE or click to mark', W / 2, L.left.y - 8);
-  }
+  // NOTHING. This band used to carry the wheel's power in percent during the charge, and then
+  // the controls during the search. Both are gone: Morgan, 2026-09-24, "remove the arrows /
+  // click move lamp / click to mark. I think we don't need that because the player, once
+  // they've completed the tutorial, hopefully they know how it works."
+  //
+  // Which is the argument for having built the lesson in the first place. A room that has
+  // just made you use the keys does not have to caption them, and the caption was sitting
+  // directly under the crew count on the one screen whose subject is the crew.
 
   // crew: FIXED world positions; run-in-place gait sells treadmill relative motion
   // Leftmost first, so leftmost is painted furthest back -- except for the one who is going,

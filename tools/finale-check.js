@@ -254,6 +254,36 @@ eval(src + `
     }
   }
 
+  // ------------------------------------------------------------ the room's lamp is locked
+  {
+    // Morgan, 2026-09-24: "moving the light in the tutorial is also moving the light in the
+    // real game that's right behind it ... Can we lock that light ... until the tutorial is
+    // done?" It was one condition, and it is the kind of fault only a player sees: the lesson
+    // HAS its own lamp, so nothing in the window looked wrong -- the damage was on the cards
+    // behind it, and it arrived with you when the room opened.
+    const g = charging(100);
+    const at0 = { u: g.spot.u, v: g.spot.v };
+    for (let i = 0; i < 60 * 8; i++) {
+      HELD.ARROWRIGHT = (i % 180) < 90; HELD.ARROWLEFT = (i % 180) >= 90;
+      HELD.ARROWDOWN = (i % 120) < 60; HELD.ARROWUP = (i % 120) >= 60;
+      update(1/60);
+    }
+    HELD.ARROWRIGHT = HELD.ARROWLEFT = HELD.ARROWUP = HELD.ARROWDOWN = false;
+    const swept = Math.hypot(g.lesson.u - LESSON_START.u, g.lesson.v - LESSON_START.v);
+    const bled = Math.hypot(g.spot.u - at0.u, g.spot.v - at0.v);
+    ok('the lesson steers its own lamp and never the room behind it',
+       swept > 0.2 && bled < 1e-9,
+       'the lesson lamp travelled ' + swept.toFixed(2) + ' and the room lamp ' + bled.toFixed(4));
+    // ...and it is the player's again the moment the room is.
+    finaleTeach(g);
+    run(6, () => { if (F().phase === 'search') return 'stop'; });
+    const atOpen = g.spot.u;
+    HELD.ARROWRIGHT = true; run(1); HELD.ARROWRIGHT = false;
+    ok('and the room takes its lamp back as soon as it opens',
+       F().phase === 'search' && g.spot.u > atOpen + 0.2,
+       'opened at ' + atOpen.toFixed(2) + ', a second of ARROWRIGHT took it to ' + g.spot.u.toFixed(2));
+  }
+
   // ------------------------------------------------------------ the standing pack
   {
     charging(24);
