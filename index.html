@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '163 the tutorial keeps its own light';
+const BUILD = '164 no cheering for an empty lane';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2860,7 +2860,7 @@ function reset() {
   CFG.rooms.forEach(r => {
     const t = CFG.types[r.type];
     S.rooms.push({ ...r, ord: byX.indexOf(r) + 1, verb: t.verb, hazard: t.hazard, title: t.title, color: t.color,
-                   hot: null, mg: null, state: 'dormant', bridge: 0, blast: 0, deaths: 0, flash: 0, killT: 0,
+                   hot: null, mg: null, state: 'dormant', bridge: 0, blast: 0, deaths: 0, flash: 0, killT: 0, met: false,
                    slamT: rand(0, CFG.crusherPeriod) });
   });
   for (const x of CFG.gates) S.gates.push({ x, state: 'dormant', holdT: 0, drop: 0.09, dropV: 0, landed: false, judder: 0, flash: 0 });
@@ -6105,13 +6105,27 @@ function update(dt) {
       if (S.active !== room) room.mg.inputT = Math.max(0, room.mg.inputT - dt);
       if (room.mg.inputT <= 0) solveRoom(room);
     }
+    // Did anybody actually WALK UP to this room. Deliberately not canReach: that is true from
+    // the moment a fork ahead could carry somebody into this lane, and it goes false again the
+    // instant the crowd takes the other branch -- so a room on a lane nobody ever entered
+    // expired below with deaths 0, took the `else`, and awarded a streak, a big green CLEAN
+    // and a cheer for a hazard no one had been within a thousand units of. Act three arms
+    // every room on sight, nine at a time across the hillside, so that was a fistful of free
+    // CLEANs every run, exactly where the lanes are emptiest. 40 is a body length short of the
+    // face, where the queue's leading toe stands. Latched: met once is met for good, because
+    // the crowd walks past and canReach then goes false behind them.
+    if (room.state === 'armed' && !room.met
+        && S.runners.some(r => (r.state === 'run' || r.state === 'fall')
+                               && r.lane === room.lane && r.x >= holdLine(room) - 40)) room.met = true;
     // nobody left who can reach it: close it, whether it was fixed or not
     if (room.state === 'armed' && !room.pendingClear
         && !S.runners.some(r => (r.state === 'run' || r.state === 'fall') && canReach(r, room))) {
       room.state = 'passed';
       if (S.active === room) S.active = null;
       if (room.deaths) S.floaters.push({ wx: room.x + CFG.gapWidth / 2, wy: laneY(room.lane) - 100, txt: 'TOO LATE', life: 1.2, color: '#ff8a8a' });
-      else cleanRoom(room);
+      // and a room nobody ever reached closes with NOTHING. Not TOO LATE either: nobody was
+      // late, nobody came. The only room that earns the streak is one somebody stood in front of.
+      else if (room.met) cleanRoom(room);
     }
     // Three presses on a rota, each taking at most one person. The clock runs
     // whenever the room is unsolved, including before the panel is ever opened,
