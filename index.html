@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '168 the boss room has its own music';
+const BUILD = '169 the podium says who else got out';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -19268,7 +19268,7 @@ function drawPodiumCard(sy, at) {
   ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(title, W / 2 + 2, 62);
   ctx.fillStyle = survived ? '#7ee6a2' : '#ffd27a'; ctx.fillText(title, W / 2, 60);
   ctx.font = '13px monospace'; ctx.fillStyle = 'rgba(214,206,206,0.75)';
-  ctx.fillText(`${S.stats.arrived} of ${CFG.runnerCount} reached the exit · best streak x${S.bestStreak}`, W / 2, 86);
+  ctx.fillText(`${S.stats.arrived} of ${CFG.runnerCount} reached the exit`, W / 2, 86);
   ctx.restore();
   // 1st in the middle on the tallest block, 2nd to its left, 3rd to its right
   // Muted toward the night the rest of the screen is painted in. At full chroma the three
@@ -19335,11 +19335,22 @@ function drawPodiumCard(sy, at) {
     // Laid out from the BOTTOM up, so a long roll grows away from the footer instead of down
     // into it. Two rows, and a count for whoever is left over: the podium is the point here,
     // and twenty-three names stacked under it is a wall, not a roll.
-    const rows = nameRows(rest, W - 300, 14), shown = rows.slice(0, 2);
+    // A bare row of names under the podium said nothing about who they were, so the top row
+    // carries a label. It is measured into the row width, so a long roll still wraps.
+    const label = survived ? 'they also made it out' : 'also still inside';
+    ctx.font = '11px monospace'; const lw = ctx.measureText(label).width + 16;
+    ctx.font = 'bold 12px monospace';
+    const rows = nameRows(rest, W - 300 - lw, 14), shown = rows.slice(0, 2);
     let y = 506 - (shown.length - 1) * 15;
     for (const row of shown) {
       let x = W / 2 - row.w / 2;
       ctx.textAlign = 'left';
+      if (row === shown[0]) {
+        x += lw / 2;
+        ctx.fillStyle = 'rgba(214,206,206,0.6)'; ctx.font = '11px monospace';
+        ctx.fillText(label, x - lw, y);
+        ctx.font = 'bold 12px monospace';
+      }
       for (const it of row.items) { nameAt(it.r, x, y, 0, false); x += it.w + 14; }
       ctx.textAlign = 'center';
       y += 15;
@@ -19385,7 +19396,7 @@ function drawEnd() {
     const cp = easeOut(clamp01((T - 0.45) / 0.8));
     ctx.globalAlpha = clamp01((T - 0.4) / 0.3) * fade;
     ctx.fillStyle = '#eee'; ctx.font = '16px monospace';
-    ctx.fillText(`Lost ${Math.round(S.stats.dead * cp)}   Reached the exit ${Math.round(S.stats.arrived * cp)}   best streak x${S.bestStreak}`, W / 2, 278);
+    ctx.fillText(`Lost ${Math.round(S.stats.dead * cp)}   Reached the exit ${Math.round(S.stats.arrived * cp)}`, W / 2, 278);
     ctx.globalAlpha = 1;
   }
 
@@ -19431,7 +19442,8 @@ function drawEnd() {
     ctx.fillStyle = '#f1c40f'; ctx.fillText(`RANK ${rank}`, 0, 10);
     ctx.restore();
     ctx.fillStyle = '#d8cfae'; ctx.font = '13px monospace';
-    typeLine(`${left} survivor${left === 1 ? '' : 's'} — ${line}`, W / 2, 108, R.end + 0.6);
+    // The count is already in the header two lines up, and saying it twice read as a stutter.
+    typeLine(line, W / 2, 108, R.end + 0.6);
   }
 
   // the footer: skippable while the reel runs, the way out once it has stopped
