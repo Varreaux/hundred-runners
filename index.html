@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '175 the traps take half';
+const BUILD = '176 more of them take the stairs';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -216,7 +216,14 @@ const CFG = {
   forks: [
     { x: 2700,  from: 0, to: 1, merge: 5600,  split: 0.5 },
     { x: 3800,  from: 1, to: 2, merge: 5200,  split: 0.5 },
-    { x: 6600,  from: 0, to: 1, merge: 11000, split: 0.55 },
+    // THE FIRST FORK OF ACTS TWO AND THREE SENDS 70% UP. Morgan, 2026-09-24: with every fork
+    // near a coin toss the ground floor kept the largest share of the crowd -- measured, 46% of
+    // it in act two and 51% in act three, against 5-6% on the top floor -- because each later
+    // fork only divides whoever is already upstairs. So only the first fork of those two acts
+    // changed, to a 70/30 flip with the 30 staying on the ground; act one and every later fork
+    // are as they were. Measured after, six solved runs: 29% on the ground in act two, 33% in
+    // act three.
+    { x: 6600,  from: 0, to: 1, merge: 11000, split: 0.7 },
     { x: 7000,  from: 1, to: 2, merge: 10700, split: 0.6 },
     { x: 7400,  from: 2, to: 3, merge: 10400, split: 0.6 },
     { x: 7800,  from: 3, to: 4, merge: 10100, split: 0.6 },
@@ -289,7 +296,7 @@ const CFG = {
     // The eighteen-second single path is where the act introduces itself, and it is the only
     // stretch where updateView holds the camera at 0.95 instead of 0.453 -- so it is also the
     // only stretch where act three's own furniture is drawn at a size you can read.
-    { x: 14100, from: 0, to: 1, merge: 19990, split: 0.5 },
+    { x: 14100, from: 0, to: 1, merge: 19990, split: 0.7 },   // 70/30, see the note at 6600
     { x: 15300, from: 1, to: 2, merge: 19770, split: 0.5 },
     { x: 16500, from: 2, to: 3, merge: 19550, split: 0.5 },
     { x: 17600, from: 3, to: 4, merge: 19330, split: 0.5 },
