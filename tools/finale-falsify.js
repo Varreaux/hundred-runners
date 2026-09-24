@@ -169,6 +169,16 @@ const FAULTS = [
   ['the win banks the crew that is still standing',
    'bank nothing when the wall is beaten',
    s => s.replace('{ f.winT = 0.85; saveBest(f.line.length); }', '{ f.winT = 0.85; }')],
+
+  ['the room lamp is not drawn over the tutorial',
+   "Morgan's bug, restored: the room's lamp cores go on being painted through the tutorial",
+   s => s.replace("  if (f.phase === 'search') {\n    ctx.save();\n    ctx.globalCompositeOperation = 'lighter';",
+                  "  if (f.phase === 'search' || f.phase === 'charge') {\n    ctx.save();\n    ctx.globalCompositeOperation = 'lighter';")],
+
+  ['and is drawn once the room opens',
+   'the cores are gated off everywhere -- which satisfies the half above by deleting the only\n              indicator of where the lamp the player is steering actually is',
+   s => s.replace("  if (f.phase === 'search') {\n    ctx.save();\n    ctx.globalCompositeOperation = 'lighter';",
+                  "  if (false) {\n    ctx.save();\n    ctx.globalCompositeOperation = 'lighter';")],
 ];
 
 let proved = 0, unproven = 0;

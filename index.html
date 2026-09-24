@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '164 no cheering for an empty lane';
+const BUILD = '165 the tutorial hides the room lamp';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -17862,7 +17862,17 @@ function drawFinalePanel() {
   ctx.globalAlpha = 1;
 
   // flashlight cores (control indicator) — no separate crosshair
-  if (f.phase === 'search' || f.phase === 'charge') {
+  //
+  // SEARCH ONLY. This is the cursor for the lamp the player steers, and during the charge the
+  // player is steering the TUTORIAL's lamp, not this one -- BUILD 163 locked the steering to
+  // the search phase for exactly that reason and left the indicator behind, so the real lamp
+  // sat frozen at its start position while its two cores went on being drawn. They are the
+  // last thing painted in the panel and they composite with 'lighter', so they punched
+  // straight through a tutorial window that is otherwise opaque: two white dots, one in each
+  // of the lesson's own cards, in the middle of the thing the player is being asked to read.
+  // Morgan: "we can still see the two white dots from the actual game ... its bleeding
+  // through."
+  if (f.phase === 'search') {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     const core = f.flashWrong > 0 ? 'rgba(255,90,90,0.95)' : 'rgba(255,236,196,0.92)';   // survives a lit panel

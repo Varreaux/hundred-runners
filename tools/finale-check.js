@@ -30,6 +30,21 @@ const fs = require('fs'), path = require('path');
 const root = process.argv[2] || path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
   .split('<script>')[1].split('</script>')[0].replace("'use strict';", '');
+// The line the lamp's core is struck on, in the extracted script. DERIVED, not written down:
+// index.html's line numbers are 13 ahead of the script this evals, so a number copied out of
+// the file points at nothing and reports a clean zero.
+//
+// It lives out here, in module scope, rather than inside the eval'd template below, because
+// the template eats backslashes -- `split('\n')` written in there becomes a split on a real
+// newline and the whole file fails to parse.
+const SRC_LINES = src.split('\n');
+const NLINES = SRC_LINES.length;
+const CORE_LINE = SRC_LINES.findIndex(l => l.includes('spotR * 0.12')) + 1;
+global.siteIsCore = () => {
+  const ns = ((new Error()).stack || '').split('\n')
+    .map(l => l.match(/<anonymous[^>]*>:(\d+):/)).filter(Boolean).map(m => +m[1]);
+  return ns.find(k => k <= NLINES) === CORE_LINE;
+};
 const h = fs.readFileSync(path.join(__dirname, 'freeze-check.js'), 'utf8');
 eval(h.slice(h.indexOf('function makeCtx()'), h.indexOf('eval(src'))
   .replace("path.join(__dirname, 'audio-mock.js')", JSON.stringify(path.join(__dirname, 'audio-mock.js'))));
@@ -282,6 +297,49 @@ eval(src + `
     ok('and the room takes its lamp back as soon as it opens',
        F().phase === 'search' && g.spot.u > atOpen + 0.2,
        'opened at ' + atOpen.toFixed(2) + ', a second of ARROWRIGHT took it to ' + g.spot.u.toFixed(2));
+  }
+
+  // ------------------------------------------- ...and the room's lamp is not DRAWN either
+  {
+    // Locking the steering was only half of it. Morgan, straight after: "we can still see the
+    // two white dots from the actual game ... its bleeding through." The room's lamp had
+    // stopped MOVING and had gone on being PAINTED -- its two cores are the last thing drawn
+    // in the panel and they composite with 'lighter', so they came through a tutorial window
+    // that is otherwise opaque, one dot inside each of the lesson's own cards.
+    //
+    // Counted by intercepting the canvas, because this is a question about what is PAINTED
+    // and no amount of reading the state answers it.
+    //
+    // The core and the veil's ring are both circles at the spot centres, so they have to be
+    // told apart. Not by radius: the first version of this asked for r <= 6, and at a crew of
+    // 100 the spot is small enough that the RING is under 6 too, so it counted the ring and
+    // reported two cores painted over a tutorial that has none. They differ in the operation
+    // rather than the size -- the core is FILLED, the ring is STROKED -- and that holds at
+    // every crew size, which a radius threshold does not.
+    // Identified BY CALL SITE. Two earlier discriminators both failed, and both failed by
+    // over-counting rather than by erroring, which is the shape that gets believed: a radius
+    // threshold caught the veil's ring too, because at a crew of 100 the spot is small enough
+    // that the ring is under 6 as well; fill-vs-stroke caught the veil's own filled spot, 8 of
+    // them per frame; and the composite operation could not separate them either, because the
+    // mock's restore does not roll 'lighter' back, so everything after the first use reads as
+    // lighter. The call site is the one thing that cannot be shared by two different shapes.
+    const cores = () => {
+      let n = 0;
+      const rArc = ctx.arc.bind(ctx);
+      ctx.arc = function () { if (siteIsCore()) n++; return rArc.apply(ctx, arguments); };
+      try { draw(); } finally { ctx.arc = rArc; }
+      return n;
+    };
+    const h = charging(100);
+    const during = cores();
+    finaleTeach(h);
+    run(6, () => { if (F().phase === 'search') return 'stop'; });
+    const after = cores();
+    // BOTH HALVES. Gating the cores off everywhere would pass the first clause perfectly and
+    // delete the only indicator of where the player's lamp is, which is the whole control.
+    ok('the room lamp is not drawn over the tutorial, and is drawn once the room opens',
+       during === 0 && after === 2,
+       during + ' cores painted during the lesson, ' + after + ' once the search started');
   }
 
   // ------------------------------------------------------------ the standing pack
