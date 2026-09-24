@@ -55,6 +55,14 @@ eval(src + `
   //
   // 0.10s is the bias used here: a hand consistently a tenth of a second late, which is a bad
   // hand rather than a floor. If the band forgives that, it forgives most people.
+  //
+  // IT NO LONGER HAS TO. Morgan, 2026-09-24, asked for the needle twice as fast and the band
+  // narrowing after each clean release, which puts even the first band at +/-55-74ms -- inside
+  // this hand's error by design, not by accident. So the late hand is still PLAYED and still
+  // PRINTED, because it is the number to quote him, and it is no longer a verdict. What still
+  // fails the run is what no difficulty setting excuses: a room perfect play cannot open, a
+  // room a hand that aims well cannot open, a room either of those cannot open in the road it
+  // is given, and a band the needle can step over between two frames.
   const LATE_BY = 0.10;
   function play(diff, hand) {
     const m = V_.start(diff);
@@ -65,8 +73,12 @@ eval(src + `
         let go = false;
         if (hand === 'entry') go = Math.abs(m.gauge - m.zone) <= m.half;
         else {
-          // the moment the hand MEANT to release: the middle of the band, to a quarter of it
-          if (aimed < 0 && Math.abs(m.gauge - m.zone) <= m.half * 0.25) aimed = t;
+          // the moment the hand MEANT to release: the middle of the band, to a quarter of it.
+          // The first frame AT OR PAST that point, not the first frame inside a +/-quarter
+          // window: at the doubled speed the needle moves 0.028-0.034 of the bar a frame, the
+          // last pull's quarter window is narrower than that, and the needle stepped clean
+          // over it -- a hand that never let go, printed as "never", a verdict on the ruler.
+          if (aimed < 0 && m.gauge >= m.zone - m.half * 0.25) aimed = t;
           go = aimed >= 0 && t - aimed >= (hand === 'late' ? LATE_BY : 0);
         }
         if (go) { const was = m.got; V_.release(m, ' '); presses++; if (m.got === was) misses++; }
@@ -86,19 +98,28 @@ eval(src + `
   // The headline is "forgives", not the band width: the half-band IS the timing error the
   // room tolerates either side of the moment you aimed at, and that is the number a person
   // can be asked to judge. A band is a bar width; a tolerance is a hand.
-  console.log('  diff   climb  forgives    entry   centre     late   (misses at late)');
+  // The band narrows after every clean release, so "forgives" is a RANGE: the first pull's
+  // tolerance, then the last's. Both read off the game -- the last band is the one start()
+  // hands the live grip after pulls-1 successes, taken through key() rather than recomputed.
+  console.log('  diff   climb  forgives, first..last pull    entry   centre     late   (misses at late)');
   for (const d of diffs) {
-    const m0 = V_.start(d), tolMs = (m0.half / m0.rate) * 1000, climb = m0.zone / m0.rate;
+    const m0 = V_.start(d), climb = m0.zone / m0.rate;
+    const mL = V_.start(d); mL.got = mL.pulls - 1; V_.key(mL, ' ');
+    const tolMs = (m0.half / m0.rate) * 1000, lastMs = (mL.half / mL.rate) * 1000;
+    // how many frames the needle spends inside the last band: under 2 and a release that
+    // lands in it depends on where the frame boundaries happen to fall
+    const frames = (2 * mL.half) / (mL.rate * dt);
     const e = play(d, 'entry'), c = play(d, 'centre'), s = play(d, 'late');
     cost[d] = { entry: e.secs, centre: c.secs, late: s.secs };
     const f = v => (v === Infinity ? '  never' : v.toFixed(2) + 's');
     console.log('  ' + String(d).padStart(4) + '  ' + climb.toFixed(2) + 's  ' +
-      ('+/-' + tolMs.toFixed(0) + 'ms').padStart(9) + '  ' +
+      ('+/-' + tolMs.toFixed(0) + '..' + lastMs.toFixed(0) + 'ms (' + frames.toFixed(1) + ' frames)').padStart(28) + '  ' +
       f(e.secs).padStart(7) + '  ' + f(c.secs).padStart(7) + '  ' + f(s.secs).padStart(7) +
       '   ' + s.misses);
     if (e.secs === Infinity) fails.push('difficulty ' + d + ' cannot be solved even by a hand that releases on the first frame inside the band');
-    if (s.secs === Infinity) fails.push('difficulty ' + d + ' is never solved by a hand ' + (LATE_BY * 1000).toFixed(0) + 'ms late -- the band is smaller than a hand\\'s own timing error');
-    if (tolMs < 100) fails.push('difficulty ' + d + ' forgives only +/-' + tolMs.toFixed(0) + 'ms, which is inside ordinary timing error');
+    if (c.secs === Infinity) fails.push('difficulty ' + d + ' is never solved by a hand that aims at the middle of the band');
+    if (!(mL.half < m0.half)) fails.push('difficulty ' + d + ': the band does not narrow after a clean release (' + m0.half.toFixed(3) + ' first, ' + mL.half.toFixed(3) + ' last)');
+    if (frames < 2) fails.push('difficulty ' + d + ': the needle crosses the last band in ' + frames.toFixed(1) + ' frames, so hitting it is down to where the frames fall');
   }
 
   // ---------------------------------------------------------------- half two: the road
@@ -148,8 +169,11 @@ eval(src + `
     // The line to hold is the one CLAUDE.md draws for the wiring room: a room a good hand
     // CANNOT clear in the road available is a bug. A room a good hand can only just clear is
     // hard, which is a difficulty judgement and Morgan's to make -- quote him the number.
+    // TIGHT is judged on the hand that aims at the middle since 2026-09-24 (see LATE_BY); a
+    // late hand that does not fit is printed, as "hard", and does not fail the run.
     const why = k.entry > road ? 'IMPOSSIBLE -- perfect play does not fit'
-              : k.late > road ? 'TIGHT -- a hand 100ms late does not fit'
+              : k.centre > road ? 'TIGHT -- a hand that aims at the middle does not fit'
+              : k.late > road ? 'hard -- a hand 100ms late does not fit'
               : k.centre > road * 0.75 ? 'hard' : 'ok';
     // TIGHT FAILS THE RUN TOO, and that is not fussiness -- it was a reporting bug here,
     // caught by injecting a 200-unit warn: the table printed TIGHT against that room and the
@@ -158,7 +182,7 @@ eval(src + `
     // this tool does not take it; whether a hand can finish at all is not a judgement.
     if (why.indexOf('IMPOSSIBLE') === 0 || why.indexOf('TIGHT') === 0)
       fails.push('the room at ' + r.x + ' gives ' + road.toFixed(2) + 's of road, and ' +
-                 (why.indexOf('TIGHT') === 0 ? 'a hand that is 100ms late needs ' + k.late.toFixed(2) + 's'
+                 (why.indexOf('TIGHT') === 0 ? 'a hand that aims at the middle needs ' + k.centre.toFixed(2) + 's'
                                              : 'perfect play needs ' + k.entry.toFixed(2) + 's'));
     console.log('  ' + String(r.x).padStart(7) + '  ' + String(r.lane).padStart(4) +
       '  ' + String(r.diff).padStart(4) + '  ' + String(r.warn).padStart(5) +
@@ -166,7 +190,7 @@ eval(src + `
   }
   console.log('');
   if (fails.length) fails.forEach(f => console.log('  VERDICT: BAD -- ' + f));
-  else console.log('  VERDICT: GOOD -- the jaws open inside the road, for a hand that reacts');
+  else console.log('  VERDICT: GOOD -- the jaws open inside the road, for a hand that aims at the band');
   console.log('');
   console.log('These are ONE hand each, not a distribution, and every one of them already knows');
   console.log('where the band is. A person meeting this room for the first time is slower.');

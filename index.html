@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '166 the tutorial is the wait';
+const BUILD = '167 the jaws run twice as fast';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -1402,14 +1402,33 @@ const VERBS = {
       // 0.06/s between pulls, so three clean releases landed on 0.997, `m.open >= 1` never
       // fired, and the jaws sat wide open on a room that could not be finished. A count of
       // successes is an integer and cannot drift; the jaws are an animation of it.
-      const rate = 0.78 + 0.05 * diff;
+      //
+      // TWICE AS FAST, AND THE BAND NARROWS. Morgan, 2026-09-24: "I want the indicator to
+      // travel twice as fast and i want the green zone to reduce each time you successfully
+      // get it (so twice)."
+      //
+      // The band is sized off `walk`, the needle's OLD speed, so the first band is exactly as
+      // wide on the bar as it always was. Sized off `rate` it would have doubled along with the
+      // needle and the room would be no harder at all -- the same moment, drawn twice as wide.
+      // So EVERY MILLISECOND FIGURE IN THIS VERB'S COMMENTS WAS MEASURED AT THE OLD SPEED AND
+      // IS NOW HALVED: the first band forgives +/-74ms at difficulty 1 and +/-55ms from 4 up,
+      // and the rope past it is about 57ms.
+      //
+      // Each clean release then takes a quarter off the band, about the same centre: 100%, 75%
+      // and 56% of it for the three pulls, so the last one forgives +/-31ms from difficulty 4.
+      // `half0` is the first band and `half` the live one. It is recomputed from the pull count
+      // when the next grip is taken -- never multiplied in place, so it cannot drift -- and NOT
+      // at the release, so the verdict frame still shows the band that was actually hit, with
+      // the ghost needle inside it.
+      const walk = 0.78 + 0.05 * diff, rate = walk * 2;
+      const half0 = walk * Math.max(0.22, 0.32 - 0.025 * diff) / 2;
       // `at` is WHERE THE NEEDLE WAS WHEN THE KEY CAME UP, kept after the gauge resets, so
       // the verdict frames can show it. Without it a release at 0.40 and one at 0.95 drew the
       // identical empty bar with a different word on it -- the one frame that could teach this
       // room, spending it on a word.
       return { open: 0, got: 0, gauge: 0, at: 0, holding: false, snapped: 0, recoil: 0, inputT: 0.3,
                verdict: 0, hit: 0, late: 0,
-               rate, zone: 0.78, half: rate * Math.max(0.22, 0.32 - 0.025 * diff) / 2, pulls: 3 };
+               rate, zone: 0.78, half0, half: half0, narrow: 0.75, pulls: 3 };
     },
     key(m, k) {
       if (k !== ' ') return null;
@@ -1422,7 +1441,8 @@ const VERBS = {
       // scoring it, and a press that re-takes a grip the player has let go of is the one
       // press in this window that is not mashing -- swallowed, it costs them the re-grip.
       if (m.recoil > 0 && m.holding) return 'ok';
-      if (m.holding) VERBS.lift.letGo(m); else { m.holding = true; m.gauge = 0; m.verdict = 0; }
+      if (m.holding) VERBS.lift.letGo(m);
+      else { m.holding = true; m.gauge = 0; m.verdict = 0; m.half = m.half0 * Math.pow(m.narrow, m.got); }
       // `got`, not `open`: open is an eased animation of the pull count that only approaches
       // its target, so a test on it is one that fires late or, with any decay at all, never.
       // The last pull is usually banked on the key coming UP anyway, so update() carries the

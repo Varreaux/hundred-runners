@@ -37,13 +37,27 @@ const bench = `
   for (let i = 0; i < 60 * 40 && !S.drill; i++) { update(1 / 60); if (S.boss) bossAdvance(); }
   // Walk to the LIFT panel by looking for it, not by counting to a remembered index: the
   // drill's order is built from CFG.rooms and moves whenever somebody adds a room type.
+  //
+  // AND THE OPENING DRILL NO LONGER HAS ONE. Drills are per act now and the mantrap is taught
+  // at the cave door, so this walk ran off the end of the yard's list and the bench died on
+  // S.drill.room being null. startDrill's own filter gives a one-panel drill of just this verb,
+  // which cannot run off anything; the walk stays for the day it is taught in the yard again.
+  if (!actVerbs(1).some(o => o.verb === 'lift')) startDrill([{ verb: 'lift' }]);
   for (let g = 0; S.drill && S.drill.room && S.drill.room.verb !== 'lift' && g < 8000; g++) {
     S.drill.phase = 'out'; S.drill.pos = -1; update(1 / 60);
   }
   S.drill.phase = 'play'; S.drill.pos = 0;
   for (let i = 0; i < 30; i++) update(1 / 60);       // let the panel finish sliding in
   const m = S.drill.room.mg;
-  m.got = num('got', 0);
+  // BANK THE PULLS THROUGH THE REAL HANDLERS, not by writing m.got. Since 2026-09-24 the band
+  // narrows by a quarter per clean release, recomputed when the NEXT grip is taken -- so a bench
+  // that set got directly photographed pull three with pull one's band on it. Grip, park the
+  // needle in the band, release: the same key() and release() the player reaches.
+  for (let i = 0; i < num('got', 0) && m.got < m.pulls; i++) {
+    VERBS.lift.key(m, ' '); m.gauge = m.zone; VERBS.lift.release(m, ' ');
+  }
+  // and a held key is a GRIP, which is what sizes the band for the pull being played
+  if (num('hold', 0) && m.got < m.pulls) VERBS.lift.key(m, ' ');
   m.open = m.got / m.pulls;                          // open only ever follows got
   // update() banks the win off got, and this bench sets got AFTER the frames it runs -- so
   // without this a fully-opened trap photographs with the bar still reading HOLD SPACE, and
