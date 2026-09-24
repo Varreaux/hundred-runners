@@ -292,7 +292,50 @@ const ESCAPE2 = [
     sub: ['ARE YOU ANOTHER COG IN THE SYSTEM,', 'OR ARE YOU YOUR OWN PERSON?'] },
 ];
 
-const EDITS = { escape2: ESCAPE2, escape: ESCAPE, ...ALTS };
+// ---------------------------------------------------------------- the fifth pass
+// Morgan on escape2: the vignettes "can't all be Morgan, and they are even more laggy now".
+// Both were mine. ?trap defaults who=Morgan and I never passed anything else; and the lag was
+// never about the EDIT, it was the capture -- a screencast only hands over a frame when the
+// page repaints and the previous one was acked, so a 0.72s vignette came back with a dozen
+// usable frames however it was cut, slowed or held.
+//
+// These four are not recorded at all. film.js steps the end clock, calls draw() and captures,
+// once per output frame, so each is 42 real renders across 1.4s: the full death played at half
+// speed with nothing duplicated. Four people, four deaths, four looks.
+const ESCAPE3 = [
+  { card: 'title', text: 'ONE HUNDRED PEOPLE', sub: 'GO TO WORK', for: 3.0 },
+  { clip: 'doors', at: 1.5, for: 1.5 },
+  { clip: 'mill', at: 1.0, for: 3.8 },
+  { clip: 'cave', at: 1.5, for: 3.8 },
+  { card: 'beat', kicker: 'BUT THE WORK CAN BE', text: 'GRINDING', for: 2.6 },
+  { clip: 'losing', at: 0.3, for: 3.5 },
+
+  { clip: 'k_gears', at: 7.40, for: 0.95, punch: 2.6, cx: 0.375, cy: 0.731 },
+  { clip: 'k_crusher', at: 7.95, for: 0.95, punch: 2.6, cx: 0.300, cy: 0.700 },
+  { clip: 'k_winch', at: 7.60, for: 0.95, punch: 2.6, cx: 0.605, cy: 0.360 },
+  { clip: 'k_mantrap', at: 7.15, for: 0.95, punch: 2.6, cx: 0.627, cy: 0.580 },
+
+  { card: 'count', text: 'YOU CANNOT', sub: 'SAVE THEM ALL', for: 3.0 },
+  { clip: 'w_wiring', at: 0, for: 1.4 },     // Isabela, live wiring
+  { clip: 'w_mantrap', at: 0, for: 1.4 },    // Atthiyya, a mantrap
+  { clip: 'w_gears', at: 0, for: 1.4 },      // Hasan, the drive train
+  { clip: 'w_thorn', at: 0, for: 1.4 },      // Valeria, the thorn hedge
+
+  { card: 'turn', text: 'BUT IF YOU KNOW HOW TO PLAY THEIR GAME...', cps: 26, for: 3.2 },
+  { clip: 'c_gears', at: 2.6, for: 1.6 },
+  { clip: 'c_bar', at: 3.0, for: 1.6 },
+  { clip: 'c_wires', at: 2.8, for: 1.6 },
+  { clip: 'c_dig', at: 1.5, for: 1.6 },
+  { clip: 'c_lift', at: 3.4, for: 1.9 },
+  { clip: 'blast2', at: 4.3, for: 2.2 },
+
+  { card: 'hope', text: '...YOU MIGHT JUST ESCAPE.', for: 3.0 },
+  { clip: 'podium', at: 1.4, for: 2.0 },
+  { card: 'end', text: 'HUNDRED RUNNERS', cps: 24, for: 6.0,
+    sub: ['ARE YOU ANOTHER COG IN THE SYSTEM,', 'OR ARE YOU YOUR OWN PERSON?'] },
+];
+
+const EDITS = { escape3: ESCAPE3, escape2: ESCAPE2, escape: ESCAPE, ...ALTS };
 
 // ---------------------------------------------------------------- build
 const run = (bin, args) => execFileSync(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });

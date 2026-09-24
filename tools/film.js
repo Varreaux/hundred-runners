@@ -283,6 +283,45 @@ function keyEvent(client, key) {
     // which looks like a working shot of the wrong thing rather than like a failure.
     await sleep(seg.settle != null ? seg.settle : 1400);
 
+    // ---------------------------------------------------------------- stepped, not recorded
+    // A segment with `frames` is not screen-recorded at all: the end clock is SET, draw() is
+    // called, and the frame is captured -- once per output frame. A screencast only delivers a
+    // frame when the page repaints and the previous one was acked, so a 0.72s death vignette
+    // came back with a dozen usable frames and read as lag however it was cut. Stepping the
+    // clock gives exactly `frames` real renders across `span` seconds of screen time, so the
+    // animation can be stretched without a single duplicated frame.
+    // NOTE: a stepped segment must carry &shot in its url. Without it the page's own
+    // requestAnimationFrame loop keeps running, update() advances S.endT on its own, and the
+    // value set here is overwritten before the screenshot -- so the sequence drifts off the
+    // end of the card and the last frames come back as the podium.
+    if (seg.frames) {
+      const ev = async expr => (await client.send('Runtime.evaluate',
+        { expression: expr, returnByValue: true })).result.value;
+      const at = await ev('REEL.at');
+      // the card's own window, read from the roll rather than written down here
+      // 0.92, not 0.98: at the very end of the step the roll flips to the podium, and the last
+      // frame of the sequence landed on "WHO GOT FURTHEST" instead of on the card.
+      const span = await ev('S.endRoll ? S.endRoll.step * 0.92 : 0.66');
+      for (let i = 0; i < seg.frames; i++) {
+        const u = seg.frames === 1 ? 0 : i / (seg.frames - 1);
+        await ev(`S.endT = ${at} + ${span} * ${u}; S.t = ${(seg.st == null ? 3.1 : seg.st)} + ${(i / 60).toFixed(4)}; draw();`);
+        const shot = await client.send('Page.captureScreenshot', { format: 'jpeg', quality: 94 });
+        frames.push({ t: i * (seg.span || 1.4) / seg.frames, data: shot.data });
+      }
+      const kept0 = frames.slice();
+      for (let i = 0; i < kept0.length; i++) {
+        const file = path.join(tmp, `f${String(n).padStart(6, '0')}.jpg`);
+        fs.writeFileSync(file, Buffer.from(kept0[i].data, 'base64'));
+        const next = kept0[i + 1];
+        const dur = next ? Math.max(0.008, Math.min(0.2, next.t - kept0[i].t)) : (seg.span || 1.4) / seg.frames;
+        shots.push({ file, dur });
+        n++;
+      }
+      cuts.push({ name: seg.name, from: shots.length - kept0.length, to: shots.length });
+      console.log(`  ${seg.name.padEnd(10)} ${kept0.length} stepped frames over ${(seg.span || 1.4)}s`);
+      continue;
+    }
+
     const t0 = Date.now();
     const trace = [];
     let lastTrace = -1;
