@@ -179,6 +179,14 @@ const FAULTS = [
    'the cores are gated off everywhere -- which satisfies the half above by deleting the only\n              indicator of where the lamp the player is steering actually is',
    s => s.replace("  if (f.phase === 'search') {\n    ctx.save();\n    ctx.globalCompositeOperation = 'lighter';",
                   "  if (false) {\n    ctx.save();\n    ctx.globalCompositeOperation = 'lighter';")],
+
+  ['solving the tutorial opens the room within the lesson hold',
+   "Morgan's wait, restored: the flywheel is never re-aimed, so a thin crew charges for its full genTime",
+   s => s.replace('      f.chargeNeed = Math.min(f.chargeNeed, since + LESSON.hold);', '      // re-aim removed')],
+
+  ['solving late never pushes the charge backwards',
+   'a bare assignment in place of the Math.min, so a solve after the flywheel has finished\n              LENGTHENS the charge again',
+   s => s.replace('      f.chargeNeed = Math.min(f.chargeNeed, since + LESSON.hold);', '      f.chargeNeed = since + LESSON.hold;')],
 ];
 
 let proved = 0, unproven = 0;

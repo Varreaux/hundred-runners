@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '165 the tutorial hides the room lamp';
+const BUILD = '166 the tutorial is the wait';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3533,7 +3533,7 @@ function startFinale() {
     phase: 'intro',
     introT: 0,
     chargeT: 0,
-    chargeNeed: CFG.finale.genTime(n),
+    chargeNeed: CFG.finale.genTime(n), genRush: false,
     light: 0,
     searchT: CFG.finale.searchTime,
     found: new Set(),
@@ -5815,6 +5815,29 @@ function updateFinale(dt) {
     // the bag has to have been found, and the found state has to have been held long enough
     // to see. Before it was playable this was a timer, and a timer is what it must not be --
     // "as soon as they successfully spot the difference, then the actual game starts".
+    // THE TUTORIAL IS THE WAIT -- it is not something to do WHILE you wait. Morgan: "If i
+    // solve the tutorial quickly sometimes the final boss room game does not start
+    // imidiately, it says RUNNING THE GENERATOR and i need to wait a bit before the game
+    // start."
+    //
+    // Measured: the belt is full at 1.5s at every crew size, so boarding is never the gate.
+    // The flywheel is, and genTime runs it INVERSELY to the crew -- 2.5s for a hundred, 12.4s
+    // for one -- so solving in a second left the player watching a bar for 11.4 seconds, and
+    // it was longest exactly when the run had gone worst.
+    //
+    // Shortened rather than skipped, so the generator still visibly finishes and the room
+    // still lights up on its own charge: the flywheel is re-aimed to complete at the end of
+    // the lesson's own hold, the 1.1s beat that shows the green ring and THAT IS THE JOB.
+    // So the wait after solving is that beat and nothing else, whatever the crew.
+    //
+    // Math.min, never assignment: solve the lesson AFTER the flywheel has already finished
+    // and a bare assignment would push the charge backwards, darkening a lit room and adding
+    // 1.1s to a player who waited. It may only ever shorten.
+    if (f.lesson && f.lesson.done && !f.genRush) {
+      f.genRush = true;
+      const since = f.boardT != null ? Math.max(0, f.chargeT - f.boardT) : 0;
+      f.chargeNeed = Math.min(f.chargeNeed, since + LESSON.hold);
+    }
     const taught = f.lesson && f.lesson.done && f.lesson.doneT >= LESSON.hold;
     if (finaleChargeProgress(f) >= 1 && f.learnT >= Math.min(FINALE_LEARN, 1.2) && taught) {
       // beltPow is NOT slammed to 1 here. Doing that overrode everything targetPow says about

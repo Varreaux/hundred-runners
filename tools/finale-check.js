@@ -256,16 +256,31 @@ eval(src + `
          solved && g.phase === 'search' && after >= LESSON.hold - 0.1 && after <= LESSON.hold + 0.4,
          'solved ' + solved + ', opened ' + after.toFixed(2) + 's later (the held beat is ' + LESSON.hold + 's)');
     }
-    // The generator is still the generator: a thin crew waits for it even once taught.
+    // The generator is still the generator -- WHILE THE LESSON IS UNSOLVED.
+    //
+    // This assertion used to read "a crew of 1 still waits for its flywheel after the lesson
+    // is solved", and it was a fair statement of the design until Morgan changed the design:
+    // "I would like the game to start imidiately when the tutorial is complete." Solving the
+    // lesson now re-aims the flywheel to finish with the lesson's own hold, so the old form
+    // asserts the bug. It is rewritten rather than deleted, and this note is here so a later
+    // pass does not read the shortened charge as a regression and put the wait back.
+    //
+    // What survives is the part that is still true and still worth guarding: the flywheel is
+    // crew-scaled, and a thin crew really does have a long generator when nobody has solved
+    // anything. That is what makes the room's light mean something.
     {
+      // Timed on the FLYWHEEL, not on the phase. Waiting for a phase that an unsolved lesson
+      // can never leave reported "held 40.0s, still charging" -- the full length of the run,
+      // which it would have printed at any genTime at all, including none. The number has to
+      // be one the generator actually produces.
       const g = charging(1);
-      run(1);
-      finaleTeach(g);
-      let held = 0;
-      run(40, () => { if (F().phase === 'search') return 'stop'; held += 1/60; });
-      ok('a crew of 1 still waits for its flywheel after the lesson is solved',
-         g.phase === 'search' && held > CFG.finale.genTime(1) * 0.7,
-         'held ' + held.toFixed(1) + 's against a genTime of ' + CFG.finale.genTime(1).toFixed(1) + 's');
+      let wound = null, t = 0;
+      run(40, () => { t += 1/60; if (wound == null && finaleChargeProgress(g) >= 1) { wound = t; return 'stop'; } });
+      const need = CFG.finale.genTime(1);
+      ok('a crew of 1 waits out its whole flywheel while the lesson is unsolved',
+         wound != null && wound > need * 0.7 && g.phase === 'charge',
+         (wound == null ? 'never wound in 40s' : 'wound in ' + wound.toFixed(1) + 's') +
+         ' against a genTime of ' + need.toFixed(1) + 's, phase ' + g.phase);
     }
   }
 
@@ -297,6 +312,45 @@ eval(src + `
     ok('and the room takes its lamp back as soon as it opens',
        F().phase === 'search' && g.spot.u > atOpen + 0.2,
        'opened at ' + atOpen.toFixed(2) + ', a second of ARROWRIGHT took it to ' + g.spot.u.toFixed(2));
+  }
+
+  // ------------------------------------------- solving the tutorial opens the room at once
+  {
+    // Morgan: "If i solve the tutorial quickly sometimes the final boss room game does not
+    // start imidiately, it says RUNNING THE GENERATOR and i need to wait a bit."
+    //
+    // The flywheel runs INVERSELY to the crew -- genTime is 2.5s for a hundred and 12.4s for
+    // one -- so a fast solve waited up to 11.4s, and waited longest exactly when the run had
+    // gone worst. Scored at four crew sizes for that reason: a single size cannot see a gate
+    // whose whole problem is that it changes with the crew.
+    const openAfter = (crew, solveAt) => {
+      const g = charging(crew);
+      let t = 0, solved = false, opened = null;
+      for (let i = 0; i < 60 * 300; i++) {
+        if (!solved && t >= solveAt) { finaleTeach(g); solved = true; }
+        update(1/60); t += 1/60;
+        if (g.phase === 'search') { opened = t; break; }
+      }
+      return { waited: opened == null ? null : opened - solveAt, opened, g };
+    };
+    // 1.1s is the lesson's own hold -- the beat that shows the green ring and THAT IS THE JOB
+    // -- plus a frame. Anything past that is the generator making the player wait.
+    const ceiling = LESSON.hold + 0.1;
+    const slow = [];
+    for (const crew of [100, 30, 4, 1]) {
+      const r = openAfter(crew, 3.0);
+      if (r.waited == null || r.waited > ceiling) slow.push(crew + ': ' + (r.waited == null ? 'never opened' : r.waited.toFixed(1) + 's'));
+    }
+    ok('solving the tutorial opens the room within the lesson hold, at every crew size',
+       slow.length === 0, slow.length ? 'still waiting -- ' + slow.join(', ') : 'at most ' + ceiling.toFixed(1) + 's after the solve');
+
+    // THE OTHER HALF. The flywheel may only ever be SHORTENED. Solve after it has already
+    // finished and a bare assignment would push the charge backwards -- darkening a room that
+    // was lit and adding the hold to a player who had waited the full charge out.
+    const late = openAfter(1, 13.0);
+    ok('solving late never pushes the charge backwards',
+       late.waited != null && late.waited < 0.1 && late.g.light > 0.9,
+       'opened ' + (late.waited == null ? 'never' : late.waited.toFixed(2) + 's') + ' after a solve at 13.0s, light ' + late.g.light.toFixed(2));
   }
 
   // ------------------------------------------- ...and the room's lamp is not DRAWN either
