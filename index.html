@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '172 he gets his last word out of the rock';
+const BUILD = '173 one room at a time after the conveyor';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -397,9 +397,12 @@ const CFG = {
     // and he ducks and HOLDS whenever a room is opened -- so a room here cut him off
     // mid-sentence. Morgan, 2026-09-24: "a mini game appears and interupts him if you start
     // it. Could you push the mini game way back." The gears stood at 12900 and armed with the
-    // lead at 12618, inside a speech that runs 12554..13275; at 14800 it arms after he has
+    // lead at 12618, inside a speech that runs 12554..13275; further on it arms after he has
     // gone. Measured by hooking armRoom on a solved run, not worked out from reach.
-    { x: 14800, lane: 0, type: 'gears', diff: 4 },
+    // NOT 14800: that is exactly where lane 1's conveyor stands, so the split crowd met two
+    // rooms at once and nobody can play two at once (Morgan, same day). At 15150 it arms as
+    // the conveyor's road runs out, so the two come one after the other.
+    { x: 15150, lane: 0, type: 'gears', diff: 4 },
     { x: 14800, lane: 1, type: 'conveyor', diff: 4 },
     { x: 14000, lane: 0, type: 'ditch', diff: 4, warn: 480 },
     { x: 16000, lane: 2, type: 'wiring', diff: 4, warn: 840 },
