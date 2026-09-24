@@ -29,6 +29,9 @@ const OUT = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[
 const ONLY = (process.argv.find(a => a.startsWith('--only=')) || '').slice(7).split(',').filter(Boolean);
 
 const W = 1920, H = 1080, FPS = 30;
+// Rendered cards are cached here BETWEEN RUNS as well as within one: re-cutting after a timing
+// tweak should not re-screenshot four hundred frames that have not changed.
+const CARD_DIR = path.join(os.tmpdir(), 'hundred-runners-cards');
 
 function findChrome() {
   if (process.env.CHROME && fs.existsSync(process.env.CHROME)) return process.env.CHROME;
@@ -167,24 +170,92 @@ const EDITS = Object.fromEntries(
 
 // ---------------------------------------------------------------- build
 const run = (bin, args) => execFileSync(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const keyOf = o => require('crypto').createHash('sha1').update(JSON.stringify(o)).digest('hex').slice(0, 12);
 
-function buildPiece(item, tmp, i, chrome) {
-  const out = path.join(tmp, `p${String(i).padStart(3, '0')}.mp4`);
-  // Fades are on every piece rather than on the whole reel: a hard cut between two moving
-  // shots is what a trailer wants, but a card arriving without one reads as a dropped frame.
-  const fade = item.card ? `,fade=t=in:st=0:d=0.3,fade=t=out:st=${(item.for - 0.35).toFixed(2)}:d=0.35` : '';
-  if (item.card) {
-    const html = cardHTML(item.card, item.text, item.sub, item.kicker);
-    const hf = path.join(tmp, `c${i}.html`), pf = path.join(tmp, `c${i}.png`);
-    fs.writeFileSync(hf, html);
-    run(chrome, ['--headless=new', '--disable-gpu', '--no-sandbox', '--hide-scrollbars',
-      `--screenshot=${pf}`, `--window-size=${W},${H}`, '--force-device-scale-factor=1',
-      '--virtual-time-budget=1200', `file://${hf}`]);
-    run('ffmpeg', ['-y', '-loop', '1', '-t', String(item.for), '-i', pf,
-      '-vf', `scale=${W}:${H},fps=${FPS}${fade}`, '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
-      '-crf', '18', '-preset', 'fast', out]);
-    return out;
+// A CDP session against one headless Chrome, held open for the whole run. The cards are drawn
+// to canvas as a function of t and screenshotted frame by frame, rather than recorded: a
+// screencast of a CSS animation drops frames and drifts, and re-running it gives a different
+// file. This gives exactly FPS frames per second and a byte-identical re-run.
+function cdp(wsUrl) {
+  const ws = new WebSocket(wsUrl);
+  let id = 0;
+  const pending = new Map();
+  const ready = new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.id && pending.has(m.id)) {
+      const { res, rej } = pending.get(m.id); pending.delete(m.id);
+      m.error ? rej(new Error(m.error.message)) : res(m.result);
+    }
+  };
+  return {
+    ready,
+    send: (method, params = {}) => new Promise((res, rej) => {
+      const i = ++id; pending.set(i, { res, rej });
+      ws.send(JSON.stringify({ id: i, method, params }));
+    }),
+    close: () => ws.close(),
+  };
+}
+
+function freePort(from) {
+  for (let p = from; p < from + 200; p++) {
+    try { execFileSync('lsof', ['-nP', `-iTCP:${p}`, '-sTCP:LISTEN'], { stdio: 'ignore' }); }
+    catch (e) { return p; }
   }
+  throw new Error('no free port');
+}
+
+async function openChrome(chrome, tmp) {
+  const dbg = freePort(9400);
+  const proc = require('child_process').spawn(chrome, [
+    '--headless=new', '--disable-gpu', '--no-sandbox', '--hide-scrollbars',
+    '--force-device-scale-factor=1', `--remote-debugging-port=${dbg}`,
+    `--user-data-dir=${path.join(tmp, 'profile')}`, 'about:blank',
+  ], { stdio: 'ignore' });
+  let wsUrl = null;
+  for (let i = 0; i < 80 && !wsUrl; i++) {
+    await sleep(250);
+    try {
+      const v = await fetch(`http://127.0.0.1:${dbg}/json/list`).then(r => r.json());
+      const page = v.find(t => t.type === 'page');
+      if (page) wsUrl = page.webSocketDebuggerUrl;
+    } catch (e) {}
+  }
+  if (!wsUrl) { try { proc.kill(); } catch (e) {} throw new Error('Chrome never opened its debugger'); }
+  const client = cdp(wsUrl);
+  await client.ready;
+  await client.send('Page.enable');
+  // Forced, not left to the window: headless reserves 200px of window height, so a
+  // --window-size of 1920x1080 screenshots 1920x880. This is the same trap film.js's default
+  // capture size fell into, one layer along.
+  await client.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+  await client.send('Page.navigate', { url: `file://${path.join(__dirname, 'trailer-card.html')}` });
+  await sleep(700);
+  return { client, proc };
+}
+
+async function cardPiece(sess, item, out) {
+  const spec = { kind: item.card, text: item.text, sub: item.sub, kicker: item.kicker, for: item.for };
+  const frames = Math.round(item.for * FPS);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'card-'));
+  try {
+    for (let i = 0; i < frames; i++) {
+      const t = i / FPS;
+      await sess.client.send('Runtime.evaluate', { expression: `renderCard(${JSON.stringify(spec)}, ${t})` });
+      const shot = await sess.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+      fs.writeFileSync(path.join(dir, `f${String(i).padStart(5, '0')}.png`), Buffer.from(shot.data, 'base64'));
+    }
+    run('ffmpeg', ['-y', '-framerate', String(FPS), '-i', path.join(dir, 'f%05d.png'),
+      '-vf', `scale=${W}:${H}`, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '17',
+      '-preset', 'fast', out]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function clipPiece(item, out) {
   const src = path.join(IN, item.clip + '.mp4');
   if (!fs.existsSync(src)) throw new Error(`missing clip: ${src}`);
   const p = item.punch || 1;
@@ -194,13 +265,31 @@ function buildPiece(item, tmp, i, chrome) {
   run('ffmpeg', ['-y', '-ss', String(item.at || 0), '-t', String(item.for), '-i', src,
     '-vf', vf, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-preset', 'fast',
     '-an', out]);
-  return out;
 }
 
-function build(name, items, chrome) {
+async function build(name, items, sess, cardCache) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'trailer-'));
   try {
-    const pieces = items.map((it, i) => buildPiece(it, tmp, i, chrome));
+    const pieces = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.card) {
+        // Cards are identical across these cuts -- same spine -- so each is rendered ONCE and
+        // the file reused. Four trailers share four cards; without this that is 1512 frames
+        // of Chrome screenshotting to produce 378 distinct ones.
+        const k = keyOf({ c: it.card, t: it.text, s: it.sub, kk: it.kicker, f: it.for });
+        if (!cardCache.has(k)) {
+          const cf = path.join(CARD_DIR, `card-${k}.mp4`);
+          if (!fs.existsSync(cf)) await cardPiece(sess, it, cf);
+          cardCache.set(k, cf);
+        }
+        pieces.push(cardCache.get(k));
+      } else {
+        const out = path.join(tmp, `p${String(i).padStart(3, '0')}.mp4`);
+        clipPiece(it, out);
+        pieces.push(out);
+      }
+    }
     const listFile = path.join(tmp, 'list.txt');
     fs.writeFileSync(listFile, pieces.map(f => `file '${f}'`).join('\n') + '\n');
     const silent = path.join(tmp, 'silent.mp4');
@@ -208,15 +297,11 @@ function build(name, items, chrome) {
 
     const dur = items.reduce((a, it) => a + it.for, 0);
     const out = path.join(OUT, `trailer-${name}.mp4`);
-    // The game's own two cues, in the order the game plays them: the intro arrives, the bed
-    // takes over. Looped to cover the cut and faded under the last card.
     const intro = path.join(ROOT, 'Hundred Intro New.wav');
     const loop = path.join(ROOT, 'Hundred Loop New.wav');
-    const haveMusic = fs.existsSync(intro) && fs.existsSync(loop);
-    if (haveMusic) {
+    if (fs.existsSync(intro) && fs.existsSync(loop)) {
       // CONCAT, not amix: mixing the two halves the level wherever they overlap, and these are
-      // meant to follow each other the way the game plays them, not to sound together. The bed
-      // is stream-looped so a cut longer than 16 + 32 still has music under it.
+      // meant to follow each other the way the game plays them, not to sound together.
       run('ffmpeg', ['-y', '-i', silent, '-i', intro, '-stream_loop', '-1', '-i', loop,
         '-filter_complex',
         `[1:a][2:a]concat=n=2:v=0:a=1,atrim=0:${dur.toFixed(2)},asetpts=N/SR/TB,` +
@@ -227,23 +312,34 @@ function build(name, items, chrome) {
       run('ffmpeg', ['-y', '-i', silent, '-c', 'copy', '-movflags', '+faststart', out]);
     }
     const mb = (fs.statSync(out).size / 1e6).toFixed(1);
-    console.log(`  ${path.basename(out).padEnd(26)} ${dur.toFixed(1)}s  ${mb} MB  ${items.length} pieces`);
-    return out;
+    console.log(`  ${path.basename(out).padEnd(28)} ${dur.toFixed(1)}s  ${mb} MB  ${items.length} pieces`);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 }
 
-const chrome = findChrome();
-if (!chrome) { console.error('trailer: no Chromium found. Set CHROME=/path/to/binary.'); process.exit(1); }
-if (!fs.existsSync(IN)) { console.error(`trailer: no footage at ${IN}. Film it first.`); process.exit(1); }
-fs.mkdirSync(OUT, { recursive: true });
+(async () => {
+  const chrome = findChrome();
+  if (!chrome) { console.error('trailer: no Chromium found. Set CHROME=/path/to/binary.'); process.exit(1); }
+  if (!fs.existsSync(IN)) { console.error(`trailer: no footage at ${IN}. Film it first.`); process.exit(1); }
+  fs.mkdirSync(OUT, { recursive: true });
+  fs.mkdirSync(CARD_DIR, { recursive: true });
 
-console.log(`cutting from ${IN}`);
-let made = 0;
-for (const [name, items] of Object.entries(EDITS)) {
-  if (ONLY.length && !ONLY.includes(name)) continue;
-  try { build(name, items, chrome); made++; }
-  catch (e) { console.error(`  ${name}: FAILED -- ${e.message.split('\n')[0]}`); }
-}
-console.log(`\n${made} trailer${made === 1 ? '' : 's'} in ${OUT}`);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'trailer-chrome-'));
+  let sess = null;
+  try {
+    sess = await openChrome(chrome, tmp);
+    console.log(`cutting from ${IN}`);
+    const cardCache = new Map();
+    let made = 0;
+    for (const [name, items] of Object.entries(EDITS)) {
+      if (ONLY.length && !ONLY.includes(name)) continue;
+      try { await build(name, items, sess, cardCache); made++; }
+      catch (e) { console.error(`  ${name}: FAILED -- ${e.message.split('\n')[0]}`); }
+    }
+    console.log(`\n${made} trailer${made === 1 ? '' : 's'} in ${OUT}`);
+  } finally {
+    if (sess) { try { sess.client.close(); } catch (e) {} try { sess.proc.kill(); } catch (e) {} }
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+})().catch(e => { console.error('trailer failed:', e.message); process.exit(1); });
