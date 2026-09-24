@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '171 the podium comments tell the truth';
+const BUILD = '172 he gets his last word out of the rock';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -391,9 +391,15 @@ const CFG = {
     // hundredths of a second to spare. Three a second still never cuts through, which is
     // the point of the room. Model the cost if you must, but drive the verb before you
     // trust the number.
-    // Nothing between the mouth at 12290 and 13500: the crowd comes out into open country
-    // and runs through it unthreatened, because the stretch has to be worth losing.
-    { x: 12900, lane: 0, type: 'gears', diff: 4 },
+    // Nothing between the mouth at 12290 and the ditch at 14000: the crowd comes out into
+    // open country and runs through it unthreatened, because the stretch has to be worth
+    // losing. It is also where the proprietor has his last word out of the rock (BOSS_OPEN),
+    // and he ducks and HOLDS whenever a room is opened -- so a room here cut him off
+    // mid-sentence. Morgan, 2026-09-24: "a mini game appears and interupts him if you start
+    // it. Could you push the mini game way back." The gears stood at 12900 and armed with the
+    // lead at 12618, inside a speech that runs 12554..13275; at 14800 it arms after he has
+    // gone. Measured by hooking armRoom on a solved run, not worked out from reach.
+    { x: 14800, lane: 0, type: 'gears', diff: 4 },
     { x: 14800, lane: 1, type: 'conveyor', diff: 4 },
     { x: 14000, lane: 0, type: 'ditch', diff: 4, warn: 480 },
     { x: 16000, lane: 2, type: 'wiring', diff: 4, warn: 840 },
