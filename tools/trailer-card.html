@@ -267,7 +267,11 @@ function renderCard(spec, t) {
   vignette(L.vig);
 
   // the whole card fades in and out, so trailer.js does not have to
-  const f = Math.min(clamp01(t / 0.3), clamp01(((spec.for || 3) - t) / 0.4));
+  // fadeOut is per-card: 0.4s is a beat between shots, but the last card is the end of the
+  // film and wants a real dissolve. Anything that changes the picture has to go into the
+  // cache key in trailer.js -- the card cache is keyed on content, not on this renderer.
+  const fo = spec.fadeOut || 0.4;
+  const f = Math.min(clamp01(t / 0.3), clamp01(((spec.for || 3) - t) / fo));
   if (f < 1) { ctx.fillStyle = `rgba(0,0,0,${1 - f})`; ctx.fillRect(0, 0, W, H); }
 }
 window.renderCard = renderCard;

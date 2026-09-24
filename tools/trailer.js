@@ -383,7 +383,22 @@ const ESCAPE5 = [...ESCAPE4, { clip: 'outro', at: 0, for: 4.6 }];
 const ESCAPE6 = ESCAPE5.map(it =>
   it.clip === 'losing' ? { ...it, sync: true } : it);
 
-const EDITS = { escape6: ESCAPE6, escape5: ESCAPE5, escape4: ESCAPE4, escape3: ESCAPE3, escape2: ESCAPE2, escape: ESCAPE, ...ALTS };
+// ---------------------------------------------------------------- the ninth pass
+// Morgan, on escape6: the broken television goes. "I don't want to see the boss anymore. I
+// just want it to close out with the title and the sentence."
+//
+// He also spotted something worth protecting: the loop is exactly 32.000s, so aligning the
+// first boom to the drowning at 14.690 put the SECOND one at 46.688 -- which is 0.23s into
+// the closing title, while it is still fading up. That was luck, not design, and it survives
+// this cut only because the outro was the last item and nothing before it moves.
+//
+// The card's own fade-out goes from 0.4s to 1.5s. 0.4 is a beat between two shots; this is
+// now the end of the film, and he asked for the fade with the picture and the music.
+const ESCAPE7 = ESCAPE6
+  .filter(it => it.clip !== 'outro')
+  .map(it => (it.card === 'end' ? { ...it, fadeOut: 1.5 } : it));
+
+const EDITS = { escape7: ESCAPE7, escape6: ESCAPE6, escape5: ESCAPE5, escape4: ESCAPE4, escape3: ESCAPE3, escape2: ESCAPE2, escape: ESCAPE, ...ALTS };
 
 // ---------------------------------------------------------------- build
 const run = (bin, args) => execFileSync(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -465,7 +480,13 @@ async function openChrome(chrome, tmp) {
 }
 
 async function cardPiece(sess, item, out) {
-  const spec = { kind: item.card, text: item.text, sub: item.sub, kicker: item.kicker, for: item.for };
+  // EXPLICIT, and that is the trap: a field added to an item in the edit list does not reach
+  // the renderer until it is named here. `fadeOut` was set on the end card, keyed into the
+  // cache, re-rendered -- and still faded in 0.4s, because this line dropped it. Measured off
+  // the pixels, not read off the source. (`cps` is dropped the same way and has never been
+  // applied to the two cards that carry it; left as it is, because those cards are approved.)
+  const spec = { kind: item.card, text: item.text, sub: item.sub, kicker: item.kicker,
+                 for: item.for, fadeOut: item.fadeOut };
   const frames = Math.round(item.for * FPS);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'card-'));
   try {
@@ -530,7 +551,8 @@ async function build(name, items, sess, cardCache) {
         // Cards are identical across these cuts -- same spine -- so each is rendered ONCE and
         // the file reused. Four trailers share four cards; without this that is 1512 frames
         // of Chrome screenshotting to produce 378 distinct ones.
-        const k = keyOf({ c: it.card, t: it.text, s: it.sub, kk: it.kicker, f: it.for });
+        const k = keyOf({ c: it.card, t: it.text, s: it.sub, kk: it.kicker, f: it.for,
+                          fo: it.fadeOut });
         if (!cardCache.has(k)) {
           const cf = path.join(CARD_DIR, `card-${k}.mp4`);
           if (!fs.existsSync(cf)) await cardPiece(sess, it, cf);
