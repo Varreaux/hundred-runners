@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '169 the podium says who else got out';
+const BUILD = '170 the lost stand up straight';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -19281,7 +19281,17 @@ function drawPodiumCard(sy, at) {
     if (p <= 0) continue;
     // SOLE, not shoe-bottom. drawFigure anchors at the sole line and its shoe ellipse hangs
     // about 2.6 units under that, which at this scale is nine pixels of foot inside the block.
-    const kick = easeBack(p), top = base - ph[k] - REEL_SOLE * (3.0 * 1.1 * (r.height || 1)), arrived = r.state === 'arrived';
+    //
+    // TWO LINES, `surf` and `top`, and the SLAB STANDS ON `surf`. It used to be drawn from
+    // `top` as well, so the lift that was meant to raise the body off the block raised the
+    // block with it and cancelled itself: every plinth hung REEL_SOLE * sc (about 10px) above
+    // the ground it casts its shadow on, and every pair of shoes sank a full 4.1 units (13px)
+    // into the block's face instead of the 0.9 the lift is sized for. Both reviewers found it
+    // independently on 2026-09-24, the first frames in which the bodies stood still enough
+    // for the eye to run down to the contact. The ordinal was always centred on `surf`, which
+    // is why it sat low in the block.
+    const sc = 3.0 * 1.1 * (r.height || 1);
+    const kick = easeBack(p), surf = base - ph[k], top = surf - REEL_SOLE * sc, arrived = r.state === 'arrived';
     // The SAME expression that scales the body decides where the name goes, so a short
     // runner cannot end up with their name floating a body's width above their head. 36.5
     // units is the figure's own height at scale 1, measured off the 45px a named runner
@@ -19290,22 +19300,20 @@ function drawPodiumCard(sy, at) {
     // units above the soles at the top of its bounce, against the 36.5 a standing figure
     // reaches -- so the winner's hands swept straight through their own name, on the last and
     // longest-held thing on the screen.
-    const sc = 3.0 * 1.1 * (r.height || 1), bh = (r.state === 'arrived' ? 48 : 36.5) * sc;
+    const bh = (r.state === 'arrived' ? 48 : 36.5) * sc;
     ctx.save(); ctx.globalAlpha *= Math.min(1, p * 2);
     ctx.translate(0, (1 - kick) * 34);
-    reelSlab(px[k] - 62, top, 124, ph[k], cols[k][0], cols[k][1]);
+    reelSlab(px[k] - 62, surf, 124, ph[k], cols[k][0], cols[k][1]);
     ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.font = 'bold 28px monospace';
     ctx.fillText(ordinal(k + 1), px[k], base - ph[k] / 2 + 11);
-    // Someone who walked out dances. Someone who did not is not standing to attention on a
-    // podium: they are shown the way they were last seen, going over, and dimmer than the
-    // people beside them who are alive.
+    // Someone who walked out dances. Someone who did not STANDS, dimmer than the people who
+    // are alive. They used to be tipped -0.15 rad about a point above the soles, meant as
+    // "going over" -- but drawFigure faces right, so that swung the head back and the feet
+    // forward, and it read as a body leaning backwards off the block. Morgan, 2026-09-24:
+    // "they are leaning backwards for some reason. can you straighten them out." Standing
+    // at phase 0 is drawFigure's own upright pose, the one every standing body in the game uses.
     if (arrived) drawDancer(r, px[k], top, S.t, sc, 1);
-    else {
-      ctx.save();
-      ctx.translate(px[k], top - 15 * sc); ctx.rotate(-0.15); ctx.translate(-px[k], -(top - 15 * sc));
-      drawFigure(r, px[k], top, 0, sc, 0.74);
-      ctx.restore();
-    }
+    else drawFigure(r, px[k], top, 0, sc, 0.74);
     ctx.font = 'bold 19px monospace';
     reelNameShadow();
     ctx.fillStyle = readable(r.shirt, true); ctx.fillText(r.name, px[k], top - bh - 14);
