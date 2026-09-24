@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '179 the alarm falls away under the boss';
+const BUILD = '180 SPACE moves him on everywhere';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3156,6 +3156,8 @@ window.addEventListener('keydown', e => {
     }
     if (k === 'ENTER') { toggleGate(); return; }
     if (k === 'ESCAPE') { S.active = null; return; }
+    // SPACE with no room open does nothing else, so it is his while he is talking
+    if (k === ' ' && !S.active && S.boss && !S.boss.gone) { bossAdvance(); return; }
     const room = S.active;
     if (!room) return;
     const res = VERBS[room.verb].key(room.mg, k);
@@ -3172,6 +3174,7 @@ window.addEventListener('keydown', e => {
     // the lamp is resting. In the window that is the handbag; in the room it is a difference.
     // It used to dismiss the window, which taught the key by making it mean something else.
     const f = S.finale;
+    if (k === ' ' && f && f.phase === 'intro') { bossAdvance(); return; }   // his speech first
     if (k === ' ' && f && f.phase === 'charge') { lessonMark(f); return; }
     if (k === ' ') finaleConfirm();
     return;
@@ -5495,10 +5498,12 @@ function updateFinale(dt) {
     // standing in it; the beat is as long as he takes now, which is what the band was built
     // to do everywhere else in the game.
     //
-    // AUTO, like the cave. The opening waits for SPACE because nothing else is happening and
-    // he must not be walked past unread; here SPACE is already the player's marking key and
-    // handing it two jobs a second apart is how you get somebody marking a painting they have
-    // not looked at. He says it on his own clock and never takes a key.
+    // AUTO, like the hills: he says it on his own clock and does not wait for anybody. But
+    // SPACE moves him on, as it does everywhere he speaks -- Morgan, 2026-09-24: "the boss
+    // dialogue is not skipable with space like all the other times". It was kept off SPACE
+    // because SPACE is the room's marking key and two jobs a second apart is how somebody marks
+    // a painting they have not looked at; the lesson now stands between his last line and the
+    // paintings, and a wrong mark in the lesson costs nothing, so that no longer bites.
     // `!S.boss` is NOT the test, and this is the whole of it: S.boss is not cleared when he
     // finishes, it is left standing with gone = true, and by the time the last room opens it
     // still holds whoever spoke on the hillside. Written as `!S.boss` he never arrived in a
@@ -16783,7 +16788,7 @@ const BOSS_OPEN = [
 ];
 // And when the line speeds up, the first time in a run (see updatePace). A speed-up is a real
 // thing on a real shop floor: fewer hands, same quota. Smug, and on his own clock like the
-// cave and the hills -- the run is live behind him, so he never takes a key.
+// hills -- the run is live behind him, so he never waits for a key (SPACE moves him on).
 const BOSS_SPEED = [
   { t: 'Fewer hands? Then faster hands.', shake: 'faster', laugh: 1 },
 ];
@@ -16815,7 +16820,8 @@ const BOSS_LAND = [
 // `auto` is the whole difference between his two appearances. In the opening nothing else
 // is happening and he waits for SPACE, so he cannot be walked past unread. At the seam the
 // run is live: a hundred people are on the road behind him and a puzzle may be a second
-// away, so he says his piece on a clock and leaves, and never takes a key from the player.
+// away, so he says his piece on a clock and leaves without waiting for a key. SPACE still
+// moves him on wherever no room is open to take it -- see bossAdvance.
 // The three places he is allowed to be, in ONE expression, because it is read by updateBoss
 // and again by update() and those two disagreeing is how a boss ends up half-dismissed --
 // leaving on one clock and still drawn on another.
@@ -16901,7 +16907,10 @@ function updateBoss(dt) {
 function bossAdvance() {
   const b = S.boss;
   if (!b || b.leaving) return;
-  if (b.auto) return;                                   // his own clock; SPACE is the player's
+  // An auto speech takes SPACE too, since 2026-09-24 -- Morgan: "the boss dialogue is not
+  // skipable with space like all the other times". It still runs on its own clock if nobody
+  // presses anything; SPACE only gets there sooner. The callers decide when SPACE is his:
+  // on the road only while no room is open, in the last room only during its speech.
   const line = b.script[b.line];
   if (!line) { b.leaving = true; return; }
   if (b.ch < line.t.length) { b.ch = line.t.length; b.dwell = 0; if (line.laugh) b.laugh = 1.05; return; }
@@ -17045,14 +17054,17 @@ function drawBoss() {
 
   // ---- the prompt. It pulses only once the line is actually ready to be moved past, so
   // the pulse is a signal rather than decoration, and it names the last line as the last.
-  // no prompt when he is on his own clock: there is nothing for the player to press, and
-  // a SPACE prompt over a live run would be asking them to do something that does nothing
-  const cur = b.auto ? null : b.script[b.line];
+  // ON HIS OWN CLOCK TOO, now that SPACE moves him on there as well. It used to be left off
+  // because it asked for a press that did nothing; wherever he is visible it does something
+  // now -- on the road he ducks out of sight while a panel is open, which is the one time
+  // SPACE belongs to something else.
+  const cur = b.script[b.line];
   if (cur && !b.leaving) {
     const filled = b.ch >= cur.t.length;
     const ready = filled && b.dwell >= BOSS.dwell;
     const last = b.line === b.script.length - 1;
-    const msg = !filled ? 'SPACE fills the line' : last ? 'SPACE to begin the drill' : 'SPACE to continue';
+    // "begin the drill" only where a drill follows him: the yard and the cave door
+    const msg = !filled ? 'SPACE fills the line' : last && !b.auto ? 'SPACE to begin the drill' : 'SPACE to continue';
     ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right';
     const a = ready ? 0.55 + 0.45 * Math.abs(Math.sin(b.t * 3.2)) : 0.28;
     ctx.fillStyle = 'rgba(206,168,92,' + a.toFixed(3) + ')';
