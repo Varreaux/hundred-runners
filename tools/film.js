@@ -294,31 +294,42 @@ function keyEvent(client, key) {
     // requestAnimationFrame loop keeps running, update() advances S.endT on its own, and the
     // value set here is overwritten before the screenshot -- so the sequence drifts off the
     // end of the card and the last frames come back as the podium.
-    if (seg.frames) {
+    if (seg.frames || seg.speed) {
       const ev = async expr => (await client.send('Runtime.evaluate',
         { expression: expr, returnByValue: true })).result.value;
       const at = await ev('REEL.at');
       // the card's own window, read from the roll rather than written down here
-      // 0.92, not 0.98: at the very end of the step the roll flips to the podium, and the last
-      // frame of the sequence landed on "WHO GOT FURTHEST" instead of on the card.
-      const span = await ev('S.endRoll ? S.endRoll.step * 0.92 : 0.66');
-      for (let i = 0; i < seg.frames; i++) {
-        const u = seg.frames === 1 ? 0 : i / (seg.frames - 1);
-        await ev(`S.endT = ${at} + ${span} * ${u}; S.t = ${(seg.st == null ? 3.1 : seg.st)} + ${(i / 60).toFixed(4)}; draw();`);
+      const step = await ev('S.endRoll ? S.endRoll.step : 0.72');
+      // BOTH ENDS ARE INSET, and each end had to be. REEL.at is the instant the reel takes the
+      // screen FROM THE HEADLINE, so a frame rendered at exactly `at` is still the end card --
+      // every vignette began with a single frame of "NOBODY MADE IT", which in a cut reads as
+      // a flash between two shots. At the far end the roll flips to the podium.
+      const from = seg.from == null ? 0.05 : seg.from;
+      const to = seg.to == null ? 0.95 : seg.to;
+      // speed 1 is the game's own rate, 0.5 is half. The frame count FOLLOWS from the screen
+      // time rather than being written down, so a stepped clip never duplicates a frame.
+      const realSpan = step * (to - from);
+      const span = realSpan / (seg.speed == null ? 1 : seg.speed);
+      const nf = seg.frames || Math.max(2, Math.round(span * 30));
+      for (let i = 0; i < nf; i++) {
+        const u = from + (to - from) * (nf === 1 ? 0 : i / (nf - 1));
+        await ev(`S.endT = ${at} + ${step} * ${u}; S.t = ${(seg.st == null ? 3.1 : seg.st)} + ${(i / 60).toFixed(4)}; draw();`);
         const shot = await client.send('Page.captureScreenshot', { format: 'jpeg', quality: 94 });
-        frames.push({ t: i * (seg.span || 1.4) / seg.frames, data: shot.data });
+        frames.push({ t: i * span / nf, data: shot.data });
       }
+      // locals, not a reassignment of `seg`: it is the const binding of the for-of above, and
+      // writing to it throws under 'use strict' -- the same fault the audit found in mineProps.
       const kept0 = frames.slice();
       for (let i = 0; i < kept0.length; i++) {
         const file = path.join(tmp, `f${String(n).padStart(6, '0')}.jpg`);
         fs.writeFileSync(file, Buffer.from(kept0[i].data, 'base64'));
         const next = kept0[i + 1];
-        const dur = next ? Math.max(0.008, Math.min(0.2, next.t - kept0[i].t)) : (seg.span || 1.4) / seg.frames;
+        const dur = next ? Math.max(0.008, Math.min(0.2, next.t - kept0[i].t)) : span / nf;
         shots.push({ file, dur });
         n++;
       }
       cuts.push({ name: seg.name, from: shots.length - kept0.length, to: shots.length });
-      console.log(`  ${seg.name.padEnd(10)} ${kept0.length} stepped frames over ${(seg.span || 1.4)}s`);
+      console.log(`  ${seg.name.padEnd(10)} ${kept0.length} stepped frames over ${span.toFixed(2)}s (speed ${seg.speed == null ? 1 : seg.speed})`);
       continue;
     }
 

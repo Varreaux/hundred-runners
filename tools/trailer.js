@@ -335,7 +335,25 @@ const ESCAPE3 = [
     sub: ['ARE YOU ANOTHER COG IN THE SYSTEM,', 'OR ARE YOU YOUR OWN PERSON?'] },
 ];
 
-const EDITS = { escape3: ESCAPE3, escape2: ESCAPE2, escape: ESCAPE, ...ALTS };
+// ---------------------------------------------------------------- the sixth pass
+// Two more from Morgan on escape3, both real and both mine.
+//
+// A single frame of "NOBODY MADE IT" sat in front of every vignette. REEL.at is the instant
+// the reel takes the screen FROM the headline, and I was rendering the first frame at exactly
+// REEL.at -- so frame 0 was still the end card. What he saw at the END of Isabela's was the
+// front of Atthiyya's. Both ends of the window are inset now, 0.05 to 0.95 of the step.
+//
+// And they play at the game's own rate, not half. Stepping the clock means the speed is just
+// a parameter and no frame is ever duplicated, so 1.0 costs nothing in smoothness -- 21 real
+// renders over 0.69s each, which is exactly what the game does.
+const ESCAPE4 = ESCAPE3.map(it =>
+  it.clip === 'w_wiring' ? { clip: 'n_wiring', at: 0, for: 0.69 }
+  : it.clip === 'w_mantrap' ? { clip: 'n_mantrap', at: 0, for: 0.69 }
+  : it.clip === 'w_gears' ? { clip: 'n_gears', at: 0, for: 0.69 }
+  : it.clip === 'w_thorn' ? { clip: 'n_thorn', at: 0, for: 0.69 }
+  : it);
+
+const EDITS = { escape4: ESCAPE4, escape3: ESCAPE3, escape2: ESCAPE2, escape: ESCAPE, ...ALTS };
 
 // ---------------------------------------------------------------- build
 const run = (bin, args) => execFileSync(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
