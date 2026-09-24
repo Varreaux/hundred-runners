@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '174 fewer hands, faster hands';
+const BUILD = '175 the traps take half';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -183,7 +183,18 @@ const CFG = {
     mantrap:  { family: 'Lift',        rank: 4, weight: 1 },
     wall:     { family: 'Blast',       rank: 5, weight: 1 },
   },
-  crusherPeriod: 1.6,
+  // THE CRUSHER AND THE MANTRAP, the two traps nobody queues at. Morgan, 2026-09-24: make them
+  // "kill roughly half of the people on average ... more deadly than it is now, but i dont want
+  // a ludicrously fast animation for a trap". A walker spends 0.456s under the 50-unit ram
+  // (measured), and a slam now takes EVERYONE under it, so the share killed is that over the
+  // period: 1.6s was 28% and 0.9s is half. tools/burst-check.js measures it.
+  //
+  // FASTER BY RESTING LESS, NOT BY MOVING FASTER. `crusherSlam` is where in the period the
+  // blow lands; the drop before it (0.15s) and the hold and the lift after it (0.3 + 0.3) are
+  // the same seconds they always were, so the only thing the shorter period took away is the
+  // wait at the top -- 0.85s down to 0.15. The drawings read these two, not a fraction of the
+  // period, so a change to either cannot speed the motion up behind anybody's back.
+  crusherPeriod: 0.9, crusherSlam: 0.3,
   // hazard -> how far into the room it starts killing; canReach asks this
   // instead of assuming 8, so the next hazard added cannot reintroduce the bug
   killFrom: { all: 8, half: 8, burst: 35, machine: 88, press: 1 },
@@ -6352,7 +6363,8 @@ function update(dt) {
     room.shaftA = (room.shaftA || 0) + dt * 4 * (1 - room.bridge);
     if (room.hazard === 'burst' && room.state !== 'solved') {
       const before = room.slamT; room.slamT += dt;
-      if (before < 0.78 && room.slamT >= 0.78 && inView(room.x, 120)) {
+      const grit = CFG.crusherSlam - 0.22;
+      if (before < grit && room.slamT >= grit && inView(room.x, 120)) {
         // THE DUST COMES OFF WHAT IS ACTUALLY THERE. Both burst rooms run this branch -- the
         // crusher in act two, which is inside a tunnel, and the mantrap in act three, which
         // is out in open country -- and the height was CFG.tunnelH - 16, i.e. 114 units above
@@ -6363,16 +6375,23 @@ function update(dt) {
         emit('grit', 7, room.x + 60, burstY, { sx: 26, vx: [-12, 12], vy: [20, 70], life: [0.4, 0.7], c: '#9a8d80' });
         emit('chip', 3, room.x + 60, burstY, { sx: 22, vx: [-24, 24], vy: [10, 40], life: [0.5, 0.9], c: '#6f6459' });
       }
-      if (before < 1.0 && room.slamT >= 1.0) {
+      if (before < CFG.crusherSlam && room.slamT >= CFG.crusherSlam) {
         if (inView(room.x, 0)) AU.thud();
-        // ONE. Jaws close on whoever is under them, not on everyone standing in a fifty-unit
-        // band -- this loop used to take up to ten people on a single frame. The slam's own
-        // 1.6s period already spaces them, so it needs no reload of its own.
+        // EVERYONE UNDER IT. This took ONE -- the first body found in the fifty-unit band --
+        // after a version that took up to ten on a frame was thought too many. Morgan lifted
+        // that on 2026-09-24 ("if you think its better to uncap the amount of people on the
+        // strip that can die that works too") when he asked for these two to take about half:
+        // with one per slam no period gets there, because a full lane puts about five people
+        // under the ram at once and the 3% it killed was the cap, not the clock. Uncapped,
+        // each person's odds are their time under it over the period, whatever the crowd.
         // NOT WHILE THEY ARE ON A RAMP. The runner loop's `if (r.ramp) continue;` only stops
         // them queueing; the slam is decided HERE, and the mantrap at 19300 sits under the
         // merge at 19330, so it was taking bodies 185 units up the hillside from its jaws.
-        const victim = S.runners.find(r => r.state === 'run' && !r.ramp && r.lane === room.lane && r.x >= room.x + 35 && r.x < room.x + 85);
-        if (victim) { victim.doom = room; killRunner(victim, 'crush'); room.deaths++; }
+        for (const victim of S.runners) {
+          if (victim.state !== 'run' || victim.ramp || victim.lane !== room.lane) continue;
+          if (victim.x < room.x + 35 || victim.x >= room.x + 85) continue;
+          victim.doom = room; killRunner(victim, 'crush'); room.deaths++;
+        }
       }
       if (room.slamT >= CFG.crusherPeriod) room.slamT -= CFG.crusherPeriod;
     }
@@ -13616,14 +13635,16 @@ function drawRoom(room, y) {
     // over them, and the tail's cave mark belongs to the tunnels
     if (outdoors) return;
   } else if (room.type === 'crusher') {
-    const th = CFG.tunnelH, t = room.slamT;
+    // `u` is seconds from the blow, so the drop, the hold and the lift keep their own speeds
+    // whatever the period is -- see crusherSlam in CFG.
+    const th = CFG.tunnelH, u = room.slamT - CFG.crusherSlam;
     let drop = 0;
     // The fall lands ON the kill, as the mantrap's window does: the victim is taken when
-    // slamT crosses 1.0 (see update), and the block used to START falling there and arrive
-    // 0.15s late -- the thud sounded with the ram still parked at the tunnel roof.
-    if (t >= 0.85 && t < 1.0) drop = (t - 0.85) / 0.15;
-    else if (t >= 1.0 && t < 1.3) drop = 1;
-    else if (t >= 1.3) drop = 1 - (t - 1.3) / 0.3;
+    // slamT crosses crusherSlam (see update), and the block used to START falling there and
+    // arrive 0.15s late -- the thud sounded with the ram still parked at the tunnel roof.
+    if (u >= -0.15 && u < 0) drop = (u + 0.15) / 0.15;
+    else if (u >= 0 && u < 0.3) drop = 1;
+    else if (u >= 0.3) drop = Math.max(0, 1 - (u - 0.3) / 0.3);
     // AND IT IS WINCHED UP FROM WHERE IT WAS CAUGHT, not teleported. slamT stops advancing
     // the moment the room is solved (see the burst branch in update), so the frozen `t` above
     // is the ram's last live position and `bridge` lifts it from there. The old branch ignored
@@ -13745,7 +13766,10 @@ function drawEncRoom(room, y) {
     //
     // And the window is re-centred so the extreme lands ON the kill: it peaked at phase 0.86
     // against a kill at 0.625, i.e. 0.376s late even at zero offset.
-    const t = room.slamT / CFG.crusherPeriod;
+    // In SECONDS from the blow now, not as a fraction of the period: the window is the same
+    // 0.448s it always was (0.28 of the old 1.6), centred on the kill, so shortening the period
+    // shortens the wait between snaps and not the snap. See crusherSlam in CFG.
+    const u = room.slamT - CFG.crusherSlam;
     // the window SHUTS at 0.765 as well as opening at 0.485: past it the sine turns negative and
     // open = 46 * (1 - shut) swung on to 92, twice the rest opening, then popped back at the wrap
     // THIS POSE IS UPSIDE DOWN AND IS LEFT THAT WAY ON PURPOSE. `open` is the jaw-tip HEIGHT,
@@ -13769,7 +13793,7 @@ function drawEncRoom(room, y) {
     // on bare grass -- and to draw the jaws in drawRoomProps so they close OVER the body
     // rather than behind it. That needs a set-pose and a defused-pose authored, which is a
     // decision about how three drawings should read, so it is Morgan's. Reported with numbers.
-    const shut = solved ? 1 : (t < 0.485 || t > 0.765) ? 0 : Math.sin((t - 0.485) / 0.28 * Math.PI);
+    const shut = solved ? 1 : Math.abs(u) > 0.224 ? 0 : Math.sin((u + 0.224) / 0.448 * Math.PI);
     // `solved ? 46` used to override the `solved ? 1` on the line above it, which existed to
     // drive exactly this to zero -- so a solved mantrap drew at the identical geometry to an
     // armed one and only its stroke colour changed. Three clean pulls in the panel moved the
