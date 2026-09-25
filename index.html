@@ -15,7 +15,11 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '190 the music ships as mp3';
+const BUILD = '191 the title screen says what this is';
+// The title screen no longer prints it -- Morgan asked for the build stamp and the best-run
+// line off the front of the game. This keeps it one keystroke away in a console, which is
+// what it was for between sessions. The delivery check greps the SOURCE and is unaffected.
+try { console.log('Hundred Runners, build ' + BUILD); } catch (e) {}
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -19007,23 +19011,35 @@ function drawTitle() {
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.font = 'bold 52px monospace'; ctx.fillText('HUNDRED RUNNERS', W / 2 + 4, 114);
   ctx.fillStyle = '#f1c40f'; ctx.fillText('HUNDRED RUNNERS', W / 2, 110);
+  // WHAT THIS SCREEN IS FOR CHANGED. It used to be nine lines of rules -- the hazard colours,
+  // what NUMBER and ENTER do, how a streak works -- and Morgan, 2026-09-25, wanted the jam and
+  // the book instead: "i dont want instructions there". The drill at the top of every run
+  // already walks a player through every mini-game, which is what makes that affordable.
+  //
+  // Óbidos rather than a theme word: the jam's brief was the BOOK, not a one-word prompt, so
+  // the game was made from Federici's ideas rather than riffing on a title.
   ctx.fillStyle = '#eee'; ctx.font = '15px monospace';
   const lines = [
-    '100 people are running and you cannot stop them. There is nowhere to stop.',
-    'A broken crossing takes one person at a time. The rest get past it.',
-    'Red is the worst of them, orange about half as bad, yellow takes whoever is under it.',
-    'Out of the mill, into the mountain, and out into open country \u2014 which is being fenced.',
+    'Made in \u00d3bidos, September 2026, for a jam whose theme',
+    "was a book: Silvia Federici's Beyond the Periphery of the Skin.",
     '',
-    'NUMBER opens a flashing room. Each room asks for something different, and tells you what.',
-    'ENTER holds the crowd at a gate to buy yourself a moment. Each gate works once.',
-    'M mutes. Clear a room with nobody lost to build a streak.',
-    'Everyone who gets through the last wall is one attempt at the final gate.',
+    'A hundred people start inside a factory. Not a workplace',
+    'so much as a machine that was never built to stop.',
+    '',
+    'Bodies can still walk out of it. Get as many out as you can.',
   ];
-  lines.forEach((l, i) => ctx.fillText(l, W / 2, 156 + i * 22));
+  lines.forEach((l, i) => ctx.fillText(l, W / 2, 168 + i * 24));
   ctx.fillStyle = '#f1c40f'; ctx.font = 'bold 20px monospace';
-  ctx.globalAlpha = 0.6 + 0.4 * Math.sin(S.t * 4); ctx.fillText('SPACE to start', W / 2, 350); ctx.globalAlpha = 1;
-  if (S.best) { ctx.fillStyle = '#aaa'; ctx.font = '13px monospace'; ctx.fillText(`best run: ${S.best} survivors`, W / 2, 374); }
-  ctx.fillStyle = '#777'; ctx.font = '11px monospace'; ctx.fillText(`build ${BUILD}`, W / 2, H - 34);
+  ctx.globalAlpha = 0.6 + 0.4 * Math.sin(S.t * 4); ctx.fillText('SPACE to start', W / 2, 372); ctx.globalAlpha = 1;
+  // The three of them. Emoji come out of the system font rather than the monospace face, so
+  // they sit a shade low and wide beside it -- checked in a shot rather than assumed, because
+  // it renders differently on the machine that made it and the machine that plays it.
+  ctx.fillStyle = '#9a9188'; ctx.font = '13px monospace';
+  ctx.fillText('Built by Linh \u{1F4BB}, Frankie \u{1F3B5} and Morgan \u{1F0CF}', W / 2, H - 46);
+  // NO BUILD STAMP, NO BEST RUN. Both were asked for by name. The build number is still in the
+  // source one line from the top, so `curl -s http://127.0.0.1:8765/index.html | grep BUILD`
+  // -- the check this project actually uses to prove a delivery landed -- is untouched; what
+  // is gone is a player seeing it. Logged once at startup so a console still answers it.
   ctx.textAlign = 'left';
 }
 // a list of names wrapped to the width of the screen, returning the y it finished on
