@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '186 a sum before the ditch';
+const BUILD = '187 the recap music half a second out';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2516,10 +2516,14 @@ const MUSIC = {
   // downbeat on the first card and by ear that is still not where he wants it, so this is the
   // one number to turn and it is his. Subtracted from the cue, so larger is sooner.
   //
-  // At 1.0 it goes past the top of the end screen -- the calculated cue is 0.99 -- so the bed
-  // comes in on the FIRST FRAME of the win screen and the shift is 0.99s in practice, not 1.0.
-  // Anything above 0.99 means the same thing; there is no runway before endT 0.
-  EARLY: 1.0,
+  // 1.0 took the cue past the top of the end screen and Morgan, 2026-09-25: "i think the music
+  // now starts too early. Delay it by 0.5s". At 0.5 the cue is at endT 0.49 and the first hit
+  // lands at 0.85, half a second ahead of the first card at REEL.at -- so the loop is already
+  // under way when the recap arrives rather than starting on it or over the headline.
+  //
+  // Anything at or above 0.99 puts the cue past endT 0 and means the same thing as 0.99: the
+  // first frame of the win screen. There is no runway before that.
+  EARLY: 0.5,
   // Morgan's own filenames, kept as he saved them so that dropping a replacement in with
   // the same name just works. Encoded because they contain spaces.
   SRC: { tut: 'Hundred%20Tutorial%20Loop.wav', intro: 'Hundred%20Intro%20New.wav', bed: 'Hundred%20Loop%20New.wav',
