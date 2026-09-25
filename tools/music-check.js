@@ -260,10 +260,31 @@ eval(src + `
      'boss volume ' + bossEl.volume.toFixed(3));
   for (let i = 0; i < 60 * (MUSIC.FADE + 0.2); i++) update(1/60);
   ok('...then stops, rewinds, and its volume is put back', bossEl.paused && bossEl.currentTime === 0 && bossEl.volume === MUSIC.VOL);
-  ok('the win screen came up under the victory, and the bed waits for it', S.mode === 'win' && !vicEl.paused && played('bed') === bedV,
+  // DRIVEN TO THE WIN, not assumed to be there. This used to run MUSIC.FADE + 0.2 = 1.7s past
+  // the tenth mark and test for mode 'win'; the escape now puts 4.35s of leaving between the
+  // two, so the assertion failed on a build where the music was fine. A length written down is
+  // a fact about the thing being tested, and it goes stale the first time somebody changes it.
+  for (let i = 0; i < 60 * 12 && S.mode !== 'win'; i++) update(1/60);
+  ok('the win screen comes up under the victory, still playing', S.mode === 'win' && !vicEl.paused && played('bed') === bedV,
      'mode ' + S.mode + ', bed plays ' + bedV + ' -> ' + played('bed'));
-  vicEl.fire('ended');
-  ok('when the victory ends, the bed comes back from the top', played('bed') === bedV + 1 && !bedEl.paused && bedEl.currentTime === 0);
+  // THE BED IS CUED BY THE PICTURE, NOT BY THE FILE. It used to wait for the victory's ended
+  // event -- but that file is 9.816s long and goes silent at 6.13s, so the wait was 3.69s of
+  // trailing silence that no event reports, landing squarely over the start of the death
+  // recap. Morgan asked for the music "as soon as they start showing the death vignettes",
+  // which is REEL.at.
+  ok('...and the bed is still held while the headline is up', S.endT < REEL.at && bedEl.paused,
+     'endT ' + S.endT.toFixed(2) + ' of REEL.at ' + REEL.at);
+  for (let i = 0; i < 60 * 3 && S.endT < REEL.at; i++) update(1/60);
+  update(1/60);
+  ok('the death recap takes the screen and the bed comes in with it',
+     played('bed') === bedV + 1 && !bedEl.paused && bedEl.currentTime === 0,
+     'at endT ' + S.endT.toFixed(2) + ', bed plays ' + bedV + ' -> ' + played('bed'));
+  ok('...and the victory fades under it rather than cutting',
+     MUSIC.fade && MUSIC.fade.a === vicEl && !vicEl.paused,
+     MUSIC.fade ? 'fading, volume ' + vicEl.volume.toFixed(3) : 'no fade');
+  for (let i = 0; i < 60 * (MUSIC.FADE + 0.2); i++) update(1/60);
+  ok('...then the victory stops, rewinds, and its volume is put back',
+     vicEl.paused && vicEl.currentTime === 0 && vicEl.volume === MUSIC.VOL);
   press('ARROWLEFT');
   ok('a key after it does not play the victory again', played('victory') === vicV + 1 && !bedEl.paused);
   press('R');

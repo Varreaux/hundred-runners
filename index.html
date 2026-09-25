@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '182 the crew dance off the belt';
+const BUILD = '183 the recap brings the music with it';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2507,11 +2507,28 @@ const MUSIC = {
     if (this.boss) this.boss.loop = true;
     this.alarm = this.make(this.SRC.alarm);
     if (this.alarm) this.alarm.loop = true;
-    // The victory plays ONCE, and the end screen's bed waits for it to finish rather than
-    // starting on top of it the moment the win screen comes up, 0.85s into a 9.8s jingle.
+    // The victory plays ONCE. The bed used to wait for its `ended` event, which was right when
+    // the win screen came up 0.85s into it -- and wrong the moment the escape put 4.35s
+    // between the tenth mark and the end screen.
+    //
+    // WAITING ON `ended` IS WAITING ON THE FILE, NOT ON THE SOUND. This one is 9.816s long and
+    // its audible content stops at 6.13s: 3.69 seconds of trailing silence that no event
+    // reports. Measured off the PCM at 10ms resolution, not guessed. Morgan, 2026-09-25: "we
+    // get the winning sound as soon as they win which is correct but then there is silence
+    // while the death vignettes start and the normal music only start about a third of the way
+    // in." The silence he heard is that tail, and it began within half a second of the
+    // vignettes because the sting runs out almost exactly where the recap starts.
+    //
+    // So the handover is keyed to the PICTURE instead -- see the follow() call in update(),
+    // which hands the moment to the bed at REEL.at. The listener stays as a backstop for the
+    // case the file is ever shorter than the reel's own lead-in, and no longer rewinds a bed
+    // that is already playing.
     this.victory = this.make(this.SRC.victory);
     if (this.victory) this.victory.addEventListener('ended', () => {
-      if (this.room === 'victory' && this.bed && !AU.muted) { try { this.bed.currentTime = 0; } catch (e) {} this.bed.play().catch(() => {}); }
+      if (this.room === 'victory' && this.bed && this.bed.paused && !AU.muted) {
+        try { this.bed.currentTime = 0; } catch (e) {}
+        this.bed.play().catch(() => {});
+      }
     });
     // the one place the bed is allowed to begin -- and not under the last room's own sound
     if (this.intro) this.intro.addEventListener('ended', () => {
@@ -2543,8 +2560,13 @@ const MUSIC = {
     // TWO HANDOVERS FADE (see FADE): the alarm under the boss loop, and the boss loop under the
     // victory -- Morgan, 2026-09-24: play the victory "as soon as the player finds the 10th
     // difference and make the boss music fade out at the same time". Every other way out cuts.
+    // THREE HANDOVERS FADE now: the third is the victory under the closing reel's bed. It has
+    // to fade rather than cut, because where the reel takes the screen is a fact about the
+    // PICTURE and how much sting is left is a fact about the FILE, and nothing keeps those two
+    // in step -- a long escape leaves the sting spent, a short one leaves it mid-phrase.
     const out = was === 'alarm' && want === 'boss' ? this.alarm
-              : was === 'boss' && want === 'victory' ? this.boss : null;
+              : was === 'boss' && want === 'victory' ? this.boss
+              : was === 'victory' && !want ? this.victory : null;
     this.endFade();                                       // one fade at a time
     if (out) this.fade = { a: out, t: 0 };
     for (const a of [this.alarm, this.boss, this.victory]) if (a !== out) halt(a, true);
@@ -6529,7 +6551,9 @@ function update(dt) {
   // the real room, then the boss loop, then -- from the tenth mark, through the win's beat and
   // onto the win screen -- the victory. See MUSIC.follow.
   const fin = S.finale;
-  MUSIC.follow(S.mode === 'win' ? 'victory'
+  // ...and then the reel's own music, from the frame the death cards take the screen. REEL.at
+  // is read rather than restated, so moving the headline's hold moves the music with it.
+  MUSIC.follow(S.mode === 'win' ? (S.endT >= REEL.at ? null : 'victory')
              : S.mode !== 'finale' || !fin ? null
              : fin.phase === 'intro' || fin.phase === 'charge' ? 'alarm'
              : fin.winT > 0 || fin.found.size >= CFG.finale.findCount ? 'victory' : 'boss');
