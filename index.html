@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '185 the music cue actually ships';
+const BUILD = '186 a sum before the ditch';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -423,7 +423,22 @@ const CFG = {
     { x: 15150, lane: 0, type: 'gears', diff: 4 },
     { x: 14800, lane: 1, type: 'conveyor', diff: 4 },
     { x: 14000, lane: 0, type: 'ditch', diff: 4, warn: 480 },
-    { x: 13850, lane: 0, type: 'calculation', diff: 4, warn: 500 },
+    // THE ACT'S FIRST ROOM, a sum. Morgan, 2026-09-25: the proprietor says his two lines at the
+    // mouth and then there was a long empty walk to the ditch -- "maybe a bit too much space
+    // ... can we add another room, maybe just a little bit before it? ... maybe a math
+    // question". The ditch is untouched. Placed by three numbers, all measured:
+    //   * his speech is gone by a lead of 13261..13291, and this arms at x - warn = 13340,
+    //     about 0.5s after -- opening a room while he speaks ducks him mid-line, which Morgan
+    //     asked to stop; the ditch still arms at 13520, 1.6s later, so they come staggered;
+    //   * the fork's signpost stands between this and the ditch, and when both are armed each
+    //     puts a bracket up beside it (this one's at x + 132, the ditch's at 13988). The boards
+    //     are 39 wide, so they need 45 between brackets: at 13820 there were 33, and at 13850
+    //     the sign was drawn into the machine itself. Here there are 64, with the sign stepped
+    //     back to sit between them (see signpost);
+    //   * warn 450 rather than the terminal's usual 500 is what lets it stand that far back and
+    //     still arm after him: 454 units, 4.1s, from arming to the crowd, against the ~2.9s the
+    //     sum is priced at in VERBS.calculation.
+    { x: 13790, lane: 0, type: 'calculation', diff: 4, warn: 450 },
     { x: 16000, lane: 2, type: 'wiring', diff: 4, warn: 840 },
     { x: 16900, lane: 3, type: 'sweeper', diff: 4, warn: 1350 },
     { x: 16200, lane: 1, type: 'winch', diff: 4 },
@@ -13810,7 +13825,12 @@ function signpost(wx, y) {
   // rather than the anchor: step the sign back clear of the near lip. Moving wx moves the
   // sign and nothing below reads it -- outdoors, inMill and inView are all settled above.
   for (const r of S.rooms.filter(m => laneY(m.lane) === y && roomIsGap(m)).sort((a, b) => b.x - a.x))
-    if (wx - 56 > r.x && wx - 83 < r.x + CFG.gapWidth) wx = r.x + 50;
+    if (wx - 56 > r.x && wx - 83 < r.x + CFG.gapWidth) wx = r.x + 24;
+  // + 24, NOT + 50. At + 50 the post stood at r.x - 20 and the gap room's own armed bracket, at
+  // r.x - 12, ran straight up through both boards (which span post - 18 .. post + 21) -- drawn
+  // after the sign, so on top of it. + 24 puts the post at r.x - 46 and the boards 12 clear of
+  // that bracket, and 12 clear of the act-three wages terminal's bracket on the other side.
+  // Only the fork at 14100, over the ditch at 14000, steps back at all; measured, not assumed.
   const sx = wx - V.left - 70;
   // a 5px post against a dark wall disappears at any zoom below 1 and the boards
   // are left hanging in the air; the ink outline and a footing are what hold it down

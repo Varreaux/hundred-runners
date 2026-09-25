@@ -141,12 +141,18 @@ eval(src + `
   // this, which is a spread and not a mix.
   const tally = {};
   for (const r of byAct[2]) { const f = fam[r.type]; if (f) tally[f.family] = (tally[f.family] || 0) + 1; }
-  const counts = Object.values(tally), lo = Math.min(...counts), hi = Math.max(...counts);
+  // Over the EARLIER families, which is what the assertion is about. Counting every family let
+  // Blast in -- the wall, which exists once, only in act three, and cannot be doubled -- so it
+  // pinned the floor at 1 and one extra room of ANY family read as uneven. It passed only while
+  // everything else happened to sit at exactly 2. Found 2026-09-25 when Morgan asked for a room
+  // before the first ditch: Calculation x3 against x2 everywhere else is inside this rule's own
+  // one-room tolerance, and was failing on the wall.
+  const counts = [...earlier].map(f => tally[f] || 0), lo = Math.min(...counts), hi = Math.max(...counts);
   const every = [...earlier].every(f => tally[f]);
   ok('the last act carries EVERY earlier family, evenly', every && hi - lo <= 1,
      !every ? 'missing from act three: ' + [...earlier].filter(f => !tally[f]).join(', ')
-            : hi - lo <= 1 ? Object.keys(tally).length + ' families, ' + lo + ' to ' + hi + ' rooms each'
-            : 'uneven: ' + Object.entries(tally).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' x' + v).join(', '));
+            : hi - lo <= 1 ? earlier.size + ' earlier families, ' + lo + ' to ' + hi + ' rooms each'
+            : 'uneven: ' + Object.entries(tally).filter(([k]) => earlier.has(k)).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' x' + v).join(', '));
 
   // ---------------------------------------------------------------- 4. nothing unranked
   const unranked = Object.keys(CFG.types).filter(t => !fam[t]);
