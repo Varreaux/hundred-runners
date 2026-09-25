@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '194 the whole field machine goes behind the crowd';
+const BUILD = '195 the cave stops clipping every rock';
 // The title screen no longer prints it -- Morgan asked for the build stamp and the best-run
 // line off the front of the game. This keeps it one keystroke away in a console, which is
 // what it was for between sessions. The delivery check greps the SOURCE and is unaffected.
@@ -8196,142 +8196,154 @@ function drawMountain() {
   ctx.save(); seamClip(-1); ctx.clip();
   drawMillMass();
   ctx.restore();
-  ctx.save(); seamClip(1); ctx.clip();
-  // top..bottom is 2240 world units of rock. The view is H/zoom tall -- about 770 at act
-  // one's zoom -- so roughly two thirds of these courses were built and filled entirely
-  // off the screen, and each one is a full-width path of about sixty segments.
-  //
-  // Culled on the BAND, not on the loop bounds, so `k` keeps counting from the same place:
-  // k picks the colour and seeds the wobble, and starting the loop at the first visible y
-  // instead would renumber every course and repaint the whole mountain.
-  for (let y = top; y < bottom; y += 26) {
-    const k = Math.floor(y / 26);
-    const y0 = y + hash(k) * 8, h = 9 + hash(k * 7) * 9;
-    if (!inViewY(y0 - 8, y0 + h + 8)) continue;   // +-8 for strataBand's own sine wobble
-    ctx.fillStyle = k % 3 === 0 ? 'rgba(255,255,255,0.04)' : k % 3 === 1 ? 'rgba(0,0,0,0.11)' : 'rgba(150,100,130,0.07)';
-    strataBand(y0, h, k);
+  // THE ROCK SIDE ONLY WHEN SOME OF IT CAN BE SEEN. Everything from here to drawSeamRock is
+  // clipped to seamClip(1), and the rock there starts no further left than FAC.seam - 116
+  // (seamXAt: 88 of lean and 28 of tooth) and ends by CFG.exit + 73 (the flank's 48, its
+  // jitter, and the +-15 of the midpoints between its corners). For most of act one, and most of act three, none of it is in the frame -- and it
+  // was all still being built and clipped away: 129 rock blocks, each with a clip of its own,
+  // plus strata, boulders, workings and cracks. 188 clips in an act-one frame fell to 52, and
+  // 175 in act three to 17. 300 units of margin both ways so a screen shake cannot uncover it.
+  // Only drawSkeleton writes a global in here (SKEL_FLIP), and it sets that before every use.
+  // Rendered in software against the frame with the pass, at thirteen points from the first
+  // second to deep in act three, including the frame where the rock first enters: identical.
+  if (FAC.seam - 416 < V.left + V.vw && CFG.exit + 358 > V.left) {
+    ctx.save(); seamClip(1); ctx.clip();
+    // top..bottom is 2240 world units of rock. The view is H/zoom tall -- about 770 at act
+    // one's zoom -- so roughly two thirds of these courses were built and filled entirely
+    // off the screen, and each one is a full-width path of about sixty segments.
+    //
+    // Culled on the BAND, not on the loop bounds, so `k` keeps counting from the same place:
+    // k picks the colour and seeds the wobble, and starting the loop at the first visible y
+    // instead would renumber every course and repaint the whole mountain.
+    for (let y = top; y < bottom; y += 26) {
+      const k = Math.floor(y / 26);
+      const y0 = y + hash(k) * 8, h = 9 + hash(k * 7) * 9;
+      if (!inViewY(y0 - 8, y0 + h + 8)) continue;   // +-8 for strataBand's own sine wobble
+      ctx.fillStyle = k % 3 === 0 ? 'rgba(255,255,255,0.04)' : k % 3 === 1 ? 'rgba(0,0,0,0.11)' : 'rgba(150,100,130,0.07)';
+      strataBand(y0, h, k);
+    }
+    rockFace(top, bottom);
+    // Whole animals, before the boulder pass, so loose rock is drawn OVER them and the stone
+    // partly buries what it holds. Their boxes are handed to the workings below so no drift is
+    // cut through the middle of one.
+    const skels = placeSkeletons(null);
+    // PLACED in full, DRAWN when visible. The boxes are handed to the workings pass below so
+    // no drift is cut through an animal, so placing fewer of them would move the holes.
+    for (const sk of skels)
+      if (inViewLocalX(sk.cx - V.left - sk.L, sk.cx - V.left + sk.L) && inViewY(sk.cy - sk.L, sk.cy + sk.L))
+        drawSkeleton(sk.cx - V.left, sk.cy, sk.L, sk.kind, sk.seed);
+    parallaxRange(1, 120, (seg, sx) => {
+      for (let j = 0; j < 3; j++) {
+        const h = hash(seg * 13 + j * 101); if (h < 0.6) continue;
+        const bx = sx + hash(seg + j) * 120, by = top + hash(seg * 3 + j * 17) * (bottom - top);
+        const rw = 12 + h * 28, rh = rw * (0.45 + hash(seg * 5 + j) * 0.4);
+        // by is spread over the whole 2240 units of the mass, so most boulders are nowhere
+        // near the view. Six paths of seven vertices each, for nothing. Nothing downstream
+        // reads a boulder, so this one can be culled outright.
+        // 1.12 is the largest facet scale (0.82 + 0.3), and the shadow face sits at +3,+5.
+        if (!inViewLocalX(bx - rw * 1.12, bx + rw * 1.12 + 3)) continue;
+        if (!inViewY(by - rh * 1.12, by + rh * 1.12 + 5)) continue;
+        // A boulder set in the rock. At 10% white on a flat wall these read as grease on the
+        // lens, so the body carries a real dark side, an ink rim and a contact shadow, and
+        // the silhouette is faceted rather than a clean ellipse.
+        const rot = 0.25 + hash(seg * 2.7 + j) * 0.5;
+        const face = (cx2, cy2, fx, fy, style) => {
+          ctx.beginPath();
+          for (let s = 0; s < 7; s++) {
+            const a2 = s / 7 * 6.283, k = 0.82 + hash(seg * 3.1 + j * 5.3 + s) * 0.3;
+            const px2 = cx2 + Math.cos(a2 + rot) * fx * k, py2 = cy2 + Math.sin(a2 + rot) * fy * k;
+            if (s === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
+          }
+          ctx.closePath(); ctx.fillStyle = style; ctx.fill();
+        };
+        face(bx + 3, by + 5, rw, rh, 'rgba(0,0,0,0.4)');
+        face(bx, by, rw, rh, 'rgba(126,112,132,0.5)');
+        face(bx + rw * 0.22, by + rh * 0.3, rw * 0.74, rh * 0.68, 'rgba(0,0,0,0.3)');
+        face(bx - rw * 0.2, by - rh * 0.34, rw * 0.6, rh * 0.44, 'rgba(255,240,216,0.16)');
+        ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 1.6;
+        face(bx, by, rw, rh, 'rgba(0,0,0,0)'); ctx.stroke();
+      }
+    });
+    // Old workings: drifts and shafts cut through the rock long ago, some still lit.
+    // Each is a carved void with a back wall, a floor, prop timbers and rubble, so the
+    // mountain reads as honeycombed rather than as a slab with black holes painted on.
+    // Kept across segments, not per segment: two cuts in neighbouring segments were free to
+    // overlap, and an excavation with a mitred right-angled corner reads as a UI panel.
+    const placed = skels.map(sk => ({ x: sk.cx - sk.L / 2 - V.left, y: sk.cy - sk.L * 0.34, w: sk.L, h: sk.L * 0.62 }));
+    parallaxRange(1, 150, (seg, sx) => {
+     for (let j = 0; j < 6; j++) {
+      const h = hash(seg * 17.3 + j * 41.7);
+      if (h < 0.4) continue;
+      const vert = hash(seg * 6.1 + j * 3.7) > 0.82;
+      const w = vert ? 26 + h * 16 : 62 + h * 130;
+      const hgt = vert ? 90 + hash(seg * 5.5 + j * 13.1) * 150 : 26 + hash(seg * 5.5 + j * 13.1) * 20;
+      // each cut starts somewhere of its own; without this every working in a segment
+      // shares a left edge and the rock reads as a column of stickers
+      const xx = sx + hash(seg * 21.7 + j * 8.9) * 132 - 40;
+      const yy = -820 + hash(seg * 9.1 + j * 27.3) * 1340;
+      // only keep clear of tunnels that actually exist at this point in the course
+      const wx = xx + V.left;
+      let clear = true;
+      for (let k = 0; k < CFG.laneCount; k++) {
+        if (!laneAt(k, wx) && !laneAt(k, wx + w)) continue;
+        // Narrower clearance than the old 30/56, which very nearly closed the gap between
+        // lanes at laneGap 190. Worth noting what this did NOT fix: placement went from 12-21
+        // per frame to 14-22, and the on-screen count did not move at all. The limit is not
+        // this test, it is that yy is spread over 1340 world units against a viewport a
+        // fraction of that, so most candidates are never on screen wherever the camera is.
+        if (yy + hgt > laneY(k) - CFG.tunnelH - 14 && yy < laneY(k) + 24) { clear = false; break; }
+      }
+      // and clear of each other, with rock left between: two dead ends 5px apart is not rock,
+      // and two that touch merge into one stepped black polygon with a mitred corner
+      if (clear) for (const p of placed) {
+        if (xx < p.x + p.w + 56 && xx + w + 56 > p.x && yy < p.y + p.h + 58 && yy + hgt + 58 > p.y) { clear = false; break; }
+      }
+      if (!clear) continue;
+      placed.push({ x: xx, y: yy, w, h: hgt });
+      // Some of these holes are a find instead. It goes HERE, in the same placement pass with
+      // the same spacing rules, so the wall loses one hole for every find it gains -- which is
+      // what "replace some of them" means. The first attempt put finds on rockFace's nodule
+      // grid instead: that is a different system, it replaced bumps rather than holes, the
+      // wall ended up with every hole it started with plus twenty-five ornaments, and workings
+      // drawn afterwards cut bones in half because this pass knew nothing about them.
+      // Only the wide cuts. A vertical one is a shaft, and a shaft with a fossil in it is a
+      // hole with a fossil in it.
+      // THE CULL GOES HERE, BELOW placed.push AND NOT ABOVE IT. Every cut tests itself
+      // against every cut already placed, so skipping a candidate because it is off screen
+      // would free the next one to sit where it could not have sat -- and the rock would
+      // quietly rearrange itself as the camera moved, which is the one failure a still of
+      // the frame you were looking at cannot show. Place them all; draw the visible ones.
+      const shown = inViewLocalX(xx, xx + w) && inViewY(yy, yy + hgt);
+      if (!shown) continue;
+      if (!vert && hash(seg * 13.9 + j * 5.3) < FIND_RATE) {
+        // r 20..34 clipped at 1.06r is 42 to 70 units wide against a 45-unit body: 1.6m to 2.7m,
+        // which is the largest ammonite ever found, six times a screen. 14..22 is 0.55m to 0.86m.
+        drawFind(xx + w / 2, yy + hgt / 2, Math.max(14, Math.min(22, hgt * 0.5)),
+                 FIND_KINDS[Math.floor(hash(seg * 3.7 + j * 11.1) * FIND_KINDS.length)], seg + j * 3.1);
+        continue;
+      }
+      working(xx, yy, w, hgt, seg + j * 0.37, hash(seg * 3.3 + j * 7.9) > 0.62, vert);
+     }
+    });
+    // mineral seams catching what little light there is
+    parallaxRange(1, 300, (seg, sx) => {
+      if (hash(seg * 7.7) < 0.62) return;
+      const yy = -300 + hash(seg * 4.4) * 900, len = 60 + hash(seg * 2.2) * 130;
+      if (!inViewY(yy, yy + 26)) return;          // spread over 900 units, the view holds a fraction
+      ctx.strokeStyle = 'rgba(170,150,190,0.1)'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(sx, yy);
+      ctx.quadraticCurveTo(sx + len * 0.5, yy + 26, sx + len, yy + 14); ctx.stroke();
+    });
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1.6;
+    parallaxRange(1, 140, (seg, sx) => {
+      if (hash(seg * 11) < 0.5) return;
+      const cx = sx + hash(seg) * 100, cy = top + hash(seg * 3) * (bottom - top);
+      if (!inViewY(cy, cy + 62)) return;          // the crack runs 62 units down from cy
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo(cx + 14, cy + 18, cx + 5, cy + 36); ctx.quadraticCurveTo(cx - 3, cy + 48, cx + 6, cy + 62); ctx.stroke();
+    });
+    drawSeamRock();
+    ctx.restore();
   }
-  rockFace(top, bottom);
-  // Whole animals, before the boulder pass, so loose rock is drawn OVER them and the stone
-  // partly buries what it holds. Their boxes are handed to the workings below so no drift is
-  // cut through the middle of one.
-  const skels = placeSkeletons(null);
-  // PLACED in full, DRAWN when visible. The boxes are handed to the workings pass below so
-  // no drift is cut through an animal, so placing fewer of them would move the holes.
-  for (const sk of skels)
-    if (inViewLocalX(sk.cx - V.left - sk.L, sk.cx - V.left + sk.L) && inViewY(sk.cy - sk.L, sk.cy + sk.L))
-      drawSkeleton(sk.cx - V.left, sk.cy, sk.L, sk.kind, sk.seed);
-  parallaxRange(1, 120, (seg, sx) => {
-    for (let j = 0; j < 3; j++) {
-      const h = hash(seg * 13 + j * 101); if (h < 0.6) continue;
-      const bx = sx + hash(seg + j) * 120, by = top + hash(seg * 3 + j * 17) * (bottom - top);
-      const rw = 12 + h * 28, rh = rw * (0.45 + hash(seg * 5 + j) * 0.4);
-      // by is spread over the whole 2240 units of the mass, so most boulders are nowhere
-      // near the view. Six paths of seven vertices each, for nothing. Nothing downstream
-      // reads a boulder, so this one can be culled outright.
-      // 1.12 is the largest facet scale (0.82 + 0.3), and the shadow face sits at +3,+5.
-      if (!inViewLocalX(bx - rw * 1.12, bx + rw * 1.12 + 3)) continue;
-      if (!inViewY(by - rh * 1.12, by + rh * 1.12 + 5)) continue;
-      // A boulder set in the rock. At 10% white on a flat wall these read as grease on the
-      // lens, so the body carries a real dark side, an ink rim and a contact shadow, and
-      // the silhouette is faceted rather than a clean ellipse.
-      const rot = 0.25 + hash(seg * 2.7 + j) * 0.5;
-      const face = (cx2, cy2, fx, fy, style) => {
-        ctx.beginPath();
-        for (let s = 0; s < 7; s++) {
-          const a2 = s / 7 * 6.283, k = 0.82 + hash(seg * 3.1 + j * 5.3 + s) * 0.3;
-          const px2 = cx2 + Math.cos(a2 + rot) * fx * k, py2 = cy2 + Math.sin(a2 + rot) * fy * k;
-          if (s === 0) ctx.moveTo(px2, py2); else ctx.lineTo(px2, py2);
-        }
-        ctx.closePath(); ctx.fillStyle = style; ctx.fill();
-      };
-      face(bx + 3, by + 5, rw, rh, 'rgba(0,0,0,0.4)');
-      face(bx, by, rw, rh, 'rgba(126,112,132,0.5)');
-      face(bx + rw * 0.22, by + rh * 0.3, rw * 0.74, rh * 0.68, 'rgba(0,0,0,0.3)');
-      face(bx - rw * 0.2, by - rh * 0.34, rw * 0.6, rh * 0.44, 'rgba(255,240,216,0.16)');
-      ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 1.6;
-      face(bx, by, rw, rh, 'rgba(0,0,0,0)'); ctx.stroke();
-    }
-  });
-  // Old workings: drifts and shafts cut through the rock long ago, some still lit.
-  // Each is a carved void with a back wall, a floor, prop timbers and rubble, so the
-  // mountain reads as honeycombed rather than as a slab with black holes painted on.
-  // Kept across segments, not per segment: two cuts in neighbouring segments were free to
-  // overlap, and an excavation with a mitred right-angled corner reads as a UI panel.
-  const placed = skels.map(sk => ({ x: sk.cx - sk.L / 2 - V.left, y: sk.cy - sk.L * 0.34, w: sk.L, h: sk.L * 0.62 }));
-  parallaxRange(1, 150, (seg, sx) => {
-   for (let j = 0; j < 6; j++) {
-    const h = hash(seg * 17.3 + j * 41.7);
-    if (h < 0.4) continue;
-    const vert = hash(seg * 6.1 + j * 3.7) > 0.82;
-    const w = vert ? 26 + h * 16 : 62 + h * 130;
-    const hgt = vert ? 90 + hash(seg * 5.5 + j * 13.1) * 150 : 26 + hash(seg * 5.5 + j * 13.1) * 20;
-    // each cut starts somewhere of its own; without this every working in a segment
-    // shares a left edge and the rock reads as a column of stickers
-    const xx = sx + hash(seg * 21.7 + j * 8.9) * 132 - 40;
-    const yy = -820 + hash(seg * 9.1 + j * 27.3) * 1340;
-    // only keep clear of tunnels that actually exist at this point in the course
-    const wx = xx + V.left;
-    let clear = true;
-    for (let k = 0; k < CFG.laneCount; k++) {
-      if (!laneAt(k, wx) && !laneAt(k, wx + w)) continue;
-      // Narrower clearance than the old 30/56, which very nearly closed the gap between
-      // lanes at laneGap 190. Worth noting what this did NOT fix: placement went from 12-21
-      // per frame to 14-22, and the on-screen count did not move at all. The limit is not
-      // this test, it is that yy is spread over 1340 world units against a viewport a
-      // fraction of that, so most candidates are never on screen wherever the camera is.
-      if (yy + hgt > laneY(k) - CFG.tunnelH - 14 && yy < laneY(k) + 24) { clear = false; break; }
-    }
-    // and clear of each other, with rock left between: two dead ends 5px apart is not rock,
-    // and two that touch merge into one stepped black polygon with a mitred corner
-    if (clear) for (const p of placed) {
-      if (xx < p.x + p.w + 56 && xx + w + 56 > p.x && yy < p.y + p.h + 58 && yy + hgt + 58 > p.y) { clear = false; break; }
-    }
-    if (!clear) continue;
-    placed.push({ x: xx, y: yy, w, h: hgt });
-    // Some of these holes are a find instead. It goes HERE, in the same placement pass with
-    // the same spacing rules, so the wall loses one hole for every find it gains -- which is
-    // what "replace some of them" means. The first attempt put finds on rockFace's nodule
-    // grid instead: that is a different system, it replaced bumps rather than holes, the
-    // wall ended up with every hole it started with plus twenty-five ornaments, and workings
-    // drawn afterwards cut bones in half because this pass knew nothing about them.
-    // Only the wide cuts. A vertical one is a shaft, and a shaft with a fossil in it is a
-    // hole with a fossil in it.
-    // THE CULL GOES HERE, BELOW placed.push AND NOT ABOVE IT. Every cut tests itself
-    // against every cut already placed, so skipping a candidate because it is off screen
-    // would free the next one to sit where it could not have sat -- and the rock would
-    // quietly rearrange itself as the camera moved, which is the one failure a still of
-    // the frame you were looking at cannot show. Place them all; draw the visible ones.
-    const shown = inViewLocalX(xx, xx + w) && inViewY(yy, yy + hgt);
-    if (!shown) continue;
-    if (!vert && hash(seg * 13.9 + j * 5.3) < FIND_RATE) {
-      // r 20..34 clipped at 1.06r is 42 to 70 units wide against a 45-unit body: 1.6m to 2.7m,
-      // which is the largest ammonite ever found, six times a screen. 14..22 is 0.55m to 0.86m.
-      drawFind(xx + w / 2, yy + hgt / 2, Math.max(14, Math.min(22, hgt * 0.5)),
-               FIND_KINDS[Math.floor(hash(seg * 3.7 + j * 11.1) * FIND_KINDS.length)], seg + j * 3.1);
-      continue;
-    }
-    working(xx, yy, w, hgt, seg + j * 0.37, hash(seg * 3.3 + j * 7.9) > 0.62, vert);
-   }
-  });
-  // mineral seams catching what little light there is
-  parallaxRange(1, 300, (seg, sx) => {
-    if (hash(seg * 7.7) < 0.62) return;
-    const yy = -300 + hash(seg * 4.4) * 900, len = 60 + hash(seg * 2.2) * 130;
-    if (!inViewY(yy, yy + 26)) return;          // spread over 900 units, the view holds a fraction
-    ctx.strokeStyle = 'rgba(170,150,190,0.1)'; ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.moveTo(sx, yy);
-    ctx.quadraticCurveTo(sx + len * 0.5, yy + 26, sx + len, yy + 14); ctx.stroke();
-  });
-  ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1.6;
-  parallaxRange(1, 140, (seg, sx) => {
-    if (hash(seg * 11) < 0.5) return;
-    const cx = sx + hash(seg) * 100, cy = top + hash(seg * 3) * (bottom - top);
-    if (!inViewY(cy, cy + 62)) return;          // the crack runs 62 units down from cy
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo(cx + 14, cy + 18, cx + 5, cy + 36); ctx.quadraticCurveTo(cx - 3, cy + 48, cx + 6, cy + 62); ctx.stroke();
-  });
-  drawSeamRock();
-  ctx.restore();
   drawSeamFace();
   // Light falls on the mass whatever the mass is made of. These used to sit
   // inside the rock clip, so sunlit exterior brick came out darker than lamplit
@@ -9528,10 +9540,112 @@ function placeSkeletons(push) {
   }
   return out;
 }
+// NO CLIP PER BLOCK. The block grid is laid in WORLD units, so the number of blocks on
+// screen goes with 1/zoom^2 while the canvas stays 960x540: about 129 at act one's zoom of 0.95,
+// about 604 at the cave's widest view of 0.39. Each one was clipped to its own outline to paint
+// a lit crown at 7% and an underside at 16%, and that was 604 of the 724 clips in the frame.
+//
+// Morgan, 2026-09-25: the game "runs fine on my computer" and his partner's goes "very laggy"
+// in act two "when the camera zooms out". His renderer is an M4 Pro through Metal, which absorbs
+// 700 clips a frame without noticing; a laptop GPU does not. The zoomed-out cave was the heaviest
+// scene in the game -- 64,000 canvas calls and 724 clips a frame, against 34,000 and 188 in act
+// one -- and this block grid was most of the difference.
+//
+// THE SHADING STAYS; ONLY THE CLIP GOES. The first version of this faded the crown and underside
+// out below a 50px block, on the reasoning that nobody could see them at 29px. Rendered side by
+// side at 0.39 they were plainly what made the wall read as cobbled rock rather than as outlines
+// on a flat wall, so that was wrong. A block clipped by a rectangle is just a smaller polygon,
+// and cutting a seven-sided polygon by four straight lines is a few lines of arithmetic
+// (rcCut, below). So each facet is cut here, in JavaScript, and filled as a plain polygon: the
+// same shading, and no clip.
+//
+// NOT BATCHED, and that was measured rather than assumed. Collecting every facet into one path
+// and filling it once -- two fills a frame instead of 1,208 -- made rockFace SLOWER on the main
+// thread, 2.05ms a frame against 0.89 for the clipped original, at 0.39 on Morgan's machine.
+// Building that path cost 2.0ms by itself with the fill removed: Chrome's canvas path does not
+// grow in linear time. Filled block by block the same work is 0.78ms, and 3.2ms against 3.7 with
+// the CPU throttled four times.
+//
+// AT EVERY ZOOM. The first version kept the clipped path wherever a block was over 50 pixels,
+// so that act one, act three and the cave's entry drew exactly what they drew before. Those
+// views were paying about 200 clips a frame for it -- 318 at the mill exit -- and the two paths
+// differ only in whether the crown's 7% goes on under the ink line or over its inner half, which
+// the art critic put at under 4 levels in 255 at any zoom. So there is one path. The facets go
+// on after the outline; the underside is black on a black line, where order does not matter.
+// Rendered in software against the old build: at the mill exit 171 pixels move, by at most 2
+// levels in 255; entering the cave at 0.70 and 0.74, at most 7, with the ink steps and the
+// corridor lamps' new edges counted in. The mill exit's clips went from 318 to 96.
+// one polygon cut by one axis-aligned line, Sutherland-Hodgman; keeps the side with v >= c when
+// `above`, v <= c otherwise. src and out are x,y interleaved; returns the new corner count.
+function rcCut(src, n, out, axis, c, above) {
+  let m = 0;
+  for (let i = 0; i < n; i++) {
+    const j = i ? i - 1 : n - 1;
+    const px = src[j * 2], py = src[j * 2 + 1], qx = src[i * 2], qy = src[i * 2 + 1];
+    const pv = axis ? py : px, qv = axis ? qy : qx;
+    const pin = above ? pv >= c : pv <= c, qin = above ? qv >= c : qv <= c;
+    if (pin !== qin) {
+      const t = (c - pv) / (qv - pv);
+      out[m * 2] = px + (qx - px) * t; out[m * 2 + 1] = py + (qy - py) * t; m++;
+    }
+    if (qin) { out[m * 2] = qx; out[m * 2 + 1] = qy; m++; }
+  }
+  return m;
+}
+// A block has at most 7 corners and each of four cuts adds at most one, so 11 points (22
+// numbers) is the most a facet reaches. That holds because no cut line can cross the shallow
+// notch a 7-sided block can have (0.04 of a radius, at about 0.74 of it) -- change the k range
+// or the cuts and it may not, and an overflow here is silent in a browser. Hence 32, not 24.
+// RC_FACE holds the block itself.
+const RC_FACE = new Float64Array(32), RC_A = new Float64Array(32), RC_B = new Float64Array(32);
+// the n-cornered block in RC_FACE, cut to the rectangle [xa,xb] x [ya,yb] and filled
+function rcFacet(n, xa, xb, ya, yb, style) {
+  let m = rcCut(RC_FACE, n, RC_A, 0, xa, true);
+  m = rcCut(RC_A, m, RC_B, 0, xb, false);
+  m = rcCut(RC_B, m, RC_A, 1, ya, true);
+  m = rcCut(RC_A, m, RC_B, 1, yb, false);
+  if (m < 3) return;
+  ctx.beginPath(); ctx.moveTo(RC_B[0], RC_B[1]);
+  for (let i = 1; i < m; i++) ctx.lineTo(RC_B[i * 2], RC_B[i * 2 + 1]);
+  ctx.closePath(); ctx.fillStyle = style; ctx.fill();
+}
+// The blocks' fill and ink, built once rather than printed and parsed twice per block
+// -- 1,200 strings a frame at 0.39, and 0.5ms of rockFace's 2.9 with the CPU throttled four
+// times. n in sixteenths moves an alpha by at most 0.004; in software, at most 3 levels in 255.
+const ROCK_FILLS = [], ROCK_INKS = [];
+for (let i = 0; i <= 16; i++) { ROCK_FILLS.push(`rgba(150,136,164,${0.05 + i / 16 * 0.05})`); ROCK_INKS.push(`rgba(0,0,0,${0.1 + i / 16 * 0.12})`); }
 function rockFace(top, bottom) {
   const S1 = 74;
-  const x0 = Math.floor(V.left / S1) * S1, x1 = V.left + V.vw + S1;
+  // Not left of FAC.seam - 197: a block reaches 80.1 units from its cell (25.9 of wander, 53.7 of
+  // facet, half the ink line) and the rock begins no further left than seam - 116, so every cell
+  // before that is thrown away whole by seamClip(1) -- up to 129 blocks a frame for the last ten
+  // seconds of act one. Still a multiple of S1, so no cell's hashes move.
+  const x0 = Math.max(Math.floor(V.left / S1), Math.floor((FAC.seam - 197) / S1)) * S1, x1 = V.left + V.vw + S1;
   const y0 = Math.floor(top / S1) * S1;
+  // nothing below saves, restores or sets another width, so this holds for the whole grid
+  ctx.lineWidth = 1.1;
+  // BLOCKS A CORRIDOR WILL BURY. carveTunnels runs after this, clipped to the same mountain,
+  // and rockCorridor paints every straight corridor OPAQUE across [laneY - tunnelH, laneY + 1],
+  // so a block lying wholly inside one was filled, inked and shaded for nothing: about 90 of
+  // the 600 at the cave's widest view. Only the
+  // rock side of the seam, which is where splitSeam hands a span to rockCorridor; no further
+  // than rockCorridor's own clamp of 10 units past either edge of the view, because a screen
+  // shake or a slow frame's zoom-out shows more than that and the old blocks show there; and
+  // short of CFG.exit, where block and corridor share the mountain's anti-aliased silhouette.
+  // `pad` is the ink line plus two pixels, so not even a block's anti-aliased edge reaches the
+  // corridor's. Rendered in software against the frame without the skip, at four zooms in two
+  // places: identical to the byte; and a band buried 60 units too tall does show.
+  const buried = [], pad = 1 + 2 / V.zoom;
+  for (let k = 0; k < CFG.laneCount; k++) {
+    // cy0/cy1, not y0/y1: the grid's own y0 seeds every block's hashes
+    const cy1 = laneY(k) + 1, cy0 = laneY(k) - CFG.tunnelH;
+    if (!inViewY(cy0, cy1)) continue;
+    for (const [a0, b0] of LANE_SPANS[k]) {
+      const [a, b] = corridorRock(a0, b0);
+      const lo = Math.max(a, FAC.seam, V.left - 10), hi = Math.min(b, CFG.exit, V.left + V.vw + 10);
+      if (hi - lo > pad * 2) buried.push(lo + pad, hi - pad, cy0 + pad, cy1 - pad);
+    }
+  }
   // The x loop has always started at the camera; the y loop ran the whole 2240 units of
   // the mass, every frame, at every camera position. The view holds H/zoom of that -- about
   // 770 at act one -- so roughly two thirds of this grid was built, faceted, filled, clipped,
@@ -9555,41 +9669,85 @@ function rockFace(top, bottom) {
       const jy = wy + (hash(wx * 0.017 + wy * 0.083) - 0.5) * S1 * 0.7;
       const r1 = 14 + n * 30, r2 = r1 * (0.5 + hash(wx + wy) * 0.5);
       const rot = hash(wx * 0.31 + wy * 0.017) * 3.14;
-      const pts = [];
       const sides = 5 + Math.floor(hash(wx * 0.9 + wy) * 3);
+      // 1.22 is the largest corner reach (k tops out at 0.72 + 0.5)
+      const bx0 = jx + V.left - r1 * 1.22, bx1 = jx + V.left + r1 * 1.22, by0 = jy - r2 * 1.22, by1 = jy + r2 * 1.22;
+      let hid = false;
+      for (let i = 0; i < buried.length && !hid; i += 4)
+        hid = bx0 >= buried[i] && bx1 <= buried[i + 1] && by0 >= buried[i + 2] && by1 <= buried[i + 3];
+      if (hid) continue;
+      // the block filled and inked on one path, then its lit crown and its shaded underside --
+      // the block cut to two rectangles offset along the sun axis -- each filled without a clip
+      ctx.beginPath();
       for (let s = 0; s < sides; s++) {
         const a = rot + s / sides * 6.283;
         const k = 0.72 + hash(wx * 0.5 + wy * 0.7 + s) * 0.5;
-        pts.push([jx + Math.cos(a) * r1 * k, jy + Math.sin(a) * r2 * k]);
+        const px = jx + Math.cos(a) * r1 * k, py = jy + Math.sin(a) * r2 * k;
+        RC_FACE[s * 2] = px; RC_FACE[s * 2 + 1] = py;
+        if (s) ctx.lineTo(px, py); else ctx.moveTo(px, py);
       }
-      const poly = () => { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let s = 1; s < pts.length; s++) ctx.lineTo(pts[s][0], pts[s][1]); ctx.closePath(); };
-      // the block, then its lit crown and its shaded underside, offset along the sun axis
-      ctx.fillStyle = `rgba(150,136,164,${0.05 + n * 0.05})`; poly(); ctx.fill();
-      ctx.save(); poly(); ctx.clip();
-      ctx.fillStyle = 'rgba(255,240,214,0.07)';
-      ctx.fillRect(jx - r1, jy - r2, r1 * 2, r2 * 0.75);
-      ctx.fillStyle = 'rgba(0,0,0,0.16)';
-      ctx.fillRect(jx - r1 * 0.2, jy + r2 * 0.1, r1 * 2, r2);
-      ctx.restore();
-      ctx.strokeStyle = `rgba(0,0,0,${0.1 + n * 0.12})`; ctx.lineWidth = 1.1; poly(); ctx.stroke();
+      ctx.closePath();
+      const q = Math.round(n * 16);
+      ctx.fillStyle = ROCK_FILLS[q]; ctx.fill();
+      ctx.strokeStyle = ROCK_INKS[q]; ctx.stroke();
+      rcFacet(sides, jx - r1, jx + r1, jy - r2, jy - r2 * 0.25, 'rgba(255,240,214,0.07)');
+      rcFacet(sides, jx - r1 * 0.2, jx + r1 * 1.8, jy + r2 * 0.1, jy + r2 * 1.1, 'rgba(0,0,0,0.16)');
     }
   }
 }
+// HALF THE VERTICES WHEN ZOOMED OUT -- the same fault as rockFace one function up. A vertex
+// every 48 world units across a view that is 960/zoom wide came to 55 per edge at the cave's
+// 0.39, on three times as many bands as act one shows: 10,900 calls a frame for a wobble whose
+// main term is 6 world units, which is 2.3 screen pixels at that zoom.
+//
+// A THRESHOLD, NOT A SCALE, and the first version got this wrong. It stepped by 48 / zoom, on
+// the reasoning that "zoom never exceeds 1, so at full zoom this is 48". True only at exactly
+// 1.0 -- and the cave's first views, measured at 0.70 and 0.74, came to 68.6 and 64.9, so
+// every strata edge moved in views that were supposed to be untouched: 1.8% and 3.9% of the
+// frame, found by rendering the old and new builds on one seeded scene and comparing pixels.
+// Two levels instead. At 0.6 and above nothing changes. Below it, a vertex every 96 world units
+// ON A GRID FIXED TO THE WORLD. The 48 grid is fixed to the screen (x = -60 + i * step), so the
+// wobble slides under its vertices as the camera moves -- up to 0.93 world units of swim at 48,
+// 0.65 px at 0.70, which is what every view above 0.6 has always had. At
+// 96 the 170-unit term gets 1.8 vertices a period and aliases, and the art critic worked out
+// that the aliased ripple ran AGAINST the scroll, faster than the camera: motion no still can
+// show. Fixed to the world, whatever shape the sampling makes is fixed to the rock and travels
+// with it. Both edges run on the same indices, so the band closes off screen; the old return
+// loop started off the forward grid and, at 96, could end inside the view, cutting the left
+// end of every band on a diagonal.
+//
+// At the switch an edge moves by up to 3.2 world units, 1.9 pixels at 0.6. The camera never
+// rests near 0.6 -- it settles at 0.696 with three lanes and 0.549 with four -- and crosses
+// it while every band is already moving with the zoom.
+const STRATA_LOD = 0.6;
 function strataBand(y, h, k) {
+  if (V.zoom < STRATA_LOD) {
+    const step = 96, i0 = Math.floor((V.left - 60) / step), i1 = Math.ceil((V.left + V.vw + 60) / step);
+    ctx.beginPath();
+    for (let i = i0; i <= i1; i++) {
+      const wx = i * step, py = y + Math.sin(wx * 0.011 + k) * 6 + Math.sin(wx * 0.037 + k * 2) * 2;
+      if (i === i0) ctx.moveTo(wx - V.left, py); else ctx.lineTo(wx - V.left, py);
+    }
+    for (let i = i1; i >= i0; i--) { const wx = i * step; ctx.lineTo(wx - V.left, y + h + Math.sin(wx * 0.011 + k + 1) * 6 + Math.sin(wx * 0.031 + k) * 2); }
+    ctx.closePath(); ctx.fill();
+    return;
+  }
   const step = 48, x0 = -60, x1 = V.vw + 60;
   ctx.beginPath(); ctx.moveTo(x0, y);
   for (let x = x0; x <= x1 + step; x += step) { const wx = x + V.left; ctx.lineTo(x, y + Math.sin(wx * 0.011 + k) * 6 + Math.sin(wx * 0.037 + k * 2) * 2); }
   for (let x = x1 + step; x >= x0; x -= step) { const wx = x + V.left; ctx.lineTo(x, y + h + Math.sin(wx * 0.011 + k + 1) * 6 + Math.sin(wx * 0.031 + k) * 2); }
   ctx.closePath(); ctx.fill();
 }
+// A corridor is a hole cut in rock, so it cannot exist where there is no rock. Act three
+// is open country: drawn unclipped, every enclosure lane painted a black tunnel interior
+// across the sky. Clip each span to the mountain instead of skipping the lane, because
+// lane 0 runs the whole world and only part of it is underground. carveTunnels paints
+// these spans and rockFace skips the blocks they will bury, both from this one function.
+const corridorRock = (a, b) => [Math.max(a, CFG.entrance - 60), Math.min(b, CFG.exit + 60)];
 function carveTunnels() {
   const th = CFG.tunnelH;
   ctx.fillStyle = '#17121c';
-  // A corridor is a hole cut in rock, so it cannot exist where there is no rock. Act three
-  // is open country: drawn unclipped, every enclosure lane painted a black tunnel interior
-  // across the sky. Clip each span to the mountain instead of skipping the lane, because
-  // lane 0 runs the whole world and only part of it is underground.
-  const rock = (a, b) => [Math.max(a, CFG.entrance - 60), Math.min(b, CFG.exit + 60)];
+  const rock = corridorRock;
   // ...and +-60 is a guess at where that rock ends. The flank leans left as it climbs, so at
   // the exit the clamp paints interior 14 units past the silhouette at the floor and 36 at
   // the ceiling. Clip to the mountain itself, as archway does, so the two cannot disagree.
@@ -9610,12 +9768,13 @@ function carveTunnels() {
     const sx = wx - V.left;
     const fl = 0.86 + 0.1 * Math.sin(S.t * 9 + wx) + 0.06 * Math.sin(S.t * 23 + wx * 1.7);
     const R = 200 * fl;
-    ctx.save();
-    ctx.beginPath(); ctx.rect(sx - 240, y - 1, 480, CFG.tunnelH + 2); ctx.clip();
+    // The glow keeps the old clip's span, [y - 1, y + tunnelH + 1]. That used to be a clip, one
+    // per lamp on screen; a rectangle clipping a rectangle is just the smaller rectangle. fl runs
+    // 0.70..1.02, so R is 140..204: the old clip's +-240 never bound in x, and y + 12 +- R always
+    // reaches past both of its edges in y. So the fill is exactly the old clip's y span.
     const gl = ctx.createRadialGradient(sx, y + 12, 4, sx, y + 12, R);
     gl.addColorStop(0, `rgba(255,190,90,${0.3 * fl})`); gl.addColorStop(0.5, `rgba(255,190,90,${0.1 * fl})`); gl.addColorStop(1, 'rgba(255,190,90,0)');
-    ctx.fillStyle = gl; ctx.fillRect(sx - R, y + 12 - R, R * 2, R * 2);
-    ctx.restore();
+    ctx.fillStyle = gl; ctx.fillRect(sx - R, y - 1, R * 2, CFG.tunnelH + 2);
     ctx.fillStyle = INK; ctx.fillRect(sx - 2, y - 1, 4, 10); ctx.fillRect(sx - 6.2, y + 5.8, 12.4, 15.4);
     ctx.fillStyle = '#6e6e7a'; ctx.fillRect(sx - 1, y, 2, 8);
     ctx.fillStyle = '#3a2f1c'; ctx.fillRect(sx - 4, y + 8, 8, 10);
@@ -13719,22 +13878,23 @@ function lampPools(lane) {
   // Same generator as the lamp bodies, the embers and the runners' shadows, so a pool cannot
   // land where there is no flame. The lamps stop at the mouth and so must their pools: a warm
   // radial on open grass in daylight turned turf from green-dominant to red-dominant.
+  // NO CLIP. There was one per lamp, made WIDER than the gradient's own radius after an earlier
+  // version cut the ramp at a bottom edge of y+18 -- a bar ending dead at a quarter of full
+  // strength, which is the fill-narrower-than-its-gradient fault this file records twice already. Once widened it contained the whole fill, [sx-126, sx+126] x
+  // [y-123, y+129] inside [sx-146, sx+146] x [y-130, y+146], so it removed no pixel at all and
+  // cost a GPU clip for every lamp on screen: about 38 in the zoomed-out cave. R is one number,
+  // read by the gradient and the fill. One save for the loop keeps the gradient from leaking.
+  ctx.save();
   for (const lx of lampsIn(lane, V.left - 200, V.left + V.vw + 200, [])) {
     if (!inView(lx, 140)) continue;
     const sx = lx - V.left;
-    ctx.save();
-    // The clip has to be WIDER than the gradient's own radius, not narrower. At a bottom edge
-    // of y+18 the 126-unit ramp was cut at 0.247 alpha -- a 320-unit bar terminating dead at a
-    // quarter of full strength, which is the fill-narrower-than-its-gradient fault this file
-    // records twice already. R is one number, read by the clip, the gradient and the fill.
     const R = 126;
-    ctx.beginPath(); ctx.rect(sx - R - 20, y - CFG.tunnelH, (R + 20) * 2, CFG.tunnelH + R + 20); ctx.clip();
     const mill = inMill(lx), c = mill ? '255,214,152' : '255,200,110';
     const g = ctx.createRadialGradient(sx, y + 3, 4, sx, y + 3, R);
     g.addColorStop(0, `rgba(${c},${mill ? 0.44 : 0.3})`); g.addColorStop(0.45, `rgba(${c},${mill ? 0.12 : 0.1})`); g.addColorStop(1, `rgba(${c},0)`);
     ctx.fillStyle = g; ctx.fillRect(sx - R, y + 3 - R, R * 2, R * 2);
-    ctx.restore();
   }
+  ctx.restore();
 }
 // The doorstep. `dir` is +1 when the inside lies to the right of wx, -1 when it lies to the left.
 function threshold(wx, y, dir) {

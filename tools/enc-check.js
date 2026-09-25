@@ -169,13 +169,19 @@ eval(src + `
   //    It EXERCISES lampPools now rather than asking the source a question: park the view
   //    in act three, count what the function actually draws, and require it to be nothing.
   //    A guard that is deleted, inverted or moved then shows up here.
+  //
+  //    It counts the pool's own RADIAL GRADIENT. It used to count ctx.save(), which was one per
+  //    pool while every pool clipped itself -- and when the clip went (it contained the whole
+  //    fill, so it removed no pixel and cost a GPU clip per lamp) the one save left around each
+  //    lane's loop read as six pools drawn in daylight, with nothing drawn at all.
   let pools = 0;
   {
-    const keep = { left: V.left, vw: V.vw, zoom: V.zoom }, realSave = ctx.save;
-    V.left = CFG.exit + 600; V.vw = 2119; V.zoom = 0.453;
-    ctx.save = function () { pools++; return realSave.apply(this, arguments); };
+    const keep = { left: V.left, vw: V.vw, zoom: V.zoom }, realGrad = ctx.createRadialGradient;
+    // ENC_POOLS_AT=8000 parks it inside the cave instead, which must FAIL (38 pools): the falsifier
+    V.left = (process.env.ENC_POOLS_AT ? +process.env.ENC_POOLS_AT : CFG.exit + 600); V.vw = 2119; V.zoom = 0.453;
+    ctx.createRadialGradient = function () { pools++; return realGrad.apply(this, arguments); };
     try { for (let k = 0; k < CFG.laneCount; k++) lampPools(k); }
-    finally { ctx.save = realSave; V.left = keep.left; V.vw = keep.vw; V.zoom = keep.zoom; }
+    finally { ctx.createRadialGradient = realGrad; V.left = keep.left; V.vw = keep.vw; V.zoom = keep.zoom; }
   }
   // 6. The near plane must never rise over the crowd. Morgan's one constraint on it was
   //    "not something that would hide the view", and the first version broke it by its own
