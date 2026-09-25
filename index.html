@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '191 the title screen says what this is';
+const BUILD = '192 no gates, no hint line, tighter rooms';
 // The title screen no longer prints it -- Morgan asked for the build stamp and the best-run
 // line off the front of the game. This keeps it one keystroke away in a console, which is
 // what it was for between sessions. The delivery check greps the SOURCE and is unaffected.
@@ -44,6 +44,31 @@ const CFG = {
   // longer run-up to it.
   catchTop: 55,           // was 110, i.e. a 300 px/s sprint against a 110 px/s walk
   catchEase: 2.4,
+  // EVERY `warn` IN THE ROOM TABLE IS 45% SHORTER THAN IT WAS. Morgan, 2026-09-25: "the
+  // distance that the player has to unlock a room and clear the minigame is sometimes too
+  // long ... Allowing the minigame to triger from too far makes it too easy for the player and
+  // that seems to be especially true in act 2 and 3."
+  //
+  // He had the acts right, and the table says why: act one is ten rooms at this floor and one
+  // at 840, while acts two and three carry every large value -- 480, 500, 620, 840, 1000, 1350.
+  // Cut by verb rather than by act, so all the ditches still share one number.
+  //
+  // MEASURED, NOT GUESSED, because this is the dial that can make a room unfinishable.
+  // tools/room-check.js prices the keys an optimal player needs against the road they get,
+  // and the tightest room in the game -- a difficulty-4 ditch, ten alternating presses --
+  // goes from 4.50s of road at 2.22 keys/sec to about 3.1s at 3.2/s, and the worst rate
+  // anywhere is 3.59/s. At 0.45 instead of 0.55 that ditch reaches 2.57s and 3.90/s, also
+  // clear of the ceiling; that is the next notch if this is still too easy.
+  //
+  // FOUR RUNS, NOT ONE, because this tool measures the road from a real run and the road
+  // moves: one run in four reported a difficulty-1 conveyor at 2.48 keys/sec and called it
+  // hard, and the other three put the same room at 2.17-2.26 and called it ok. That room's
+  // own warn is 240 and was not touched by any of this. The spread is the instrument, not the
+  // change -- and the conveyor has been quoted to Morgan at 2.75/s before and left as it is,
+  // so even the outlier is easier than the state he already ruled on.
+  //
+  // The ceiling is not theoretical: a wiring room once asked 6.4 keys/sec and could not be
+  // solved. Impossible is a bug; hard is Morgan's call and is quoted rather than padded away.
   armDist: 240,           // the FLOOR: a room is never armed later than this (or its own warn)
   // How much of the gap between that floor and the far edge of the view a room waits out
   // before it can be opened. Morgan asked for this: a room used to arm the instant it came
@@ -305,7 +330,19 @@ const CFG = {
     { x: 16500, from: 2, to: 3, merge: 19550, split: 0.5 },
     { x: 17600, from: 3, to: 4, merge: 19330, split: 0.5 },
   ],
-  gates: [3150, 8150, 14600],
+  // NO HOLD GATES. Morgan, 2026-09-25: "i dont really like them any more and i never use
+  // them." They stood at 3150, 8150 and 14600, armed 140 ahead, and ENTER dropped one for up
+  // to 8 seconds.
+  //
+  // EMPTIED RATHER THAN EXCISED, deliberately. The machinery is threaded through eleven
+  // places -- the key handler, two draw passes, the update loop, the course track's markers,
+  // the hint line, the cave placement's clearance test, and releaseGate, which the SEAM also
+  // calls for the cave door and which therefore has to survive. With no x values the array is
+  // empty, so every loop is a no-op, toggleGate finds nothing and returns, and drawGate is
+  // never reached. Deleting a function whose callers are spread that wide is how this project
+  // has shipped a freeze before: a call to something that no longer exists throws inside
+  // draw(), and the loop stops rescheduling. Putting the three numbers back turns them on.
+  gates: [],
   gateArm: 140, holdMax: 8,
   keepOnScreen: 10,       // a live runner is never pushed closer than this to the left edge; the camera waits instead
   // everyone in the crew runs every time; who they end up being is shuffled each run
@@ -351,7 +388,7 @@ const CFG = {
     // Do not read 0.95 as a property of 6900: cave lane 2's span starts at fork 7000 +
     // rampLen 200 = 7200, and the zoom sample looks ahead to x + 250 = 7150, so it misses
     // by FIFTY UNITS. Move a room here 50 further on and its sampled zoom drops to 0.70.
-    { x: 6900,  lane: 0, type: 'calculation', diff: 2, warn: 500 },
+    { x: 6900,  lane: 0, type: 'calculation', diff: 2, warn: 280 },
     // The sweeper's warn was justified by arithmetic about a room that no longer exists. The
     // old note here said the demo runs TWICE and totals 5.60 / 7.00 / 8.40s, and sized 1350
     // against that. It is one round now: SWEEP.lead 0.40 + SWEEP.len 3 x SWEEP.flash 0.30 =
@@ -364,7 +401,7 @@ const CFG = {
     // runner 6250 to 8140. Cutting it to ~620 would reclaim both and still cover the worst
     // play measured below -- but that is a straight difficulty increase on a tuned room
     // (13.07s down to 6.44s), so it is Morgan's call and not a tidy-up. Quote him the number.
-    { x: 7600,  lane: 0, type: 'sweeper',     diff: 2, warn: 1350 },
+    { x: 7600,  lane: 0, type: 'sweeper',     diff: 2, warn: 740 },
     // ---- back to act one, the mill.
     //
     // This slot held the worn-key keypad until 2026-09-22, when it was retired. A second
@@ -381,24 +418,24 @@ const CFG = {
     // time to read the colours. 840px is 7.64s, about 2.1 a second at worst, which leaves a
     // moment to look at it. Undo by deleting warn. Numbers from tools/room-check.js, which
     // DERIVES them by driving the verb -- do not restate them here without re-running it.
-    { x: 5800,  lane: 0, type: 'wiring',   diff: 3, warn: 840 },
+    { x: 5800,  lane: 0, type: 'wiring',   diff: 3, warn: 460 },
     { x: 2200,  lane: 0, type: 'rope',    diff: 1 },
     { x: 3300,  lane: 0, type: 'winch',   diff: 2 },
     { x: 3450,  lane: 1, type: 'bridge',  diff: 2 },
     { x: 4400,  lane: 2, type: 'rope',    diff: 2 },
     { x: 4600,  lane: 0, type: 'crusher', diff: 2 },
     { x: 4900,  lane: 1, type: 'rickety', diff: 2 },
-    { x: 6200, lane: 0, type: 'ditch', diff: 3, warn: 480 },
-    { x: 8300, lane: 0, type: 'mantrap', diff: 3, warn: 620 },
-    { x: 8500, lane: 1, type: 'calculation', diff: 3, warn: 500 },
-    { x: 8700, lane: 2, type: 'ditch', diff: 3, warn: 480 },
-    { x: 8900, lane: 3, type: 'calculation', diff: 3, warn: 500 },
-    { x: 9100, lane: 4, type: 'mantrap', diff: 3, warn: 620 },
-    { x: 9300, lane: 5, type: 'sweeper', diff: 3, warn: 1350 },
-    { x: 9600, lane: 0, type: 'ditch', diff: 4, warn: 480 },
-    { x: 9900, lane: 1, type: 'ditch', diff: 4, warn: 480 },
-    { x: 10200, lane: 2, type: 'mantrap', diff: 4, warn: 620 },
-    { x: 11600, lane: 0, type: 'sweeper', diff: 5, warn: 1350 },
+    { x: 6200, lane: 0, type: 'ditch', diff: 3, warn: 260 },
+    { x: 8300, lane: 0, type: 'mantrap', diff: 3, warn: 340 },
+    { x: 8500, lane: 1, type: 'calculation', diff: 3, warn: 280 },
+    { x: 8700, lane: 2, type: 'ditch', diff: 3, warn: 260 },
+    { x: 8900, lane: 3, type: 'calculation', diff: 3, warn: 280 },
+    { x: 9100, lane: 4, type: 'mantrap', diff: 3, warn: 340 },
+    { x: 9300, lane: 5, type: 'sweeper', diff: 3, warn: 740 },
+    { x: 9600, lane: 0, type: 'ditch', diff: 4, warn: 260 },
+    { x: 9900, lane: 1, type: 'ditch', diff: 4, warn: 260 },
+    { x: 10200, lane: 2, type: 'mantrap', diff: 4, warn: 340 },
+    { x: 11600, lane: 0, type: 'sweeper', diff: 5, warn: 740 },
     // ---- act three -------------------------------------------------------------
     // The warn values are not decoration: tools/room-check.js works out what each room
     // costs an optimal player against the road CFG.scroll gives them, and the mantrap
@@ -444,10 +481,10 @@ const CFG = {
     // LISTED BEFORE THE DITCH, though it changes nothing in a real run. S.rooms keeps this
     // order and hotkeys are handed out lowest-first in it, so anything that arms both on one
     // frame -- a dev flag, a check -- numbered the ditch 1 and this 2, the road backwards.
-    { x: 13790, lane: 0, type: 'calculation', diff: 4, warn: 450 },
-    { x: 14000, lane: 0, type: 'ditch', diff: 4, warn: 480 },
-    { x: 16000, lane: 2, type: 'wiring', diff: 4, warn: 840 },
-    { x: 16900, lane: 3, type: 'sweeper', diff: 4, warn: 1350 },
+    { x: 13790, lane: 0, type: 'calculation', diff: 4, warn: 250 },
+    { x: 14000, lane: 0, type: 'ditch', diff: 4, warn: 260 },
+    { x: 16000, lane: 2, type: 'wiring', diff: 4, warn: 460 },
+    { x: 16900, lane: 3, type: 'sweeper', diff: 4, warn: 740 },
     { x: 16200, lane: 1, type: 'winch', diff: 4 },
     // 15600 held the other worn-key keypad. It is not simply deleted, and the reason is
     // measured: half the crowd (51% of runner-frames, act three) is on lane 0, and taking
@@ -466,8 +503,8 @@ const CFG = {
     // counts are untouched, the lane-0 gap goes back to 1630, and the room lands where it is
     // actually met: 18300 was lane 4, which carries 2% of the crowd, against lane 0's 51%.
     // The other lane-0 calculations are at 13790, 1810 before this one, and 18800, 3200 after.
-    { x: 15600, lane: 0, type: 'calculation', diff: 5, warn: 500 },
-    { x: 17400, lane: 2, type: 'ditch', diff: 4, warn: 480 },
+    { x: 15600, lane: 0, type: 'calculation', diff: 5, warn: 280 },
+    { x: 17400, lane: 2, type: 'ditch', diff: 4, warn: 260 },
     // THE MISHMASH. Act three used to hold only the four enclosure types, so the last act
     // introduced four new rooms and brought nothing back. Morgan asked for all of them
     // combined here, and these are the families that can stand in open country without
@@ -488,16 +525,16 @@ const CFG = {
     // ENC.inside, and drawMachineRoom reads nothing but room.x, V.left and the lane -- which
     // is also why the enclosure's own types cannot make the reverse trip into act two.
     { x: 18900, lane: 4, type: 'winch', diff: 5 },
-    { x: 18600, lane: 3, type: 'wiring', diff: 5, warn: 840 },
-    { x: 17200, lane: 0, type: 'mantrap', diff: 5, warn: 620 },
+    { x: 18600, lane: 3, type: 'wiring', diff: 5, warn: 460 },
+    { x: 17200, lane: 0, type: 'mantrap', diff: 5, warn: 340 },
     { x: 18400, lane: 2, type: 'gears', diff: 5 },
-    { x: 19300, lane: 3, type: 'mantrap', diff: 5, warn: 620 },
-    { x: 19000, lane: 1, type: 'sweeper', diff: 5, warn: 1350 },
+    { x: 19300, lane: 3, type: 'mantrap', diff: 5, warn: 340 },
+    { x: 19000, lane: 1, type: 'sweeper', diff: 5, warn: 740 },
     { x: 19400, lane: 2, type: 'rickety', diff: 5 },
-    { x: 18800, lane: 0, type: 'calculation', diff: 5, warn: 500 },
+    { x: 18800, lane: 0, type: 'calculation', diff: 5, warn: 280 },
     // the wall across everything. Its warning is long because it is the one room the
     // whole act has been walking toward and a player should see it coming.
-    { x: 20430, lane: 0, type: 'wall', diff: 5, warn: 1000 },
+    { x: 20430, lane: 0, type: 'wall', diff: 5, warn: 550 },
   ],
   // THE LAST ROOM. Linh's finale, transplanted from her LastRoom branch (486d00e).
   // x stays at OUR 15600 -- her branch carries a playtest x of 2100 with laneCount 1 and no
@@ -3248,7 +3285,9 @@ window.addEventListener('keydown', e => {
       if (room) S.active = room;
       return;
     }
-    if (k === 'ENTER') { toggleGate(); return; }
+    // ENTER was the hold gate's key and there are no gates any more. Left unbound rather
+    // than pointed at a function that can only return: a key that visibly does nothing is
+    // better than one that looks like it might.
     if (k === 'ESCAPE') { S.active = null; return; }
     // SPACE with no room open does nothing else, so it is his while he is talking
     if (k === ' ' && !S.active && S.boss && !S.boss.gone) { bossAdvance(); return; }
@@ -16948,6 +16987,60 @@ function drawBubbles() {
   }
   ctx.globalAlpha = 1; ctx.textAlign = 'left';
 }
+// The two counters the run is actually about, drawn as a stacked chip rather than a lozenge:
+// a small tracked label over a big number, on a bevelled plate with a coloured spine.
+//
+// Morgan, 2026-09-25, asked for these to "look a bit more premium". What reads as premium at
+// this size is hierarchy and restraint, not ornament: the NUMBER is the thing being read, so
+// it gets the size and the near-white, and the word gets 9px, letter-spacing and a grey. The
+// old pill gave both the same 14px weight, which is why it read as a debug readout.
+//
+// Letter-spacing is drawn per character rather than set with ctx.letterSpacing, which Chrome
+// has and Safari did not until recently -- this ships to a browser on itch, not to mine.
+function tracked(s, x, y, px, tr, fill) {
+  ctx.font = 'bold ' + px + 'px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = fill;
+  let cx = x;
+  for (const ch of s) { ctx.fillText(ch, cx, y); cx += ctx.measureText(ch).width + tr; }
+  return cx - tr - x;
+}
+function trackedW(s, px, tr) {
+  ctx.font = 'bold ' + px + 'px ui-monospace, Menlo, monospace';
+  let w = 0;
+  for (const ch of s) w += ctx.measureText(ch).width + tr;
+  return w - tr;
+}
+function stat(x, label, value, color) {
+  // ONE ROW, NOT TWO. Stacked, a 9px label over a 19px number needs about 34 units of type
+  // and the HUD bar is 40 tall -- BOSS.y is 42 because that is the bar's real lower edge, so
+  // the bar cannot grow without moving the proprietor. Side by side the same hierarchy fits
+  // with air around it, and a label-then-figure row is what a gauge looks like anyway.
+  const lw = trackedW(label, 9.5, 1.7);
+  ctx.font = 'bold 18px ui-monospace, Menlo, monospace';
+  const vw = ctx.measureText(String(value)).width;
+  const w = 9 + 3 + 9 + lw + 10 + vw + 12;
+  const y0 = 6, h = 28;
+  // plate: a shallow vertical gradient and a top highlight, so it has an edge without a border
+  const g = ctx.createLinearGradient(0, y0, 0, y0 + h);
+  g.addColorStop(0, 'rgba(255,255,255,0.11)');
+  g.addColorStop(1, 'rgba(255,255,255,0.035)');
+  ctx.fillStyle = g; roundRect(x, y0, w, h, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.10)'; roundRect(x + 1, y0 + 0.5, w - 2, 1.2, 0.6); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 1; roundRect(x + 0.5, y0 + 0.5, w - 1, h - 1, 7); ctx.stroke();
+  // the spine, with a little of its own light on the plate beside it
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const gl = ctx.createLinearGradient(x + 9, 0, x + 26, 0);
+  gl.addColorStop(0, color + '44'); gl.addColorStop(1, color + '00');
+  ctx.fillStyle = gl; ctx.fillRect(x + 9, y0 + 2, 26, h - 4);
+  ctx.restore();
+  ctx.fillStyle = color; roundRect(x + 9, y0 + 5, 3, h - 10, 1.5); ctx.fill();
+  // The two baselines are set apart on purpose: 9.5px caps and 18px digits centred on the
+  // same line do not look centred, because digits sit on the baseline and caps hang above it.
+  tracked(label, x + 21, y0 + 18, 9.5, 1.7, 'rgba(198,206,222,0.66)');
+  ctx.font = 'bold 18px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = '#f4f7fb'; ctx.fillText(String(value), x + 21 + lw + 10, y0 + 20);
+  return x + w + 9;
+}
 function pill(x, label, value, color) {
   ctx.font = 'bold 14px monospace';
   const w = ctx.measureText(`${label} ${value}`).width + 22;
@@ -16994,10 +17087,12 @@ function drawHud() {
   else if (speaking && S.seam.phase === 'boss') { x = pill(x, 'RUNNING', String(S.runners.filter(r => r.state === 'run').length), '#8affbc'); x = pill(x, 'SHIFT', 'stopped at the cave door', '#5ce1ff'); }
   else if (speaking) x = pill(x, 'SHIFT', 'waiting at the doors', '#5ce1ff');
   else {
-    x = pill(x, 'RUNNING', alive, '#2ecc71');
-    x = pill(x, 'LOST', S.stats.dead, '#ff6b6b');
-    x = pill(x, 'FINISHED', S.stats.arrived, '#f1c40f');
-    if (S.streak > 1) x = pill(x, 'CLEAN', `x${S.streak}`, '#5cff9a');
+    // FINISHED and CLEAN are gone -- Morgan asked for both off. FINISHED reads 0 for most of
+    // a run and then duplicates what the end screen says anyway; CLEAN was a streak bonus the
+    // bar was the only place to see. S.streak and S.stats.arrived are both still kept, so the
+    // end screen and the rank are unaffected.
+    x = stat(x, 'RUNNING', alive, '#3ddc84');
+    x = stat(x, 'LOST', S.stats.dead, '#ff6b6b');
     // the speed-up while it is on, with its number while it eases so the change is seen
     if (S.pace >= 1.05) x = pill(x, 'LINE SPEED', `x${S.pace.toFixed(1)}`, '#ff9a3c');
   }
@@ -17037,25 +17132,16 @@ function drawHud() {
   // both hintBar calls fired in one frame -- the 0.6 wash laid twice, and the road's one line
   // printed between the drill's two. It was also a lie: from phase 'gather' on, keydown hits
   // `if (seamHolding()) return;` and discards ESCAPE, ENTER and every digit this line names.
-  if (S.mode === 'play' && !drilling && !seamHolding()) {
-    let hint = (ENC.inside(S.cam + CFG.packFront) ? 'the land is being fenced \u2014 keep them moving' : 'watch the tunnels ahead');
-    const armed = S.rooms.filter(r => r.state === 'armed');
-    const gate = S.gates.find(g => g.state === 'armed' || g.state === 'holding');
-    // The aside goes in hintBar's own `note` slot rather than being glued onto the text.
-    // Concatenated, it was an ordinary run of words: the wrap broke "(ESC to close)" across
-    // a line, which reads as a typesetting accident, and both halves came out at full
-    // instruction brightness because only `note` is dimmed.
-    let note = null;
-    if (S.active) { hint = VERBS[S.active.verb].hint; note = '(ESC to close)'; }
-    else if (armed.length) hint = `press ${armed.map(r => r.hot).sort().join(' or ')} to open a flashing room`;
-    if (gate) note = (note ? note + '   ' : '') + (gate.state === 'holding' ? 'ENTER releases the gate' : 'ENTER holds the crowd at the gate');
-    // And a sizeFrom, for the same reason the drill has one: without it the band changes
-    // height the instant a room opens or closes, so the bottom of the screen jumps 20px
-    // every time -- which is the flicker that argument exists to prevent. The longest line
-    // the road can assemble is the longest verb hint, its aside, and the gate clause.
-    const longestHint = Object.values(VERBS).reduce((a, v) => (v.hint && v.hint.length > a.length ? v.hint : a), '');
-    hintBar(hint, note, longestHint + '    (ESC to close)   ENTER holds the crowd at the gate');
-  }
+  // THE ROAD'S HINT LINE IS GONE. Morgan, 2026-09-25: "remove all the instructions/text i see
+  // cyclying constantly at the bottom of the screen, the user doesnt need or have time to read
+  // that text." He is right about the time: it changed on every arm, every open and every
+  // close, and the moment it had something specific to say -- a verb's instruction -- is the
+  // moment the player is already pressing keys and cannot spare an eye for the bottom of the
+  // screen.
+  //
+  // The DRILL's band below is kept, and that is what makes this affordable: it is the one
+  // place instructions are read rather than glanced at, it runs every mini-game before the
+  // shift walks out, and it is the same reason the title screen could give its rules up.
   // the drill runs during the intro and needs the same line: what this room wants, and
   // the way out for anyone who has played before
   if (drilling && S.drill.room) {
