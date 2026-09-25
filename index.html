@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '187 the recap music half a second out';
+const BUILD = '188 one crowd, one count';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -409,9 +409,9 @@ const CFG = {
     // hundredths of a second to spare. Three a second still never cuts through, which is
     // the point of the room. Model the cost if you must, but drive the verb before you
     // trust the number.
-    // Nothing between the mouth at 12290 and the ditch at 14000: the crowd comes out into
-    // open country and runs through it unthreatened, because the stretch has to be worth
-    // losing. It is also where the proprietor has his last word out of the rock (BOSS_OPEN),
+    // Nothing between the mouth at 12290 and the first room -- the wages terminal at 13790
+    // since 2026-09-25, the ditch at 14000 before that: the crowd comes out into open country
+    // and runs through it unthreatened, because the stretch has to be worth losing. It is also where the proprietor has his last word out of the rock (BOSS_OPEN),
     // and he ducks and HOLDS whenever a room is opened -- so a room here cut him off
     // mid-sentence. Morgan, 2026-09-24: "a mini game appears and interupts him if you start
     // it. Could you push the mini game way back." The gears stood at 12900 and armed with the
@@ -422,12 +422,11 @@ const CFG = {
     // the conveyor's road runs out, so the two come one after the other.
     { x: 15150, lane: 0, type: 'gears', diff: 4 },
     { x: 14800, lane: 1, type: 'conveyor', diff: 4 },
-    { x: 14000, lane: 0, type: 'ditch', diff: 4, warn: 480 },
     // THE ACT'S FIRST ROOM, a sum. Morgan, 2026-09-25: the proprietor says his two lines at the
     // mouth and then there was a long empty walk to the ditch -- "maybe a bit too much space
     // ... can we add another room, maybe just a little bit before it? ... maybe a math
     // question". The ditch is untouched. Placed by three numbers, all measured:
-    //   * his speech is gone by a lead of 13261..13291, and this arms at x - warn = 13340,
+    //   * his speech is gone by a lead of 13248..13291, and this arms at x - warn = 13340,
     //     about 0.5s after -- opening a room while he speaks ducks him mid-line, which Morgan
     //     asked to stop; the ditch still arms at 13520, 1.6s later, so they come staggered;
     //   * the fork's signpost stands between this and the ditch, and when both are armed each
@@ -438,7 +437,11 @@ const CFG = {
     //   * warn 450 rather than the terminal's usual 500 is what lets it stand that far back and
     //     still arm after him: 454 units, 4.1s, from arming to the crowd, against the ~2.9s the
     //     sum is priced at in VERBS.calculation.
+    // LISTED BEFORE THE DITCH, though it changes nothing in a real run. S.rooms keeps this
+    // order and hotkeys are handed out lowest-first in it, so anything that arms both on one
+    // frame -- a dev flag, a check -- numbered the ditch 1 and this 2, the road backwards.
     { x: 13790, lane: 0, type: 'calculation', diff: 4, warn: 450 },
+    { x: 14000, lane: 0, type: 'ditch', diff: 4, warn: 480 },
     { x: 16000, lane: 2, type: 'wiring', diff: 4, warn: 840 },
     { x: 16900, lane: 3, type: 'sweeper', diff: 4, warn: 1350 },
     { x: 16200, lane: 1, type: 'winch', diff: 4 },
@@ -451,12 +454,14 @@ const CFG = {
     // act to carry every earlier family evenly (hi - lo <= 1), and act three holds exactly
     // two of each, so any addition makes one family three and fails. Every candidate type
     // was tried; all thirteen failed, and deleting outright was the only in-place swap that
-    // passed.
+    // passed. (That was the TOOL'S fault, found 2026-09-25: it counted the wall's family, which
+    // exists once and only here, as the floor. Fixed, one family at three passes -- the wages
+    // terminal at 13790 is one.)
     //
     // So the wages terminal is MOVED here from 18300 rather than a new room invented. Family
     // counts are untouched, the lane-0 gap goes back to 1630, and the room lands where it is
     // actually met: 18300 was lane 4, which carries 2% of the crowd, against lane 0's 51%.
-    // The other lane-0 calculation is at 18800, 3200 clear of this one.
+    // The other lane-0 calculations are at 13790, 1810 before this one, and 18800, 3200 after.
     { x: 15600, lane: 0, type: 'calculation', diff: 5, warn: 500 },
     { x: 17400, lane: 2, type: 'ditch', diff: 4, warn: 480 },
     // THE MISHMASH. Act three used to hold only the four enclosure types, so the last act
@@ -7411,6 +7416,14 @@ function canReach(r, room) {
 const footY = r => r.y + (r.dy + 22) * 0.3 * (r.stagger === undefined ? 1 : r.stagger) - 2;
 function approaching(room) {
   let n = 0, maxX = -1e9;
+  // THE LOOK-BACK IS FROM THE CROWD, NOT THE ROOM. Anyone more than 700 behind the room was not
+  // counted, so two rooms on one lane read different numbers for the same people: with the
+  // wages terminal at 13790 and the ditch 210 on, the badges said 100 and 85 for one hundred
+  // walkers, and a room armed far ahead read 0 until the pack was on it. Measured back from
+  // whichever is nearer, the room or the crowd's front, a room ahead of the pack counts the pack.
+  let front = -Infinity;
+  for (const r of S.runners) if (r.state === 'run' && r.x > front) front = r.x;
+  const back = Math.min(room.x, front) - 700;
   for (const r of S.runners) {
     // Not a bare lane test: canReach follows the forks and the merges, so anyone on an upper
     // lane that rejoins this one before the room is counted. The wiring room at 5800 stands
@@ -7418,7 +7431,7 @@ function approaching(room) {
     // room-closing sweep already asks canReach, so the two agreed about nobody being left and
     // disagreed about how many. Same lane is canReach's own answer, so ask that first and skip
     // the fork walk for most of the pack.
-    if (r.state !== 'run' || r.x >= room.x + killTo(room) || r.x < room.x - 700 || (r.lane !== room.lane && !canReach(r, room))) continue;
+    if (r.state !== 'run' || r.x >= room.x + killTo(room) || r.x < back || (r.lane !== room.lane && !canReach(r, room))) continue;
     n++; if (r.x > maxX) maxX = r.x;
   }
   // killFrom(room), NOT a literal 8. This was the one place left that still assumed the old
@@ -13821,13 +13834,13 @@ function signpost(wx, y) {
   // six times a frame. The cave version keeps the pop; it needs it.
   const outdoors = ENC.inside(wx);
   if (inMill(wx)) return millSign(wx, y);
-  if (!inView(wx, 100)) return;
   // THE SIGN IS DRAWN 70 UNITS LEFT OF THE FORK IT ANNOUNCES, and act three's first fork
   // stands 100 units inside the ditch at 14000 -- so the post, its footing block and its
   // contact shadow were painted on a ground line drawLane had cut away, over open water.
   // The test buriedByRoom makes for a fence post, against the FOOTPRINT (wx - 83 .. wx - 56)
   // rather than the anchor: step the sign back clear of the near lip. Moving wx moves the
-  // sign and nothing below reads it -- outdoors, inMill and inView are all settled above.
+  // sign and nothing below reads it -- outdoors and inMill are settled above; the cull is not,
+  // see below.
   for (const r of S.rooms.filter(m => laneY(m.lane) === y && roomIsGap(m)).sort((a, b) => b.x - a.x))
     if (wx - 56 > r.x && wx - 83 < r.x + CFG.gapWidth) wx = r.x + 24;
   // + 24, NOT + 50. At + 50 the post stood at r.x - 20 and the gap room's own armed bracket, at
@@ -13835,6 +13848,11 @@ function signpost(wx, y) {
   // after the sign, so on top of it. + 24 puts the post at r.x - 46 and the boards 12 clear of
   // that bracket, and 12 clear of the act-three wages terminal's bracket on the other side.
   // Only the fork at 14100, over the ditch at 14000, steps back at all; measured, not assumed.
+  //
+  // CULLED ON THE POST IT DRAWS, after the step-back. It culled on the fork before it, so a sign
+  // stepped back 76 units was already on screen for 64 units of travel without being drawn, then
+  // appeared whole 25px inside the right edge. The boards reach 21 either side of the post.
+  if (!inView(wx - 70, 100)) return;
   const sx = wx - V.left - 70;
   // a 5px post against a dark wall disappears at any zoom below 1 and the boards
   // are left hanging in the air; the ink outline and a footing are what hold it down
@@ -14311,7 +14329,10 @@ function armedMark(room, y, sx, gw, outdoors) {
     // 10 rad/s. That is the exact fault the clip was introduced to prevent, in the note just
     // above: "painted an opaque light bar over the middle of the very thing they warn about".
     ctx.rect(sx - 26, y - 10, 24, 22);
-    ctx.rect(sx + gw + 2, y - 10, 24, 22);
+    // not on the far side of a machine: it holds and takes people at its near face, and nobody
+    // meets it from the right. Out there the strip only walled in the fork sign beside the
+    // act-three wages terminal, and made the ground between two rooms three quarters warning.
+    if (room.hazard !== 'machine' && room.hazard !== 'press') ctx.rect(sx + gw + 2, y - 10, 24, 22);
   } else {
     ctx.rect(sx - 12, y - 10, gw + 24, 22);
   }
