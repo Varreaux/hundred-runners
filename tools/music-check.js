@@ -272,18 +272,28 @@ eval(src + `
   // trailing silence that no event reports, landing squarely over the start of the death
   // recap. Morgan asked for the music "as soon as they start showing the death vignettes",
   // which is REEL.at.
-  ok('...and the bed is still held while the headline is up', S.endT < REEL.at - MUSIC.LEAD && bedEl.paused,
-     'endT ' + S.endT.toFixed(2) + ' of the cue at ' + (REEL.at - MUSIC.LEAD).toFixed(2));
+  // MUSIC.EARLY is Morgan's dial and at 1.0 it takes the cue past endT 0, so the bed comes in
+  // on the first frame of the win screen and there is no "held" window left to assert. Written
+  // as a branch rather than deleted, because the hold is the right behaviour at a smaller dial
+  // and a check that quietly stops looking reads exactly like one that is passing.
+  const cueAt = REEL.at - MUSIC.LEAD - MUSIC.EARLY;
+  if (cueAt > 0) {
+    ok('...and the bed is held while the headline is up', S.endT < cueAt && bedEl.paused,
+       'endT ' + S.endT.toFixed(2) + ' of the cue at ' + cueAt.toFixed(2));
+  } else {
+    ok('...and the dial has taken the cue to the top of the win screen', cueAt <= 0,
+       'MUSIC.EARLY ' + MUSIC.EARLY + ' against a calculated cue of ' + (REEL.at - MUSIC.LEAD).toFixed(2));
+  }
   // CUED EARLY BY THE LENGTH OF ITS OWN SILENCE. The loop opens with 0.36s of nothing, so
   // starting it on the cut put the first hit 0.36s behind the first card. This asserts the
   // cue, and the comment on MUSIC.LEAD carries the measurement -- a silence inside a file is
   // the one fact neither this check nor the game can see for itself.
-  for (let i = 0; i < 60 * 3 && S.endT < REEL.at - MUSIC.LEAD; i++) update(1/60);
+  for (let i = 0; i < 60 * 3 && S.endT < cueAt; i++) update(1/60);
   update(1/60);
-  ok('the bed is cued a lead-in before the recap, so its first hit lands on the first card',
+  ok('the bed comes in ahead of the recap and from the top of the loop',
      played('bed') === bedV + 1 && !bedEl.paused && bedEl.currentTime === 0,
      'cued at endT ' + S.endT.toFixed(2) + ', first hit at ' + (S.endT + MUSIC.LEAD).toFixed(2) +
-     ' against the first card at ' + REEL.at);
+     ', first card at ' + REEL.at + ' (dial EARLY ' + MUSIC.EARLY + ')');
   ok('...and the victory fades under it rather than cutting',
      MUSIC.fade && MUSIC.fade.a === vicEl && !vicEl.paused,
      MUSIC.fade ? 'fading, volume ' + vicEl.volume.toFixed(3) : 'no fade');

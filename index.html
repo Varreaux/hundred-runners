@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '184 the downbeat lands on the first card';
+const BUILD = '185 the music cue actually ships';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2488,6 +2488,23 @@ const MUSIC = {
   // tutorial". The boss loop comes in at full on the frame the lesson hands over and the alarm
   // falls away under it over FADE seconds, fast at first and trailing off. One number.
   FADE: 1.5, fade: null,
+  // THE BED DOES NOT START WHEN IT STARTS. Hundred Loop New.wav opens with exactly 0.3600s of
+  // silence before its first hit -- measured off the PCM at 2ms windows and again at 5ms, both
+  // landing on 0.3600, with the hit that follows at full amplitude 1.26. So cueing play() on
+  // the frame the death recap takes the screen put the music 0.36s behind the picture.
+  //
+  // A LENGTH OF SILENCE INSIDE A FILE is the one kind of fact neither the game nor a check can
+  // see for itself: replace the loop and this has to be measured again, or the music drifts
+  // off the cut with nothing reporting it.
+  LEAD: 0.36,
+  // MORGAN'S DIAL, 2026-09-25: "Just start it 1 second earlier." The calculated cue lands the
+  // downbeat on the first card and by ear that is still not where he wants it, so this is the
+  // one number to turn and it is his. Subtracted from the cue, so larger is sooner.
+  //
+  // At 1.0 it goes past the top of the end screen -- the calculated cue is 0.99 -- so the bed
+  // comes in on the FIRST FRAME of the win screen and the shift is 0.99s in practice, not 1.0.
+  // Anything above 0.99 means the same thing; there is no runway before endT 0.
+  EARLY: 1.0,
   // Morgan's own filenames, kept as he saved them so that dropping a replacement in with
   // the same name just works. Encoded because they contain spaces.
   SRC: { tut: 'Hundred%20Tutorial%20Loop.wav', intro: 'Hundred%20Intro%20New.wav', bed: 'Hundred%20Loop%20New.wav',
@@ -6552,9 +6569,11 @@ function update(dt) {
   // the real room, then the boss loop, then -- from the tenth mark, through the win's beat and
   // onto the win screen -- the victory. See MUSIC.follow.
   const fin = S.finale;
-  // ...and then the reel's own music, from the frame the death cards take the screen. REEL.at
-  // is read rather than restated, so moving the headline's hold moves the music with it.
-  MUSIC.follow(S.mode === 'win' ? (S.endT >= REEL.at ? null : 'victory')
+  // ...and then the reel's own music. REEL.at is where drawEnd starts the reel (it gates the
+  // whole thing on `T > REEL.at`), LEAD is the loop's own silent head, and EARLY is Morgan's
+  // dial on top of both -- all three read rather than restated, so moving the headline's hold,
+  // changing the file, or turning the dial each move the cue on their own.
+  MUSIC.follow(S.mode === 'win' ? (S.endT >= REEL.at - MUSIC.LEAD - MUSIC.EARLY ? null : 'victory')
              : S.mode !== 'finale' || !fin ? null
              : fin.phase === 'intro' || fin.phase === 'charge' ? 'alarm'
              : fin.winT > 0 || fin.found.size >= CFG.finale.findCount ? 'victory' : 'boss');
