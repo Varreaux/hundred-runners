@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '192 no gates, no hint line, tighter rooms';
+const BUILD = '193 the crowd passes in front of the field machine';
 // The title screen no longer prints it -- Morgan asked for the build stamp and the best-run
 // line off the front of the game. This keeps it one keystroke away in a console, which is
 // what it was for between sessions. The delivery check greps the SOURCE and is unaffected.
@@ -14232,7 +14232,7 @@ function drawRoomProps(lane) {
   for (const room of S.rooms) {
     if (room.lane !== lane || !inView(room.x, 240)) continue;
     if ((room.hazard === 'machine' || room.hazard === 'press') && ENC.inside(room.x)) {
-      fieldMachineFront(room, laneY(lane), room.x - V.left, CFG.gapWidth);
+      fieldMachineFront(room, laneY(lane), room.x - V.left, CFG.gapWidth, true);
       continue;
     }
     if (room.type !== 'winch' && room.type !== 'bridge') continue;
@@ -15389,6 +15389,8 @@ function drawFieldMachine(room, y, sx, gw) {
   // nowhere.
   sunShade(x0 + w / 2, y + 2, w / 2 + 6, FIELD_H + 9, 0.22);
   if (room.state === 'armed') armedMark(room, y, sx, gw, true);
+  // ...and then the machine itself, BEHIND the crowd. Everything but the two frame posts.
+  fieldMachineFront(room, y, sx, gw, false);
 }
 // 66, and the honest numbers rather than the flattering ones. The OVERALL silhouette is not
 // 66: the uprights run to y-H-2 and the caps reach y-H-9, so it stands 75 tall against a
@@ -15419,10 +15421,45 @@ const FIELD_H = 66;
 // over the top of them. The file already carries this fix and its reasoning: drawRoomProps
 // took the raised bridge leaf into the front pass for exactly this, counting 4188 body-frames
 // inside the slab across one unsolved run. Only the ground and the armed wash stay behind.
-function fieldMachineFront(room, y, sx, gw) {
+// THE CROWD WALKS IN FRONT OF IT NOW, and only the two frame posts stay ahead of them.
+// Morgan, 2026-09-25: "when the players are walking by it, because the mini game was cleared,
+// instead of walking in front of that art, it's walking behind that art ... suddenly you
+// don't see the player anymore while it's running through it."
+//
+// This whole structure was moved into the front pass for the opposite reason, written up
+// above: roomIsGap is false for a machine, so drawLane cuts no hole, the deck runs straight
+// under it, and a solved room stops being skipped by the queue -- so the crowd was drawn over
+// 96 units of opaque housing and read as walking THROUGH it. Both readings are bad and the
+// real fault is underneath both: the machine stands on the lane the crowd walks along.
+//
+// Between the two, his is the one that costs the player something. A body drawn over a
+// cabinet is odd; a body you cannot see at all is a body you cannot count, in a game whose
+// entire HUD is a count of them. So the mass goes behind and the FRAME stays in front: the
+// two uprights are 10 wide at x0 - 8 and x1 - 6, the outer edges of a 96-unit span, so they
+// cross a runner for about a fifth of the time the housing did and give the pass a near
+// plane to read against.
+//
+// NOT the timber boards, which were the other candidate: bn is 3 at y-10, y-21 and y-32
+// against a 45-unit body, so they would stripe the crowd across its whole height -- the same
+// complaint in three bars instead of one slab.
+//
+// One consequence, stated because it is a real change and not visible in a still: the posts
+// are now drawn AFTER the wheel, the brace and the lamp rather than before them, so the
+// brace's right end tucks behind the post it braces instead of crossing it. That is the
+// better join of the two.
+function fieldMachineFront(room, y, sx, gw, front) {
   const H = FIELD_H, x0 = sx + 8, w = gw - 16, x1 = x0 + w;
   const lit = room.state === 'solved';
   const M = roomMaterial(room.x);
+  if (front) {
+    for (const px of [x0 - MACHINE_FACE - 4, x1 - 6]) {
+      ctx.fillStyle = '#5c4630'; ctx.fillRect(px, y - H - 2, 10, H + 2);
+      ctx.fillStyle = 'rgba(255,240,206,0.20)'; ctx.fillRect(px, y - H - 2, 2.8, H + 2);
+      ctx.fillStyle = '#6b5438'; ctx.beginPath();
+      ctx.moveTo(px - 2, y - H - 2); ctx.lineTo(px + 12, y - H - 2); ctx.lineTo(px + 5, y - H - 9); ctx.closePath(); ctx.fill();
+    }
+    return;
+  }
   // the drum housing: the cabinet's own value, reaching the ground
   const by = y - H + 10, bh = H - 10;
   ctx.fillStyle = '#121018'; ctx.fillRect(x0 + 2, by - 2, w - 4, bh + 2);
@@ -15452,12 +15489,7 @@ function fieldMachineFront(room, y, sx, gw) {
     ctx.fillStyle = 'rgba(255,240,206,0.16)'; ctx.fillRect(x0 - 2, ry - rh, w + 4, hair);
     ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(x0 - 2, ry - hair, w + 4, hair);
   }
-  for (const px of [x0 - MACHINE_FACE - 4, x1 - 6]) {
-    ctx.fillStyle = '#5c4630'; ctx.fillRect(px, y - H - 2, 10, H + 2);
-    ctx.fillStyle = 'rgba(255,240,206,0.20)'; ctx.fillRect(px, y - H - 2, 2.8, H + 2);
-    ctx.fillStyle = '#6b5438'; ctx.beginPath();
-    ctx.moveTo(px - 2, y - H - 2); ctx.lineTo(px + 12, y - H - 2); ctx.lineTo(px + 5, y - H - 9); ctx.closePath(); ctx.fill();
-  }
+  // (the two uprights are drawn in the front pass -- see the top of this function)
   // the drive wheel, inboard over the housing on a bearing block, with a crank pin that breaks
   // its six-fold symmetry -- a symmetric spoked disc with no rim mark cannot show rotation.
   // THE PIN IS WHY THE ANGLE IS NOW HELD on solve: spin used to snap to 0.6 the frame the room
