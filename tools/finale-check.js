@@ -800,12 +800,21 @@ eval(src + `
     let bossAt = Infinity, beltMoved = 0, beltAt0 = null, worstWho = null, minX = Infinity;
     let bossMoved = -Infinity, startX = null;
     let landedInFrame = 0, apexMin = Infinity, apexMax = 0, landWho = null;
+    let blowAt = null, deckAtBlow = -1, beltAtBlow = null, beltDrift = 0, handedAt = null;
     const peak = new Map();
     const sample = () => {
       const fin = S.finale;
       if (!fin || fin.phase !== 'escape') return;
       if (beltAt0 == null) beltAt0 = fin.beltT || 0;
       beltMoved = (fin.beltT || 0) - beltAt0;
+      // THE BLAST. Sampled rather than reasoned about: the claim is that it fires with nobody
+      // left on the deck, that the belt STOPS rather than snapping, and that the room waits
+      // long enough afterwards for it to be seen.
+      if (fin.blowT != null && blowAt === null) {
+        blowAt = fin.escT; deckAtBlow = fin.deck.length; beltAtBlow = fin.beltT || 0;
+      }
+      if (beltAtBlow != null) beltDrift = Math.max(beltDrift, Math.abs((fin.beltT || 0) - beltAtBlow));
+      if (S.mode === 'win' && handedAt === null) handedAt = fin.escT;
       if (startX == null) startX = new Map(fin.deck.map(d => [d, d.x]));
       if (fin.escBoss && bossAt === Infinity) {
         bossAt = fin.escT;
@@ -897,6 +906,23 @@ eval(src + `
        peaks.length > 0 && apexMax / Math.max(1, apexMin) < 1.8,
        peaks.length + ' arcs, apex ' + apexMin.toFixed(0) + '..' + apexMax.toFixed(0) +
        ' units, ratio ' + (apexMax / Math.max(1, apexMin)).toFixed(2) + ' (a body is 45 tall)');
+    ok('the generator lets go, and only once the belt is empty',
+       blowAt !== null && deckAtBlow === 0,
+       blowAt === null ? 'it never went off' : 'at escT ' + blowAt.toFixed(2) + 's with ' + deckAtBlow + ' still aboard');
+    // Frozen, not switched off. finaleBeltRunning still reports the belt live, so nothing in
+    // drawChamberBase snaps: flipping it instead would jump the slats a whole 26-unit plank,
+    // the lip stripes 18, and both drums to angle zero, on the frame of the bang.
+    // RUNS DOWN, not stops dead. The first version asserted beltT never moved again, which was
+    // right about the snap it was guarding (flipping beltLive jumps the slats a whole plank and
+    // both drums to angle zero) and wrong about the belt: 200 u/s to nothing in one frame is
+    // still a step. What has to hold is that it decelerates and is stopped -- and that nothing
+    // flips beltLive, which is what would cause the snap.
+    ok('...and the belt runs down rather than snapping to a new phase',
+       beltAtBlow !== null && beltDrift > 5 && beltDrift < 60 && finaleBeltRunning(S.finale) === true,
+       'beltT coasted ' + beltDrift.toFixed(1) + ' units after the blast (200 u/s over 0.45s is 45), belt still reported live');
+    ok('...and the room holds long enough to see it',
+       handedAt !== null && blowAt !== null && handedAt - blowAt >= ESC.blowHold - 0.02,
+       handedAt === null ? 'never handed over' : (handedAt - blowAt).toFixed(2) + 's held, ESC.blowHold is ' + ESC.blowHold);
     ok('the escape hands the room to the ending', S.mode === 'win', 'mode ' + S.mode);
     ok('the win banks the crew that is still standing', loadBest() >= g.line.length,
        'best ' + loadBest() + ', standing ' + g.line.length);

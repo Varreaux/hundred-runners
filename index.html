@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '188 one crowd, one count';
+const BUILD = '189 the generator comes apart';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -3741,7 +3741,12 @@ function finaleFx(f, k, x, y, o = {}) {
   for (let i = 0; i < n; i++) {
     const life = rand(lf[0], lf[1]);
     f.fx.push({ k, x: x + rand(-(o.sx || 0), o.sx || 0), y: y + rand(-(o.sy || 0), o.sy || 0),
-      vx: rand(vx[0], vx[1]), vy: rand(vy[0], vy[1]), life, max: life, c: o.c || '#ffe0a0', r: o.r || 2 });
+      vx: rand(vx[0], vx[1]), vy: rand(vy[0], vy[1]), life, max: life, c: o.c || '#ffe0a0', r: o.r || 2,
+      // PER PARTICLE, because one number cannot serve both. The blast's debris has mass and the
+      // dynamo's ambient sparks do not -- those live 0.12..0.35s, and at the heavy gravity they
+      // would sag 32 units inside their own life, which is a change to an effect nobody asked
+      // about. Omitted, the old shared rule applies and nothing existing moves.
+      g: o.g, spin: o.spin == null ? 8 : rand(o.spin[0], o.spin[1]), ink: !!o.ink });
   }
 }
 function startFinale() {
@@ -4623,7 +4628,12 @@ const ESC = {
   // bossSpeechLength reports, which counts a typing pass this line never makes and over-states
   // any fast script by 1.18s. The last body clears at about 3.05s. Close enough either way that
   // the test below has to be an && rather than a guess about which of them ends.
-  cap: 6.5,
+  // THE BEAT AFTER THE BANG. The generator lets go once the last body is clear of it, and the
+  // room has to stay up long enough to see it happen rather than cutting to the reel on the
+  // same frame. Nobody is on screen by then, which is the point: the machine comes apart with
+  // nobody in it.
+  blowHold: 1.1,
+  cap: 8,
 };
 // `Lin` because both callers have a layout already and one of them does NOT: updateFinale
 // passes its own, the dev flag has none. Written as a parameter with a fallback rather than
@@ -4635,6 +4645,7 @@ function beginFinaleEscape(f, Lin) {
   const L = Lin || finaleLayout();
   f.phase = 'escape';
   f.escT = 0;
+  f.blowT = null;                 // null until the generator goes; its own clock after
   // Rightmost first: they are nearest the way out, and a line that leaves as a block reads
   // as one object moving rather than as people deciding to go.
   const out = f.deck.filter(d => d.enter >= 0).sort((a, b) => b.x - a.x);
@@ -4706,7 +4717,23 @@ function updateFinaleEscape(f, L, dt) {
   // finaleBeltRunning was extended for this phase and its comment claims the machine does
   // not know it has been beaten; this is the line that makes that true. "Run up the conveyor
   // belt" is only a thing to do while the belt is going the other way.
-  f.beltT = (f.beltT || 0) + BELT_SPD * dt;
+  // ...UNTIL IT LETS GO. Frozen rather than switched off: finaleBeltRunning still reports the
+  // belt as live, so beltOff, the lip stripes, both drums and the wheel all simply STOP at the
+  // angle and offset they had reached. Flipping beltLive instead would snap the slats up to a
+  // whole 26-unit plank, the stripes 18, and both drums to angle zero, on one frame.
+  // IT COASTS. Stopping the accumulation outright was right about the snap it was avoiding --
+  // flipping beltLive would jump the slats a whole 26-unit plank and both drums to angle zero
+  // -- but a velocity step is still a step: 200 u/s to nothing in 16ms reads as the animation
+  // being paused, not as a machine stopping, and this belt is the one thing the player has
+  // watched move for the entire room. It runs down over 0.45s instead.
+  const coast = f.blowT == null ? 1 : Math.max(0, 1 - f.blowT / 0.45);
+  f.beltT = (f.beltT || 0) + BELT_SPD * coast * dt;
+  // ...and the gauge comes down with the crowd that was driving it. f.beltPow is updated 319
+  // lines past the early return that brings us here, so it held its search-time reading for
+  // the whole 3-4s escape with nobody left on the belt, and then the blast took it from that
+  // frozen value to zero in one frame. Same target the room's own smoothing uses.
+  const want = f.deck.length / Math.max(1, f.crewAtSearch || f.crew0 || 1);
+  f.beltPow = (f.beltPow || 0) + (want - (f.beltPow || 0)) * Math.min(1, dt * 2.8);
   // HE REACTS, HE DOES NOT ANNOUNCE. Started on the same frame as the bodies he was screaming
   // 0.35s before anybody had left the belt -- a reaction simultaneous with its own cause --
   // and he won the first second of a celebration in which nothing had yet happened.
@@ -4810,8 +4837,52 @@ function updateFinaleEscape(f, L, dt) {
   // He has not even been started for the first bossAt seconds, and `!S.boss` is true of the
   // proprietor who spoke on the hillside and finished -- so without escBoss the room could
   // hand over before his band had dropped at all.
+  // THE GENERATOR GOES WHEN THE LAST OF THEM IS CLEAR OF IT. The crowd walking the belt is
+  // what turns it -- that is the whole premise of the room -- and they have just spent three
+  // seconds running the other way up it. Fired on the deck emptying rather than on a clock, so
+  // it cannot land on somebody: the last body is already past the frame edge.
+  if (f.deck.length === 0 && f.blowT == null) {
+    f.blowT = 0;
+    AU.boom(); AU.clank();
+    const gx = L.gen.x + 28, gy = L.gen.y + 24;
+    // WEIGHT, AND A THROW THAT STAYS IN THE ROOM. At the shared gravity of 40 a spark thrown
+    // at vy -320 needs EIGHT SECONDS to reach the top of its arc, against a life of at most
+    // one -- so nothing arced at all, it rose in a straight line for its whole life and died
+    // 300 units up, inside the painting. And vx to 300 over a 1.0s life reached x 1164: 212
+    // units past the chamber's own wall and 204 off the canvas, about eleven pieces a blast.
+    // 520 is the number this room already uses for anything with mass -- the falling bodies --
+    // and the throw is cut to the 88 units of room that actually exist to the right.
+    finaleFx(f, 'spark', gx, gy, { n: 34, sx: 10, sy: 8, vx: [-200, 170], vy: [-300, 40],
+                                   life: [0.35, 0.95], c: '#ffd27a', g: 520, spin: [-13, 13] });
+    // The ironwork it threw: slower, darker, inked like every other solid thing in the room.
+    finaleFx(f, 'spark', gx, gy, { n: 9, sx: 6, sy: 6, vx: [-140, 120], vy: [-230, -40],
+                                   life: [0.5, 1.0], c: '#6b6570', g: 520, spin: [-7, 7], ink: true });
+    finaleFx(f, 'spark', gx, gy, { n: 10, sx: 6, sy: 6, vx: [-120, 110], vy: [-190, -40],
+                                   life: [0.4, 0.9], c: '#ff8a4c', g: 520, spin: [-11, 11] });
+    // Smoke RISES, and it has to be darker than the wall it rises over or it reads as steam.
+    // Its life is cut to fit the hold: at [0.7, 1.6] nine of sixteen puffs were still alive at
+    // full opacity on the frame the room cut to the recap.
+    finaleFx(f, 'smoke', gx, gy - 6, { n: 16, sx: 16, sy: 10, vx: [-34, 40], vy: [-62, -16],
+                                       life: [0.55, 0.95], c: 'rgba(22,18,22,0.55)', r: 5, g: -34 });
+  }
+  if (f.blowT != null) f.blowT += dt;
+  // THE SECOND BEAT. The bang owns the first third of the hold and the debris is gone from the
+  // machine's neighbourhood by 0.4s, which left the last two thirds as a dark box with a few
+  // drifting dots -- the effect's weakest frame was its last. A wrecked machine settles: a
+  // piece of it goes into the pool it stands over, which is also the only thing in the room
+  // that can answer back.
+  if (f.blowT != null && !f.blowDrop && f.blowT >= 0.44) {
+    f.blowDrop = true;
+    const gx = L.gen.x + 28;
+    finaleFx(f, 'spark', gx - 6, L.gen.y + 40, { n: 3, sx: 8, vx: [-40, 30], vy: [-30, 10],
+                                                 life: [0.5, 0.7], c: '#6b6570', g: 520,
+                                                 spin: [-5, 5], ink: true });
+    f.ripples.push({ x: gx - 10, y: L.water.y + 12, r: 3, life: 0.8 });
+    AU.thud();
+  }
   const bossDone = f.escBoss && (!S.boss || S.boss.gone);
-  if ((f.deck.length === 0 && bossDone) || f.escT > ESC.cap) S.mode = 'win';
+  const blown = f.blowT != null && f.blowT >= ESC.blowHold;
+  if ((f.deck.length === 0 && bossDone && blown) || f.escT > ESC.cap) S.mode = 'win';
 }
 // Their own draw. Everything in the working line's loop -- the run-in-place gait, the wind
 // streak pulled the belt's way, a contact shadow pinned to the slats -- is a statement about
@@ -4846,6 +4917,31 @@ function drawExitLight(L, f) {
   // the pool -- daylight underwater -- and its bright end lay along the panel's own gold rail.
   // Stopped at the floor it is a tall window in a wall, which is what it is meant to be.
   ctx.fillStyle = g; ctx.fillRect(x0, L.left.y, x1 - x0, L.water.y - L.left.y);
+}
+// THE BLAST HAS TO EXIST OUTSIDE ITS OWN CASING. Without this the only pixels that changed
+// on the impact frame of the game's last beat were inside an 86x48 box -- 0.8% of the canvas
+// -- while the pool 34 units below stayed the identical blue and the wall behind it the
+// identical brown. A 0.98-alpha flash throws light; a sticker does not.
+function drawBlastLight(f, L) {
+  if (f.blowT == null || f.blowT > 0.42) return;
+  const k = 1 - f.blowT / 0.42, k2 = k * k;
+  const gx = L.gen.x + 28, gy = L.gen.y + 24;
+  ctx.save();
+  // Clipped to the chamber, like the ripples and the belt streaks already are. Light does not
+  // fall on the letterbox either.
+  ctx.beginPath(); ctx.rect(L.px + 4, L.py + 4, L.pw - 8, L.ph - 8); ctx.clip();
+  ctx.globalCompositeOperation = 'lighter';
+  const w = ctx.createRadialGradient(gx, gy, 0, gx, gy, 640);
+  w.addColorStop(0, 'rgba(255,206,138,' + (0.26 * k2).toFixed(3) + ')');
+  w.addColorStop(0.34, 'rgba(255,150,70,' + (0.10 * k2).toFixed(3) + ')');
+  w.addColorStop(1, 'rgba(255,120,40,0)');
+  ctx.fillStyle = w; ctx.fillRect(L.px, L.py, L.pw, L.ph);
+  // The pool is directly underneath it and is the one surface that would obviously take it.
+  const wl = ctx.createLinearGradient(0, L.water.y, 0, L.water.y + 30);
+  wl.addColorStop(0, 'rgba(255,192,124,' + (0.30 * k).toFixed(3) + ')');
+  wl.addColorStop(1, 'rgba(255,150,80,0)');
+  ctx.fillStyle = wl; ctx.fillRect(gx - 160, L.water.y, 320, 30);
+  ctx.restore();
 }
 function drawEscaper(d, L, t) {
   const e = d.esc;
@@ -6028,7 +6124,18 @@ function updateFinale(dt) {
   }
 
   // screen-space FX
-  for (const p of f.fx) { p.life -= dt; p.vy += (p.k === 'drop' ? 520 : 40) * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+  for (const p of f.fx) {
+    p.life -= dt;
+    p.vy += (p.g == null ? (p.k === 'drop' ? 520 : 40) : p.g) * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    // ...AND WHAT GOES UP COMES DOWN INTO THE POOL. Giving the debris real weight puts about
+    // twenty pieces a blast into the water, and molten iron entering water with no mark on it
+    // is a new fault traded for an old one. Same test the falling bodies use, 40 lines up.
+    if (p.g && p.k === 'spark' && !p.wet && p.y >= L.water.y + 2) {
+      p.wet = true; p.life = Math.min(p.life, 0.12);
+      f.ripples.push({ x: p.x, y: L.water.y + 8, r: 2, life: 0.5 });
+    }
+  }
   f.fx = f.fx.filter(p => p.life > 0);
   for (const r of f.ripples) { r.r += 38 * dt; r.life -= dt; }
   f.ripples = f.ripples.filter(r => r.life > 0);
@@ -18264,7 +18371,11 @@ function drawChamberBase(f, L, t, still) {
   for (let x = L.deck.x + edge; x < L.deck.x + L.deck.w - 4; x += 18) ctx.fillRect(x, L.deck.y + L.deck.h - 7, 11, 4);
   ctx.fillStyle = '#c0392b';
   for (let x = L.deck.x + edge + 11; x < L.deck.x + L.deck.w - 4; x += 18) ctx.fillRect(x, L.deck.y + L.deck.h - 7, 4, 4);
-  if (beltLive) {
+  // ...AND NOT ONCE IT HAS STOPPED. wy reads S.t, which nothing freezes, so these kept
+  // travelling 40 u/s downward after the belt was frozen -- 44 units and 1.7 cycles over the
+  // hold, on a dead machine, from the one mark in the room whose whole job is to say how fast
+  // the belt is going.
+  if (beltLive && f.blowT == null) {
     // Clipped to the belt, for the reason written a few lines above about the ripples: these
     // reached x -36 and were drawn across the chamber wall and out onto the letterbox.
     ctx.save();
@@ -18285,6 +18396,21 @@ function drawChamberBase(f, L, t, still) {
 
   // generator: spinning dynamo wheel + corona
   const gx = L.gen.x + 28, gy = L.gen.y + 24;
+  // ONE JOLT, HOISTED, because a machine is not one drawing primitive. It used to wrap the
+  // rotor disc, the rim, the spokes and the flash -- and NOT the housing, the legs, the drive
+  // bands or the meter -- so a rotor vibrated inside a box that was perfectly still, the
+  // scorch slid up to 4 units off the casing onto bare wall, and the bands stayed bolted to a
+  // rim that had moved out from under them. The band joint tolerates 3.6 units of slip before
+  // daylight opens between the belt and the pulley it drives; the old radial maximum was 8.49.
+  //
+  // DAMPED, not re-rolled. rand(-j, j) on each axis every frame is white noise, which reads as
+  // a corrupted sprite; a ringing machine decays at a frequency.
+  let jx = 0, jy = 0;
+  if (f.blowT != null && f.blowT < 0.3) {
+    const k = 1 - f.blowT / 0.3, d = k * k;
+    jx = Math.sin(f.blowT * 97) * 6.5 * d;
+    jy = Math.cos(f.blowT * 79) * 5.0 * d;
+  }
   // THE DRIVE. The premise of the room is that the crowd turns the generator, and that was
   // the one thing the picture did not show: a grey box overlapping the end of the belt, on
   // no legs, with no shaft, drum or band between the belt and the dynamo. Drawn back to
@@ -18294,10 +18420,12 @@ function drawChamberBase(f, L, t, still) {
   // all of one band and 85% of the other, so the change meant to show the crowd turning the
   // machine was entirely hidden by the machine.
   const legH = (L.water.y + L.water.h - 8) - (L.gen.y + L.gen.h - 2);   // same floor as the piers
+  ctx.save(); ctx.translate(jx, jy);            // the casing and its legs ring with the rest
   ctx.fillStyle = INK;
   ctx.fillRect(L.gen.x + 8, L.gen.y + L.gen.h - 2, 7, legH);
   ctx.fillRect(L.gen.x + L.gen.w - 17, L.gen.y + L.gen.h - 2, 7, legH);
   inkFill('#2c333c', L.gen.x, L.gen.y, L.gen.w, L.gen.h, 4);
+  ctx.restore();
   const drumX = L.deck.x + L.deck.w;
   // THE CROWN IS THE WALKING SURFACE, derived rather than centred in the housing. At
   // deck.h / 2 the crown sat 1.56 ABOVE the slats -- a conveyor drum standing proud of the
@@ -18350,12 +18478,39 @@ function drawChamberBase(f, L, t, still) {
   // a V, not a loop -- and the first one started on the drum's far side, so it was painted
   // straight across the drum's own face.
   ctx.strokeStyle = '#2a2320'; ctx.lineWidth = 4.2;
-  ctx.beginPath(); ctx.moveTo(drumX + 1, drumY - drumR); ctx.lineTo(gx, gy - 14); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(drumX + 1, drumY + drumR); ctx.lineTo(gx, gy + 14); ctx.stroke();
+  // THE BAND ENDS ON THE PULLEY, so it goes where the pulley goes -- see the jolt above.
+  ctx.beginPath(); ctx.moveTo(drumX + 1, drumY - drumR); ctx.lineTo(gx + jx, gy - 14 + jy); ctx.stroke();
+  // ...and the lower one is the first thing to let go. It is the only physical link between
+  // the crowd's belt and the dynamo -- the object carrying the room's whole premise -- and it
+  // was drawn taut and unbroken across the wreck for the full hold. Slack now, hanging off the
+  // drum, which says the connection between them and it is severed better than a particle can.
+  ctx.beginPath(); ctx.moveTo(drumX + 1, drumY + drumR);
+  if (f.blowT == null) ctx.lineTo(gx + jx, gy + 14 + jy);
+  else {
+    const sag = Math.min(1, f.blowT / 0.25);
+    ctx.quadraticCurveTo(drumX + 22, drumY + drumR + 16 * sag, drumX + 30 + 8 * sag, drumY + drumR + 22 * sag);
+  }
+  ctx.stroke();
   // legs, reaching the floor rather than floating six units above the deck
   ctx.fillStyle = INK;
 
-  inkFill('#1b1519', L.gen.x + 8, L.gen.y + 6, 40, 40, 20);
+  // THE BLAST, and everything from here to the meter is drawn inside its jolt. S.shake cannot
+  // do this: draw() applies it inside a save/restore around WORLD space and the chamber is
+  // drawn in screen space after that restore, so the room would have held perfectly still
+  // through its own explosion.
+  const blow = f.blowT;
+  ctx.save();
+  ctx.translate(jx, jy);
+  // +4, NOT +6. This disc is a 40-unit circle so its centre is L.gen.y + 26, against a wheel
+  // centred at L.gen.y + 24 -- two units out, giving an annulus 2.5 units deep above the rim
+  // and 6.5 below it. Pre-existing and invisible while the corona covered it; the blast
+  // deletes the corona and puts it on show.
+  inkFill('#1b1519', L.gen.x + 8, L.gen.y + 4, 40, 40, 20);
+  // Scorch first, so the ironwork sits on top of it rather than under it.
+  if (blow != null) {
+    ctx.fillStyle = 'rgba(14,10,12,' + Math.min(0.72, blow * 1.8).toFixed(3) + ')';
+    roundRect(L.gen.x + 2, L.gen.y + 2, L.gen.w - 4, L.gen.h - 4, 4); ctx.fill();
+  }
   // THE SAME FAULT MORGAN REPORTED, one object along. This was t * (2 + 7 * beltPow) -- speed
   // times clock -- so when beltPow fell on a death the whole product fell with it and the
   // wheel kicked BACKWARDS. Measured on a real run: 1376 frames of it, worst -19 rad/s, and it
@@ -18368,15 +18523,53 @@ function drawChamberBase(f, L, t, still) {
   // which it never did; in the right ratio to the drum; and zero at the intro handoff, where
   // t * 2 used to snap it to an arbitrary angle.
   const spin = beltLive ? -beltT / 14 : 0;
-  ctx.strokeStyle = beltLive ? '#d9b169' : '#556070';   // iron and amber, like every other machine in the run
-  ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(gx, gy, 14, 0, 6.28); ctx.stroke();
-  ctx.strokeStyle = 'rgba(217,177,105,0.5)'; ctx.lineWidth = 1.6;
+  // A BROKEN RING, not a missing one. The wheel is still there after it goes -- it has thrown
+  // a segment and two spokes and stopped, which is a wrecked machine; deleting it would read
+  // as the art failing rather than as the thing failing.
+  // ONE STATEMENT FOR THE GAP, TWO READERS. The rim's hole was at a FIXED angle and the
+  // spokes were dropped by INDEX, while `spin` is -beltT/14 on a belt that has run thousands
+  // of units -- so the two were unrelated. An 85-degree hole against a 60-degree spoke pitch
+  // always contains one or two spokes, and the chance the two dropped were the two inside it
+  // is 0.417/6 = 6.9%. The other 93% of runs drew a spoke standing in the void with nothing to
+  // join, and two empty sockets on intact rim. Dropped by ANGLE now, against the same numbers
+  // the rim is drawn from, so they cannot disagree.
+  const GAP0 = 4.1, GAP1 = -0.7 + Math.PI * 2;
+  const broke = blow != null && blow >= 0.06;
+  // ...and the wheel does not go dead-grey BEFORE it breaks. The colour and the corona used to
+  // flip on the frame of the bang while the rim broke 0.06s later, so for four frames it was a
+  // complete, coronaless, iron-coloured ring: stopped, then broken, as two separate events.
+  ctx.strokeStyle = broke ? '#7a6f63' : beltLive ? '#d9b169' : '#556070';   // iron and amber, like every other machine in the run
+  ctx.lineWidth = 3; ctx.beginPath();
+  if (broke) ctx.arc(gx, gy, 14, GAP1 - Math.PI * 2, GAP0);
+  else ctx.arc(gx, gy, 14, 0, 6.28);
+  ctx.stroke();
+  ctx.strokeStyle = broke ? 'rgba(150,136,120,0.6)' : 'rgba(217,177,105,0.5)'; ctx.lineWidth = 1.6;
   for (let i = 0; i < 6; i++) {
+    const am = (((spin + i * Math.PI / 3) % 6.2832) + 6.2832) % 6.2832;
+    if (broke && am >= GAP0 && am <= GAP1) continue;   // the ones the segment took with it
     const a = spin + i * Math.PI / 3;
     ctx.beginPath(); ctx.moveTo(gx + Math.cos(a) * 4, gy + Math.sin(a) * 4);
     ctx.lineTo(gx + Math.cos(a) * 13, gy + Math.sin(a) * 13); ctx.stroke();
   }
-  if (beltLive) {
+  // The flash, over the ironwork and under the debris. Short: a bang is an event, and a glow
+  // that outstays it reads as a fire rather than as a failure.
+  if (blow != null && blow < 0.34) {
+    const k = 1 - blow / 0.34;
+    // BIG AND BRIGHT ON FRAME ONE, then collapsing. It used to be radius 20 + 78 * (1 - k)
+    // against an alpha of 0.95 * k -- so it GREW as it faded and its light energy peaked at
+    // k 0.4, i.e. 0.2s AFTER the noise. A bang peaks on the first frame and decays; the old
+    // curve is a gas ignition, and it is why the impact frame photographed as a small fire in
+    // a box.
+    const rr = 26 + 66 * k;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const fl = ctx.createRadialGradient(gx, gy, 0, gx, gy, rr);
+    fl.addColorStop(0, 'rgba(255,240,206,' + (0.98 * k * k).toFixed(3) + ')');
+    fl.addColorStop(0.42, 'rgba(255,172,76,' + (0.55 * k * k * k).toFixed(3) + ')');
+    fl.addColorStop(1, 'rgba(255,120,40,0)');
+    ctx.fillStyle = fl; ctx.beginPath(); ctx.arc(gx, gy, rr, 0, 6.28); ctx.fill();
+    ctx.restore();
+  }
+  if (beltLive && !broke) {
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < 3; i++) {
       ctx.strokeStyle = `rgba(127,219,255,${0.08 + 0.1 * beltPow * Math.sin(t * 12 + i)})`;
@@ -18394,12 +18587,25 @@ function drawChamberBase(f, L, t, still) {
     }
     ctx.restore();
   }
-  // tiny dynamo meter (machine only — not a second found/progress HUD)
+  // tiny dynamo meter (machine only — not a second found/progress HUD). INSIDE the jolt: it
+  // is painted on the casing, and the comment claiming everything to here was already inside
+  // it was simply wrong -- the restore used to happen one line above this.
   ctx.fillStyle = '#1b1519'; ctx.fillRect(L.gen.x + 52, L.gen.y + 40, 32, 6);
   // 'escape' as well, or the meter flips from the search's green to the CHARGE's orange on
   // the frame the room is beaten and holds it for the whole celebration.
-  ctx.fillStyle = (f.phase === 'search' || f.phase === 'escape') ? '#2ecc71' : '#e67e22';
-  ctx.fillRect(L.gen.x + 52, L.gen.y + 40, 32 * beltPow, 6);
+  // ...and the needle DROPS rather than being switched off. It went to zero width on one
+  // frame, in an effect built around not snapping -- and a dark slot on a scorched casing is
+  // not a dead gauge, it is an absent one. It slams over 0.1s and leaves a broken face.
+  const mk = f.blowT == null ? 1 : Math.max(0, 1 - f.blowT / 0.1);
+  ctx.fillStyle = f.blowT != null ? '#5a4a42'
+                : (f.phase === 'search' || f.phase === 'escape') ? '#2ecc71' : '#e67e22';
+  ctx.fillRect(L.gen.x + 52, L.gen.y + 40, 32 * beltPow * mk, 6);
+  if (f.blowT != null) {
+    ctx.strokeStyle = 'rgba(20,14,16,0.85)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(L.gen.x + 60, L.gen.y + 39); ctx.lineTo(L.gen.x + 68, L.gen.y + 47);
+    ctx.moveTo(L.gen.x + 70, L.gen.y + 39.5); ctx.lineTo(L.gen.x + 76, L.gen.y + 46); ctx.stroke();
+  }
+  ctx.restore();                                        // out of the blast's jolt
   return beltPow;
 }
 function drawFinalePanel() {
@@ -18564,6 +18770,7 @@ function drawFinalePanel() {
   }
 
   const beltPow = drawChamberBase(f, L, t, false);
+  drawBlastLight(f, L);
 
   // Moved off the belt entirely. At deck.y - 10 it was drawn at head height and at -26 it was
   // still among the bodies -- the crowns sit 35 above the sole line, so there is no room over
@@ -18703,18 +18910,34 @@ function drawFinalePanel() {
   // is a body you can see the strip THROUGH -- a ghost. Drawn in front, the light takes them.
   drawExitLight(L, f);
 
-  // FX sparks / spray
+  // FX sparks / spray. CLIPPED TO THE CHAMBER, which the ripples and the belt streaks both
+  // already are, each with a comment about the thing that goes wrong without it. The blast was
+  // the third case and the only unclipped one: about eleven of its fifty-four pieces crossed
+  // the gold rail and finished on the letterbox, up to 204 units off the canvas.
+  ctx.save();
+  ctx.beginPath(); ctx.rect(L.px + 4, L.py + 4, L.pw - 8, L.ph - 8); ctx.clip();
   for (const p of f.fx) {
     ctx.globalAlpha = Math.min(1, p.life * 3.4);   // actually fades out; it used to hold full for most of its life
     ctx.fillStyle = p.c;
     if (p.k === 'spark') {
-      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.life * 8);
+      // PER PIECE. life decays at exactly 1/s for everything, so a shared rotate of life * 8
+      // spun every particle at an identical -8 rad/s and any two with equal remaining life were
+      // drawn parallel -- which is the banding you can see in a still. And an inked chip for
+      // the ironwork: in a room where every solid thing goes through inkFill, a debris field
+      // with no outline was the only flat element in the frame.
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.life * (p.spin == null ? 8 : p.spin));
+      if (p.ink) { ctx.fillStyle = INK; ctx.fillRect(-2.5, -5, 5, 10); ctx.fillStyle = p.c; }
       ctx.fillRect(-1.5, -4, 3, 8); ctx.restore();
     } else {
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.r || 2, 0, 6.28); ctx.fill();
+      // Smoke GROWS and thins. At a constant radius of 5 with a flat alpha these read as
+      // bubbles -- pale round dots rising over a pool -- and they were the last thing on
+      // screen before the cut to the recap.
+      const age = p.max ? 1 - p.life / p.max : 0;
+      ctx.beginPath(); ctx.arc(p.x, p.y, (p.r || 2) * (1 + age * 2.2), 0, 6.28); ctx.fill();
     }
   }
   ctx.globalAlpha = 1;
+  ctx.restore();
 
   // flashlight cores (control indicator) — no separate crosshair
   //
@@ -20726,6 +20949,18 @@ if (qs.has('finale')) {
       // animation. The escape's own motion is on dt and was moving the whole time.
       const n = Math.round(Math.max(0, +(qs.get('esc') || 0)) * 60);
       for (let i = 0; i < n && S.mode === 'finale'; i++) update(1 / 60);
+      //   &blow=T   hold T seconds into the GENERATOR'S OWN CLOCK, not the escape's. The blast
+      //             fires when the last body clears the belt, and every body's take-off point,
+      //             speed and arc carry per-person jitter -- so the deck empties anywhere
+      //             between about 3.18s and 3.37s and each shot is its own run. A sweep keyed
+      //             to `esc` therefore came back with an INTACT dynamo sitting between two
+      //             blown ones, which reads as the effect failing rather than as two different
+      //             runs. Driven to the blast and then held, the frames are comparable.
+      if (qs.has('blow')) {
+        for (let i = 0; i < 60 * 8 && S.finale && S.finale.blowT == null && S.mode === 'finale'; i++) update(1 / 60);
+        const b = Math.round(Math.max(0, +(qs.get('blow') || 0)) * 60);
+        for (let i = 0; i < b && S.mode === 'finale'; i++) update(1 / 60);
+      }
     }
   }
   const pre = Math.min(CFG.finale.findCount - 1, +(qs.get('found') || 0));
