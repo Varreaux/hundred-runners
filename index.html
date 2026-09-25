@@ -15,7 +15,7 @@
 'use strict';
 // ================================================================ config
 const W = 960, H = 540;
-const BUILD = '189 the generator comes apart';
+const BUILD = '190 the music ships as mp3';
 const CFG = {
   scroll: 110,            // camera speed, px/s
   runnerCount: 100,
@@ -2531,8 +2531,18 @@ const MUSIC = {
   EARLY: 0.5,
   // Morgan's own filenames, kept as he saved them so that dropping a replacement in with
   // the same name just works. Encoded because they contain spaces.
-  SRC: { tut: 'Hundred%20Tutorial%20Loop.wav', intro: 'Hundred%20Intro%20New.wav', bed: 'Hundred%20Loop%20New.wav',
-         boss: 'Hundred%20Boss%20Mastered.wav', alarm: 'jeremayjimenez-greece-eas-alarm-451404.mp3',
+  // MP3, NOT WAV, and the reason is the download rather than the sound. An itch HTML5 game
+  // fetches its whole zip before it starts: these four tracks are 80 seconds of audio and
+  // 14.6MB as WAV against 2.2MB at LAME VBR q2, which takes the package from 15MB to 4MB.
+  //
+  // THE LEAD-IN SURVIVED THE RE-ENCODE, which is the thing that had to be checked rather than
+  // assumed -- MUSIC.LEAD is 0.36 because the loop opens with exactly that much silence, and
+  // an encoder delay would have shifted the recap's downbeat off the first death card. Decoded
+  // back to PCM and measured at 2ms: still 0.3600s, still exactly 32.000s. Note that is
+  // ffmpeg's decoder honouring LAME's gapless metadata; a browser that ignored it would sit
+  // about 12ms late, which is under a frame.
+  SRC: { tut: 'Hundred%20Tutorial%20Loop.mp3', intro: 'Hundred%20Intro%20New.mp3', bed: 'Hundred%20Loop%20New.mp3',
+         boss: 'Hundred%20Boss%20Mastered.mp3', alarm: 'jeremayjimenez-greece-eas-alarm-451404.mp3',
          victory: 'tomas_herudek-corporate-brand-ident-technological-innovation-257470.mp3' },
   make(src) {
     try { const a = new Audio(src); a.preload = 'auto'; a.volume = this.VOL; return a; } catch (e) { return null; }
