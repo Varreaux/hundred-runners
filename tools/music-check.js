@@ -272,13 +272,18 @@ eval(src + `
   // trailing silence that no event reports, landing squarely over the start of the death
   // recap. Morgan asked for the music "as soon as they start showing the death vignettes",
   // which is REEL.at.
-  ok('...and the bed is still held while the headline is up', S.endT < REEL.at && bedEl.paused,
-     'endT ' + S.endT.toFixed(2) + ' of REEL.at ' + REEL.at);
-  for (let i = 0; i < 60 * 3 && S.endT < REEL.at; i++) update(1/60);
+  ok('...and the bed is still held while the headline is up', S.endT < REEL.at - MUSIC.LEAD && bedEl.paused,
+     'endT ' + S.endT.toFixed(2) + ' of the cue at ' + (REEL.at - MUSIC.LEAD).toFixed(2));
+  // CUED EARLY BY THE LENGTH OF ITS OWN SILENCE. The loop opens with 0.36s of nothing, so
+  // starting it on the cut put the first hit 0.36s behind the first card. This asserts the
+  // cue, and the comment on MUSIC.LEAD carries the measurement -- a silence inside a file is
+  // the one fact neither this check nor the game can see for itself.
+  for (let i = 0; i < 60 * 3 && S.endT < REEL.at - MUSIC.LEAD; i++) update(1/60);
   update(1/60);
-  ok('the death recap takes the screen and the bed comes in with it',
+  ok('the bed is cued a lead-in before the recap, so its first hit lands on the first card',
      played('bed') === bedV + 1 && !bedEl.paused && bedEl.currentTime === 0,
-     'at endT ' + S.endT.toFixed(2) + ', bed plays ' + bedV + ' -> ' + played('bed'));
+     'cued at endT ' + S.endT.toFixed(2) + ', first hit at ' + (S.endT + MUSIC.LEAD).toFixed(2) +
+     ' against the first card at ' + REEL.at);
   ok('...and the victory fades under it rather than cutting',
      MUSIC.fade && MUSIC.fade.a === vicEl && !vicEl.paused,
      MUSIC.fade ? 'fading, volume ' + vicEl.volume.toFixed(3) : 'no fade');
