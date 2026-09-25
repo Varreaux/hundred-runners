@@ -28,6 +28,14 @@ if [[ "$OUT" = /* ]]; then
   echo "shoot.sh: outdir must be relative to $ROOT, not an absolute path ($OUT)." >&2
   exit 1
 fi
+# shots-<topic> -> shots/<topic>. .gitignore has carried `shots/` since the repo was started,
+# so the hyphenated form misses it: nineteen such folders accumulated in the repo root, 86MB,
+# every one of them showing up in every session's `git status` for a week. Rewritten rather
+# than rejected, because every existing call site and every habit still passes the old form.
+if [[ "$OUT" == shots-* ]]; then
+  OUT="shots/${OUT#shots-}"
+  echo "shoot.sh: writing to $OUT (shots/<topic>, so .gitignore covers it)"
+fi
 if [[ -z "$CHROME" || ! -x "$CHROME" ]]; then
   CHROME=""
   for c in \

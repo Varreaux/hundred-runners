@@ -1,3 +1,8 @@
 .claude/
 .DS_Store
 shots/
+
+# Deliverables and captures: large, regenerable, and not the source of anything.
+trailers/
+*.mp4
+*.sync-conflict-*
